@@ -32,6 +32,8 @@ definitions:
           backoff_strategies:
             - type: WaitTimeFromHeader
               header: "Retry-After"
+            - type: ExponentialBackoffStrategy
+              factor: 5
         - type: DefaultErrorHandler
           response_filters:
             - type: HttpResponseFilter
@@ -40,6 +42,8 @@ definitions:
           backoff_strategies:
             - type: WaitTimeFromHeader
               header: "Retry-After"
+            - type: ExponentialBackoffStrategy
+              factor: 5
         - type: DefaultErrorHandler
           response_filters:
             - type: HttpResponseFilter
