@@ -154,12 +154,13 @@ Resolves `email`/`userEmail` from Cursor Bronze tables to canonical `person_id` 
 
 - Extraction of team member directory from `GET /teams/members`
 - Extraction of audit log events from `GET /teams/audit-logs`
-- Extraction of individual AI usage events from `POST /teams/filtered-usage-events`
+- Extraction of individual AI usage events from `POST /teams/filtered-usage-events` (hourly incremental)
+- Daily resync of usage events for the previous day (`cursor_usage_events_daily_resync`) to capture retroactive cost adjustments
 - Extraction of daily aggregated usage from `POST /teams/daily-usage-data`
 - Incremental sync using `timestamp`/`date` as cursors
 - Connector execution monitoring via `cursor_collection_runs` stream
 - Identity resolution via `email` and `userEmail`
-- Bronze-layer table schemas for all 5 streams (4 data + 1 monitoring: `cursor_collection_runs`)
+- Bronze-layer table schemas for all 6 streams (4 data + 1 resync + 1 monitoring)
 - Connector package descriptor (`descriptor.yaml`) with stream-to-table mappings and Silver targets
 - dbt models for Bronze-to-Silver transformation (`dbt/to_ai_dev_usage.sql` + `schema.yml`)
 
@@ -167,7 +168,7 @@ Resolves `email`/`userEmail` from Cursor Bronze tables to canonical `person_id` 
 
 - Gold layer transformations and cross-source aggregation — responsibility of the AI dev tool domain pipeline
 - Silver step 2 (identity resolution: `email` → `person_id`) — responsibility of the Identity Manager
-- Usage events dual-schedule sync (hourly incremental + daily full resync) — described as future enhancement; initial implementation uses single-schedule incremental sync
+- Usage events real-time streaming — the connector operates in batch mode (hourly + daily)
 - Cursor workspace or project-level analytics (not available in current API)
 - Real-time streaming — this connector operates in batch mode
 
@@ -229,15 +230,20 @@ The connector **MUST** produce a collection run log entry for each execution, re
 
 **Actors**: `cpt-insightspec-actor-cursor-operator`
 
-#### Dual-Schedule Sync for Usage Events (Future)
+#### Dual-Schedule Sync for Usage Events
 
-- [ ] `p3` - **ID**: `cpt-insightspec-fr-cursor-dual-sync`
+- [ ] `p1` - **ID**: `cpt-insightspec-fr-cursor-dual-sync`
 
-The connector **SHOULD** support a dual-schedule sync pattern for usage events: (1) hourly incremental sync fetching events from the last cursor position, and (2) daily full resync re-fetching the entire current billing period to capture retroactive cost adjustments.
+The connector **MUST** implement a dual-schedule sync pattern for usage events via two streams and two Airbyte connections:
 
-**Rationale**: Cursor may retroactively adjust `requestsCosts` and `totalCents` within the current billing period. Hourly sync provides near-real-time visibility, while daily resync ensures cost accuracy. The existing production system implements this pattern with hourly sync + daily resync at 03:00 UTC.
+1. **`cursor_usage_events`** (hourly) — incremental from last cursor position. Provides near-real-time visibility into AI usage.
+2. **`cursor_usage_events_daily_resync`** (daily, after 12:08:04 UTC) — re-fetches the previous day's events. Captures retroactive cost adjustments to `requestsCosts`, `totalCents`, `cursorTokenFee`.
 
-**Status**: Placeholder — not implemented in initial manifest. Requires orchestrator-level scheduling (two Airbyte connections or a wrapper job). See DESIGN for implementation options.
+Both streams hit the same API endpoint (`POST /teams/filtered-usage-events`) and share the same schema. They write to separate Bronze tables. The Silver dbt model applies the following deduplication rule:
+- **Yesterday and earlier**: data taken from `cursor_usage_events_daily_resync` (authoritative, finalized costs)
+- **Today**: data taken from `cursor_usage_events` (near-real-time, costs may change)
+
+**Rationale**: Cursor may retroactively adjust cost fields for events within the current day. The existing production system implements this pattern with hourly sync + daily resync at 03:00 UTC. The 12:08:04 UTC boundary aligns with the Cursor billing cycle daily cutoff.
 
 **Actors**: `cpt-insightspec-actor-cursor-operator`
 
@@ -252,6 +258,7 @@ Each stream **MUST** use a primary key to ensure that re-running the connector f
 - `cursor_members`: key = `email`
 - `cursor_audit_logs`: key = `event_id`
 - `cursor_usage_events`: key = `unique` (computed as `userEmail + timestamp`)
+- `cursor_usage_events_daily_resync`: key = `unique` (same schema as `cursor_usage_events`)
 - `cursor_daily_usage`: key = `unique` (computed as `email + date`)
 
 **Rationale**: The incremental sync window may overlap with previously fetched dates. Usage events within the billing period are re-fetched on each sync to capture retroactive adjustments. Deduplication ensures idempotent extraction.

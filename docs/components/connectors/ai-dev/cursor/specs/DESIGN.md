@@ -24,7 +24,7 @@
   - [Identity Resolution Strategy](#identity-resolution-strategy)
   - [Silver / Gold Mappings](#silver--gold-mappings)
   - [Incremental Sync Strategy](#incremental-sync-strategy)
-  - [Dual-Schedule Sync (Future)](#dual-schedule-sync-future)
+  - [Dual-Schedule Sync](#dual-schedule-sync)
   - [Collection Runs Monitoring](#collection-runs-monitoring)
   - [Capacity Estimates](#capacity-estimates)
   - [API Discrepancies Log](#api-discrepancies-log)
@@ -41,14 +41,15 @@
 
 The Cursor Connector extracts team membership, audit logs, individual AI usage events, and daily aggregated usage from four Cursor Admin API endpoints and delivers them to the Bronze layer of the Insight platform. The connector is implemented as an Airbyte declarative manifest — a YAML file that defines all streams, authentication, pagination, incremental sync, and schemas without code.
 
-The connector defines four data streams and one monitoring stream:
+The connector defines four data streams, one resync stream, and one monitoring stream:
 
 1. **`cursor_members`** — team member directory via `GET /teams/members` (full refresh)
 2. **`cursor_audit_logs`** — security/admin events via `GET /teams/audit-logs` (incremental, GET with query params)
-3. **`cursor_usage_events`** — individual AI invocations via `POST /teams/filtered-usage-events` (incremental, POST with JSON body)
-4. **`cursor_daily_usage`** — daily per-user aggregated metrics via `POST /teams/daily-usage-data` (incremental, POST with JSON body)
+3. **`cursor_usage_events`** — individual AI invocations via `POST /teams/filtered-usage-events` (hourly incremental, POST with JSON body)
+4. **`cursor_usage_events_daily_resync`** — same endpoint, re-fetches previous day after 12:08:04 UTC to capture retroactive cost adjustments
+5. **`cursor_daily_usage`** — daily per-user aggregated metrics via `POST /teams/daily-usage-data` (incremental, POST with JSON body)
 
-A fifth stream (`cursor_collection_runs`) captures connector execution metadata for operational monitoring.
+A sixth stream (`cursor_collection_runs`) captures connector execution metadata for operational monitoring.
 
 All four data streams share the identity key `email` (field name varies: `email` in members/daily-usage, `userEmail` in events, `user_email` in audit logs). The monitoring stream `cursor_collection_runs` does not carry a user identity field — it records connector execution metadata only.
 
@@ -60,7 +61,7 @@ graph LR
     SrcContainer["Source Container<br/>source-declarative-manifest<br/>+ cursor.yaml"]
     Airbyte["Airbyte Platform<br/>orchestration, state, scheduling"]
     Dest["Destination Connector<br/>PostgreSQL / ClickHouse"]
-    Bronze["Bronze Layer<br/>5 tables: members, audit_logs,<br/>usage_events, daily_usage,<br/>collection_runs"]
+    Bronze["Bronze Layer<br/>6 tables: members, audit_logs,<br/>usage_events, usage_events_daily_resync,<br/>daily_usage, collection_runs"]
     Silver["Silver Layer<br/>Identity Manager → person_id<br/>class_ai_dev_usage"]
 
     CursorAPI -->|"REST/JSON<br/>Basic auth"| SrcContainer
@@ -81,7 +82,8 @@ graph LR
 |-------------|-----------------|
 | `cpt-insightspec-fr-cursor-team-members` | Stream `cursor_members` → `GET /teams/members` (full refresh) |
 | `cpt-insightspec-fr-cursor-audit-logs` | Stream `cursor_audit_logs` → `GET /teams/audit-logs` (incremental) |
-| `cpt-insightspec-fr-cursor-usage-events` | Stream `cursor_usage_events` → `POST /teams/filtered-usage-events` (incremental) |
+| `cpt-insightspec-fr-cursor-usage-events` | Stream `cursor_usage_events` → `POST /teams/filtered-usage-events` (hourly incremental) |
+| `cpt-insightspec-fr-cursor-dual-sync` | Stream `cursor_usage_events_daily_resync` → same endpoint, daily after 12:08 UTC, re-fetches previous day |
 | `cpt-insightspec-fr-cursor-daily-usage` | Stream `cursor_daily_usage` → `POST /teams/daily-usage-data` (incremental) |
 | `cpt-insightspec-fr-cursor-collection-runs` | Stream `cursor_collection_runs` — connector execution log |
 | `cpt-insightspec-fr-cursor-deduplication` | Primary keys: `email` (members), `event_id` (audit), `unique` (events/daily) |
@@ -371,7 +373,7 @@ This is a structural skeleton — the full manifest is in `src/ingestion/connect
 
 ##### Responsibility boundaries
 
-Does not handle orchestration, scheduling, or state storage. Does not perform Silver/Gold transformations. Does not handle destination-specific configuration. Does not implement dual-schedule sync — that is an orchestrator concern.
+Orchestration, scheduling, and state storage are handled by the Airbyte platform. Silver/Gold transformations and destination-specific configuration are out of scope. Dual-schedule sync is an orchestrator concern, not a manifest responsibility.
 
 ##### Related components (by ID)
 
@@ -653,6 +655,12 @@ These columns are not defined in the manifest schema but are present in all Bron
 - The `unique` key is computed as a simple concatenation of `userEmail` and `timestamp`. The production system uses a SHA-256 hash of `timestamp|userEmail|model|kind|inputTokens|outputTokens` for stronger deduplication, but this requires token-level access which is not available when `tokenUsage` is null. The simple concatenation is sufficient for the declarative manifest; Silver layer may re-hash for stronger dedup.
 - The field `isFreeBugbot` is present in the actual API but was absent from the original connector specification (`cursor.md`). Fields `isChargeable` and `isHeadless` appear in the original specification but are **not** returned by the current API — see [API Discrepancies Log](#api-discrepancies-log).
 
+#### Table: `cursor_usage_events_daily_resync`
+
+Same schema as `cursor_usage_events` (same API endpoint, same fields, same primary key). This stream is synced daily after 12:08:04 UTC via a separate Airbyte connection, re-fetching the previous day's events to capture retroactive cost adjustments.
+
+**Silver deduplication rule**: For all days up to and including yesterday, the Silver dbt model takes data from `cursor_usage_events_daily_resync` (authoritative, finalized costs). For today only, data is taken from `cursor_usage_events` (near-real-time, costs may still change).
+
 #### Table: `cursor_daily_usage`
 
 | Field | Type | Description |
@@ -721,19 +729,30 @@ Monitoring table — not an analytics source.
 
 - [ ] `p3` - **ID**: `cpt-insightspec-topology-cursor-connector`
 
-The Cursor connector is deployed as a connection in the Airbyte Declarative Connector framework. No additional infrastructure is required beyond what the framework provides.
+The Cursor connector uses one manifest and two Airbyte connections with different schedules:
 
 ```text
-Connection: cursor-{team_name}
-├── Package: src/ingestion/connectors/ai-dev/cursor/
-│   ├── connector.yaml (declarative manifest)
-│   └── descriptor.yaml (package metadata)
+Package: src/ingestion/connectors/ai-dev/cursor/
+├── connector.yaml (declarative manifest — 6 streams)
+├── descriptor.yaml (package metadata)
+└── dbt/ (Bronze → Silver)
+
+Connection A: cursor-{team_name}-hourly
+├── Schedule: hourly (via Kestra cron)
 ├── Source image: airbyte/source-declarative-manifest
 ├── Source config: {tenant_id, api_key}
-├── Configured catalog: 4 data streams + collection_runs
-├── Destination image: airbyte/destination-postgres (or other)
-├── Destination config: {host, port, database, schema, credentials}
-└── State: timestamp cursors for audit_logs, usage_events, daily_usage
+├── Streams: cursor_members, cursor_audit_logs, cursor_usage_events,
+│            cursor_daily_usage, cursor_collection_runs
+├── Destination: ClickHouse (Bronze)
+└── State: per-stream cursors
+
+Connection B: cursor-{team_name}-daily-resync
+├── Schedule: daily after 12:08 UTC (via Kestra cron)
+├── Source image: airbyte/source-declarative-manifest
+├── Source config: {tenant_id, api_key}
+├── Streams: cursor_usage_events_daily_resync (only)
+├── Destination: ClickHouse (Bronze)
+└── State: n/a (always fetches previous day)
 ```
 
 ## 4. Additional context
@@ -822,30 +841,44 @@ On first run (empty state), each stream extracts the last 30 days (configurable)
 
 **Backfill**: On first run with an empty table, the connector probes backwards in 30-day windows to find the earliest window with data, then fetches forward from that point to now. For `cursor_daily_usage`, the probe checks actual metric values (not just array length) because the API returns zero-activity rows for all team members.
 
-### Dual-Schedule Sync (Future)
+### Dual-Schedule Sync
 
 **Ref**: `cpt-insightspec-fr-cursor-dual-sync` (defined in [PRD.md](./PRD.md))
 
-**Status**: Placeholder — not implemented in initial manifest.
+The connector implements a dual-schedule sync for usage events via two streams and two Airbyte connections:
 
-The `cursor_usage_events` stream benefits from a dual-schedule sync pattern:
+| Component | Connection A (hourly) | Connection B (daily resync) |
+|-----------|----------------------|----------------------------|
+| **Stream** | `cursor_usage_events` | `cursor_usage_events_daily_resync` |
+| **Schedule** | Hourly (Kestra cron) | Daily after 12:08:04 UTC (Kestra cron) |
+| **Lookback** | Incremental from cursor | Always previous day: `day_delta(-1, format='%Y-%m-%dT12:08:04Z')` → `day_delta(0, format='%Y-%m-%dT12:08:04Z')` |
+| **Purpose** | Near-real-time event visibility | Capture retroactive cost adjustments |
+| **Bronze table** | `cursor_usage_events` | `cursor_usage_events_daily_resync` |
 
-1. **Hourly incremental sync**: Fetches new events from the last cursor position. Provides near-real-time visibility into AI usage.
-2. **Daily full resync**: Re-fetches the entire current billing period (from 27th of previous/current month). Captures retroactive cost adjustments to `requestsCosts`, `totalCents`, `cursorTokenFee`.
+**Manifest implementation**: The resync stream uses a fixed window that always fetches yesterday:
 
-The existing production system (in `additional/`) implements this as:
-- `scheduleNext()` — runs at a configured minute of every hour
-- `scheduleResync()` — runs daily at a configured hour (default 03:00 UTC), re-fetches from `getBillingPeriodStart(now)`
+```yaml
+- type: DeclarativeStream
+  name: cursor_usage_events_daily_resync
+  # ...same schema, auth, pagination as cursor_usage_events...
+  incremental_sync:
+    type: DatetimeBasedCursor
+    cursor_field: timestamp
+    datetime_format: "%ms"
+    start_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ day_delta(-1, format='%Y-%m-%dT12:08:04Z') }}"
+    end_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ day_delta(0, format='%Y-%m-%dT12:08:04Z') }}"
+```
 
-**Implementation options for Airbyte**:
+**Silver deduplication rule** (in `dbt/to_ai_dev_usage.sql`):
 
-| Option | Mechanism | Pros | Cons |
-|--------|-----------|------|------|
-| Two Airbyte connections | Connection A: hourly schedule, short lookback. Connection B: daily schedule, billing-period lookback | Clean separation; each connection has its own state | Two connections to manage; destination must handle upserts from both |
-| Single connection + lookback | One connection with hourly schedule; `start_datetime` set to `day_delta(-30)` to always cover the billing period | Simpler; single state | Re-fetches more data than necessary on each hourly run |
-| External wrapper job | Script/cron that calls Airbyte API to trigger syncs with different configs | Most flexible; matches production pattern exactly | Additional infrastructure outside Airbyte |
+- **Yesterday and earlier**: data from `cursor_usage_events_daily_resync` (authoritative — finalized costs)
+- **Today**: data from `cursor_usage_events` (near-real-time — costs may change)
 
-**Decision**: Deferred. Initial implementation uses a single connection with standard incremental sync. The dual-schedule pattern will be evaluated once cost adjustment frequency is better understood from production data.
+This matches the production system pattern (`additional/usage-events-sync.ts`) which implements `scheduleNext()` (hourly) + `scheduleResync()` (daily at 03:00 UTC). The 12:08:04 UTC boundary aligns with the Cursor billing cycle daily cutoff.
 
 ### Collection Runs Monitoring
 
@@ -862,6 +895,7 @@ Expected data volumes for typical deployments (10–500 user teams):
 | `cursor_members` | 10–500 rows | 1 (no pagination) | < 5s |
 | `cursor_audit_logs` | 10–100 events/day | 1 page | < 10s |
 | `cursor_usage_events` | 500–50,000 events/day; 15K–1.5M per 30-day window | 1–100 pages per window | 30s–10min per window |
+| `cursor_usage_events_daily_resync` | 500–50,000 events (1 day) | 1–100 pages | 30s–10min |
 | `cursor_daily_usage` | 10–500 rows/day; 300–15,000 per 30-day window | 1–30 pages per window | 10s–3min per window |
 
 At 3-second inter-page delay and 500 records per page, a full 30-day backfill for a 200-person team takes approximately 5–15 minutes total across all streams.
@@ -931,7 +965,7 @@ No ADRs have been created for this connector yet. Key architectural decisions ar
 
 - **Authentication mechanism** (Basic auth over Bearer): §2.2 Constraint `cpt-insightspec-constraint-cursor-basic-auth`
 - **Token usage nested vs flattened**: §3.7 Table `cursor_usage_events` Notes
-- **Billing period sync strategy**: §4 Dual-Schedule Sync (Future)
+- **Dual-schedule sync strategy**: §4 Dual-Schedule Sync
 - **API discrepancies resolution**: §4 API Discrepancies Log
 
 If any of these decisions require formal review or become contested, they should be extracted into standalone ADR documents in the [ADR/](./ADR/) directory.
