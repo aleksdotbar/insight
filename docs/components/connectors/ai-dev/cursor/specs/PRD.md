@@ -175,7 +175,7 @@ Resolves `email`/`userEmail` from Cursor Bronze tables to canonical `person_id` 
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-cursor-team-members`
 
-The connector **MUST** extract the team member directory from the `GET /teams/members` endpoint, including: member ID, name, email, role, and removal status (`isRemoved`).
+The connector **MUST** extract the team member directory, including member identity attributes (name, email), role, and removal status.
 
 **Rationale**: The team directory provides the `email` identity key for cross-system resolution and the membership roster for understanding team composition and license utilisation.
 
