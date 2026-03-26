@@ -102,10 +102,16 @@ kind = "DESIGN"
 path = "docs/components/connectors/hr-directory/README.md"
 name = "HR Silver Layer"
 
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/components/connectors/hr-directory/bamboohr/specs/PRD.md"
+name = "BambooHR Connector PRD"
+
 [[systems.artifacts]]
 kind = "DESIGN"
-path = "docs/components/connectors/hr-directory/bamboohr.md"
-name = "BambooHR Connector Specification"
+path = "docs/components/connectors/hr-directory/bamboohr/specs/DESIGN.md"
+name = "BambooHR Connector Design"
 
 [[systems.artifacts]]
 kind = "DESIGN"
@@ -146,6 +152,16 @@ name = "Zulip Connector Specification"
 kind = "DESIGN"
 path = "docs/components/connectors/collaboration/slack.md"
 name = "Slack Connector Specification"
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/components/connectors/collaboration/zoom/specs/PRD.md"
+name = "Zoom Connector PRD"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/connectors/collaboration/zoom/specs/DESIGN.md"
+name = "Zoom Connector Design"
 
 [[systems.artifacts]]
 kind = "DESIGN"
