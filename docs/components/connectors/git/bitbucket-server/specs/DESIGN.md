@@ -432,18 +432,42 @@ sequenceDiagram
 
 **RECORD message format** (one JSON line per record):
 
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `tenant_id` | UUID | REQUIRED | Tenant identifier — injected by framework |
+| `source_instance_id` | String | REQUIRED | Source instance identifier (e.g. `bitbucket-acme-prod`) |
+| `id` | Int64 | PRIMARY KEY | Auto-generated unique identifier |
+| `project_key` | String | REQUIRED | Repository owner — joins to `git_commit_files.project_key` |
+| `repo_slug` | String | REQUIRED | Repository name — joins to `git_commit_files.repo_slug` |
+| `commit_hash` | String | REQUIRED | Commit SHA — joins to `git_commit_files.commit_hash` |
+| `file_path` | String | REQUIRED | File path — joins to `git_commit_files.file_path` |
+| `field_id` | String | REQUIRED | Machine identifier for the property (e.g. `ai_thirdparty_flag`, `scancode_metadata`) |
+| `field_name` | String | REQUIRED | Human-readable label for the property (e.g. `"AI Third-party Flag"`) |
+| `field_value_str` | String | NULLABLE | String / JSON value; NULL when the property is purely numeric |
+| `field_value_int` | Int64 | NULLABLE | Integer or boolean (0/1) value; NULL when the property is not an integer |
+| `field_value_float` | Float64 | NULLABLE | Fractional numeric value; NULL when the property is not a float |
+| `collected_at` | DateTime64(3) | REQUIRED | When this property was collected/computed |
+| `data_source` | String | DEFAULT '' | Source discriminator — always `'insight_bitbucket_server'` for this connector |
+| `_version` | UInt64 | REQUIRED | Deduplication version (Unix ms) |
 ```json
 {"type": "RECORD", "record": {"stream": "bitbucket_team_alpha_commits", "data": {"instance_name": "team_alpha", "project_key": "RUSTLABS", "repo_slug": "rust-cli-toolkit", "id": "abc123...", "...": "..."}, "emitted_at": 1711350000000}}
 ```
 
 **STATE message format** (emitted after each repository checkpoint):
 
+**Indexes**:
+- `idx_commit_file_ext_lookup`: `(tenant_id, source_instance_id, project_key, repo_slug, commit_hash, file_path, field_id, data_source)`
+- `idx_file_ext_field_id`: `(field_id)`
 ```json
 {"type": "STATE", "state": {"data": {"commits": {"RUSTLABS/rust-cli-toolkit": {"main": "abc123..."}}, "pull_requests": {"RUSTLABS/rust-cli-toolkit": {"last_updated_date": 1711234567000}}}}}
 ```
 
 **LOG message format**:
 
+**Common property keys**:
+- `ai_thirdparty_flag` — AI-detected third-party code (0 or 1) — value: `field_value_int`
+- `scancode_thirdparty_flag` — License scanner detected third-party (0 or 1) — value: `field_value_int`
+- `scancode_metadata` — License and copyright scanning results for this file — value: `field_value_str` (JSON)
 ```json
 {"type": "LOG", "log": {"level": "INFO", "message": "Collection complete: 5 repos, 1234 commits, 42 PRs"}}
 ```
@@ -541,6 +565,8 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 ```python
 {
+    'tenant_id': config.tenant_id,
+    'source_instance_id': config.source_instance_id,
     'instance_name': config.instance_name,               # Connector instance identifier
     'project_key': api_data['project']['key'],
     'repo_slug': api_data['slug'],
@@ -583,6 +609,8 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 ```python
 {
+    'tenant_id': config.tenant_id,
+    'source_instance_id': config.source_instance_id,
     'instance_name': config.instance_name,
     'project_key': project_key,
     'repo_slug': repo_slug,
@@ -612,6 +640,8 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 ```python
 {
+    'tenant_id': config.tenant_id,
+    'source_instance_id': config.source_instance_id,
     'instance_name': config.instance_name,
     'project_key': project_key,
     'repo_slug': repo_slug,
@@ -644,6 +674,8 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 ```python
 {
+    'tenant_id': config.tenant_id,
+    'source_instance_id': config.source_instance_id,
     'instance_name': config.instance_name,
     'project_key': project_key,
     'repo_slug': repo_slug,
@@ -695,6 +727,8 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 ```python
 {
+    'tenant_id': config.tenant_id,
+    'source_instance_id': config.source_instance_id,
     'instance_name': config.instance_name,
     'project_key': project_key, 'repo_slug': repo_slug, 'pr_id': pr_id,
     'reviewer_name': user_data['name'],
@@ -716,6 +750,8 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 ```python
 {
+    'tenant_id': config.tenant_id,
+    'source_instance_id': config.source_instance_id,
     'instance_name': config.instance_name,
     'project_key': project_key, 'repo_slug': repo_slug, 'pr_id': pr_id,
     'comment_id': comment_data['id'],
@@ -922,6 +958,12 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 **Endpoint:** `GET /rest/api/1.0/admin/users` | **Sync:** Full Refresh
 
+```sql
+SELECT branch_name, last_commit_hash, last_commit_date
+FROM git_repository_branches
+WHERE tenant_id = '<tenant_id>'
+  AND project_key = 'MYPROJ' AND repo_slug = 'my-repo'
+  AND data_source = 'insight_bitbucket_server';
 ```json
 {
     "name": "cyber",                                        // Username / login
@@ -1125,6 +1167,12 @@ def paginate_endpoint(api_client, endpoint, **params):
 
 #### Stream: `global_permissions_groups`
 
+```sql
+SELECT MAX(updated_on) AS last_update
+FROM git_pull_requests
+WHERE tenant_id = '<tenant_id>'
+  AND project_key = 'MYPROJ' AND repo_slug = 'my-repo'
+  AND data_source = 'insight_bitbucket_server';
 **Endpoint:** `GET /rest/api/1.0/admin/permissions/groups` | **Sync:** Full Refresh
 
 ```json
