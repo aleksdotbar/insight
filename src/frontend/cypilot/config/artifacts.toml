@@ -1,0 +1,9 @@
+# Cypilot artifacts registry
+
+[[systems]]
+name = "InsightFront"
+slug = "insightfront"
+kit = ""
+artifacts = []
+codebase = []
+children = []
