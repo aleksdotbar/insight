@@ -1,0 +1,9 @@
+{
+  "title": "Speed Monitor",
+  "description": "Real-time speedometer gauge showing current velocity",
+  "current_speed": "Current Speed",
+  "gauge_title": "Speedometer",
+  "min_label": "Min",
+  "max_label": "Max",
+  "value_label": "Value"
+}

@@ -1,0 +1,865 @@
+{
+  "title": "Elementos del Kit UI",
+  "description": "Página demo con elementos del Kit UI disponibles y anotaciones de estilos",
+  "category": {
+    "layout": "Layout",
+    "navigation": "Navigation",
+    "forms": "Forms",
+    "actions": "Actions",
+    "feedback": "Feedback",
+    "data_display": "Data Display",
+    "overlays": "Overlays",
+    "media": "Media",
+    "disclosure": "Disclosure"
+  },
+  "element": {
+    "grid": {
+      "title": "Grid",
+      "description": "Responsive grid layout system",
+      "demo": {
+        "column1": "Column 1",
+        "column2": "Column 2",
+        "column3": "Column 3",
+        "column4": "Column 4",
+        "column5": "Column 5",
+        "column6": "Column 6"
+      }
+    },
+    "separator": {
+      "title": "Separator",
+      "description": "Visual divider between content sections",
+      "demo": {
+        "content_above": "Content above separator",
+        "content_below": "Content below separator",
+        "left_content": "Left content",
+        "right_content": "Right content"
+      }
+    },
+    "divider": {
+      "title": "Divider",
+      "description": "Horizontal or vertical line divider",
+      "demo": {
+        "section1": "Section 1",
+        "section2": "Section 2"
+      }
+    },
+    "card": {
+      "title": "Card",
+      "description": "Container for related content with optional header and footer",
+      "demo": {
+        "basic_title": "Basic Card",
+        "basic_description": "A simple card with header and content",
+        "basic_content": "This is the card content area. It can contain any content.",
+        "footer_title": "Card with Footer",
+        "footer_description": "Includes header, content, and footer",
+        "footer_content": "Card content goes here.",
+        "footer_text": "Footer information"
+      }
+    },
+    "sidebar": {
+      "title": "Sidebar",
+      "description": "Side navigation panel",
+      "demo": {
+        "note": "The Sidebar component is a composite navigation component used in the host app.",
+        "note_includes": "It includes SidebarContent, SidebarMenu, SidebarMenuItem, and SidebarMenuButton.",
+        "note_example": "See the main application sidebar for a live example."
+      }
+    },
+    "footer": {
+      "title": "Footer",
+      "description": "Page or section footer content",
+      "demo": {
+        "main_content": "Main content area",
+        "footer_content": "Footer content - typically used for actions or metadata"
+      }
+    },
+    "header": {
+      "title": "Header",
+      "description": "Page or section header with title and actions",
+      "demo": {
+        "content": "Header content and actions",
+        "note": "The Header component is a layout primitive used in the host application. It provides a consistent header bar with flexible content slots."
+      }
+    },
+    "scroll_area": {
+      "title": "ScrollArea",
+      "description": "Customizable scrolling container",
+      "demo": {
+        "item": "Scrollable content item"
+      }
+    },
+    "breadcrumb": {
+      "title": "Breadcrumb",
+      "description": "Navigation breadcrumb trail",
+      "demo": {
+        "home": "Home",
+        "docs": "Documentation",
+        "uikit": "UIKit"
+      }
+    },
+    "nav": {
+      "title": "Navigation Menu",
+      "description": "Primary navigation menu component",
+      "demo": {
+        "file": "File",
+        "file_new": "New File",
+        "file_open": "Open",
+        "file_save": "Save",
+        "edit": "Edit",
+        "edit_cut": "Cut",
+        "edit_copy": "Copy",
+        "edit_paste": "Paste",
+        "view": "View",
+        "view_zoom_in": "Zoom In",
+        "view_zoom_out": "Zoom Out"
+      }
+    },
+    "tab": {
+      "title": "Tabs",
+      "description": "Tabbed content interface",
+      "demo": {
+        "tab1": "Tab 1",
+        "tab2": "Tab 2",
+        "tab3": "Tab 3",
+        "content1": "Content for Tab 1",
+        "content2": "Content for Tab 2",
+        "content3": "Content for Tab 3"
+      }
+    },
+    "pagination": {
+      "title": "Pagination",
+      "description": "Page navigation controls",
+      "demo": {
+        "current_page": "Current page:"
+      }
+    },
+    "link": {
+      "title": "Link",
+      "description": "Hyperlink component",
+      "demo": {
+        "standard": "Standard hyperlink",
+        "hover": "Link with hover underline",
+        "muted": "Muted link"
+      }
+    },
+    "menu": {
+      "title": "Menu",
+      "description": "Context or dropdown menu",
+      "demo": {
+        "note": "See the Navigation Menu example above (Nav element) for a Menubar demonstration. UIKit also exports DropdownMenu and ContextMenu - see the Actions category."
+      }
+    },
+    "input": {
+      "title": "Input",
+      "description": "Text input field",
+      "demo": {
+        "text_label": "Text Input",
+        "text_placeholder": "Enter text...",
+        "email_label": "Email Input",
+        "email_placeholder": "email@example.com",
+        "password_label": "Password Input",
+        "password_placeholder": "Password",
+        "disabled_label": "Disabled Input",
+        "disabled_placeholder": "Disabled"
+      }
+    },
+    "textarea": {
+      "title": "TextArea",
+      "description": "Multi-line text input",
+      "demo": {
+        "default_label": "Default TextArea",
+        "default_placeholder": "Type your message here...",
+        "rows_label": "TextArea with custom rows",
+        "rows_placeholder": "More space..."
+      }
+    },
+    "select": {
+      "title": "Select",
+      "description": "Dropdown selection control",
+      "demo": {
+        "label": "Select an option",
+        "placeholder": "Choose an option",
+        "option1": "Option 1",
+        "option2": "Option 2",
+        "option3": "Option 3",
+        "option4": "Option 4"
+      }
+    },
+    "checkbox": {
+      "title": "Checkbox",
+      "description": "Boolean checkbox input",
+      "demo": {
+        "accept_terms": "Accept terms and conditions",
+        "checked_default": "Checked by default",
+        "disabled": "Disabled checkbox"
+      }
+    },
+    "radio": {
+      "title": "Radio",
+      "description": "Radio button group",
+      "demo": {
+        "option1": "Option 1",
+        "option2": "Option 2",
+        "option3": "Option 3"
+      }
+    },
+    "switch": {
+      "title": "Switch",
+      "description": "Toggle switch control",
+      "demo": {
+        "notifications": "Enable notifications",
+        "enabled_default": "Enabled by default",
+        "disabled": "Disabled switch"
+      }
+    },
+    "date_picker": {
+      "title": "DatePicker",
+      "description": "Calendar-based date selection",
+      "demo": {
+        "label": "Select a date",
+        "placeholder": "Pick a date",
+        "selected": "Selected:"
+      }
+    },
+    "file_upload": {
+      "title": "FileUpload",
+      "description": "File upload input (placeholder)",
+      "demo": {
+        "label": "Choose a file",
+        "note": "Note: UIKit uses native file input. Custom file upload components can be built on top."
+      }
+    },
+    "slider": {
+      "title": "Slider",
+      "description": "Range slider control",
+      "demo": {
+        "label": "Default Slider",
+        "value": "Value:"
+      }
+    },
+    "rating": {
+      "title": "Rating",
+      "description": "Star rating input (placeholder)",
+      "demo": {
+        "note1": "Rating component is not exported from UIKit.",
+        "note2": "Star ratings can be implemented using Button or custom components with star icons."
+      }
+    },
+    "button": {
+      "title": "Button",
+      "description": "Clickable action button",
+      "demo": {
+        "default": "Default",
+        "secondary": "Secondary",
+        "destructive": "Destructive",
+        "outline": "Outline",
+        "ghost": "Ghost",
+        "link": "Link",
+        "small": "Small",
+        "default_size": "Default",
+        "large": "Large",
+        "disabled": "Disabled",
+        "disabled_destructive": "Disabled Destructive",
+        "settings_aria": "Settings"
+      }
+    },
+    "toggle": {
+      "title": "Toggle",
+      "description": "Toggle button with pressed state",
+      "demo": {
+        "bold_aria": "Toggle bold",
+        "italic_aria": "Toggle italic",
+        "underline_aria": "Toggle underline",
+        "strikethrough_aria": "Toggle strikethrough"
+      }
+    },
+    "dropdown": {
+      "title": "Dropdown",
+      "description": "Dropdown menu component",
+      "demo": {
+        "open_menu": "Open Menu",
+        "profile": "Profile",
+        "settings": "Settings",
+        "logout": "Logout",
+        "dropdown_button": "Dropdown Button",
+        "action1": "Action 1",
+        "action2": "Action 2",
+        "action3": "Action 3"
+      }
+    },
+    "chip": {
+      "title": "Chip",
+      "description": "Compact label or tag (placeholder)",
+      "demo": {
+        "note": "UIKit does not export a dedicated Chip component. Badge component provides similar functionality:",
+        "default_badge": "Default Badge",
+        "secondary": "Secondary",
+        "destructive": "Destructive",
+        "outline": "Outline"
+      }
+    },
+    "alert": {
+      "title": "Alert",
+      "description": "Inline alert messages",
+      "demo": {
+        "default_title": "Default Alert",
+        "default_message": "This is a default alert message.",
+        "error_title": "Error",
+        "error_message": "Something went wrong. Please try again."
+      }
+    },
+    "notification": {
+      "title": "Notification",
+      "description": "Notification badge (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export a dedicated Notification component.",
+        "note2": "Use Badge for notification counts or Toast for transient notifications.",
+        "messages": "Messages",
+        "count": "5"
+      }
+    },
+    "toast": {
+      "title": "Toast",
+      "description": "Temporary toast notification",
+      "demo": {
+        "success_button": "Show Success Toast",
+        "success_message": "Your action was completed successfully.",
+        "error_button": "Show Error Toast",
+        "error_message": "Something went wrong.",
+        "info_button": "Show Info Toast",
+        "info_message": "This is an informational message.",
+        "note": "Toast notifications appear at the bottom-right corner and auto-dismiss."
+      }
+    },
+    "progress": {
+      "title": "Progress",
+      "description": "Progress bar indicator",
+      "demo": {
+        "label_25": "25% Complete",
+        "label_50": "50% Complete",
+        "label_75": "75% Complete",
+        "label_100": "100% Complete"
+      }
+    },
+    "spinner": {
+      "title": "Spinner",
+      "description": "Loading spinner animation"
+    },
+    "skeleton": {
+      "title": "Skeleton",
+      "description": "Loading placeholder skeleton"
+    },
+    "loader": {
+      "title": "Loader",
+      "description": "Generic loading indicator (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export a dedicated Loader component.",
+        "note2": "Use Spinner for loading indicators."
+      }
+    },
+    "status_badge": {
+      "title": "StatusBadge",
+      "description": "Status indicator badge (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export a dedicated StatusBadge component.",
+        "note2": "Use Badge variants for status indicators:",
+        "active": "Active",
+        "pending": "Pending",
+        "inactive": "Inactive",
+        "draft": "Draft"
+      }
+    },
+    "empty_state": {
+      "title": "EmptyState",
+      "description": "Empty state placeholder",
+      "demo": {
+        "title": "No results found",
+        "description": "We couldn't find any items matching your criteria.",
+        "clear_filters": "Clear Filters"
+      }
+    },
+    "data_table": {
+      "title": "DataTable",
+      "description": "Feature-rich data table with sorting, filtering, and pagination",
+      "demo": {
+        "column_id": "ID",
+        "column_email": "Email",
+        "column_amount": "Amount",
+        "column_status": "Status",
+        "payment_id_1": "PAY001",
+        "payment_email_1": "user1@example.com",
+        "payment_amount_1": "$100.00",
+        "payment_status_1": "success",
+        "payment_id_2": "PAY002",
+        "payment_email_2": "user2@example.com",
+        "payment_amount_2": "$200.00",
+        "payment_status_2": "pending",
+        "payment_id_3": "PAY003",
+        "payment_email_3": "user3@example.com",
+        "payment_amount_3": "$150.00",
+        "payment_status_3": "processing",
+        "payment_id_4": "PAY004",
+        "payment_email_4": "user4@example.com",
+        "payment_amount_4": "$300.00",
+        "payment_status_4": "failed"
+      }
+    },
+    "table": {
+      "title": "Table",
+      "description": "Basic table component",
+      "demo": {
+        "header_name": "Name",
+        "header_role": "Role",
+        "header_status": "Status",
+        "row1_name": "John Doe",
+        "row1_role": "Developer",
+        "row1_status": "Active",
+        "row2_name": "Jane Smith",
+        "row2_role": "Designer",
+        "row2_status": "Active",
+        "row3_name": "Bob Johnson",
+        "row3_role": "Manager",
+        "row3_status": "Away"
+      }
+    },
+    "list": {
+      "title": "List",
+      "description": "Ordered or unordered list (placeholder)",
+      "demo": {
+        "unordered_title": "Unordered List",
+        "unordered_item1": "First item",
+        "unordered_item2": "Second item",
+        "unordered_item3": "Third item",
+        "ordered_title": "Ordered List",
+        "ordered_item1": "First step",
+        "ordered_item2": "Second step",
+        "ordered_item3": "Third step"
+      }
+    },
+    "badge": {
+      "title": "Badge",
+      "description": "Small badge or label",
+      "demo": {
+        "default": "Default",
+        "secondary": "Secondary",
+        "destructive": "Destructive",
+        "outline": "Outline"
+      }
+    },
+    "tag": {
+      "title": "Tag",
+      "description": "Tag or chip label (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export a dedicated Tag component.",
+        "note2": "Use Badge for tags:",
+        "react": "React",
+        "typescript": "TypeScript",
+        "tailwindcss": "TailwindCSS",
+        "vite": "Vite"
+      }
+    },
+    "typography": {
+      "title": "Typography",
+      "description": "Text styling components",
+      "demo": {
+        "h1": "Heading 1",
+        "h2": "Heading 2",
+        "h3": "Heading 3",
+        "h4": "Heading 4",
+        "paragraph": "This is a paragraph with",
+        "inline_code": "inline code",
+        "paragraph_rest": "and regular text.",
+        "large": "Large text for emphasis.",
+        "small": "Small text for fine print.",
+        "muted": "Muted text for secondary information.",
+        "blockquote": "\"This is a blockquote. It can be used for citations or emphasized text.\""
+      }
+    },
+    "icon": {
+      "title": "Icon",
+      "description": "Icon components (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export icon components directly.",
+        "note2": "Icons are provided via Iconify (lucide: prefix) or custom SVG components.",
+        "note3": "See IconButton component for icon usage examples."
+      }
+    },
+    "image": {
+      "title": "Image",
+      "description": "Image display component (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export a dedicated Image component.",
+        "note2": "Use standard HTML <img> or Next.js Image for images.",
+        "placeholder_alt": "Placeholder"
+      }
+    },
+    "timeline": {
+      "title": "Timeline",
+      "description": "Timeline visualization (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export a Timeline component.",
+        "note2": "Timelines can be built using Card, Separator, and custom styling."
+      }
+    },
+    "tooltip": {
+      "title": "Tooltip",
+      "description": "Hover tooltip",
+      "demo": {
+        "hover_me": "Hover me",
+        "tooltip_text": "This is a tooltip",
+        "another_tooltip": "Another tooltip",
+        "positioned_right": "Positioned to the right",
+        "warning": "Warning",
+        "cannot_undo": "This action cannot be undone"
+      }
+    },
+    "dialog": {
+      "title": "Dialog",
+      "description": "Modal dialog component",
+      "demo": {
+        "open_button": "Open Dialog",
+        "edit_profile_title": "Edit Profile",
+        "edit_profile_description": "Make changes to your profile here. Click save when you're done.",
+        "name_label": "Name",
+        "name_placeholder": "Enter your name",
+        "email_label": "Email",
+        "email_placeholder": "Enter your email",
+        "cancel_button": "Cancel",
+        "save_button": "Save Changes",
+        "delete_account_button": "Delete Account",
+        "alert_title": "Are you absolutely sure?",
+        "alert_description": "This action cannot be undone. This will permanently delete your account and remove your data from our servers.",
+        "alert_cancel": "Cancel",
+        "alert_delete": "Delete"
+      }
+    },
+    "modal": {
+      "title": "Modal",
+      "description": "Modal overlay (alias for Dialog)",
+      "demo": {
+        "note1": "Modal is an alias for Dialog in UIKit.",
+        "note2": "See the Dialog example above for modal usage.",
+        "note3": "Both Dialog and AlertDialog provide modal overlays with different use cases."
+      }
+    },
+    "drawer": {
+      "title": "Drawer",
+      "description": "Slide-out drawer panel",
+      "demo": {
+        "open_button": "Open Drawer",
+        "title": "Drawer Title",
+        "description": "This is a drawer that slides in from the bottom. Commonly used on mobile.",
+        "content": "Drawer content goes here. It can include forms, lists, or any other components.",
+        "submit_button": "Submit",
+        "cancel_button": "Cancel"
+      }
+    },
+    "popover": {
+      "title": "Popover",
+      "description": "Popover overlay component",
+      "demo": {
+        "open_button": "Open Popover",
+        "dimensions_title": "Dimensions",
+        "dimensions_description": "Set the dimensions for the layer.",
+        "width_label": "Width",
+        "width_value": "100%",
+        "max_width_label": "Max. width",
+        "max_width_value": "300px",
+        "height_label": "Height",
+        "height_value": "25px",
+        "side_button": "Side Popover",
+        "side_content": "This popover opens to the right of the trigger."
+      }
+    },
+    "chart": {
+      "title": "Chart",
+      "description": "Data visualization charts",
+      "demo": {
+        "bar_chart_title": "Bar Chart",
+        "line_chart_title": "Line Chart",
+        "month_jan": "Jan",
+        "month_feb": "Feb",
+        "month_mar": "Mar",
+        "month_apr": "Apr",
+        "month_may": "May",
+        "month_jun": "Jun",
+        "value_label": "Value"
+      }
+    },
+    "calendar": {
+      "title": "Calendar",
+      "description": "Calendar component for date display and selection",
+      "demo": {
+        "selected": "Selected:"
+      }
+    },
+    "accordion": {
+      "title": "Accordion",
+      "description": "Expandable content sections",
+      "demo": {
+        "question1": "Is it accessible?",
+        "answer1": "Yes. It adheres to the WAI-ARIA design pattern and uses Radix UI primitives.",
+        "question2": "Is it styled?",
+        "answer2": "Yes. It comes with default styles that you can customize using Tailwind CSS.",
+        "question3": "Is it animated?",
+        "answer3": "Yes. The accordion expands and collapses with smooth animations powered by Radix UI.",
+        "multiple_title": "Multiple Accordion (type=\"multiple\")",
+        "section1": "Section 1",
+        "section1_content": "Content for section 1. Multiple sections can be open at once.",
+        "section2": "Section 2",
+        "section2_content": "Content for section 2.",
+        "section3": "Section 3",
+        "section3_content": "Content for section 3.",
+        "collapsible_title": "Collapsible (alternative)",
+        "toggle_details": "Toggle Details",
+        "collapsible_content": "This is a Collapsible component. It's similar to Accordion but designed for individual expand/collapse sections rather than groups."
+      }
+    },
+    "tree_view": {
+      "title": "TreeView",
+      "description": "Hierarchical tree navigation (placeholder)",
+      "demo": {
+        "note1": "UIKit does not export a dedicated TreeView component.",
+        "note2": "Tree structures can be built using nested Collapsible or Accordion components:",
+        "documents": "Documents",
+        "projects": "Projects",
+        "project_a": "Project A",
+        "project_b": "Project B",
+        "readme": "README.md"
+      }
+    }
+  },
+  "common": {
+    "click_me": "Click me",
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "save": "Save",
+    "edit": "Edit",
+    "close": "Close",
+    "open": "Open",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "loading": "Loading...",
+    "search": "Search",
+    "filter": "Filter",
+    "sort": "Sort",
+    "export": "Export",
+    "import": "Import",
+    "download": "Download",
+    "upload": "Upload",
+    "copy": "Copy",
+    "paste": "Paste",
+    "cut": "Cut",
+    "undo": "Undo",
+    "redo": "Redo",
+    "refresh": "Refresh",
+    "settings": "Settings",
+    "help": "Help",
+    "about": "About",
+    "profile": "Profile",
+    "logout": "Logout",
+    "login": "Login",
+    "register": "Register",
+    "forgot_password": "Forgot password?",
+    "reset_password": "Reset password",
+    "change_password": "Change password",
+    "confirm": "Confirm",
+    "yes": "Yes",
+    "no": "No",
+    "ok": "OK",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Information",
+    "required": "Required",
+    "optional": "Optional",
+    "select_all": "Select all",
+    "deselect_all": "Deselect all",
+    "clear": "Clear",
+    "apply": "Apply",
+    "reset": "Reset",
+    "remove": "Remove",
+    "add": "Add",
+    "create": "Create",
+    "update": "Update",
+    "view": "View",
+    "details": "Details",
+    "more": "More",
+    "less": "Less",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "show": "Show",
+    "hide": "Hide",
+    "enable": "Enable",
+    "disable": "Disable",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "restore": "Restore",
+    "duplicate": "Duplicate",
+    "move": "Move",
+    "rename": "Rename",
+    "share": "Share",
+    "print": "Print",
+    "preview": "Preview",
+    "fullscreen": "Fullscreen",
+    "exit_fullscreen": "Exit fullscreen",
+    "zoom_in": "Zoom in",
+    "zoom_out": "Zoom out",
+    "fit_to_screen": "Fit to screen",
+    "actual_size": "Actual size",
+    "rotate": "Rotate",
+    "flip_horizontal": "Flip horizontal",
+    "flip_vertical": "Flip vertical",
+    "align_left": "Align left",
+    "align_center": "Align center",
+    "align_right": "Align right",
+    "align_justify": "Align justify",
+    "bold": "Bold",
+    "italic": "Italic",
+    "underline": "Underline",
+    "strikethrough": "Strikethrough",
+    "superscript": "Superscript",
+    "subscript": "Subscript",
+    "bullet_list": "Bullet list",
+    "numbered_list": "Numbered list",
+    "increase_indent": "Increase indent",
+    "decrease_indent": "Decrease indent",
+    "link": "Link",
+    "unlink": "Unlink",
+    "insert_image": "Insert image",
+    "insert_table": "Insert table",
+    "insert_video": "Insert video",
+    "background_color": "Background color",
+    "text_color": "Text color",
+    "font_size": "Font size",
+    "font_family": "Font family",
+    "heading": "Heading",
+    "paragraph": "Paragraph",
+    "quote": "Quote",
+    "code": "Code",
+    "preformatted": "Preformatted",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "tomorrow": "Tomorrow",
+    "this_week": "This week",
+    "last_week": "Last week",
+    "next_week": "Next week",
+    "this_month": "This month",
+    "last_month": "Last month",
+    "next_month": "Next month",
+    "this_year": "This year",
+    "last_year": "Last year",
+    "next_year": "Next year",
+    "custom_range": "Custom range",
+    "start_date": "Start date",
+    "end_date": "End date",
+    "all": "All",
+    "none": "None",
+    "active": "Active",
+    "inactive": "Inactive",
+    "pending": "Pending",
+    "completed": "Completed",
+    "draft": "Draft",
+    "published": "Published",
+    "archived": "Archived",
+    "deleted": "Deleted",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "online": "Online",
+    "offline": "Offline",
+    "available": "Available",
+    "unavailable": "Unavailable",
+    "busy": "Busy",
+    "away": "Away",
+    "do_not_disturb": "Do not disturb",
+    "name": "Name",
+    "email": "Email",
+    "username": "Username",
+    "password": "Password",
+    "confirm_password": "Confirm password",
+    "first_name": "First name",
+    "last_name": "Last name",
+    "full_name": "Full name",
+    "phone": "Phone",
+    "mobile": "Mobile",
+    "address": "Address",
+    "city": "City",
+    "state": "State",
+    "country": "Country",
+    "zip_code": "ZIP code",
+    "postal_code": "Postal code",
+    "company": "Company",
+    "organization": "Organization",
+    "department": "Department",
+    "job_title": "Job title",
+    "role": "Role",
+    "permissions": "Permissions",
+    "status": "Status",
+    "type": "Type",
+    "category": "Category",
+    "tags": "Tags",
+    "description": "Description",
+    "notes": "Notes",
+    "comments": "Comments",
+    "attachments": "Attachments",
+    "files": "Files",
+    "documents": "Documents",
+    "images": "Images",
+    "videos": "Videos",
+    "audio": "Audio",
+    "date": "Date",
+    "time": "Time",
+    "datetime": "Date & time",
+    "created": "Created",
+    "created_by": "Created by",
+    "created_at": "Created at",
+    "updated": "Updated",
+    "updated_by": "Updated by",
+    "updated_at": "Updated at",
+    "modified": "Modified",
+    "modified_by": "Modified by",
+    "modified_at": "Modified at",
+    "deleted_by": "Deleted by",
+    "deleted_at": "Deleted at",
+    "owner": "Owner",
+    "author": "Author",
+    "version": "Version",
+    "size": "Size",
+    "duration": "Duration",
+    "count": "Count",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "tax": "Tax",
+    "discount": "Discount",
+    "shipping": "Shipping",
+    "amount": "Amount",
+    "price": "Price",
+    "quantity": "Quantity",
+    "unit_price": "Unit price",
+    "currency": "Currency",
+    "payment_method": "Payment method",
+    "payment_status": "Payment status",
+    "transaction_id": "Transaction ID",
+    "order_id": "Order ID",
+    "invoice_id": "Invoice ID",
+    "reference": "Reference",
+    "priority": "Priority",
+    "severity": "Severity",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "critical": "Critical",
+    "major": "Major",
+    "minor": "Minor",
+    "trivial": "Trivial"
+  },
+  "bridge_info": "Bridge Info",
+  "domain_id": "Domain ID:",
+  "instance_id": "Instance ID:",
+  "current_theme": "Current Theme:",
+  "current_language": "Current Language:"
+}

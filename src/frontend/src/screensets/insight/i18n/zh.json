@@ -1,0 +1,16 @@
+{
+  "menu_items": {
+    "documentation": {
+      "label": "Documentation"
+    },
+    "dashboard": {
+      "label": "Dashboard"
+    },
+    "speed": {
+      "label": "Speed"
+    },
+    "uikit": {
+      "label": "UIKit Elements"
+    }
+  }
+}
