@@ -614,7 +614,7 @@ No public API. Purely internal (Redpanda consumer + SMTP producer). Does NOT aut
 
 Single Ingress routes to all services by path prefix. Each service owns its prefix and versions independently. Email Service has no public API.
 
-```
+```text
 https://insight.customer.com/
 ├── /                                          → Frontend (React SPA)
 │
@@ -1096,7 +1096,7 @@ Bundled Prometheus + Grafana + Alertmanager stack for platform operators.
 
 Single `helm install insight` deploys the entire platform. Works on any K8s cluster (AWS EKS, GCP GKE, Azure AKS, on-prem).
 
-```
+```text
 insight-helm/
 ├── Chart.yaml
 ├── values.yaml
@@ -1236,7 +1236,7 @@ Tenant Admin can trigger Silver/Gold rebuild from Bronze via Connector Manager �
 
 **Deployment** (ArgoCD):
 
-```
+```text
 GitHub Actions (per service repo)
   → build + test + push image to registry
   → update image tag in insight-helm repo

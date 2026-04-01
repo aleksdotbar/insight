@@ -297,7 +297,7 @@ The system **MUST** enforce follow-the-unit-strict visibility: when a person tra
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-be-identity-resolution-service`
 
-The system **MUST** map disparate identity signals (emails, usernames, employee IDs, system-specific handles) from multiple source systems into canonical person records. The system **MUST** provide a bootstrap job that seeds the identity store from `class_people` Silver tables, a resolution service that enriches Silver step 1 tables with `person_id` to produce Silver step 2, a golden record builder that assembles best-value person attributes, conflict detection for ambiguous matches, and manual merge/split operations with audit trail. GDPR erasure **MUST** be supported.
+The system **MUST** map disparate identity signals (emails, usernames, employee IDs, system-specific handles) from multiple source systems into canonical person records. The system **MUST** support conflict detection for ambiguous matches, manual merge and split operations with audit trail, and GDPR erasure. See [Identity Resolution DESIGN](../../domain/identity-resolution/specs/DESIGN.md) and [Backend DESIGN section 3.2](./DESIGN.md) for implementation details.
 
 **Rationale**: Cross-source analytics (correlating a person's Git commits with their Jira tasks, calendar events, and HR data) requires a single canonical person_id across all data sources. Without identity resolution, each source has its own user identifiers that cannot be joined.
 
