@@ -1,0 +1,6 @@
+# Cypilot project configuration
+
+version = "1.0"
+project_root = ".."
+
+[kits]
