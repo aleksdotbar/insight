@@ -36,8 +36,9 @@ class BranchesStream(GitHubRestStream):
             owner = record.get("owner", {}).get("login", "")
             repo = record.get("name", "")
             default_branch = record.get("default_branch", "")
+            pushed_at = record.get("pushed_at", "")
             if owner and repo:
-                yield {"owner": owner, "repo": repo, "default_branch": default_branch}
+                yield {"owner": owner, "repo": repo, "default_branch": default_branch, "pushed_at": pushed_at}
 
     def parse_response(self, response, stream_slice=None, **kwargs):
         self._update_rate_limit(response)
@@ -60,6 +61,7 @@ class BranchesStream(GitHubRestStream):
             branch["_owner"] = owner
             branch["_repo"] = repo
             branch["_default_branch"] = stream_slice.get("default_branch", "")
+            branch["_pushed_at"] = stream_slice.get("pushed_at", "")
             yield self._add_envelope(branch)
 
     def get_json_schema(self) -> Mapping[str, Any]:

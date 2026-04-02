@@ -140,12 +140,17 @@ class CommitsStream(GitHubGraphQLStream):
             # --- Optimization 1: Repo freshness gate ---
             repo_pushed_at = ""
             for record in branches:
-                # All branches from same repo have same parent repo metadata
-                # Get pushed_at from any branch's parent context
-                # We stored it... actually we need it from the repo record.
-                # Branches don't carry pushed_at. Skip this for now and use
-                # a different approach: check if ANY branch HEAD changed.
-                break
+                pa = record.get("_pushed_at", "")
+                if pa:
+                    repo_pushed_at = pa
+                    break
+
+            repo_state_key = f"_repo:{owner}/{repo}"
+            stored_pushed_at = state.get(repo_state_key, {}).get("pushed_at", "")
+            if repo_pushed_at and stored_pushed_at and repo_pushed_at <= stored_pushed_at:
+                repos_skipped_fresh += 1
+                logger.info(f"Repo freshness: skipping {owner}/{repo} (pushed_at unchanged: {repo_pushed_at})")
+                continue
 
             # --- Find default branch ---
             default_branch = ""
@@ -238,7 +243,8 @@ class CommitsStream(GitHubGraphQLStream):
                     "partition_key": partition_key,
                     "cursor_value": cursor_value,
                     "head_sha": head_sha,
-                    "stop_at_sha": stored_head,  # Stop pagination when we hit the old HEAD
+                    "stop_at_sha": stored_head,
+                    "repo_pushed_at": repo_pushed_at,
                     "_skipped_siblings": [
                         f"{owner}/{repo}/{sb}" for sb, chosen in skipped_map.items()
                         if chosen == branch
@@ -287,6 +293,15 @@ class CommitsStream(GitHubGraphQLStream):
                 sibling_cursor = current_stream_state.get(sibling_key, {}).get(self.cursor_field, "")
                 if record_cursor > sibling_cursor:
                     current_stream_state[sibling_key] = dict(cursor_entry)
+
+        # Store repo pushed_at for freshness gate
+        repo_pushed_at = latest_record.get("_repo_pushed_at", "")
+        if repo_pushed_at:
+            owner = latest_record.get("_owner", "")
+            repo = latest_record.get("_repo", "")
+            repo_state_key = f"_repo:{owner}/{repo}"
+            current_stream_state[repo_state_key] = {"pushed_at": repo_pushed_at}
+
         return current_stream_state
 
     def parse_response(self, response, stream_slice=None, **kwargs):
@@ -294,6 +309,7 @@ class CommitsStream(GitHubGraphQLStream):
         self._current_skipped_siblings = s.get("_skipped_siblings", [])
         self._current_stop_at_sha = s.get("stop_at_sha")
         head_sha = s.get("head_sha", "")
+        repo_pushed_at = s.get("repo_pushed_at", "")
 
         body = response.json()
         self._update_graphql_rate_limit(body)
@@ -346,7 +362,8 @@ class CommitsStream(GitHubGraphQLStream):
                 "_owner": owner,
                 "_repo": repo,
                 "_branch": branch,
-                "_head_sha": head_sha,  # Carried for state update
+                "_head_sha": head_sha,
+                "_repo_pushed_at": repo_pushed_at,
             }
             yield self._add_envelope(record)
 

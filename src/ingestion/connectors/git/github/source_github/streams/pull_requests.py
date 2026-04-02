@@ -89,18 +89,35 @@ class PullRequestsStream(GitHubGraphQLStream):
         **kwargs,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         state = stream_state or {}
+        repos_skipped = 0
+        repos_total = 0
         for record in self._parent.read_records(sync_mode=None):
             owner = record.get("owner", {}).get("login", "")
             repo = record.get("name", "")
-            if owner and repo:
-                partition_key = f"{owner}/{repo}"
-                cursor_value = state.get(partition_key, {}).get(self.cursor_field)
-                yield {
-                    "owner": owner,
-                    "repo": repo,
-                    "partition_key": partition_key,
-                    "cursor_value": cursor_value,
-                }
+            if not (owner and repo):
+                continue
+            repos_total += 1
+
+            # Repo freshness gate: skip if pushed_at unchanged
+            pushed_at = record.get("pushed_at", "")
+            repo_state_key = f"_repo:{owner}/{repo}"
+            stored_pushed_at = state.get(repo_state_key, {}).get("pushed_at", "")
+            if pushed_at and stored_pushed_at and pushed_at <= stored_pushed_at:
+                repos_skipped += 1
+                logger.debug(f"PR freshness: skipping {owner}/{repo} (pushed_at unchanged)")
+                continue
+
+            partition_key = f"{owner}/{repo}"
+            cursor_value = state.get(partition_key, {}).get(self.cursor_field)
+            yield {
+                "owner": owner,
+                "repo": repo,
+                "partition_key": partition_key,
+                "cursor_value": cursor_value,
+                "pushed_at": pushed_at,
+            }
+        if repos_skipped:
+            logger.info(f"PR freshness: {repos_total - repos_skipped}/{repos_total} repos need PR sync ({repos_skipped} skipped, unchanged)")
 
     def get_updated_state(
         self,
@@ -114,6 +131,15 @@ class PullRequestsStream(GitHubGraphQLStream):
         current_cursor = current_stream_state.get(partition_key, {}).get(self.cursor_field, "")
         if record_cursor > current_cursor:
             current_stream_state[partition_key] = {self.cursor_field: record_cursor}
+
+        # Store repo pushed_at for freshness gate
+        pushed_at = latest_record.get("_repo_pushed_at", "")
+        if pushed_at:
+            owner = latest_record.get("_owner", "")
+            repo = latest_record.get("_repo", "")
+            repo_state_key = f"_repo:{owner}/{repo}"
+            current_stream_state[repo_state_key] = {"pushed_at": pushed_at}
+
         return current_stream_state
 
     def next_page_token(self, response, **kwargs):
@@ -226,6 +252,7 @@ class PullRequestsStream(GitHubGraphQLStream):
                 "requested_teams": requested_teams,
                 "_owner": owner,
                 "_repo": repo,
+                "_repo_pushed_at": (stream_slice or {}).get("pushed_at", ""),
             }
             yield self._add_envelope(record)
 
