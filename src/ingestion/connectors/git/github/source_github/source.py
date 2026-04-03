@@ -70,7 +70,7 @@ class SourceGitHub(AbstractSource):
         rate_limit_threshold = config.get("rate_limit_threshold", 200)
         skip_archived = config.get("skip_archived", True)
         skip_forks = config.get("skip_forks", True)
-        max_workers = config.get("max_workers", 10)
+        max_workers = config.get("max_workers", 5)
         rate_limiter = RateLimiter(threshold=rate_limit_threshold)
 
         shared_kwargs = {

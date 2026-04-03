@@ -52,7 +52,7 @@ class CommentsStream(GitHubRestStream):
         """Yield one slice per repo (not per PR)."""
         state = stream_state or self._state
         seen_repos = set()
-        for pr in self._parent.read_records(sync_mode=None):
+        for pr in self._parent.get_child_slices():
             owner = pr.get("repo_owner", "")
             repo = pr.get("repo_name", "")
             if not (owner and repo):

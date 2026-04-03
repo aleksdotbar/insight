@@ -3,16 +3,15 @@
 import logging
 import random
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, Future, FIRST_COMPLETED, wait
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Iterator, List, Mapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, Optional
 
 logger = logging.getLogger("airbyte")
 
-DEFAULT_WORKERS = 10
+DEFAULT_WORKERS = 5
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
-CHUNK_SIZE = 50  # Process slices in chunks to bound memory
 
 
 @dataclass
@@ -23,45 +22,38 @@ class SliceResult:
     error: Optional[Exception] = None
 
 
-def fetch_parallel(
-    fn: Callable[[Mapping[str, Any]], List[Mapping[str, Any]]],
-    slices: Iterable[Mapping[str, Any]],
-    max_workers: int = DEFAULT_WORKERS,
-) -> Iterable[Mapping[str, Any]]:
-    """Execute fn(slice) in parallel across slices, yielding records.
-
-    Retries failed slices up to MAX_RETRIES times with exponential backoff.
-    Raises on persistent failure to avoid silent data loss.
-    """
-    for result in fetch_parallel_with_slices(fn, slices, max_workers):
-        if result.error is not None:
-            raise result.error
-        yield from result.records
-
-
 def fetch_parallel_with_slices(
     fn: Callable[[Mapping[str, Any]], List[Mapping[str, Any]]],
     slices: Iterable[Mapping[str, Any]],
     max_workers: int = DEFAULT_WORKERS,
 ) -> Iterable[SliceResult]:
-    """Execute fn(slice) in parallel in bounded chunks, yielding SliceResult.
+    """Execute fn(slice) with bounded in-flight concurrency.
 
-    Processes slices in chunks of CHUNK_SIZE to bound memory on large orgs.
+    Submits up to max_workers slices initially, then submits the next slice
+    as each worker completes. Never holds the entire slice list in memory.
     Adapts concurrency down after repeated transient failures.
     """
     current_workers = max_workers
     consecutive_errors = 0
+    slice_iter = iter(slices)
 
-    for chunk in _chunked(slices, CHUNK_SIZE):
-        with ThreadPoolExecutor(max_workers=current_workers) as pool:
-            futures = {pool.submit(_with_retry, fn, s): s for s in chunk}
-            for future in as_completed(futures):
-                s = futures[future]
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        # Seed initial batch
+        in_flight: dict[Future, Mapping[str, Any]] = {}
+        for _ in range(current_workers):
+            s = next(slice_iter, None)
+            if s is None:
+                break
+            in_flight[pool.submit(_with_retry, fn, s)] = s
+
+        while in_flight:
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                s = in_flight.pop(future)
                 exc = future.exception()
                 if exc is not None:
                     consecutive_errors += 1
-                    logger.error(f"Failed after {MAX_RETRIES} retries: {exc}")
-                    # Adapt concurrency down under pressure
+                    logger.error(f"Slice failed after retries: {exc}")
                     if consecutive_errors >= 3 and current_workers > 2:
                         current_workers = max(2, current_workers // 2)
                         logger.warning(f"Reducing concurrency to {current_workers} after {consecutive_errors} errors")
@@ -70,12 +62,17 @@ def fetch_parallel_with_slices(
                     consecutive_errors = 0
                     yield SliceResult(slice=s, records=future.result())
 
+                # Submit next slice to keep pipeline full
+                next_s = next(slice_iter, None)
+                if next_s is not None:
+                    in_flight[pool.submit(_with_retry, fn, next_s)] = next_s
+
 
 def retry_request(fn: Callable[[], Any], context: str = "") -> Any:
     """Retry a single HTTP request with jittered backoff.
 
     Use this inside fetch loops for page-level retry.
-    Raises on auth/permission errors immediately.
+    Raises on auth/permission/404 errors immediately.
     """
     last_exc = None
     for attempt in range(MAX_RETRIES):
@@ -109,20 +106,6 @@ def _with_retry(
                 raise
             jitter = random.uniform(0, 1)
             delay = RETRY_BASE_DELAY * (2 ** attempt) + jitter
-            logger.warning(
-                f"Slice retry {attempt + 1}/{MAX_RETRIES}: {e}. Waiting {delay:.1f}s..."
-            )
+            logger.warning(f"Slice retry {attempt + 1}/{MAX_RETRIES}: {e}. Waiting {delay:.1f}s...")
             time.sleep(delay)
     raise last_exc
-
-
-def _chunked(iterable: Iterable, size: int) -> Iterator[List]:
-    """Yield successive chunks from iterable."""
-    chunk = []
-    for item in iterable:
-        chunk.append(item)
-        if len(chunk) >= size:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk

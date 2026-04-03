@@ -31,29 +31,45 @@ class PullRequestsStream(GitHubGraphQLStream):
         self._parent = parent
         self._page_size = page_size
         self._partitions_with_errors: set = set()
-        self._cached_records: Optional[list] = None
+        # Minimal child-slice cache: only fields children need for slice building
+        self._child_slice_cache: Optional[list] = None
 
     def _query(self) -> str:
         return BULK_PR_QUERY
 
+    def get_child_slices(self) -> list:
+        """Return minimal PR metadata for child streams to build slices from.
+
+        Cached after first call. Contains only: repo_owner, repo_name,
+        pr_number, pr_database_id, updated_at, commit_count, comment_count,
+        review_count. ~100 bytes per PR vs ~1-2KB for full records.
+        """
+        if self._child_slice_cache is not None:
+            return self._child_slice_cache
+
+        temp = []
+        for record in self.read_records(sync_mode=None):
+            temp.append({
+                "repo_owner": record.get("repo_owner", ""),
+                "repo_name": record.get("repo_name", ""),
+                "number": record.get("number"),
+                "database_id": record.get("database_id"),
+                "updated_at": record.get("updated_at", ""),
+                "commit_count": record.get("commit_count"),
+                "comment_count": record.get("comment_count"),
+                "review_count": record.get("review_count"),
+            })
+        self._child_slice_cache = temp
+        logger.info(f"PR child-slice cache: {len(temp)} PRs cached ({len(temp) * 100 // 1024}KB est)")
+        return self._child_slice_cache
+
     def read_records(self, sync_mode=None, stream_slice=None, stream_state=None, **kwargs):
         if stream_slice is None:
-            # Called by child stream — serve from cache if available
-            if self._cached_records is not None:
-                yield from self._cached_records
-                return
-
-            # First child call: fetch, cache atomically, then yield
-            temp = []
+            # Called by child stream — iterate all repo slices
             for repo_slice in self.stream_slices(stream_state=stream_state):
-                for record in super().read_records(
+                yield from super().read_records(
                     sync_mode=sync_mode, stream_slice=repo_slice, stream_state=stream_state, **kwargs
-                ):
-                    temp.append(record)
-            # Only cache after full successful completion
-            self._cached_records = temp
-            logger.info(f"PR cache: {len(self._cached_records)} records cached for child streams")
-            yield from self._cached_records
+                )
         else:
             yield from super().read_records(
                 sync_mode=sync_mode, stream_slice=stream_slice, stream_state=stream_state, **kwargs

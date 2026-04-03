@@ -49,7 +49,7 @@ class PRCommitsStream(GitHubRestStream):
         state = stream_state or self._state
         total = 0
         skipped = 0
-        for pr in self._parent.read_records(sync_mode=None):
+        for pr in self._parent.get_child_slices():
             owner = pr.get("repo_owner", "")
             repo = pr.get("repo_name", "")
             pr_number = pr.get("number")

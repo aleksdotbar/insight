@@ -86,7 +86,7 @@
         "type": "integer",
         "title": "Concurrent Workers",
         "description": "Number of parallel threads for child stream fetches (reviews, comments, commit files, PR commits).",
-        "default": 10,
+        "default": 5,
         "minimum": 1,
         "maximum": 20,
         "order": 10
