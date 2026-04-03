@@ -108,12 +108,16 @@ class PRCommitsStream(GitHubRestStream):
 
     def _graphql_post(self, variables: dict) -> dict:
         """Make a GraphQL POST request. Thread-safe. Raises on transient errors."""
+        self._rate_limiter.throttle("graphql")
         resp = req.post(
             "https://api.github.com/graphql",
             json={"query": PR_COMMITS_QUERY, "variables": variables},
             headers=graphql_headers(self._token),
             timeout=30,
         )
+        if resp.status_code in (502, 503):
+            self._rate_limiter.on_secondary_limit()
+            raise RuntimeError(f"GitHub secondary rate limit ({resp.status_code})")
         if resp.status_code == 429 or resp.status_code >= 500:
             raise RuntimeError(f"GitHub GraphQL error {resp.status_code}")
         body = resp.json()

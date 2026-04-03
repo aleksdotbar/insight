@@ -91,6 +91,10 @@ class GitHubRestStream(HttpStream, ABC):
                 import time
                 wait = float(reset) - time.time() + 1
                 return max(wait, 1.0)
+        if response.status_code in (502, 503):
+            # Secondary rate limit — need longer cooldown
+            self._rate_limiter.on_secondary_limit()
+            return 60.0
         return None
 
     def parse_response(self, response: requests.Response, **kwargs) -> Iterable[Mapping[str, Any]]:

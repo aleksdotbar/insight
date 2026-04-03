@@ -129,7 +129,11 @@ class CommentsStream(GitHubRestStream):
     def _do_rest_get(self, url: str, params: dict = None) -> req.Response:
         """REST GET with page-level retry. Thread-safe."""
         def _call():
+            self._rate_limiter.throttle("rest")
             resp = req.get(url, headers=rest_headers(self._token), params=params, timeout=30)
+            if resp.status_code in (502, 503):
+                self._rate_limiter.on_secondary_limit()
+                raise RuntimeError(f"GitHub secondary rate limit ({resp.status_code}) for {url}")
             if resp.status_code == 429 or resp.status_code >= 500:
                 raise RuntimeError(f"GitHub API error {resp.status_code} for {url}")
             return resp

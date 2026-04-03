@@ -255,6 +255,7 @@ class CommitsStream(GitHubGraphQLStream):
     def _check_branch_ahead(self, owner: str, repo: str, base: str, head: str) -> int:
         """Check how many commits head branch is ahead of base. Returns ahead_by count."""
         try:
+            self._rate_limiter.throttle("rest")
             resp = req.get(
                 f"https://api.github.com/repos/{owner}/{repo}/compare/{base}...{head}",
                 headers=rest_headers(self._token),

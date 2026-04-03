@@ -111,6 +111,7 @@ class CommitFilesStream(GitHubRestStream):
         params = {"per_page": "100"}
 
         while url:
+            self._rate_limiter.throttle("rest")
             resp = req.get(url, headers=rest_headers(self._token), params=params, timeout=30)
             params = {}
 
@@ -120,6 +121,8 @@ class CommitFilesStream(GitHubRestStream):
                 self._rate_limiter.update_rest(int(remaining), float(reset))
             self._rate_limiter.wait_if_needed("rest")
 
+            if resp.status_code in (502, 503):
+                self._rate_limiter.on_secondary_limit()
             if not check_rest_response(resp, f"{owner}/{repo}/{sha} files"):
                 return records
 

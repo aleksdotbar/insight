@@ -127,7 +127,11 @@ class ReviewsStream(GitHubRestStream):
             _url, _params = url, params
 
             def _call():
+                self._rate_limiter.throttle("rest")
                 r = req.get(_url, headers=rest_headers(self._token), params=_params, timeout=30)
+                if r.status_code in (502, 503):
+                    self._rate_limiter.on_secondary_limit()
+                    raise RuntimeError(f"GitHub secondary rate limit ({r.status_code})")
                 if r.status_code == 429 or r.status_code >= 500:
                     raise RuntimeError(f"GitHub API error {r.status_code}")
                 return r
