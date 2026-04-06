@@ -195,7 +195,7 @@ class PullRequestsStream(GitHubGraphQLStream):
 
     def parse_response(self, response, stream_slice=None, **kwargs):
         body = response.json()
-        self._update_graphql_rate_limit(body)
+        self._update_graphql_rate_limit(body, response)
         self._rate_limiter.wait_if_needed("graphql")
 
         if "errors" in body:

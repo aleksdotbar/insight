@@ -277,7 +277,7 @@ class CommitsStream(GitHubGraphQLStream):
             if resp.status_code != 200:
                 return -1  # Unknown, don't skip
             return resp.json().get("ahead_by", -1)
-        except (requests.RequestException, json.JSONDecodeError, ValueError, KeyError):
+        except (req.RequestException, json.JSONDecodeError, ValueError, KeyError):
             return -1  # On error, don't skip
 
     def get_updated_state(
@@ -322,7 +322,7 @@ class CommitsStream(GitHubGraphQLStream):
         default_branch = s.get("default_branch", "")
 
         body = response.json()
-        self._update_graphql_rate_limit(body)
+        self._update_graphql_rate_limit(body, response)
         self._rate_limiter.wait_if_needed("graphql")
 
         if "errors" in body:

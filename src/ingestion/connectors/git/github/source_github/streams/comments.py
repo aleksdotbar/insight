@@ -156,7 +156,7 @@ class CommentsStream(GitHubRestStream):
     def _do_rest_get(self, url: str, params: dict = None) -> req.Response:
         """REST GET with page-level retry. Thread-safe."""
         def _call(_url=url, _params=params):
-            self._rate_limiter.throttle("rest")
+            self._rate_limiter.wait_if_needed("rest")
             resp = req.get(_url, headers=rest_headers(self._token), params=_params, timeout=30)
             remaining = resp.headers.get("X-RateLimit-Remaining")
             reset = resp.headers.get("X-RateLimit-Reset")

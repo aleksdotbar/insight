@@ -414,9 +414,9 @@ class SourceGitHub(AbstractSource):
 
 | Dependency Module | Interface Used | Purpose |
 |-------------------|----------------|---------|
-| `clients/auth.py` | `build_rest_headers()`, `build_graphql_headers()` | Auth header construction |
-| `clients/rate_limiter.py` | `check_budget()`, `update_budget()` | Rate limit budget tracking |
-| `clients/concurrent.py` | `ConcurrentExecutor.submit()`, `ConcurrentExecutor.results()` | Bounded parallel child fetches |
+| `clients/auth.py` | `rest_headers()`, `graphql_headers()` | Auth header construction |
+| `clients/rate_limiter.py` | `update_rest()`, `update_graphql()`, `wait_if_needed()`, `throttle()` | Rate limit budget tracking |
+| `clients/concurrent.py` | `fetch_parallel_with_slices()`, `retry_request()` | Bounded parallel child fetches |
 | `graphql/queries.py` | Query string constants | GraphQL query definitions |
 | `streams/base.py` | `GitHubRestStream`, `GitHubGraphQLStream` | Stream base classes |
 

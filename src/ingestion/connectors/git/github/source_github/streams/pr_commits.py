@@ -111,26 +111,32 @@ class PRCommitsStream(GitHubRestStream):
 
     def _graphql_post(self, variables: dict) -> dict:
         """Make a GraphQL POST request. Thread-safe. Raises on transient errors."""
-        self._rate_limiter.throttle("graphql")
+        self._rate_limiter.wait_if_needed("graphql")
         resp = req.post(
             "https://api.github.com/graphql",
             json={"query": PR_COMMITS_QUERY, "variables": variables},
             headers=graphql_headers(self._token),
             timeout=30,
         )
+        # Always update rate limit from headers before any error handling
+        hdr_remaining = resp.headers.get("x-ratelimit-remaining")
+        hdr_reset = resp.headers.get("x-ratelimit-reset")
+        if hdr_remaining is not None and hdr_reset is not None:
+            from datetime import datetime, timezone
+            reset_dt = datetime.fromtimestamp(float(hdr_reset), tz=timezone.utc)
+            self._rate_limiter.update_graphql(int(hdr_remaining), reset_dt.isoformat())
         if resp.status_code in (502, 503):
             self._rate_limiter.on_secondary_limit()
             raise RuntimeError(f"GitHub secondary rate limit ({resp.status_code})")
         if resp.status_code == 429 or resp.status_code >= 400:
             raise RuntimeError(f"GitHub GraphQL error {resp.status_code}: {resp.text[:500]}")
         body = resp.json()
-        # Update rate limit from GraphQL response
+        # Also update from response body (more precise)
         rate_limit = body.get("data", {}).get("rateLimit", {})
         remaining = rate_limit.get("remaining")
         reset_at = rate_limit.get("resetAt")
         if remaining is not None and reset_at:
             self._rate_limiter.update_graphql(remaining, reset_at)
-        self._rate_limiter.wait_if_needed("graphql")
         return body
 
     def _fetch_pr_commits(self, stream_slice: dict) -> List[Mapping[str, Any]]:

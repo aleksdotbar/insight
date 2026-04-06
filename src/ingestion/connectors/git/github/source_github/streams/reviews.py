@@ -130,14 +130,19 @@ class ReviewsStream(GitHubRestStream):
             _url, _params = url, params
 
             def _call(_url=_url, _params=_params):
-                self._rate_limiter.throttle("rest")
+                self._rate_limiter.wait_if_needed("rest")
                 r = req.get(_url, headers=rest_headers(self._token), params=_params, timeout=30)
+                # Always update limiter from headers before error handling
+                remaining = r.headers.get("X-RateLimit-Remaining")
+                reset = r.headers.get("X-RateLimit-Reset")
+                if remaining and reset:
+                    self._rate_limiter.update_rest(int(remaining), float(reset))
                 if r.status_code in (502, 503):
                     self._rate_limiter.on_secondary_limit()
                     raise RuntimeError(f"GitHub secondary rate limit ({r.status_code})")
-                if _is_rate_limit_403(r):
-                    raise RuntimeError("GitHub rate limit exhausted (403)")
-                if r.status_code == 429 or r.status_code >= 500:
+                if _is_rate_limit_403(r) or r.status_code == 429:
+                    raise RuntimeError(f"rate limit exhausted ({r.status_code})")
+                if r.status_code >= 500:
                     raise RuntimeError(f"GitHub API error {r.status_code}")
                 return r
 
