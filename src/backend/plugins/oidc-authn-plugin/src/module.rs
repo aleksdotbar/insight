@@ -64,10 +64,15 @@ impl Module for OidcAuthnPlugin {
                 .with_refresh_interval(Duration::from_secs(config.jwks_refresh_interval_seconds)),
         );
 
-        // Initial key fetch
-        modkit_auth::traits::KeyProvider::refresh_keys(key_provider.as_ref())
-            .await
-            .map_err(|e| anyhow::anyhow!("failed initial JWKS key fetch: {e}"))?;
+        // Initial key fetch — log warning if IdP is unreachable, don't crash
+        match modkit_auth::traits::KeyProvider::refresh_keys(key_provider.as_ref()).await {
+            Ok(()) => info!("JWKS keys loaded successfully"),
+            Err(e) => tracing::warn!(
+                error = %e,
+                "initial JWKS key fetch failed — will retry in background. \
+                 Auth requests will fail until keys are loaded."
+            ),
+        }
 
         // Create service
         let service = Arc::new(OidcService::new(&config, key_provider));

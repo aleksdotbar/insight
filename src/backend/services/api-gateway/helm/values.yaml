@@ -30,6 +30,8 @@ resources:
 oidc:
   issuerUrl: ""           # e.g., https://dev-12345.okta.com/oauth2/default
   audience: ""            # e.g., api://insight
+  clientId: ""            # Frontend (public) OIDC client ID
+  redirectUri: ""         # e.g., https://insight.example.com/callback
   # jwksUrl: ""           # Override if JWKS URL differs from {issuer}/v1/keys
 
 # Set to true to disable authentication (local development only)

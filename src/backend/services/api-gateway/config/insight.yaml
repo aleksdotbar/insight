@@ -66,6 +66,17 @@ modules:
       subject_type: "user"
       leeway_seconds: 60
 
+  # ─── Auth Info (public endpoint for frontend) ───────────────
+  auth-info:
+    config:
+      issuer_url: "${OIDC_ISSUER_URL}"    # Same as oidc-authn-plugin
+      client_id: "${OIDC_CLIENT_ID}"      # Frontend (public) client ID
+      redirect_uri: "${OIDC_REDIRECT_URI}" # e.g., https://insight.example.com/callback
+      scopes:
+        - openid
+        - profile
+        - email
+
   # ─── Authorization ──────────────────────────────────────────
   authz-resolver:
     config:

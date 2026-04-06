@@ -46,7 +46,7 @@ impl AuthNResolverPluginClient for OidcAuthnClient {
         // Client credentials flow not implemented for OIDC plugin.
         // S2S communication should use the static-authn-plugin or
         // a dedicated service account token.
-        Err(AuthNResolverError::Internal(
+        Err(AuthNResolverError::Unauthorized(
             "client_credentials flow not supported by OIDC plugin — use static-authn-plugin for S2S".to_owned(),
         ))
     }

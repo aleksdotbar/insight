@@ -25,6 +25,12 @@ modules:
         description: "Insight Platform API — auth disabled"
       auth_disabled: true
 
+  auth-info:
+    config:
+      issuer_url: ""
+      client_id: ""
+      redirect_uri: "http://localhost:3000/callback"
+
   module-orchestrator:
     config: {}
 

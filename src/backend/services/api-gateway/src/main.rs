@@ -14,7 +14,10 @@
 //!   insight-api-gateway run -c config/insight.yaml
 //!   insight-api-gateway check -c config/insight.yaml
 
-// Link modules via inventory — runtime discovers them automatically.
+// Insight modules (compiled into the binary, registered via inventory).
+mod auth_info;
+
+// Link external modules via inventory — runtime discovers them automatically.
 use api_gateway_module as _;
 use authn_resolver as _;
 use authz_resolver as _;

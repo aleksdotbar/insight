@@ -35,16 +35,13 @@ pub enum OidcError {
 pub struct OidcService {
     key_provider: Arc<JwksKeyProvider>,
     validation_config: ValidationConfig,
+    issuer_url: String,
     tenant_claim: String,
     subject_type: String,
 }
 
 impl OidcService {
     /// Creates a new OIDC service from plugin configuration.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if the JWKS key provider cannot be created.
     #[must_use]
     pub fn new(
         config: &OidcAuthnPluginConfig,
@@ -70,6 +67,7 @@ impl OidcService {
         Self {
             key_provider,
             validation_config,
+            issuer_url: config.issuer_url.clone(),
             tenant_claim: config.tenant_claim.clone(),
             subject_type: config.subject_type.clone(),
         }
@@ -107,8 +105,9 @@ impl OidcService {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| OidcError::MissingClaim("sub".to_owned()))?;
 
-        // OIDC `sub` is often not a UUID — use a deterministic UUID v5 from the issuer+sub
-        let subject_id = uuid_from_sub(sub_str);
+        // OIDC `sub` is often not a UUID — use a deterministic UUID v5 from issuer+sub
+        // to prevent collisions across different IdPs
+        let subject_id = uuid_from_issuer_sub(&self.issuer_url, sub_str);
 
         // 4. Extract tenant_id from configured claim
         let subject_tenant_id = claims
@@ -137,10 +136,11 @@ impl OidcService {
     }
 }
 
-/// Creates a deterministic UUID v5 from an OIDC `sub` claim.
-/// Uses the URL namespace so the same sub always maps to the same UUID.
-fn uuid_from_sub(sub: &str) -> Uuid {
-    Uuid::new_v5(&Uuid::NAMESPACE_URL, sub.as_bytes())
+/// Creates a deterministic UUID v5 from an OIDC issuer + `sub` claim.
+/// Includes issuer to prevent collisions when the same `sub` appears across different providers.
+fn uuid_from_issuer_sub(issuer: &str, sub: &str) -> Uuid {
+    let input = format!("{issuer}#{sub}");
+    Uuid::new_v5(&Uuid::NAMESPACE_URL, input.as_bytes())
 }
 
 /// Extracts scopes from JWT claims.
@@ -160,26 +160,44 @@ fn extract_scopes(claims: &serde_json::Value) -> Vec<String> {
         return scope.split_whitespace().map(String::from).collect();
     }
 
-    // No scopes — return wildcard (unrestricted)
-    vec!["*".to_owned()]
+    // No scopes claim present — return empty (authz layer decides access)
+    Vec::new()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const ISSUER_A: &str = "https://okta-a.example.com";
+    const ISSUER_B: &str = "https://okta-b.example.com";
+
     #[test]
-    fn uuid_from_sub_is_deterministic() {
-        let id1 = uuid_from_sub("auth0|user123");
-        let id2 = uuid_from_sub("auth0|user123");
+    fn uuid_from_issuer_sub_is_deterministic() {
+        let id1 = uuid_from_issuer_sub(ISSUER_A, "user123");
+        let id2 = uuid_from_issuer_sub(ISSUER_A, "user123");
         assert_eq!(id1, id2);
     }
 
     #[test]
-    fn uuid_from_sub_different_subs_differ() {
-        let id1 = uuid_from_sub("auth0|user123");
-        let id2 = uuid_from_sub("auth0|user456");
+    fn uuid_from_issuer_sub_different_subs_differ() {
+        let id1 = uuid_from_issuer_sub(ISSUER_A, "user123");
+        let id2 = uuid_from_issuer_sub(ISSUER_A, "user456");
         assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn uuid_from_issuer_sub_different_issuers_differ() {
+        // Same sub across different IdPs must NOT collide
+        let id1 = uuid_from_issuer_sub(ISSUER_A, "user123");
+        let id2 = uuid_from_issuer_sub(ISSUER_B, "user123");
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn uuid_from_issuer_sub_empty_sub() {
+        // Should not panic — empty sub is technically valid OIDC
+        let id = uuid_from_issuer_sub(ISSUER_A, "");
+        assert_ne!(id, Uuid::default());
     }
 
     #[test]
@@ -201,10 +219,10 @@ mod tests {
     }
 
     #[test]
-    fn extract_scopes_none_returns_wildcard() {
+    fn extract_scopes_none_returns_empty() {
         let claims = serde_json::json!({});
         let scopes = extract_scopes(&claims);
-        assert_eq!(scopes, vec!["*"]);
+        assert!(scopes.is_empty(), "no scope claims should return empty vec, not wildcard");
     }
 
     #[test]
@@ -215,5 +233,23 @@ mod tests {
         });
         let scopes = extract_scopes(&claims);
         assert_eq!(scopes, vec!["admin"]);
+    }
+
+    #[test]
+    fn extract_scopes_empty_scope_string_returns_empty() {
+        let claims = serde_json::json!({
+            "scope": ""
+        });
+        let scopes = extract_scopes(&claims);
+        assert!(scopes.is_empty());
+    }
+
+    #[test]
+    fn extract_scopes_scp_with_non_string_elements_filtered() {
+        let claims = serde_json::json!({
+            "scp": ["openid", 123, true, "email"]
+        });
+        let scopes = extract_scopes(&claims);
+        assert_eq!(scopes, vec!["openid", "email"]);
     }
 }

@@ -28,14 +28,16 @@ pub struct OidcAuthnPluginConfig {
     pub priority: i16,
 
     /// OIDC issuer URL (e.g., `https://dev-12345.okta.com/oauth2/default`).
-    /// Used to construct the JWKS URI: `{issuer_url}/.well-known/openid-configuration`
-    /// or directly `{issuer_url}/v1/keys` for Okta.
+    /// Used for `iss` claim validation and default JWKS URL derivation.
     pub issuer_url: String,
 
     /// Expected audience claim (`aud`). If empty, audience is not validated.
     pub audience: String,
 
-    /// JWKS endpoint URL override. If empty, derived from `issuer_url`.
+    /// JWKS endpoint URL override. If empty, defaults to `{issuer_url}/v1/keys` (Okta convention).
+    /// **Must be set explicitly** for non-Okta providers:
+    /// - Keycloak: `{issuer}/protocol/openid-connect/certs`
+    /// - Auth0: `{issuer}.well-known/jwks.json`
     pub jwks_url: String,
 
     /// JWKS key refresh interval in seconds.

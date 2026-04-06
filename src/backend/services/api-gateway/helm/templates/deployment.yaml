@@ -45,6 +45,12 @@ spec:
             - name: APP__modules__oidc-authn-plugin__config__jwks_url
               value: "{{ .Values.oidc.jwksUrl }}"
             {{- end }}
+            - name: APP__modules__auth-info__config__issuer_url
+              value: "{{ .Values.oidc.issuerUrl }}"
+            - name: APP__modules__auth-info__config__client_id
+              value: "{{ .Values.oidc.clientId }}"
+            - name: APP__modules__auth-info__config__redirect_uri
+              value: "{{ .Values.oidc.redirectUri }}"
             {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
