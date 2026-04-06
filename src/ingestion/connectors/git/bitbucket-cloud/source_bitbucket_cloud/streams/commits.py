@@ -125,6 +125,17 @@ class CommitsStream(BitbucketCloudRestStream):
                     continue
 
                 cursor_value = stored.get(self.cursor_field)
+
+                # Force-push detection: if HEAD changed, the timestamp cursor
+                # is unreliable (rewritten commits may have older dates).
+                # Fall back to start_date so we re-fetch the full branch.
+                if stored_head and head_sha and head_sha != stored_head and cursor_value:
+                    logger.info(
+                        f"HEAD changed on {workspace}/{repo_slug}/{branch_name} "
+                        f"({stored_head[:8]}→{head_sha[:8]}): resetting cursor for re-fetch"
+                    )
+                    cursor_value = None
+
                 yield {
                     "workspace": workspace,
                     "repo_slug": repo_slug,

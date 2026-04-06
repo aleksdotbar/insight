@@ -53,8 +53,11 @@ class PullRequestsStream(BitbucketCloudRestStream):
     def get_child_slices(self) -> list:
         """Return minimal PR metadata for child streams to build slices from.
 
-        Cached after first call. Contains: workspace, repo_slug,
-        pr_id, updated_on, comment_count, task_count, participants.
+        Intentionally reads ALL PRs (sync_mode=None, no stream_state) because
+        child streams (reviews, comments, pr_commits, file_changes) need the
+        full PR set for slice construction. Called after the parent's
+        incremental sync populates the CDK cache. Results are cached here
+        to avoid redundant reads.
         """
         if self._child_slice_cache is not None:
             return self._child_slice_cache
