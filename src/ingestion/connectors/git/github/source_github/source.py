@@ -94,6 +94,7 @@ class SourceGitHub(AbstractSource):
         prs = PullRequestsStream(
             parent=repos,
             page_size=50,
+            start_date=start_date,
             **shared_kwargs,
         )
 

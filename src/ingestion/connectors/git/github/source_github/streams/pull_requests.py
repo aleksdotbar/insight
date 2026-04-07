@@ -25,11 +25,13 @@ class PullRequestsStream(GitHubGraphQLStream):
         self,
         parent: RepositoriesStream,
         page_size: int = 50,
+        start_date: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._parent = parent
         self._page_size = page_size
+        self._start_date = start_date
         self._partitions_with_errors: set = set()
         # Minimal child-slice cache: only fields children need for slice building
         self._child_slice_cache: Optional[list] = None
@@ -186,12 +188,15 @@ class PullRequestsStream(GitHubGraphQLStream):
         data = body.get("data", {})
         page_info = self._extract_page_info(data)
 
-        # Early exit: if last node on this page is older than cursor
+        # Early exit: if last node on this page is older than cursor or start_date
         nodes = self._extract_nodes(data)
-        if nodes and hasattr(self, "_current_cursor_value") and self._current_cursor_value:
+        if nodes:
             last_updated = nodes[-1].get("updatedAt", "")
-            if last_updated and last_updated < self._current_cursor_value:
-                return None
+            if last_updated:
+                if hasattr(self, "_current_cursor_value") and self._current_cursor_value and last_updated < self._current_cursor_value:
+                    return None
+                if self._start_date and last_updated[:10] < self._start_date:
+                    return None
 
         if page_info.get("hasNextPage"):
             return {"after": page_info["endCursor"]}
@@ -226,6 +231,9 @@ class PullRequestsStream(GitHubGraphQLStream):
 
             # Skip records older than cursor for incremental
             if cursor_value and updated_at and updated_at <= cursor_value:
+                continue
+            # Skip records older than start_date on first sync
+            if self._start_date and updated_at and updated_at[:10] < self._start_date:
                 continue
 
             # Normalize state
