@@ -57,7 +57,10 @@ class FileChangesStream(GitHubRestStream):
         current_stream_state: MutableMapping[str, Any],
         latest_record: Mapping[str, Any],
     ) -> MutableMapping[str, Any]:
-        return self._state
+        # Only persist pr: entries (bounded by active PRs). commit: entries are
+        # transient within a single sync to avoid re-fetching, but don't need
+        # to persist across syncs — they would grow unboundedly otherwise.
+        return {k: v for k, v in self._state.items() if not k.startswith("commit:")}
 
     def read_records(self, sync_mode=None, stream_slice=None, stream_state=None, **kwargs) -> Iterable[Mapping[str, Any]]:
         if stream_state:

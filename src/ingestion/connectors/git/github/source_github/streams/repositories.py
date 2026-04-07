@@ -12,7 +12,7 @@ class RepositoriesStream(GitHubRestStream):
     """Fetches all repositories for configured organizations via REST API."""
 
     name = "repositories"
-    use_cache = True  # Other streams use this as parent
+    # Caching managed by _cached_records — no CDK use_cache needed
 
     def __init__(
         self,

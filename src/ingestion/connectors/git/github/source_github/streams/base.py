@@ -89,6 +89,8 @@ class GitHubRestStream(HttpStream, ABC):
         self._rate_limiter = rate_limiter
 
     def request_headers(self, **kwargs) -> Mapping[str, Any]:
+        # Check shared rate limiter before every CDK-managed request
+        self._rate_limiter.wait_if_needed("rest")
         return rest_headers(self._token)
 
     def request_params(self, **kwargs) -> MutableMapping[str, Any]:
@@ -189,6 +191,8 @@ class GitHubGraphQLStream(HttpStream, ABC):
         return "graphql"
 
     def request_headers(self, **kwargs) -> Mapping[str, Any]:
+        # Check shared rate limiter before every CDK-managed request
+        self._rate_limiter.wait_if_needed("graphql")
         return graphql_headers(self._token)
 
     @abstractmethod
@@ -239,6 +243,22 @@ class GitHubGraphQLStream(HttpStream, ABC):
         if response.status_code in (401, 403):
             return False
         return response.status_code in (429, 500, 502, 503, 504)
+
+    def backoff_time(self, response: requests.Response) -> Optional[float]:
+        if response.status_code == 429 or (response.status_code == 403 and _is_rate_limit_403(response)):
+            retry_after = response.headers.get("Retry-After")
+            if retry_after:
+                return max(float(retry_after), 1.0)
+            reset = response.headers.get("x-ratelimit-reset")
+            if reset:
+                import time
+                wait = float(reset) - time.time() + 1
+                return max(wait, 1.0)
+            return 60.0
+        if response.status_code in (502, 503):
+            self._rate_limiter.on_secondary_limit()
+            return 60.0
+        return None
 
     def parse_response(
         self,

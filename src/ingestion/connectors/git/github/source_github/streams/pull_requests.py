@@ -19,7 +19,7 @@ class PullRequestsStream(GitHubGraphQLStream):
 
     name = "pull_requests"
     cursor_field = "updated_at"
-    use_cache = True  # Reviews/comments streams use this as parent
+    # Caching managed by _child_slice_cache — no CDK use_cache needed
 
     def __init__(
         self,
@@ -134,7 +134,7 @@ class PullRequestsStream(GitHubGraphQLStream):
             pushed_at = record.get("pushed_at", "")
             repo_state_key = f"_repo:{owner}/{repo}"
             stored_pushed_at = state.get(repo_state_key, {}).get("pushed_at", "")
-            if pushed_at and stored_pushed_at and pushed_at <= stored_pushed_at:
+            if pushed_at and stored_pushed_at and pushed_at < stored_pushed_at:
                 repos_skipped += 1
                 logger.debug(f"PR freshness: skipping {owner}/{repo} (pushed_at unchanged)")
                 continue

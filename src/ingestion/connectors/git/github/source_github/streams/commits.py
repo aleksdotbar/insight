@@ -43,6 +43,7 @@ class CommitsStream(GitHubGraphQLStream):
         self._partitions_with_errors: set = set()
         self._current_skipped_siblings: list = []
         self._current_stop_at_sha: Optional[str] = None
+        self._last_partition_key: Optional[str] = None
 
     def _query(self) -> str:
         return BULK_COMMIT_QUERY
@@ -152,7 +153,7 @@ class CommitsStream(GitHubGraphQLStream):
 
             repo_state_key = f"_repo:{owner}/{repo}"
             stored_pushed_at = state.get(repo_state_key, {}).get("pushed_at", "")
-            if repo_pushed_at and stored_pushed_at and repo_pushed_at <= stored_pushed_at:
+            if repo_pushed_at and stored_pushed_at and repo_pushed_at < stored_pushed_at:
                 repos_skipped_fresh += 1
                 logger.info(f"Repo freshness: skipping {owner}/{repo} (pushed_at unchanged: {repo_pushed_at})")
                 continue
@@ -335,6 +336,14 @@ class CommitsStream(GitHubGraphQLStream):
         head_sha = s.get("head_sha", "")
         repo_pushed_at = s.get("repo_pushed_at", "")
         default_branch = s.get("default_branch", "")
+
+        # Clear error tracking when we move to a new partition — a transient
+        # error on an earlier page should not freeze the cursor if subsequent
+        # pages succeed.
+        partition_key = f"{s.get('owner', '')}/{s.get('repo', '')}/{s.get('branch', '')}"
+        if partition_key != self._last_partition_key:
+            self._partitions_with_errors.discard(self._last_partition_key)
+            self._last_partition_key = partition_key
 
         body = response.json()
         self._update_graphql_rate_limit(body, response)

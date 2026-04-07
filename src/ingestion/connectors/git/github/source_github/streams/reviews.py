@@ -149,10 +149,6 @@ class ReviewsStream(GitHubRestStream):
             resp = retry_request(_call, context=f"{owner}/{repo} PR#{pr_number} reviews")
             params = {}
 
-            remaining = resp.headers.get("X-RateLimit-Remaining")
-            reset = resp.headers.get("X-RateLimit-Reset")
-            if remaining and reset:
-                self._rate_limiter.update_rest(int(remaining), float(reset))
             self._rate_limiter.wait_if_needed("rest")
 
             if not check_rest_response(resp, f"{owner}/{repo} PR#{pr_number} reviews"):

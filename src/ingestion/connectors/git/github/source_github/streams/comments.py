@@ -102,9 +102,9 @@ class CommentsStream(GitHubRestStream):
             self._state = stream_state
 
         if stream_slice is not None:
-            records = self._fetch_repo_comments(stream_slice)
+            records, general_page_max, inline_page_max = self._fetch_repo_comments(stream_slice)
             yield from records
-            self._advance_state(stream_slice, records)
+            self._advance_state(stream_slice, records, general_page_max, inline_page_max)
         else:
             slices = self.stream_slices(stream_state=stream_state)
             for result in fetch_parallel_with_slices(self._fetch_repo_comments, slices, self._max_workers):
@@ -113,18 +113,20 @@ class CommentsStream(GitHubRestStream):
                         raise result.error
                     logger.warning(f"Skipping comment slice {result.slice.get('repo_key', '?')}: {result.error}")
                     continue
-                yield from result.records
-                self._advance_state(result.slice, result.records)
+                records, general_page_max, inline_page_max = result.records
+                yield from records
+                self._advance_state(result.slice, records, general_page_max, inline_page_max)
 
-    def _advance_state(self, stream_slice: Mapping[str, Any], records: List[Mapping[str, Any]]):
+    def _advance_state(self, stream_slice: Mapping[str, Any], records: List[Mapping[str, Any]],
+                        general_page_max: str = "", inline_page_max: str = ""):
         repo_key = stream_slice.get("repo_key", "")
         if not repo_key:
             return
         # Use page-level max timestamps (covers ALL items on the page, including
         # non-PR issue comments that were filtered out). This ensures the cursor
         # advances past active issue comments so they don't replay forever.
-        max_general = stream_slice.get("_general_page_max", "") or stream_slice.get("general_since", "")
-        max_inline = stream_slice.get("_inline_page_max", "") or stream_slice.get("inline_since", "")
+        max_general = general_page_max or stream_slice.get("general_since", "")
+        max_inline = inline_page_max or stream_slice.get("inline_since", "")
         # Also check emitted records in case page-level max wasn't set
         for r in records:
             updated = r.get("updated_at", "")
@@ -141,17 +143,18 @@ class CommentsStream(GitHubRestStream):
         if max_inline:
             self._state[f"{repo_key}/inline"] = {"since": max_inline}
 
-    def _fetch_repo_comments(self, stream_slice: dict) -> List[Mapping[str, Any]]:
-        """Fetch both general and inline comments for one repo. Thread-safe."""
+    def _fetch_repo_comments(self, stream_slice: dict) -> tuple:
+        """Fetch both general and inline comments for one repo. Thread-safe.
+
+        Returns (records, general_page_max, inline_page_max) to avoid mutating
+        the input stream_slice which may be shared across concurrent workers.
+        """
         records = []
         general_records, general_page_max = self._fetch_paginated(stream_slice, comment_type="general")
         inline_records, inline_page_max = self._fetch_paginated(stream_slice, comment_type="inline")
         records.extend(general_records)
         records.extend(inline_records)
-        # Stash page-level max timestamps on the slice for _advance_state
-        stream_slice["_general_page_max"] = general_page_max
-        stream_slice["_inline_page_max"] = inline_page_max
-        return records
+        return records, general_page_max, inline_page_max
 
     def _do_rest_get(self, url: str, params: dict = None) -> req.Response:
         """REST GET with page-level retry. Thread-safe."""
