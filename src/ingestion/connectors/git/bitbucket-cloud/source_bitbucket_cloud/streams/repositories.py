@@ -91,8 +91,8 @@ class RepositoriesStream(BitbucketCloudRestStream):
                 "workspace": workspace,
                 "metadata": json.dumps(repo),
             }
-            record["pk"] = _make_pk(self._tenant_id, self._source_id, workspace, slug)
-            yield self._add_envelope(record)
+            pk_parts = [workspace, slug]
+            yield self._add_envelope(record, pk_parts=pk_parts)
         if skipped:
             logger.info(f"Repo filter: skipped {skipped} fork(s) in workspace {workspace}")
 

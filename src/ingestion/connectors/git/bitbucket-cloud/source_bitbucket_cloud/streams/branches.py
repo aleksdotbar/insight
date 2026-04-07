@@ -83,11 +83,8 @@ class BranchesStream(BitbucketCloudRestStream):
                 "repo_slug": repo_slug,
                 "default_branch": s.get("default_branch", ""),
             }
-            record["pk"] = _make_pk(
-                self._tenant_id, self._source_id,
-                workspace, repo_slug, branch_name,
-            )
-            yield self._add_envelope(record)
+            pk_parts = [workspace, repo_slug, branch_name]
+            yield self._add_envelope(record, pk_parts=pk_parts)
 
     def get_child_records(self) -> list[dict]:
         """Return cached branch records for child streams (e.g. commits)."""

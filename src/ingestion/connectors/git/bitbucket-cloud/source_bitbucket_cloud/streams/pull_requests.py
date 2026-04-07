@@ -11,6 +11,7 @@ from source_bitbucket_cloud.streams.base import (
     BitbucketCloudRestStream,
     _is_fatal,
     _make_pk,
+    _make_unique_key,
     _now_iso,
     check_rest_response,
 )
@@ -257,14 +258,10 @@ class PullRequestsStream(BitbucketCloudRestStream):
                         "state": p.get("state"),
                     })
 
+                pk_parts = [workspace, repo_slug, pr_id_str]
                 record = {
-                    "pk": _make_pk(
-                        self._tenant_id,
-                        self._source_id,
-                        workspace,
-                        repo_slug,
-                        pr_id_str,
-                    ),
+                    "pk": _make_pk(self._tenant_id, self._source_id, *pk_parts),
+                    "unique_key": _make_unique_key(self._tenant_id, self._source_id, *pk_parts),
                     "database_id": pr_id,
                     "title": pr.get("title"),
                     "body": pr.get("description"),

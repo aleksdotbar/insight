@@ -12,6 +12,7 @@ from source_bitbucket_cloud.streams.base import (
     BitbucketCloudRestStream,
     _is_fatal,
     _make_pk,
+    _make_unique_key,
     _now_iso,
     check_rest_response,
 )
@@ -240,8 +241,11 @@ class CommitsStream(BitbucketCloudRestStream):
             for commit in commits:
                 commit_date = commit.get("date", "")
 
-                # Early-exit: stop when we reach already-seen data
+                # Early-exit: stop when we reach already-seen data or start_date cutoff
                 if cursor_value and commit_date and commit_date <= cursor_value:
+                    early_exit = True
+                    break
+                if self._start_date and commit_date and commit_date[:10] < self._start_date:
                     early_exit = True
                     break
 
@@ -254,14 +258,10 @@ class CommitsStream(BitbucketCloudRestStream):
                     p.get("hash", "") for p in (commit.get("parents") or [])
                 ]
 
+                pk_parts = [workspace, repo_slug, commit.get("hash", "")]
                 record = {
-                    "pk": _make_pk(
-                        self._tenant_id,
-                        self._source_id,
-                        workspace,
-                        repo_slug,
-                        commit.get("hash", ""),
-                    ),
+                    "pk": _make_pk(self._tenant_id, self._source_id, *pk_parts),
+                    "unique_key": _make_unique_key(self._tenant_id, self._source_id, *pk_parts),
                     "commit_hash": commit.get("hash", ""),
                     "message": commit.get("message"),
                     "date": commit_date,
