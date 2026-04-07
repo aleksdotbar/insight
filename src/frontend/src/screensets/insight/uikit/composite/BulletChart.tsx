@@ -1,0 +1,152 @@
+/**
+ * BulletChart — composite component for bullet metric visualization.
+ * Supports 'chart' mode (track + footer) and 'tile' mode (compact card).
+ * No state imports. Props-only (no internal state except hover).
+ */
+
+import React from 'react';
+import { ProgressTrack } from '../base/ProgressTrack';
+import type { BulletMetric } from '../../types';
+
+// Status class maps — no hex literals
+const STATUS_BAR_CLASS: Record<'good' | 'warn' | 'bad', string> = {
+  good: 'bg-green-600',
+  warn: 'bg-amber-600',
+  bad: 'bg-red-600',
+};
+
+const STATUS_BADGE_CLASS: Record<'good' | 'warn' | 'bad', string> = {
+  good: 'bg-green-100 text-green-600',
+  warn: 'bg-amber-100 text-amber-600',
+  bad: 'bg-red-100 text-red-600',
+};
+
+const STATUS_ARROW: Record<'good' | 'warn' | 'bad', string> = {
+  good: '↑',
+  warn: '→',
+  bad: '↓',
+};
+
+// Units that suppress period suffix
+const SUPPRESS_SUFFIX_UNITS = ['%', '×', 'h', 'avg replies', 'avg', '/mo'];
+
+function getPeriodSuffix(unit: string, period?: string): string {
+  if (!period) return '';
+  const u = unit.toLowerCase();
+  if (SUPPRESS_SUFFIX_UNITS.some((s) => u.includes(s))) return '';
+  const map: Record<string, string> = {
+    week: '/ wk',
+    month: '/ mo',
+    quarter: '/ qtr',
+    year: '/ yr',
+  };
+  return map[period] ?? '';
+}
+
+export interface BulletChartProps {
+  metric: BulletMetric & { period?: string };
+  onDrillClick?: (drillId: string) => void;
+  mode?: 'chart' | 'tile';
+  personName?: string;
+}
+
+const BulletChart: React.FC<BulletChartProps> = ({
+  metric,
+  onDrillClick,
+  mode = 'chart',
+  personName,
+}) => {
+  const {
+    label,
+    sublabel,
+    value,
+    unit,
+    bar_left_pct,
+    bar_width_pct,
+    median_left_pct,
+    median_label,
+    range_min,
+    range_max,
+    status,
+    drill_id,
+    period,
+  } = metric;
+
+  const suffix = getPeriodSuffix(unit, period);
+  const isDrillable = !!drill_id;
+
+  const handleDrillClick = () => {
+    if (isDrillable && onDrillClick) {
+      onDrillClick(drill_id);
+    }
+  };
+
+  // Build sublabel with personName appended
+  const fullSublabel = sublabel
+    ? personName
+      ? `${sublabel} · ${personName}`
+      : sublabel
+    : undefined;
+
+  if (mode === 'tile') {
+    return (
+      <div
+        className={`bg-slate-100 rounded-lg px-3.5 py-3 ${isDrillable ? 'cursor-pointer' : 'cursor-default'}`}
+        onClick={isDrillable ? handleDrillClick : undefined}
+      >
+        <div className="text-[10px] text-gray-500 font-medium mb-0.5">{label}</div>
+        <div className="flex items-baseline gap-0.5 mb-1">
+          <span className="text-[22px] font-extrabold text-gray-900 tracking-tight">{value}</span>
+          {unit && <span className="text-[11px] text-gray-400">{unit}</span>}
+          {suffix && <span className="text-[9px] text-gray-400">{suffix}</span>}
+        </div>
+        <div className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-semibold ${STATUS_BADGE_CLASS[status]}`}>
+          <span>{STATUS_ARROW[status]}</span>
+          <span>{median_label}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Chart mode
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <span className="text-[12px] text-gray-500 font-medium leading-snug">{label}</span>
+          {fullSublabel && (
+            <div className="text-[9px] text-gray-400 font-normal">{fullSublabel}</div>
+          )}
+        </div>
+        <div className="text-right">
+          <span
+            className={`text-sm font-extrabold text-gray-900 ${isDrillable ? 'border-b border-dotted border-blue-600 cursor-pointer' : 'cursor-default'}`}
+            onClick={isDrillable ? handleDrillClick : undefined}
+          >
+            {value}
+          </span>
+          {unit && <span className="text-[10px] text-gray-400 ml-0.5">{unit}</span>}
+          {suffix && <span className="text-[9px] text-gray-300 ml-0.5">{suffix}</span>}
+        </div>
+      </div>
+
+      {/* Track */}
+      <ProgressTrack
+        barLeftPct={bar_left_pct}
+        barWidthPct={bar_width_pct}
+        medianLeftPct={median_left_pct}
+        barColorClass={STATUS_BAR_CLASS[status]}
+      />
+
+      {/* Footer */}
+      <div className="flex justify-between mt-0.5 text-[9px] text-gray-400">
+        <span>{range_min}</span>
+        <span>{median_label}</span>
+        <span>{range_max}</span>
+      </div>
+    </div>
+  );
+};
+
+export default React.memo(BulletChart);

@@ -11,6 +11,15 @@
     },
     "uikit": {
       "label": "UIKit Elements"
+    },
+    "executive-view": {
+      "label": "Executive View"
+    },
+    "team-view": {
+      "label": "Team View"
+    },
+    "ic-dashboard": {
+      "label": "IC Dashboard"
     }
   }
 }
