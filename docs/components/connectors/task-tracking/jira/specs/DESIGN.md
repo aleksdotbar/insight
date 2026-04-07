@@ -392,14 +392,14 @@ In Phase 1, Atlassian Document Format (ADF) JSON from Jira Cloud REST API v3 com
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `instance_url` | str | Jira Cloud instance URL (e.g., `https://myorg.atlassian.net`) |
-| `email` | str | User email for API token authentication |
-| `api_token` | str (airbyte_secret) | Jira Cloud API token |
-| `tenant_id` | str | Insight tenant identifier — injected into every record |
-| `source_instance_id` | str | Instance discriminator (e.g., `jira-team-alpha`) |
-| `project_keys` | str | **Required.** Comma-separated project keys — Jira Cloud does not allow unbounded JQL queries |
-| `start_date` | str | Earliest date to sync issues from, `YYYY-MM-DD` (default `2020-01-01`) |
-| `page_size` | int | Page size for JQL search (default 50, max 100) |
+| `jira_instance_url` | str | Jira Cloud instance URL (e.g., `https://myorg.atlassian.net`) |
+| `jira_email` | str | User email for API token authentication |
+| `jira_api_token` | str (airbyte_secret) | Jira Cloud API token |
+| `insights_tenant_id` | str | Insight tenant identifier — injected into every record |
+| `jira_source_instance_id` | str | Instance discriminator (e.g., `jira-team-alpha`) |
+| `jira_project_keys` | str | **Required.** Comma-separated project keys — Jira Cloud does not allow unbounded JQL queries |
+| `jira_start_date` | str | Earliest date to sync issues from, `YYYY-MM-DD` (default `2020-01-01`) |
+| `jira_page_size` | int | Page size for JQL search (default 50, max 100) |
 
 ---
 
@@ -434,7 +434,7 @@ In Phase 1, Atlassian Document Format (ADF) JSON from Jira Cloud REST API v3 com
 |--------|-------|
 | Base URL | `{base_url}/rest/agile/1.0/` |
 | Endpoints | `/board` (list boards), `/board/{id}/sprint` (list sprints) |
-| Pagination | Offset-based; `isLast: true` on final page |
+| Pagination | Offset-based (`startAt`) |
 
 #### Identity Manager Service
 
@@ -556,6 +556,8 @@ All Bronze table schemas are defined in [`jira.md`](../jira.md). The schemas are
 | `jira_sprints` | `(tenant_id, source_instance_id, sprint_id)` | Full refresh each run. `board_name` and `project_key` removed from Bronze (resolve via JOIN with boards/projects in Silver/dbt) |
 | `jira_user` | `(tenant_id, source_instance_id, account_id)` | Full refresh each run |
 
+All streams use `unique_key` as the primary key in the connector manifest. The `unique_key` value follows the pattern `{tenant_id}-{source_instance_id}-{natural_key}`, where `natural_key` is the stream-specific identifier (e.g., `id` for projects, `accountId` for users, `key` for issues). The composite `(tenant_id, source_instance_id, natural_key)` columns remain as the logical natural key for reference and JOINs.
+
 All tables use `ReplacingMergeTree(_version)` with `_version = toUnixTimestamp64Milli(now64())` for deduplication.
 
 > **Note**: `jira_issue_ext` and `jira_issue_links` Bronze tables from the original specification ([`jira.md`](../jira.md)) are not populated by the connector in Phase 1. All custom fields and issue links are stored in `custom_fields_json` on `jira_issue` (since `fields: "*all"` returns the full `fields` object including `issuelinks`) and denormalized to separate tables in Silver/dbt. Sync monitoring is handled by the Airbyte platform; `jira_collection_runs` is not implemented at the connector level.
@@ -596,8 +598,8 @@ The connector overlaps the cursor window by 1 hour (`lookback_window: PT1H`) to 
 | Worklogs | `/rest/api/3/issue/{key}/worklog` | Offset (max 100/page) | Substream per issue via `SubstreamPartitionRouter` |
 | Comments | `/rest/api/3/issue/{key}/comment` | Offset (max 50/page) | Per-issue (N+1) |
 | Projects | `/rest/api/3/project/search` | Offset | Full refresh |
-| Boards | `/rest/agile/1.0/board` | Offset (`isLast`) | Full refresh |
-| Sprints | `/rest/agile/1.0/board/{id}/sprint` | Offset (`isLast`) | Full refresh per board |
+| Boards | `/rest/agile/1.0/board` | Offset (`startAt`) | Full refresh |
+| Sprints | `/rest/agile/1.0/board/{id}/sprint` | Offset (`startAt`) | Full refresh per board |
 | Users | `/rest/api/3/users/search` | Offset (max 1000/page) | Full refresh |
 | Fields | `/rest/api/3/field` | None (single response) | Full refresh; used for custom field metadata |
 
@@ -723,7 +725,7 @@ Jira JQL only accepts dates in `yyyy-MM-dd` or `yyyy-MM-dd HH:mm` format. The Ji
 3. **`datetime_format`**: formats cursor for JQL as `%Y-%m-%d %H:%M` — compatible with Jira JQL parser (minute precision)
 4. **`cursor_granularity`**: `PT1M` (one minute) — matches the JQL output format
 5. **`lookback_window`**: `PT1H` — overlaps by one hour to catch edge cases; deduplication handled by `ReplacingMergeTree(_version)` at storage level
-6. **`start_datetime`**: configurable via `start_date` config field (default: `2020-01-01`)
+6. **`start_datetime`**: configurable via `jira_start_date` config field (default: `2020-01-01`)
 
 ---
 

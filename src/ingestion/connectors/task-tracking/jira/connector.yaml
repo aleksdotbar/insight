@@ -10,12 +10,12 @@ check:
 definitions:
   auth:
     type: BasicHttpAuthenticator
-    username: "{{ config['email'] }}"
-    password: "{{ config['api_token'] }}"
+    username: "{{ config['jira_email'] }}"
+    password: "{{ config['jira_api_token'] }}"
 
   base_requester:
     type: HttpRequester
-    url_base: "{{ config['instance_url'] }}"
+    url_base: "{{ config['jira_instance_url'] }}"
     http_method: GET
     authenticator:
       $ref: "#/definitions/auth"
@@ -36,9 +36,9 @@ definitions:
     type: AddFields
     fields:
       - path: [tenant_id]
-        value: "{{ config['tenant_id'] }}"
+        value: "{{ config['insights_tenant_id'] }}"
       - path: [source_instance_id]
-        value: "{{ config['source_instance_id'] }}"
+        value: "{{ config['jira_source_instance_id'] }}"
 
   paginator:
     type: DefaultPaginator
@@ -103,6 +103,7 @@ definitions:
     type: object
     $schema: http://json-schema.org/schema#
     properties:
+      unique_key: {}
       tenant_id: {}
       source_instance_id: {}
       project_id: {}
@@ -119,6 +120,7 @@ definitions:
     type: object
     $schema: http://json-schema.org/schema#
     properties:
+      unique_key: {}
       tenant_id: {}
       source_instance_id: {}
       account_id: {}
@@ -132,6 +134,7 @@ definitions:
     type: object
     $schema: http://json-schema.org/schema#
     properties:
+      unique_key: {}
       tenant_id: {}
       source_instance_id: {}
       jira_id: {}
@@ -150,6 +153,7 @@ definitions:
     type: object
     $schema: http://json-schema.org/schema#
     properties:
+      unique_key: {}
       tenant_id: {}
       source_instance_id: {}
       id_readable: {}
@@ -163,6 +167,7 @@ definitions:
     type: object
     $schema: http://json-schema.org/schema#
     properties:
+      unique_key: {}
       tenant_id: {}
       source_instance_id: {}
       comment_id: {}
@@ -177,6 +182,7 @@ definitions:
     type: object
     $schema: http://json-schema.org/schema#
     properties:
+      unique_key: {}
       tenant_id: {}
       source_instance_id: {}
       worklog_id: {}
@@ -192,6 +198,7 @@ definitions:
     type: object
     $schema: http://json-schema.org/schema#
     properties:
+      unique_key: {}
       tenant_id: {}
       source_instance_id: {}
       sprint_id: {}
@@ -243,7 +250,7 @@ streams:
   - type: DeclarativeStream
     name: jira_projects
     primary_key:
-      - project_id
+      - unique_key
     retriever:
       type: SimpleRetriever
       record_selector:
@@ -261,6 +268,8 @@ streams:
       - $ref: "#/definitions/add_fields"
       - type: AddFields
         fields:
+          - path: [unique_key]
+            value: "{{ config['insights_tenant_id'] }}-{{ config['jira_source_instance_id'] }}-{{ record['id'] }}"
           - path: [project_id]
             value: "{{ record['id'] }}"
           - path: [project_key]
@@ -284,7 +293,7 @@ streams:
   - type: DeclarativeStream
     name: jira_user
     primary_key:
-      - account_id
+      - unique_key
     retriever:
       type: SimpleRetriever
       record_selector:
@@ -312,6 +321,8 @@ streams:
       - $ref: "#/definitions/add_fields"
       - type: AddFields
         fields:
+          - path: [unique_key]
+            value: "{{ config['insights_tenant_id'] }}-{{ config['jira_source_instance_id'] }}-{{ record['accountId'] }}"
           - path: [account_id]
             value: "{{ record['accountId'] }}"
           - path: [email]
@@ -331,7 +342,7 @@ streams:
   - type: DeclarativeStream
     name: jira_issue
     primary_key:
-      - id_readable
+      - unique_key
     retriever:
       type: SimpleRetriever
       record_selector:
@@ -347,8 +358,8 @@ streams:
         path: /rest/api/3/search/jql
         request_parameters:
           jql: >-
-            project IN ({{ config['project_keys'] }}) AND updated >= "{{ stream_slice.start_time }}" AND updated <= "{{ stream_slice.end_time }}" ORDER BY updated ASC
-          maxResults: "{{ config.get('page_size', 50) }}"
+            project IN ({{ config['jira_project_keys'] }}) AND updated >= "{{ stream_slice.start_time }}" AND updated <= "{{ stream_slice.end_time }}" ORDER BY updated ASC
+          maxResults: "{{ config.get('jira_page_size', 50) }}"
           expand: names
           fields: "*all"
     incremental_sync:
@@ -362,7 +373,7 @@ streams:
       cursor_granularity: PT1M
       start_datetime:
         type: MinMaxDatetime
-        datetime: "{{ config.get('start_date', '2020-01-01') }}"
+        datetime: "{{ config.get('jira_start_date', '2020-01-01') }}"
         datetime_format: "%Y-%m-%d"
       end_datetime:
         type: MinMaxDatetime
@@ -374,6 +385,8 @@ streams:
       - $ref: "#/definitions/add_fields"
       - type: AddFields
         fields:
+          - path: [unique_key]
+            value: "{{ config['insights_tenant_id'] }}-{{ config['jira_source_instance_id'] }}-{{ record['key'] }}"
           - path: [jira_id]
             value: "{{ record['id'] }}"
           - path: [id_readable]
@@ -403,7 +416,7 @@ streams:
   - type: DeclarativeStream
     name: jira_issue_history
     primary_key:
-      - changelog_id
+      - unique_key
     retriever:
       type: SimpleRetriever
       record_selector:
@@ -430,6 +443,8 @@ streams:
       - $ref: "#/definitions/add_fields"
       - type: AddFields
         fields:
+          - path: [unique_key]
+            value: "{{ config['insights_tenant_id'] }}-{{ config['jira_source_instance_id'] }}-{{ record['id'] }}"
           - path: [id_readable]
             value: "{{ stream_partition.id_readable }}"
           - path: [author_account_id]
@@ -449,7 +464,7 @@ streams:
   - type: DeclarativeStream
     name: jira_comments
     primary_key:
-      - comment_id
+      - unique_key
     retriever:
       type: SimpleRetriever
       record_selector:
@@ -476,6 +491,8 @@ streams:
       - $ref: "#/definitions/add_fields"
       - type: AddFields
         fields:
+          - path: [unique_key]
+            value: "{{ config['insights_tenant_id'] }}-{{ config['jira_source_instance_id'] }}-{{ record['id'] }}"
           - path: [comment_id]
             value: "{{ record['id'] }}"
           - path: [id_readable]
@@ -497,7 +514,7 @@ streams:
   - type: DeclarativeStream
     name: jira_worklogs
     primary_key:
-      - worklog_id
+      - unique_key
     retriever:
       type: SimpleRetriever
       record_selector:
@@ -524,6 +541,8 @@ streams:
       - $ref: "#/definitions/add_fields"
       - type: AddFields
         fields:
+          - path: [unique_key]
+            value: "{{ config['insights_tenant_id'] }}-{{ config['jira_source_instance_id'] }}-{{ record['id'] }}"
           - path: [worklog_id]
             value: "{{ record['id'] }}"
           - path: [id_readable]
@@ -547,7 +566,7 @@ streams:
   - type: DeclarativeStream
     name: jira_sprints
     primary_key:
-      - sprint_id
+      - unique_key
     retriever:
       type: SimpleRetriever
       record_selector:
@@ -574,6 +593,8 @@ streams:
       - $ref: "#/definitions/add_fields"
       - type: AddFields
         fields:
+          - path: [unique_key]
+            value: "{{ config['insights_tenant_id'] }}-{{ config['jira_source_instance_id'] }}-{{ record['id'] }}"
           - path: [sprint_id]
             value: "{{ record['id'] }}"
           - path: [board_id]
@@ -601,50 +622,50 @@ spec:
     type: object
     $schema: http://json-schema.org/draft-07/schema#
     required:
-      - instance_url
-      - email
-      - api_token
-      - tenant_id
-      - source_instance_id
-      - project_keys
+      - jira_instance_url
+      - jira_email
+      - jira_api_token
+      - insights_tenant_id
+      - jira_source_instance_id
+      - jira_project_keys
     properties:
-      instance_url:
+      jira_instance_url:
         type: string
         title: Jira Instance URL
         description: "Jira Cloud instance URL (e.g., https://myorg.atlassian.net)"
         order: 0
-      email:
+      jira_email:
         type: string
-        title: Email
+        title: Jira Email
         description: "Email for Jira API token authentication"
         order: 1
-      api_token:
+      jira_api_token:
         type: string
-        title: API Token
+        title: Jira API Token
         airbyte_secret: true
         order: 2
-      tenant_id:
+      insights_tenant_id:
         type: string
-        title: Tenant ID
-        description: "Insight tenant isolation identifier"
+        title: Insights Tenant ID
+        description: "Tenant isolation identifier for the ingestion layer"
         order: 3
-      source_instance_id:
+      jira_source_instance_id:
         type: string
         title: Source Instance ID
         description: "Instance discriminator (e.g., jira-team-alpha)"
         order: 4
-      project_keys:
+      jira_project_keys:
         type: string
         title: Project Keys
         description: "Comma-separated project keys to sync (e.g., TC,TNG). Required — Jira Cloud does not allow unbounded queries."
         order: 5
-      start_date:
+      jira_start_date:
         type: string
         title: Start Date
         description: "Earliest date to sync issues from (YYYY-MM-DD). Default: 2020-01-01"
         default: "2020-01-01"
         order: 6
-      page_size:
+      jira_page_size:
         type: integer
         title: Page Size
         description: "Page size for JQL search (default 50, max 100)"
