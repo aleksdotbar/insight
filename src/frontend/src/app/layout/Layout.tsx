@@ -6,38 +6,89 @@
  * Uses @hai3/uikit for UI components.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Sheet, SheetContent } from '@hai3/uikit';
+import { Icon } from '@iconify/react';
 import { fetchCurrentUser } from '@/app/actions/bootstrapActions';
-import { Header } from './Header';
 import { Footer } from './Footer';
 import { Menu } from './Menu';
 import { Sidebar } from './Sidebar';
 import { Screen } from './Screen';
 import { Popup } from './Popup';
 import { Overlay } from './Overlay';
+import { RoleSwitcher } from '@/screensets/insight/components/RoleSwitcher';
+import { HAI3LogoIcon } from '@/app/icons/HAI3LogoIcon';
+import { HAI3LogoTextIcon } from '@/app/icons/HAI3LogoTextIcon';
 
 export interface LayoutProps {
   children?: React.ReactNode;
 }
 
+const RoleSwitcherSlot = (
+  <div className="mt-auto border-t border-gray-200 pt-1 pb-2">
+    <RoleSwitcher />
+  </div>
+);
+
+const MobileRoleSwitcherSlot = (
+  <div className="mt-auto border-t border-white/10 pt-1 pb-2">
+    <RoleSwitcher />
+  </div>
+);
+
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   useEffect(() => {
     // Bootstrap application on mount - fetch current user
     fetchCurrentUser();
   }, []);
 
+  // Close mobile menu when viewport grows past mobile breakpoint
+  useEffect(() => {
+    const handler = () => {
+      if (window.innerWidth >= 768) setMobileMenuOpen(false);
+    };
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
-      {/* Top row: Menu + Header + Content + Sidebar */}
+      {/* Mobile top bar — visible only below md */}
+      <div className="md:hidden flex items-center gap-3 px-4 h-12 bg-sidebar border-b border-sidebar-border flex-shrink-0">
+        <button
+          type="button"
+          aria-label="Open navigation"
+          onClick={() => setMobileMenuOpen(true)}
+          className="text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors p-1 -ml-1"
+        >
+          <Icon icon="lucide:menu" className="w-5 h-5" />
+        </button>
+        <HAI3LogoIcon className="w-6 h-6 text-sidebar-foreground" />
+        <HAI3LogoTextIcon className="h-4 text-sidebar-foreground" />
+      </div>
+
+      {/* Mobile nav sheet */}
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="p-0 w-64 flex flex-col bg-sidebar border-r border-sidebar-border [&>button]:text-sidebar-foreground/40 [&>button]:hover:text-sidebar-foreground">
+          <Menu onNavigate={() => setMobileMenuOpen(false)}>
+            {MobileRoleSwitcherSlot}
+          </Menu>
+        </SheetContent>
+      </Sheet>
+
+      {/* Desktop row: Menu + Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Menu - full height on left */}
-        <Menu />
+        {/* Left nav — hidden on mobile, shown on md+ */}
+        <div className="hidden md:flex md:h-full">
+          <Menu>
+            {RoleSwitcherSlot}
+          </Menu>
+        </div>
 
-        {/* Right side: Header + Content */}
+        {/* Right side: Content */}
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Header */}
-          <Header />
-
           {/* Main content area */}
           <div className="flex flex-1 overflow-hidden">
             {/* Main content */}

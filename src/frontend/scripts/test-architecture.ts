@@ -73,11 +73,19 @@ interface ArchCheck {
  * These run in all HAI3 projects (standalone and monorepo)
  */
 function getStandaloneChecks(): ArchCheck[] {
+  // dependency-cruiser supports ^20.12||^22||>=24; skip on unsupported versions (21, 23)
+  const nodeMajor = parseInt(process.version.slice(1).split('.')[0]);
+  const depsCheckSupported = nodeMajor !== 21 && nodeMajor !== 23;
+
+  const depsCheck: ArchCheck = depsCheckSupported
+    ? { command: 'npm run arch:deps', description: 'Dependency rules' }
+    : { command: `node -e "console.log('⚠ Dependency rules skipped: Node ${process.version} not supported by dependency-cruiser (needs ^20.12||^22||>=24)')"`, description: 'Dependency rules (skipped — Node version)' };
+
   return [
     { command: 'npm run generate:colors', description: 'Generate theme colors' },
     { command: 'npm run lint -- --max-warnings 0', description: 'ESLint rules' },
     { command: 'npm run type-check', description: 'TypeScript type check' },
-    { command: 'npm run arch:deps', description: 'Dependency rules' },
+    depsCheck,
   ];
 }
 

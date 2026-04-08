@@ -1,0 +1,31 @@
+{
+  "kpi_cards": {
+    "teams_at_risk": "Teams at Risk",
+    "avg_build_success": "Avg Build Success",
+    "avg_ai_adoption": "Avg AI Adoption",
+    "avg_focus_time": "Avg Focus Time"
+  },
+  "charts": {
+    "team_health_title": "Team Health Overview",
+    "key_metrics_title": "Key Metrics by Team"
+  },
+  "table": {
+    "title": "Teams Overview",
+    "col_team": "Team",
+    "col_headcount": "Headcount",
+    "col_tasks": "Tasks Closed",
+    "col_bugs": "Bugs Fixed",
+    "col_build": "Build %",
+    "col_focus": "Focus %",
+    "col_ai_adoption": "AI Adoption",
+    "col_ai_loc": "AI LOC %",
+    "col_pr_cycle": "PR Cycle",
+    "col_status": "Status"
+  },
+  "status": {
+    "good": "good",
+    "warn": "warn",
+    "bad": "bad"
+  },
+  "loading": "Loading..."
+}

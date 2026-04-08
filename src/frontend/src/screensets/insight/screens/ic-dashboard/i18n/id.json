@@ -1,0 +1,28 @@
+{
+  "person": {
+    "not_found": "Person not found",
+    "not_found_sub": "The requested profile does not exist."
+  },
+  "time_off": {
+    "days_off": "days off",
+    "this_month": "this month",
+    "working_days": "metrics reflect active working days"
+  },
+  "sections": {
+    "task_delivery": "Task Delivery",
+    "git_output": "Git Output",
+    "code_quality": "Code Quality",
+    "loc_breakdown": "LOC Breakdown",
+    "loc_subtitle": "Bitbucket · lines added per period · AI-assisted vs manual vs spec/config",
+    "delivery_trends": "Delivery Trends",
+    "delivery_subtitle": "Jira + Bitbucket · activity counts · Commits, PRs and Tasks are independent signals — not directly comparable",
+    "ai_tools": "AI Dev Tools & AI Chat",
+    "collaboration": "Collaboration"
+  },
+  "drill": {
+    "open_link": "Open all in",
+    "records": "records"
+  },
+  "privacy_footer": "This is your personal dashboard. Your manager sees a summary — not the full detail shown here.",
+  "loading": "Loading..."
+}

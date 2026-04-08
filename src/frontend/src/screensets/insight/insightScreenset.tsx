@@ -12,9 +12,19 @@ import {
   screensetRegistry,
   i18nRegistry,
 } from '@hai3/react';
-import { INSIGHT_SCREENSET_ID, DOCUMENTATION_SCREEN_ID, DASHBOARD_SCREEN_ID, SPEED_SCREEN_ID, UIKIT_SCREEN_ID } from './ids';
+import { INSIGHT_SCREENSET_ID, DOCUMENTATION_SCREEN_ID, DASHBOARD_SCREEN_ID, SPEED_SCREEN_ID, UIKIT_SCREEN_ID, EXECUTIVE_VIEW_SCREEN_ID, TEAM_VIEW_SCREEN_ID, IC_DASHBOARD_SCREEN_ID, MY_DASHBOARD_SCREEN_ID } from './ids';
 import insightSlice from './slices/insightSlice';
 import { initializeInsightEffects } from './effects/insightEffects';
+import periodSlice from './slices/periodSlice';
+import { initializePeriodEffects } from './effects/periodEffects';
+import executiveViewSlice from './slices/executiveViewSlice';
+import { initializeExecutiveViewEffects } from './effects/executiveViewEffects';
+import teamViewSlice from './slices/teamViewSlice';
+import { initializeTeamViewEffects } from './effects/teamViewEffects';
+import icDashboardSlice from './slices/icDashboardSlice';
+import { initializeIcDashboardEffects } from './effects/icDashboardEffects';
+import currentUserSlice from './slices/currentUserSlice';
+import { initializeCurrentUserEffects } from './effects/currentUserEffects';
 
 // Import for side effect - register API service
 import './api/insightApiService';
@@ -76,6 +86,21 @@ i18nRegistry.registerLoader(
 registerSlice(insightSlice, (dispatch) => {
   initializeInsightEffects(dispatch);
 });
+registerSlice(periodSlice, (dispatch) => {
+  initializePeriodEffects(dispatch);
+});
+registerSlice(executiveViewSlice, (dispatch) => {
+  initializeExecutiveViewEffects(dispatch);
+});
+registerSlice(teamViewSlice, (dispatch) => {
+  initializeTeamViewEffects(dispatch);
+});
+registerSlice(icDashboardSlice, (dispatch) => {
+  initializeIcDashboardEffects(dispatch);
+});
+registerSlice(currentUserSlice, (dispatch) => {
+  initializeCurrentUserEffects(dispatch);
+});
 
 /**
  * insight Screenset Configuration
@@ -84,9 +109,41 @@ registerSlice(insightSlice, (dispatch) => {
 export const insightScreenset: ScreensetConfig = {
   id: INSIGHT_SCREENSET_ID,
   name: 'insight',
-  category: ScreensetCategory.Drafts,
-  defaultScreen: DOCUMENTATION_SCREEN_ID,
+  category: ScreensetCategory.Production,
+  defaultScreen: EXECUTIVE_VIEW_SCREEN_ID,
   menu: [
+    {
+      menuItem: {
+        id: EXECUTIVE_VIEW_SCREEN_ID,
+        label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.executive-view.label`,
+        icon: 'lucide:bar-chart-2',
+      },
+      screen: () => import('./screens/executive-view/ExecutiveViewScreen'),
+    },
+    {
+      menuItem: {
+        id: TEAM_VIEW_SCREEN_ID,
+        label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.team-view.label`,
+        icon: 'lucide:users',
+      },
+      screen: () => import('./screens/team-view/TeamViewScreen'),
+    },
+    {
+      menuItem: {
+        id: IC_DASHBOARD_SCREEN_ID,
+        label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.ic-dashboard.label`,
+        icon: 'lucide:user',
+      },
+      screen: () => import('./screens/ic-dashboard/IcDashboardScreen'),
+    },
+    {
+      menuItem: {
+        id: MY_DASHBOARD_SCREEN_ID,
+        label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.my-dashboard.label`,
+        icon: 'lucide:user-circle',
+      },
+      screen: () => import('./screens/ic-dashboard/IcDashboardScreen'),
+    },
     {
       menuItem: {
         id: DOCUMENTATION_SCREEN_ID,

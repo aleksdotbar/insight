@@ -1,0 +1,38 @@
+{
+  "hero": {
+    "at_risk": "At Risk",
+    "team_dev_time": "Task Dev Time",
+    "focus_gte_60": "Focus ≥ 60%",
+    "not_using_ai": "Not Using AI Tools"
+  },
+  "attention": {
+    "title": "Attention Needed",
+    "no_items": "No attention items",
+    "open_ic": "→ Open IC dashboard"
+  },
+  "table": {
+    "title": "Team Members",
+    "click_hint": "Click member to open IC dashboard",
+    "col_name": "Name",
+    "col_tasks": "Tasks",
+    "col_bugs": "Bugs Fixed",
+    "col_dev_time": "Dev Time",
+    "col_prs": "PRs",
+    "col_build": "Build %",
+    "col_focus": "Focus %",
+    "col_ai_tools": "AI Tools",
+    "col_ai_loc": "AI LOC %"
+  },
+  "sections": {
+    "task_delivery": "Task Delivery",
+    "code_quality": "Code & Quality",
+    "estimation": "Estimation",
+    "ai_adoption": "AI Adoption",
+    "collaboration": "Collaboration"
+  },
+  "legend": {
+    "company_median": "Company median",
+    "team_bar": "Team"
+  },
+  "loading": "Loading..."
+}

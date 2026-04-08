@@ -6,25 +6,13 @@
  */
 
 import React from 'react';
-import { useAppSelector, type FooterState } from '@hai3/react';
 
 export interface FooterProps {
   children?: React.ReactNode;
 }
 
-export const Footer: React.FC<FooterProps> = ({ children }) => {
-  const footerState = useAppSelector((state) => state['layout/footer'] as FooterState | undefined);
-  const visible = footerState?.visible ?? true;
-
-  if (!visible) {
-    return null;
-  }
-
-  return (
-    <footer className="h-10 flex items-center justify-between px-4 border-t border-border bg-background">
-      {children}
-    </footer>
-  );
+export const Footer: React.FC<FooterProps> = () => {
+  return null;
 };
 
 Footer.displayName = 'Footer';

@@ -1,0 +1,56 @@
+/**
+ * PersonHeader — displays person identity (avatar, name, role/seniority).
+ * Uses @hai3/uikit Avatar with initials fallback.
+ * No state imports.
+ */
+
+import React from 'react';
+import { Avatar, AvatarFallback, Card, CardContent } from '@hai3/uikit';
+import type { PersonData } from '../../../types';
+
+export interface PersonHeaderProps {
+  person: PersonData | null;
+  /** When true, renders without outer card wrapper (for embedding in a header row) */
+  inline?: boolean;
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0].toUpperCase())
+    .join('');
+}
+
+const PersonHeader: React.FC<PersonHeaderProps> = ({ person, inline = false }) => {
+  if (!person) return null;
+
+  const content = (
+    <div className="flex items-center gap-3">
+      <Avatar className="w-8 h-8 flex-shrink-0">
+        <AvatarFallback className="bg-blue-50 text-blue-600 text-[13px] font-extrabold">
+          {getInitials(person.name)}
+        </AvatarFallback>
+      </Avatar>
+      <div>
+        <div className="text-[15px] font-bold text-gray-900 leading-tight">{person.name}</div>
+        <div className="text-[10px] text-gray-400">
+          {person.role} · {person.seniority}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (inline) return content;
+
+  return (
+    <Card>
+      <CardContent className="p-3">
+        {content}
+      </CardContent>
+    </Card>
+  );
+};
+
+export default React.memo(PersonHeader);

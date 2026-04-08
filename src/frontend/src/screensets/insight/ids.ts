@@ -20,3 +20,7 @@ export const DOCUMENTATION_SCREEN_ID = 'documentation';
 export const DASHBOARD_SCREEN_ID = 'dashboard';
 export const SPEED_SCREEN_ID = 'speed';
 export const UIKIT_SCREEN_ID = 'uikit';
+export const EXECUTIVE_VIEW_SCREEN_ID = 'executive-view';
+export const TEAM_VIEW_SCREEN_ID = 'team-view';
+export const IC_DASHBOARD_SCREEN_ID = 'ic-dashboard';
+export const MY_DASHBOARD_SCREEN_ID = 'my-dashboard';

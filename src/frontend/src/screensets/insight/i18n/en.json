@@ -1,5 +1,17 @@
 {
   "menu_items": {
+    "executive-view": {
+      "label": "Executive View"
+    },
+    "team-view": {
+      "label": "Team View"
+    },
+    "ic-dashboard": {
+      "label": "IC Dashboard"
+    },
+    "my-dashboard": {
+      "label": "My Dashboard"
+    },
     "documentation": {
       "label": "Documentation"
     },
