@@ -9,17 +9,17 @@ import { Badge } from '@hai3/uikit';
 import { ProgressTrack } from '../base/ProgressTrack';
 import type { BulletMetric } from '../../types';
 
-// Status class maps — no hex literals
+// Status class maps
 const STATUS_BAR_CLASS: Record<'good' | 'warn' | 'bad', string> = {
-  good: 'bg-green-600',
-  warn: 'bg-amber-600',
-  bad: 'bg-red-600',
+  good: 'bg-insight-green',
+  warn: 'bg-insight-amber',
+  bad: 'bg-insight-red',
 };
 
 const STATUS_BADGE_CLASS: Record<'good' | 'warn' | 'bad', string> = {
-  good: 'bg-green-100 text-green-600',
-  warn: 'bg-amber-100 text-amber-600',
-  bad: 'bg-red-100 text-red-600',
+  good: 'bg-insight-green-bg text-insight-green',
+  warn: 'bg-insight-amber-bg text-insight-amber',
+  bad: 'bg-insight-red-bg text-insight-red',
 };
 
 const STATUS_ARROW: Record<'good' | 'warn' | 'bad', string> = {
