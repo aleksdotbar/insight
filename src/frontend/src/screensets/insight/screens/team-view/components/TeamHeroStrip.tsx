@@ -12,9 +12,9 @@ export interface TeamHeroStripProps {
 }
 
 const CHIP_CLASS: Record<'good' | 'warn' | 'bad', string> = {
-  good: 'bg-green-100 text-green-600',
-  warn: 'bg-amber-100 text-amber-600',
-  bad: 'bg-red-100 text-red-600',
+  good: 'bg-insight-green-bg text-insight-green',
+  warn: 'bg-insight-amber-bg text-insight-amber',
+  bad: 'bg-insight-red-bg text-insight-red',
 };
 
 // Border classes for each card position on mobile (2-col) and desktop (4-col)

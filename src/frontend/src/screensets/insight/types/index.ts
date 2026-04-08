@@ -61,6 +61,15 @@ export interface PeriodState {
   scale: number;
 }
 
+// Executive View Config
+export interface ExecColumnThreshold {
+  metric_key: string;
+  threshold: number;
+}
+export interface ExecViewConfig {
+  column_thresholds: ExecColumnThreshold[];
+}
+
 // Executive View
 export interface ExecTeamRow {
   team_id: string;
@@ -85,6 +94,7 @@ export interface OrgKpis {
 export interface ExecViewData {
   teams: ExecTeamRow[];
   orgKpis: OrgKpis;
+  config: ExecViewConfig;
 }
 
 // Team View
@@ -111,6 +121,8 @@ export interface TeamMember {
   focus_time_pct: number;
   ai_tools: string[];
   ai_loc_share_pct: number;
+  /** Human-readable trend label from the backend, e.g. "3 months declining" */
+  trend_label?: string;
 }
 export interface BulletMetric {
   period: PeriodValue;
@@ -135,11 +147,28 @@ export interface BulletSection {
   title: string;
   metrics: BulletMetric[];
 }
+export interface AlertThreshold {
+  metric_key: string;
+  trigger: number;
+  bad: number;
+  reason: string;
+}
+export interface ColumnThreshold {
+  metric_key: string;
+  good: number;
+  warn: number;
+  higher_is_better: boolean;
+}
+export interface TeamViewConfig {
+  alert_thresholds: AlertThreshold[];
+  column_thresholds: ColumnThreshold[];
+}
 export interface TeamViewData {
   teamName: string;
   teamKpis: TeamKpi[];
   members: TeamMember[];
   bulletSections: BulletSection[];
+  config: TeamViewConfig;
 }
 
 // IC Dashboard

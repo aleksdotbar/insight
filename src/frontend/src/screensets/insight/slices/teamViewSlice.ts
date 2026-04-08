@@ -7,7 +7,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { TeamMember, TeamKpi, BulletSection, TeamViewData } from '../types';
+import type { TeamMember, TeamKpi, BulletSection, TeamViewData, TeamViewConfig } from '../types';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/teamView` as const;
 
@@ -19,6 +19,7 @@ export interface TeamViewState {
   members: TeamMember[];
   teamKpis: TeamKpi[];
   bulletSections: BulletSection[];
+  config: TeamViewConfig | null;
   loading: boolean;
   error: string | null;
 }
@@ -28,6 +29,7 @@ const initialState: TeamViewState = {
   members: [],
   teamKpis: [],
   bulletSections: [],
+  config: null,
   loading: false,
   error: null,
 };
@@ -44,6 +46,7 @@ export const teamViewSlice = createSlice({
       state.members = action.payload.members;
       state.teamKpis = action.payload.teamKpis;
       state.bulletSections = action.payload.bulletSections;
+      state.config = action.payload.config;
       state.loading = false;
     },
     setError: (state, action: PayloadAction<string>) => {
@@ -86,4 +89,8 @@ export const selectTeamViewLoading = (state: RootState): boolean => {
 
 export const selectTeamName = (state: RootState): string => {
   return state[SLICE_KEY]?.teamName ?? '';
+};
+
+export const selectTeamViewConfig = (state: RootState): TeamViewConfig | null => {
+  return state[SLICE_KEY]?.config ?? null;
 };

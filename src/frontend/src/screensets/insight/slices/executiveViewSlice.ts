@@ -7,7 +7,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { ExecTeamRow, OrgKpis, ExecViewData } from '../types';
+import type { ExecTeamRow, OrgKpis, ExecViewData, ExecViewConfig } from '../types';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/executiveView` as const;
 
@@ -17,6 +17,7 @@ const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/executiveView` as const;
 export interface ExecutiveViewState {
   teams: ExecTeamRow[];
   orgKpis: OrgKpis | null;
+  config: ExecViewConfig | null;
   loading: boolean;
   error: string | null;
 }
@@ -24,6 +25,7 @@ export interface ExecutiveViewState {
 const initialState: ExecutiveViewState = {
   teams: [],
   orgKpis: null,
+  config: null,
   loading: false,
   error: null,
 };
@@ -38,6 +40,7 @@ export const executiveViewSlice = createSlice({
     setExecutiveViewData: (state, action: PayloadAction<ExecViewData>) => {
       state.teams = action.payload.teams;
       state.orgKpis = action.payload.orgKpis;
+      state.config = action.payload.config;
       state.loading = false;
     },
     setError: (state, action: PayloadAction<string>) => {
@@ -76,4 +79,8 @@ export const selectExecLoading = (state: RootState): boolean => {
 
 export const selectExecError = (state: RootState): string | null => {
   return state[SLICE_KEY]?.error ?? null;
+};
+
+export const selectExecViewConfig = (state: RootState): ExecViewConfig | null => {
+  return state[SLICE_KEY]?.config ?? null;
 };

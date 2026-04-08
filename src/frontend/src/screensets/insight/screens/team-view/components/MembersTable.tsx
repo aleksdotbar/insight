@@ -7,36 +7,29 @@ import React from 'react';
 import { Button, Card, CardContent, ScrollArea, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge, Skeleton } from '@hai3/uikit';
 import { DynamicWidthBar } from '../../../uikit/base/DynamicWidthBar';
 import MetricInfo from '../../../uikit/base/MetricInfo';
-import type { TeamMember } from '../../../types';
+import type { TeamMember, ColumnThreshold } from '../../../types';
 
 export interface MembersTableProps {
   members: TeamMember[];
+  columnThresholds: ColumnThreshold[];
   loading: boolean;
   onRowClick: (personId: string) => void;
   onDetailsDrill?: () => void;
   onCellDrill?: (personId: string, drillId: string) => void;
 }
 
-// higher = better
-const hi = (v: number, good: number, warn: number): string => {
-  if (v >= good) return 'text-green-600';
-  if (v >= warn) return 'text-amber-600';
-  return 'text-red-600';
-};
+function colClass(v: number, t: ColumnThreshold, type: 'text' | 'bg'): string {
+  const prefix = type === 'text' ? 'text' : 'bg';
+  const good = t.higher_is_better ? v >= t.good : v <= t.good;
+  const warn = t.higher_is_better ? v >= t.warn : v <= t.warn;
+  if (good) return `${prefix}-insight-green`;
+  if (warn) return `${prefix}-insight-amber`;
+  return `${prefix}-insight-red`;
+}
 
-// lower = better
-const lo = (v: number, good: number, warn: number): string => {
-  if (v <= good) return 'text-green-600';
-  if (v <= warn) return 'text-amber-600';
-  return 'text-red-600';
-};
-
-// Bar color: higher = better
-const hiBar = (v: number, good: number, warn: number): string => {
-  if (v >= good) return 'bg-green-600';
-  if (v >= warn) return 'bg-amber-600';
-  return 'bg-red-600';
-};
+function getThreshold(thresholds: ColumnThreshold[], key: string): ColumnThreshold {
+  return thresholds.find((t) => t.metric_key === key) ?? { metric_key: key, good: 100, warn: 50, higher_is_better: true };
+}
 
 const DrillCell: React.FC<{
   children: React.ReactNode;
@@ -52,32 +45,38 @@ const DrillCell: React.FC<{
   </button>
 );
 
-const FocusBar: React.FC<{ pct: number }> = ({ pct }) => (
+const FocusBar: React.FC<{ pct: number; threshold: ColumnThreshold }> = ({ pct, threshold }) => (
   <div className="flex items-center gap-1.5">
     <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
-      <DynamicWidthBar pct={pct} colorClass={hiBar(pct, 60, 50)} />
+      <DynamicWidthBar pct={pct} colorClass={colClass(pct, threshold, 'bg')} />
     </div>
-    <span className={`text-[12px] font-bold ${hi(pct, 60, 50)}`}>{pct}%</span>
+    <span className={`text-[12px] font-bold ${colClass(pct, threshold, 'text')}`}>{pct}%</span>
   </div>
 );
 
-const COL_HEADERS: { label: string; sub: string; info?: string }[] = [
-  { label: 'Name',          sub: '' },
-  { label: 'Tasks',         sub: 'closed · Jira' },
-  { label: 'Bugs Fixed',    sub: 'bug-type tasks · Jira' },
-  { label: 'Dev Time',      sub: 'time in dev per task · lower = better',
-    info: 'Average time a task spends in "In Progress" state. Lower means faster execution.' },
-  { label: 'Pull Requests', sub: 'merged to main · Bitbucket' },
-  { label: 'Build Success', sub: 'CI builds passing · target ≥90%' },
-  { label: 'Focus Time',    sub: 'uninterrupted work · target ≥60%' },
-  { label: 'AI Tools',      sub: 'active this month' },
-  { label: 'AI LOC Share',  sub: 'Cursor + Claude Code',
-    info: 'Share of authored code lines accepted from AI suggestions out of total lines written.' },
-];
+type ColHeader = { label: string; sub: string; info?: string };
 
-const SkeletonRow: React.FC = () => (
+function buildColHeaders(columnThresholds: ColumnThreshold[]): ColHeader[] {
+  const buildT = getThreshold(columnThresholds, 'build_success_pct').good;
+  const focusT = getThreshold(columnThresholds, 'focus_time_pct').good;
+  return [
+    { label: 'Name',          sub: '' },
+    { label: 'Tasks',         sub: 'closed · Jira' },
+    { label: 'Bugs Fixed',    sub: 'bug-type tasks · Jira' },
+    { label: 'Dev Time',      sub: 'time in dev per task · lower = better',
+      info: 'Average time a task spends in "In Progress" state. Lower means faster execution.' },
+    { label: 'Pull Requests', sub: 'merged to main · Bitbucket' },
+    { label: 'Build Success', sub: `CI builds passing · target ≥${buildT}%` },
+    { label: 'Focus Time',    sub: `uninterrupted work · target ≥${focusT}%` },
+    { label: 'AI Tools',      sub: 'active this month' },
+    { label: 'AI LOC Share',  sub: 'Cursor + Claude Code',
+      info: 'Share of authored code lines accepted from AI suggestions out of total lines written.' },
+  ];
+}
+
+const SkeletonRow: React.FC<{ count: number }> = ({ count }) => (
   <TableRow>
-    {COL_HEADERS.map((_, i) => (
+    {Array.from({ length: count }).map((_, i) => (
       <TableCell key={i}>
         <Skeleton className="h-3.5 w-full" />
       </TableCell>
@@ -85,11 +84,17 @@ const SkeletonRow: React.FC = () => (
   </TableRow>
 );
 
-export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, onRowClick, onDetailsDrill, onCellDrill }) => {
+export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThresholds, loading, onRowClick, onDetailsDrill, onCellDrill }) => {
   const drill = (personId: string, drillId: string) => (e: React.MouseEvent) => {
     e.stopPropagation();
     onCellDrill?.(personId, drillId);
   };
+  const colHeaders = buildColHeaders(columnThresholds);
+  const tBugs  = getThreshold(columnThresholds, 'bugs_fixed');
+  const tDev   = getThreshold(columnThresholds, 'dev_time_h');
+  const tBuild = getThreshold(columnThresholds, 'build_success_pct');
+  const tFocus = getThreshold(columnThresholds, 'focus_time_pct');
+  const tAiLoc = getThreshold(columnThresholds, 'ai_loc_share_pct');
   return (
   <Card>
     <div className="px-4 pt-3.5 pb-3 border-b border-gray-200 flex items-center justify-between">
@@ -108,7 +113,7 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, on
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
-              {COL_HEADERS.map((col) => (
+              {colHeaders.map((col) => (
                 <TableHead key={col.label} className="text-[10px] font-bold uppercase tracking-[0.4px] text-gray-400 h-9 px-3 bg-gray-50">
                   <span>{col.label}</span>
                   {col.info && <MetricInfo description={col.info} side="bottom" />}
@@ -125,9 +130,9 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, on
           <TableBody>
             {loading ? (
               <>
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
+                <SkeletonRow count={colHeaders.length} />
+                <SkeletonRow count={colHeaders.length} />
+                <SkeletonRow count={colHeaders.length} />
               </>
             ) : (
               members.map((m) => (
@@ -146,14 +151,14 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, on
                       <DrillCell onClick={drill(m.person_id, 'tasks-completed')}>{m.tasks_closed}</DrillCell>
                     ) : m.tasks_closed}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${hi(m.bugs_fixed, 15, 8)}`}>
+                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.bugs_fixed, tBugs, 'text')}`}>
                     {onCellDrill ? (
-                      <DrillCell onClick={drill(m.person_id, 'bugs-fixed')} className={hi(m.bugs_fixed, 15, 8)}>{m.bugs_fixed}</DrillCell>
+                      <DrillCell onClick={drill(m.person_id, 'bugs-fixed')} className={colClass(m.bugs_fixed, tBugs, 'text')}>{m.bugs_fixed}</DrillCell>
                     ) : m.bugs_fixed}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${lo(m.dev_time_h, 14, 20)}`}>
+                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.dev_time_h, tDev, 'text')}`}>
                     {onCellDrill ? (
-                      <DrillCell onClick={drill(m.person_id, 'cycle-time')} className={lo(m.dev_time_h, 14, 20)}>{m.dev_time_h}h</DrillCell>
+                      <DrillCell onClick={drill(m.person_id, 'cycle-time')} className={colClass(m.dev_time_h, tDev, 'text')}>{m.dev_time_h}h</DrillCell>
                     ) : `${m.dev_time_h}h`}
                   </TableCell>
                   <TableCell className="px-3 py-2.5 text-[12px]">
@@ -161,13 +166,13 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, on
                       <DrillCell onClick={drill(m.person_id, 'pull-requests')}>{m.prs_merged}</DrillCell>
                     ) : m.prs_merged}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${hi(m.build_success_pct, 90, 80)}`}>
+                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.build_success_pct, tBuild, 'text')}`}>
                     {onCellDrill ? (
-                      <DrillCell onClick={drill(m.person_id, 'builds')} className={hi(m.build_success_pct, 90, 80)}>{m.build_success_pct}%</DrillCell>
+                      <DrillCell onClick={drill(m.person_id, 'builds')} className={colClass(m.build_success_pct, tBuild, 'text')}>{m.build_success_pct}%</DrillCell>
                     ) : `${m.build_success_pct}%`}
                   </TableCell>
                   <TableCell className="px-3 py-2.5">
-                    <FocusBar pct={m.focus_time_pct} />
+                    <FocusBar pct={m.focus_time_pct} threshold={tFocus} />
                   </TableCell>
                   <TableCell className="px-3 py-2.5">
                     {m.ai_tools.length === 0 ? (
@@ -182,7 +187,7 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, on
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${hi(m.ai_loc_share_pct, 20, 10)}`}>
+                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.ai_loc_share_pct, tAiLoc, 'text')}`}>
                     {m.ai_loc_share_pct > 0 ? `${m.ai_loc_share_pct}%` : <span className="text-gray-400">0%</span>}
                   </TableCell>
                 </TableRow>
