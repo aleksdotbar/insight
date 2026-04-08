@@ -1,10 +1,11 @@
 /**
  * CollapsibleSection — expandable/collapsible section with a trigger row.
- * Uses local useState for open state (initialised from defaultOpen).
- * No @hai3/state or state hook imports from @hai3/react.
+ * Uses @hai3/uikit Collapsible (Radix UI) for accessibility and animation.
+ * No state imports.
  */
 
 import React, { useState } from 'react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@hai3/uikit';
 
 export interface CollapsibleSectionProps {
   title: string;
@@ -22,36 +23,35 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      {/* Trigger row */}
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex items-start justify-between w-full px-4 py-3 bg-white border-none cursor-pointer text-left hover:bg-black/[0.03] transition-colors"
-      >
-        <div>
-          <span className="text-[13px] font-semibold text-gray-900">{title}</span>
-          {subtitle && (
-            <div className="text-[10px] text-gray-400 mt-0.5">{subtitle}</div>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* Status badge */}
-          <span className="text-[10px] text-gray-500 bg-slate-100 rounded px-1.5 py-px">
-            {open ? 'Expanded' : 'Collapsed'}
-          </span>
-          {/* Arrow */}
-          <span className="text-[10px] text-gray-500">{open ? '▴' : '▾'}</span>
-        </div>
-      </button>
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="border border-gray-200 rounded-lg overflow-hidden"
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex items-start justify-between w-full px-4 py-3 bg-white border-none cursor-pointer text-left hover:bg-black/[0.03] transition-colors"
+        >
+          <div>
+            <span className="text-[13px] font-semibold text-gray-900">{title}</span>
+            {subtitle && (
+              <div className="text-[10px] text-gray-400 mt-0.5">{subtitle}</div>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-[10px] text-gray-500 bg-slate-100 rounded px-1.5 py-px">
+              {open ? 'Expanded' : 'Collapsed'}
+            </span>
+            <span className="text-[10px] text-gray-500">{open ? '▴' : '▾'}</span>
+          </div>
+        </button>
+      </CollapsibleTrigger>
 
-      {/* Content */}
-      {open && (
-        <div className="border-t border-gray-200 bg-white">
-          {children}
-        </div>
-      )}
-    </div>
+      <CollapsibleContent className="border-t border-gray-200 bg-white">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
   );
 };
 

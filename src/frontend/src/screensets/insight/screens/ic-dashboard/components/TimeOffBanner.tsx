@@ -1,5 +1,5 @@
 /**
- * TimeOffBanner — shows time-off notice for the current period.
+ * TimeOffBanner — compact single-line time-off notice.
  * Renders null when notice is null.
  * No state imports.
  */
@@ -15,20 +15,22 @@ const TimeOffBanner: React.FC<TimeOffBannerProps> = ({ notice }) => {
   if (!notice) return null;
 
   return (
-    <div className="bg-amber-50 border-t border-amber-200 px-4 py-2 flex items-center gap-2 text-xs text-amber-900">
-      📅{' '}
+    <div className="flex flex-wrap items-center gap-2 px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-800">
+      <span className="text-base leading-none">📅</span>
       <span>
-        <strong>{notice.days} days off</strong> this month ({notice.dateRange}) · metrics reflect
-        working days ·{' '}
-        <a
-          href={notice.bambooHrUrl}
-          className="text-amber-700 underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          BambooHR
-        </a>
+        <strong>{notice.days} days off</strong> this month ({notice.dateRange})
       </span>
+      <span className="text-amber-400">·</span>
+      <span className="text-amber-600">metrics reflect working days</span>
+      <span className="text-amber-400">·</span>
+      <a
+        href={notice.bambooHrUrl}
+        className="text-amber-700 underline underline-offset-2 hover:text-amber-900"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        BambooHR ↗
+      </a>
     </div>
   );
 };

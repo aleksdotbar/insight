@@ -8,14 +8,14 @@
 
 import React, { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
-import { Popover, PopoverContent, PopoverTrigger, Calendar } from '@hai3/uikit';
+import { Popover, PopoverContent, PopoverTrigger, Calendar, ToggleGroup, ToggleGroupItem, Button } from '@hai3/uikit';
 import type { PeriodValue, CustomRange } from '../../types';
 
-const TABS: { value: PeriodValue; label: string }[] = [
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'quarter', label: 'Quarter' },
-  { value: 'year', label: 'Year' },
+const TABS: { value: PeriodValue; label: string; short: string }[] = [
+  { value: 'week',    label: 'Week',    short: 'W' },
+  { value: 'month',   label: 'Month',   short: 'M' },
+  { value: 'quarter', label: 'Quarter', short: 'Q' },
+  { value: 'year',    label: 'Year',    short: 'Y' },
 ];
 
 export interface PeriodSelectorBarProps {
@@ -50,38 +50,43 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
     : null;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-0 bg-[#F0F2F7] rounded-lg p-[3px]">
       {/* Period tabs — segmented control */}
-      <div className="flex bg-[#F0F2F7] rounded-lg p-[3px] gap-px">
-        {TABS.map(({ value, label }) => (
-          <button
+      <ToggleGroup
+        type="single"
+        value={customRange ? '' : period}
+        onValueChange={(v) => { if (v) onPeriodChange(v as PeriodValue); }}
+        className="gap-px"
+      >
+        {TABS.map(({ value, label, short }) => (
+          <ToggleGroupItem
             key={value}
-            type="button"
-            onClick={() => onPeriodChange(value)}
-            className={`px-3 py-1 rounded-md text-[12px] font-medium transition-all border-0 cursor-pointer ${
-              period === value && !customRange
-                ? 'bg-white text-gray-900 [box-shadow:0_1px_3px_rgba(0,0,0,0.1)]'
-                : 'bg-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            value={value}
+            className="px-3 py-1 rounded-md text-[12px] font-medium data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:[box-shadow:0_1px_3px_rgba(0,0,0,0.1)] data-[state=off]:text-gray-500"
           >
-            {label}
-          </button>
+            <span className="hidden sm:inline">{label}</span>
+            <span className="sm:hidden">{short}</span>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
 
-      {/* Custom date range button */}
+      {/* Divider between period tabs and custom */}
+      <div className="w-px h-4 bg-gray-300/60 mx-1 flex-shrink-0" />
+
+      {/* Custom date range — same pill style as tabs */}
       <Popover open={calOpen} onOpenChange={setCalOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+            className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors flex items-center gap-1 ${
               customRange
-                ? 'border-blue-300 bg-blue-50 text-blue-700'
-                : 'border-gray-200 bg-white text-gray-500 hover:text-gray-700'
+                ? 'bg-white text-blue-600 [box-shadow:0_1px_3px_rgba(0,0,0,0.1)]'
+                : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             <span>📅</span>
-            {calLabel ?? <span className="hidden sm:inline">Custom</span>}
+            <span className="hidden sm:inline">{calLabel ?? 'Custom'}</span>
+            <span className="sm:hidden">{calLabel ?? '…'}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent className="p-0 w-auto" align="end">
@@ -104,28 +109,22 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
             mode="range"
             selected={tempRange}
             onSelect={handleRangeSelect}
-            numberOfMonths={2}
+            numberOfMonths={typeof window !== 'undefined' && window.innerWidth < 640 ? 1 : 2}
           />
           <div className="px-4 py-2 border-t border-gray-100 flex gap-3">
             {customRange && (
-              <button
-                type="button"
-                onClick={() => { setTempRange(undefined); onRangeChange(null); onPeriodChange('month'); setCalOpen(false); }}
-                className="text-[11px] text-gray-500 hover:text-gray-700"
-              >
+              <Button variant="ghost" size="sm" className="h-auto p-0 text-[11px] text-gray-500"
+                onClick={() => { setTempRange(undefined); onRangeChange(null); onPeriodChange('month'); setCalOpen(false); }}>
                 Clear
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
-              onClick={() => setCalOpen(false)}
-              className="text-[11px] text-gray-500 hover:text-gray-700"
-            >
+            <Button variant="ghost" size="sm" className="h-auto p-0 text-[11px] text-gray-500" onClick={() => setCalOpen(false)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </PopoverContent>
       </Popover>
     </div>
   );
+
 };

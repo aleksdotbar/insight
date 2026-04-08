@@ -667,11 +667,11 @@ const ALICE_BULLET_METRICS_MONTH: BulletMetric[] = [
 ];
 
 const ALICE_KPIS_MONTH: IcKpi[] = [
-  { period: 'month', metric_key: 'bugs_fixed', label: 'Bugs Fixed', value: '23', unit: '', sublabel: 'Jira', delta: '↑ 5 vs last month', delta_type: 'good' },
-  { period: 'month', metric_key: 'clean_loc', label: 'Clean LOC', value: '12k', unit: '', sublabel: 'Bitbucket', delta: '↑ 8% vs median 19%', delta_type: 'good' },
-  { period: 'month', metric_key: 'ai_loc_share', label: 'AI LOC Share', value: '27', unit: '%', sublabel: 'Cursor + Claude Code', delta: '≈ team avg 22%', delta_type: 'neutral' },
-  { period: 'month', metric_key: 'spec_lines', label: 'Spec Lines', value: '840', unit: '', sublabel: 'Jira', delta: '↑ 12% vs last month', delta_type: 'good' },
-  { period: 'month', metric_key: 'focus_time_pct', label: 'Focus Time', value: '68', unit: '%', sublabel: 'Calendar / M365', delta: '↑ 5% vs last month', delta_type: 'good' },
+  { period: 'month', metric_key: 'bugs_fixed', label: 'Bugs Fixed', value: '23', unit: '', sublabel: 'Jira', description: 'Bug tickets resolved and closed.', delta: '↑ 5 vs last month', delta_type: 'good' },
+  { period: 'month', metric_key: 'clean_loc', label: 'Clean LOC', value: '12k', unit: '', sublabel: 'Bitbucket', description: 'Production code lines, excl. tests & generated files.', delta: '↑ 8% vs median 19%', delta_type: 'good' },
+  { period: 'month', metric_key: 'ai_loc_share', label: 'AI LOC Share', value: '27', unit: '%', sublabel: 'Cursor + Claude Code', description: 'Code lines accepted from AI suggestions out of total authored.', delta: '≈ team avg 22%', delta_type: 'neutral' },
+  { period: 'month', metric_key: 'spec_lines', label: 'Spec Lines', value: '840', unit: '', sublabel: 'Jira', description: 'Lines written in Markdown specification files.', delta: '↑ 12% vs last month', delta_type: 'good' },
+  { period: 'month', metric_key: 'focus_time_pct', label: 'Focus Time', value: '68', unit: '%', sublabel: 'Calendar / M365', description: 'Work time in uninterrupted 60-min+ blocks.', delta: '↑ 5% vs last month', delta_type: 'good' },
 ];
 
 const ALICE_CHARTS_MONTH: { locTrend: LocDataPoint[]; deliveryTrend: DeliveryDataPoint[] } = {
@@ -864,16 +864,21 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpis: IcKpi[] = [
     { period, metric_key: 'tasks_closed',   label: 'Tasks Closed',  value: String(tasks),
-      unit: '',  sublabel: 'Jira',                  delta: '',               delta_type: 'neutral' },
+      unit: '',  sublabel: 'Jira',                  description: 'Jira tickets closed in the selected period.',
+      delta: '',               delta_type: 'neutral' },
     { period, metric_key: 'bugs_fixed',     label: 'Bugs Fixed',    value: String(bugs),
-      unit: '',  sublabel: 'Jira',                  delta: '',               delta_type: bugs > 0 ? 'good' : 'neutral' },
-    { period, metric_key: 'clean_loc',      label: 'Clean LOC',
-      value: cleanLocK >= 1000 ? `${Math.round(cleanLocK / 1000)}k` : String(cleanLocK),
-      unit: '',  sublabel: 'Bitbucket',             delta: '',               delta_type: 'neutral' },
+      unit: '',  sublabel: 'Jira',                  description: 'Bug tickets resolved and closed.',
+      delta: '',               delta_type: bugs > 0 ? 'good' : 'neutral' },
+    { period, metric_key: 'clean_loc',
+      label: 'Clean LOC',      value: cleanLocK >= 1000 ? `${Math.round(cleanLocK / 1000)}k` : String(cleanLocK),
+      unit: '',  sublabel: 'Bitbucket',             description: 'Production code lines, excl. tests & generated files.',
+      delta: '',               delta_type: 'neutral' },
     { period, metric_key: 'ai_loc_share',   label: 'AI LOC Share',  value: String(aiLoc),
-      unit: '%', sublabel: 'Cursor + Claude Code',  delta: '≈ team avg 22%', delta_type: aiLoc >= 18 ? 'good' : 'neutral' },
+      unit: '%', sublabel: 'Cursor + Claude Code',  description: 'Code lines accepted from AI suggestions out of total authored.',
+      delta: '≈ team avg 22%', delta_type: aiLoc >= 18 ? 'good' : 'neutral' },
     { period, metric_key: 'focus_time_pct', label: 'Focus Time',    value: String(focus),
-      unit: '%', sublabel: 'Calendar / M365',       delta: '',               delta_type: focus >= 60 ? 'good' : 'warn' },
+      unit: '%', sublabel: 'Calendar / M365',       description: 'Work time in uninterrupted 60-min+ blocks.',
+      delta: '',               delta_type: focus >= 60 ? 'good' : 'warn' },
   ];
 
   // ── Bullet metrics ─────────────────────────────────────────────────────────

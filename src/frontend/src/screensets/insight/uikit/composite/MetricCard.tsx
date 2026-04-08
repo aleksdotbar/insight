@@ -21,8 +21,8 @@ export interface MetricCardProps {
 
 const GRID_COLS_CLASS = {
   1: 'grid-cols-1',
-  2: 'grid-cols-2',
-  3: 'grid-cols-3',
+  2: 'grid-cols-1 sm:grid-cols-2',
+  3: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3',
 } as const;
 
 // Chart mode legend
@@ -57,7 +57,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
           <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
             {title}
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {metrics.map((metric) => (
               <BulletChart
                 key={metric.metric_key}

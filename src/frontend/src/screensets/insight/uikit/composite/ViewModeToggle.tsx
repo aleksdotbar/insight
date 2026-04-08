@@ -1,10 +1,11 @@
 /**
  * ViewModeToggle — Charts / Tiles mode segmented control.
- * Matches prototype NavBar style: gray bg, white active pill, shadow.
+ * Uses @hai3/uikit ToggleGroup (Radix UI) for accessibility and keyboard navigation.
  * No inline styles (Tailwind only).
  */
 
 import React from 'react';
+import { ToggleGroup, ToggleGroupItem } from '@hai3/uikit';
 import type { ViewMode } from '../../types';
 
 export interface ViewModeToggleProps {
@@ -13,24 +14,23 @@ export interface ViewModeToggleProps {
 }
 
 export const ViewModeToggle: React.FC<ViewModeToggleProps> = ({ mode, onChange }) => (
-  <div className="flex bg-gray-100 rounded-lg p-[3px] gap-px">
-    <button
-      type="button"
-      onClick={() => onChange('chart')}
-      className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
-        mode === 'chart' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-      }`}
+  <ToggleGroup
+    type="single"
+    value={mode}
+    onValueChange={(v) => { if (v) onChange(v as ViewMode); }}
+    className="bg-gray-100 rounded-lg p-[3px] gap-px"
+  >
+    <ToggleGroupItem
+      value="chart"
+      className="px-3 py-1 rounded-md text-[11px] font-semibold data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:shadow-sm data-[state=off]:text-gray-500"
     >
       ▬ Charts
-    </button>
-    <button
-      type="button"
-      onClick={() => onChange('tile')}
-      className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
-        mode === 'tile' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-      }`}
+    </ToggleGroupItem>
+    <ToggleGroupItem
+      value="tile"
+      className="px-3 py-1 rounded-md text-[11px] font-semibold data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:shadow-sm data-[state=off]:text-gray-500"
     >
       ⊞ Tiles
-    </button>
-  </div>
+    </ToggleGroupItem>
+  </ToggleGroup>
 );

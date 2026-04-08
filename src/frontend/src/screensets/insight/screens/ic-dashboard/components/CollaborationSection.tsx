@@ -31,7 +31,7 @@ const CollaborationSection: React.FC<CollaborationSectionProps> = ({
 }) => {
   if (viewMode === 'tile') {
     return (
-      <div className="grid grid-cols-2 gap-2 p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4">
         {metrics.map((metric) => (
           <BulletChart
             key={metric.metric_key}
@@ -51,7 +51,7 @@ const CollaborationSection: React.FC<CollaborationSectionProps> = ({
   const meetingMetrics = metrics.filter((m) => MEETING_KEYS.includes(m.metric_key));
 
   return (
-    <div className="grid grid-cols-3 gap-4 p-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4">
       {/* Slack */}
       <div>
         <ColumnHeading>Slack</ColumnHeading>

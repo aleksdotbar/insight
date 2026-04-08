@@ -4,8 +4,9 @@
  */
 
 import React from 'react';
-import { Card, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge } from '@hai3/uikit';
+import { Card, ScrollArea, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge, Skeleton } from '@hai3/uikit';
 import type { ExecTeamRow } from '../../../types';
+import MetricInfo from '../../../uikit/base/MetricInfo';
 
 export interface TeamsTableProps {
   teams: ExecTeamRow[];
@@ -25,7 +26,7 @@ const SkeletonRow: React.FC = () => (
   <TableRow>
     {Array.from({ length: 10 }).map((_, i) => (
       <TableCell key={i}>
-        <div className="h-3.5 bg-gray-200 rounded animate-pulse" />
+        <Skeleton className="h-3.5 w-full" />
       </TableCell>
     ))}
   </TableRow>
@@ -33,7 +34,7 @@ const SkeletonRow: React.FC = () => (
 
 export const TeamsTable: React.FC<TeamsTableProps> = ({ teams, loading }) => (
   <Card>
-    <div className="overflow-x-auto">
+    <ScrollArea className="w-full">
       <Table>
         <TableHeader>
           <TableRow>
@@ -41,11 +42,11 @@ export const TeamsTable: React.FC<TeamsTableProps> = ({ teams, loading }) => (
             <TableHead>Headcount</TableHead>
             <TableHead>Tasks Closed</TableHead>
             <TableHead>Bugs Fixed</TableHead>
-            <TableHead>Build %</TableHead>
-            <TableHead>Focus %</TableHead>
-            <TableHead>AI Adoption %</TableHead>
-            <TableHead>AI LOC %</TableHead>
-            <TableHead>PR Cycle</TableHead>
+            <TableHead>Build %<MetricInfo description="CI/CD builds passing. Target ≥90%." side="bottom" /></TableHead>
+            <TableHead>Focus %<MetricInfo description="Work time in uninterrupted 60-min+ blocks. Target ≥60%." side="bottom" /></TableHead>
+            <TableHead>AI Adoption %<MetricInfo description="Share of members actively using any AI tool this period." side="bottom" /></TableHead>
+            <TableHead>AI LOC %<MetricInfo description="Share of authored code lines accepted from AI suggestions (Cursor + Claude Code)." side="bottom" /></TableHead>
+            <TableHead>PR Cycle<MetricInfo description="Average time from PR opened to merged, in hours. Lower is better." side="bottom" /></TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -84,6 +85,6 @@ export const TeamsTable: React.FC<TeamsTableProps> = ({ teams, loading }) => (
           )}
         </TableBody>
       </Table>
-    </div>
+    </ScrollArea>
   </Card>
 );

@@ -13,10 +13,11 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
   ResponsiveContainer,
+  ChartTooltipContent,
+  ChartLegendContent,
 } from '@hai3/uikit';
-import { Legend } from 'recharts';
+import { Tooltip, Legend } from 'recharts';
 import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_AI_LOC, CHART_SPEC_LINES } from '../base/chartColors';
 import type { PeriodValue } from '../../types';
 
@@ -100,8 +101,8 @@ const LocStackedBar: React.FC<LocStackedBarProps> = ({ data, period = 'month' })
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_TRACK_BG} />
         <XAxis dataKey="week" tick={{ fontSize: 10, fill: CHART_GRAY }} axisLine={false} tickLine={false} />
         <YAxis tick={{ fontSize: 10, fill: CHART_GRAY }} axisLine={false} tickLine={false} />
-        <Tooltip />
-        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
+        <Tooltip content={<ChartTooltipContent />} />
+        <Legend content={<ChartLegendContent />} wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
         <Bar dataKey="AI LOC" stackId="loc" fill={CHART_AI_LOC} />
         <Bar dataKey="Code LOC" stackId="loc" fill={CHART_BLUE} />
         <Bar dataKey="Spec Lines" stackId="loc" fill={CHART_SPEC_LINES} radius={[3, 3, 0, 0]} />

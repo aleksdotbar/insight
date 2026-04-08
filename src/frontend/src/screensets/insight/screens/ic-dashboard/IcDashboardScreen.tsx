@@ -99,7 +99,7 @@ const IcDashboardScreen: React.FC = () => {
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* 0+1. Person header + controls in one row */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <PersonHeader person={person} inline />
         <div className="flex items-center gap-2 flex-shrink-0">
           <PeriodSelectorBar
@@ -119,7 +119,7 @@ const IcDashboardScreen: React.FC = () => {
       </div>
 
       {/* 3. Task Delivery + Git Output */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <MetricCard
           title="Task Delivery"
           metrics={taskMetrics}

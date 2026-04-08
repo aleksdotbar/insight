@@ -45,7 +45,7 @@ const AiToolsSection: React.FC<AiToolsSectionProps> = ({
 }) => {
   if (viewMode === 'tile') {
     return (
-      <div className="grid grid-cols-2 gap-2 p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4">
         {metrics.map((metric) => (
           <BulletChart
             key={metric.metric_key}
@@ -69,7 +69,7 @@ const AiToolsSection: React.FC<AiToolsSectionProps> = ({
     <div className="p-4">
       {/* Legend above columns */}
       <ChartLegend />
-      <div className="grid grid-cols-2 gap-4 mt-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
         {/* Left column */}
         <div className="flex flex-col gap-5">
           <div>
