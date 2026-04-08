@@ -11,7 +11,7 @@ import { getStore, TENANT_SLICE_NAME, eventBus, RestPlugin } from '@hai3/react';
 import type { RestRequestContext, ApiPluginErrorContext, RestResponseContext } from '@hai3/react';
 import type { TenantState } from '@hai3/react';
 import { selectAuthToken } from '@/app/slices/authSlice';
-import '@/app/events/authEvents';
+import { AuthEvent } from '@/app/events/authEvents';
 
 type HttpError = Error & { status?: number };
 
@@ -33,7 +33,7 @@ export class AuthPlugin extends RestPlugin {
   onError(context: ApiPluginErrorContext): Error | RestResponseContext {
     const status = (context.error as HttpError).status;
     if (status === 401 && context.retryCount === 0) {
-      eventBus.emit('auth:sessionExpired');
+      eventBus.emit(AuthEvent.SessionExpired);
     }
     return context.error;
   }

@@ -5,20 +5,20 @@
  */
 
 import { eventBus, type AppDispatch } from '@hai3/react';
-import '@/app/events/authEvents';
+import { AuthEvent } from '@/app/events/authEvents';
 import { setToken, setConfig, setStatus } from '@/app/slices/authSlice';
 
 export function initAuthEffects(dispatch: AppDispatch): void {
-  eventBus.on('auth:configLoaded', ({ config }) => {
+  eventBus.on(AuthEvent.ConfigLoaded, ({ config }) => {
     dispatch(setConfig(config));
   });
 
-  eventBus.on('auth:tokenStored', ({ token }) => {
+  eventBus.on(AuthEvent.TokenStored, ({ token }) => {
     dispatch(setToken(token));
     dispatch(setStatus('authenticated'));
   });
 
-  eventBus.on('auth:sessionExpired', () => {
+  eventBus.on(AuthEvent.SessionExpired, () => {
     dispatch(setToken(null));
     dispatch(setStatus('expired'));
   });
