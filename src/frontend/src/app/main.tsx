@@ -1,13 +1,17 @@
 /// <reference types="vite/client" />
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { HAI3Provider, apiRegistry, createHAI3App, type ThemeApplyFn } from '@hai3/react';
+import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, type ThemeApplyFn } from '@hai3/react';
 import { Toaster, applyTheme } from '@hai3/uikit';
 import { AccountsApiService } from '@/app/api';
+import { AuthApiService } from '@/app/api/AuthApiService';
+import { IdentityApiService } from '@/app/api/IdentityApiService';
 import '@hai3/uikit/styles'; // UI Kit styles
 import '@/screensets/screensetRegistry'; // Auto-registers screensets (includes API services + mocks + i18n loaders)
 import '@/app/events/bootstrapEvents'; // Register app-level events (type augmentation)
 import { registerBootstrapEffects } from '@/app/effects/bootstrapEffects'; // Register app-level effects
+import authSlice from '@/app/slices/authSlice';
+import { initAuthEffects } from '@/app/effects/authEffects';
 import App from './App';
 
 // Import all themes
@@ -17,8 +21,10 @@ import { LIGHT_THEME_ID, lightTheme } from '@/app/themes/light';
 import { DRACULA_THEME_ID, draculaTheme } from '@/app/themes/dracula';
 import { DRACULA_LARGE_THEME_ID, draculaLargeTheme } from '@/app/themes/dracula-large';
 
-// Register accounts service (application-level service for user info)
+// Register application-level API services
 apiRegistry.register(AccountsApiService);
+apiRegistry.register(AuthApiService);
+apiRegistry.register(IdentityApiService);
 
 // Initialize API services
 apiRegistry.initialize({});
@@ -28,7 +34,8 @@ const app = createHAI3App({
   themes: { applyFn: applyTheme as ThemeApplyFn },
 });
 
-// Register app-level effects (pass store dispatch)
+// Register app-level slices and effects
+registerSlice(authSlice, initAuthEffects);
 registerBootstrapEffects(app.store.dispatch);
 
 // Register all themes (default theme first, becomes the default selection)

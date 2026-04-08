@@ -8,13 +8,13 @@ import React from 'react';
 export interface DynamicWidthBarProps {
   /** Width as a percentage (0–100), capped at 100 */
   pct: number;
-  /** Tailwind background-color class, e.g. 'bg-green-600' */
+  /** Tailwind background-color class, e.g. 'bg-insight-green' */
   colorClass: string;
 }
 
 export const DynamicWidthBar: React.FC<DynamicWidthBarProps> = ({ pct, colorClass }) => (
   <div
     style={{ width: `${Math.min(pct, 100)}%` }}
-    className={`h-full rounded-full transition-[width] duration-[400ms] ease-in-out ${colorClass}`}
+    className={`h-full rounded-full transition-[width] duration-300 ease-in-out ${colorClass}`}
   />
 );

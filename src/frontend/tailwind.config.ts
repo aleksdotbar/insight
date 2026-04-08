@@ -76,6 +76,14 @@ export default {
           selected: 'hsl(var(--left-menu-selected))',
           border: 'hsl(var(--left-menu-border))',
         },
+        insight: {
+          green:      '#16a34a',
+          amber:      '#d97706',
+          red:        '#dc2626',
+          'green-bg': '#f0fdf4',
+          'amber-bg': '#fffbeb',
+          'red-bg':   '#fef2f2',
+        },
       },
       spacing: {
         xs: 'var(--spacing-xs)',

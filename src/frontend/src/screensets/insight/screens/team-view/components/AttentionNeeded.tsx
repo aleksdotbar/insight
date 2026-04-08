@@ -5,10 +5,12 @@
 
 import React from 'react';
 import { Badge, Button, Card, CardContent } from '@hai3/uikit';
-import type { TeamMember } from '../../../types';
+import type { TeamMember, AlertThreshold } from '../../../types';
+import { METRIC_KEYS } from '../../../types';
 
 export interface AttentionNeededProps {
   members: TeamMember[];
+  alertThresholds: AlertThreshold[];
   onNavigate: (personId: string) => void;
 }
 
@@ -19,48 +21,55 @@ interface AlertItem {
   title: string;
   description: string;
   severity: Severity;
-  declineBadge: string;
 }
 
 const SEVERITY_ICON: Record<Severity, string> = { bad: '🔴', warn: '🟡' };
-const SEVERITY_ICON_BG: Record<Severity, string> = { bad: 'bg-red-100', warn: 'bg-amber-100' };
+const SEVERITY_ICON_BG: Record<Severity, string> = { bad: 'bg-insight-red-bg', warn: 'bg-insight-amber-bg' };
 const SEVERITY_BADGE_CLASS: Record<Severity, string> = {
-  bad: 'bg-red-100 text-red-600',
-  warn: 'bg-amber-100 text-amber-600',
+  bad: 'bg-insight-red-bg text-insight-red',
+  warn: 'bg-insight-amber-bg text-insight-amber',
 };
 
-function computeAlerts(members: TeamMember[]): AlertItem[] {
+
+function buildDescription(metricKey: string, m: TeamMember, trigger: number): string {
+  const val  = m[metricKey as keyof TeamMember] as number;
+  const def  = METRIC_KEYS[metricKey as keyof typeof METRIC_KEYS];
+  const unit = def?.unit ?? '';
+  const label = def?.label ?? metricKey;
+
+  const base = `${label} is ${val}${unit} vs ${trigger}${unit} target.`;
+
+  if (metricKey === 'focus_time_pct')
+    return `${base} ${m.tasks_closed} tasks completed this period.`;
+  if (metricKey === 'build_success_pct')
+    return `${base} ${m.prs_merged} PRs merged this period.`;
+  if (metricKey === 'ai_loc_share_pct')
+    return `${base} ${m.ai_tools.length === 0 ? 'No AI tools active.' : `Active tools: ${m.ai_tools.join(', ')}.`}`;
+
+  return base;
+}
+
+function computeAlerts(members: TeamMember[], alertThresholds: AlertThreshold[]): AlertItem[] {
   const alerts: AlertItem[] = [];
   for (const m of members) {
-    if (m.focus_time_pct < 60 || m.dev_time_h > 20) {
-      const severity: Severity = m.focus_time_pct < 48 || m.dev_time_h > 25 ? 'bad' : 'warn';
-      const parts: string[] = [];
-      if (m.focus_time_pct < 60) parts.push(`Focus Time ${m.focus_time_pct}%`);
-      if (m.dev_time_h > 20) parts.push(`Dev Time ${m.dev_time_h}h`);
-      alerts.push({
-        member: m,
-        title: `${m.name} — ${parts.join(', ')}`,
-        description: m.dev_time_h > 20
-          ? `Dev time is ${m.dev_time_h}h vs team median 14h. Only ${m.tasks_closed} tasks completed. Suggest 1:1 to understand blockers.`
-          : `Focus Time below 60% target. ${m.tasks_closed} tasks completed this month.`,
-        severity,
-        declineBadge: severity === 'bad' ? '3 months declining' : '2 months declining',
-      });
-    } else if (m.ai_loc_share_pct === 0 && m.ai_tools.length === 0) {
-      alerts.push({
-        member: m,
-        title: `${m.name} — Not using AI tools`,
-        description: `No AI activity logged this month. ${m.tasks_closed} tasks completed.`,
-        severity: 'warn',
-        declineBadge: '2 months declining',
-      });
+    for (const rule of alertThresholds) {
+      const value = m[rule.metric_key as keyof TeamMember] as number;
+      if (value < rule.trigger) {
+        const severity: Severity = value < rule.bad ? 'bad' : 'warn';
+        alerts.push({
+          member: m,
+          title: `${m.name} — ${rule.reason}`,
+          description: buildDescription(rule.metric_key, m, rule.trigger),
+          severity,
+        });
+      }
     }
   }
   return alerts;
 }
 
-export const AttentionNeeded: React.FC<AttentionNeededProps> = ({ members, onNavigate }) => {
-  const alerts = computeAlerts(members);
+export const AttentionNeeded: React.FC<AttentionNeededProps> = ({ members, alertThresholds, onNavigate }) => {
+  const alerts = computeAlerts(members, alertThresholds);
   if (alerts.length === 0) return null;
 
   return (
@@ -89,9 +98,11 @@ export const AttentionNeeded: React.FC<AttentionNeededProps> = ({ members, onNav
                 → Open IC dashboard
               </Button>
             </div>
-            <Badge className={`text-[10px] font-bold flex-shrink-0 ${SEVERITY_BADGE_CLASS[alert.severity]}`}>
-              {alert.declineBadge}
-            </Badge>
+            {alert.member.trend_label && (
+              <Badge className={`text-[10px] font-bold flex-shrink-0 ${SEVERITY_BADGE_CLASS[alert.severity]}`}>
+                {alert.member.trend_label}
+              </Badge>
+            )}
           </div>
         ))}
       </CardContent>

@@ -12,7 +12,7 @@ export interface ProgressTrackProps {
   barWidthPct: number;
   /** Left position of the median line as a percentage (0–100) */
   medianLeftPct: number;
-  /** Tailwind background-color class for the value bar, e.g. 'bg-green-600' */
+  /** Tailwind background-color class for the value bar, e.g. 'bg-insight-green' */
   barColorClass: string;
 }
 
