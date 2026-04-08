@@ -4,8 +4,9 @@
  */
 
 import React from 'react';
-import { Card, CardContent, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge } from '@hai3/uikit';
+import { Button, Card, CardContent, ScrollArea, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge, Skeleton } from '@hai3/uikit';
 import { DynamicWidthBar } from '../../../uikit/base/DynamicWidthBar';
+import MetricInfo from '../../../uikit/base/MetricInfo';
 import type { TeamMember } from '../../../types';
 
 export interface MembersTableProps {
@@ -60,23 +61,25 @@ const FocusBar: React.FC<{ pct: number }> = ({ pct }) => (
   </div>
 );
 
-const COL_HEADERS = [
+const COL_HEADERS: { label: string; sub: string; info?: string }[] = [
   { label: 'Name',          sub: '' },
   { label: 'Tasks',         sub: 'closed · Jira' },
   { label: 'Bugs Fixed',    sub: 'bug-type tasks · Jira' },
-  { label: 'Dev Time',      sub: 'time in dev per task · lower = better' },
+  { label: 'Dev Time',      sub: 'time in dev per task · lower = better',
+    info: 'Average time a task spends in "In Progress" state. Lower means faster execution.' },
   { label: 'Pull Requests', sub: 'merged to main · Bitbucket' },
   { label: 'Build Success', sub: 'CI builds passing · target ≥90%' },
   { label: 'Focus Time',    sub: 'uninterrupted work · target ≥60%' },
   { label: 'AI Tools',      sub: 'active this month' },
-  { label: 'AI LOC Share',  sub: 'Cursor + Claude Code' },
+  { label: 'AI LOC Share',  sub: 'Cursor + Claude Code',
+    info: 'Share of authored code lines accepted from AI suggestions out of total lines written.' },
 ];
 
 const SkeletonRow: React.FC = () => (
   <TableRow>
     {COL_HEADERS.map((_, i) => (
       <TableCell key={i}>
-        <div className="h-3.5 bg-gray-200 rounded animate-pulse" />
+        <Skeleton className="h-3.5 w-full" />
       </TableCell>
     ))}
   </TableRow>
@@ -93,25 +96,22 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, on
       <span className="text-[13px] font-bold text-gray-900">Team Members</span>
       <div className="flex items-center gap-3">
         {onDetailsDrill && (
-          <button
-            type="button"
-            onClick={onDetailsDrill}
-            className="text-[11px] font-medium text-blue-600 hover:text-blue-700 bg-transparent border-none cursor-pointer px-0"
-          >
+          <Button variant="ghost" size="sm" onClick={onDetailsDrill} className="h-auto p-0 text-[11px] font-medium text-blue-600 hover:text-blue-700">
             View team stats ↗
-          </button>
+          </Button>
         )}
         <span className="text-[10px] text-gray-400">Click member to open IC dashboard</span>
       </div>
     </div>
     <CardContent className="p-0">
-      <div className="overflow-x-auto">
+      <ScrollArea className="w-full">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
               {COL_HEADERS.map((col) => (
                 <TableHead key={col.label} className="text-[10px] font-bold uppercase tracking-[0.4px] text-gray-400 h-9 px-3 bg-gray-50">
-                  {col.label}
+                  <span>{col.label}</span>
+                  {col.info && <MetricInfo description={col.info} side="bottom" />}
                   {col.sub && (
                     <>
                       <br />
@@ -190,7 +190,7 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, loading, on
             )}
           </TableBody>
         </Table>
-      </div>
+      </ScrollArea>
     </CardContent>
   </Card>
   );

@@ -1,11 +1,24 @@
 /**
  * DrillModal — modal overlay for metric drill-down detail view.
- * Shows title, source badge, value, filter string, data table, footer link.
- * Renders null when !open || !drill.
+ * Uses @hai3/uikit Dialog (Radix UI) for focus trap, escape key and portal.
+ * Uses @hai3/uikit Table for the data grid.
  * No state imports.
  */
 
 import React from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  ScrollArea,
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from '@hai3/uikit';
 
 export interface DrillModalDrill {
   title: string;
@@ -24,86 +37,71 @@ export interface DrillModalProps {
   onClose: () => void;
 }
 
-const DrillModal: React.FC<DrillModalProps> = ({ drill, open, onClose }) => {
-  if (!open || !drill) return null;
+const DrillModal: React.FC<DrillModalProps> = ({ drill, open, onClose }) => (
+  <Dialog open={open && !!drill} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <DialogContent className="w-full max-w-full sm:max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0">
+      {drill && (
+        <>
+          {/* Header */}
+          <DialogHeader className="flex-row items-center gap-2.5 px-4 pr-12 py-3.5 border-b border-gray-200 space-y-0">
+            <DialogTitle className="flex-1 text-[15px] font-bold text-gray-900">
+              {drill.title}
+            </DialogTitle>
+            <span className={`text-[10px] font-semibold text-white rounded px-2 py-0.5 ${drill.srcClass}`}>
+              {drill.source}
+            </span>
+            <span className="text-[13px] font-bold text-gray-900">{drill.value}</span>
+          </DialogHeader>
 
-  const stopPropagation = (e: React.MouseEvent) => e.stopPropagation();
+          {/* Filter bar */}
+          <div className="bg-slate-100 px-4 py-2 text-[11px] text-gray-500 flex-shrink-0">
+            {drill.filter}
+          </div>
 
-  return (
-    /* Backdrop */
-    <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
-      onClick={onClose}
-    >
-      {/* Modal panel */}
-      <div
-        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
-        onClick={stopPropagation}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-gray-200">
-          <span className="text-[15px] font-bold text-gray-900 flex-1">{drill.title}</span>
-          <span className={`text-[10px] font-semibold text-white rounded px-2 py-0.5 ${drill.srcClass}`}>
-            {drill.source}
-          </span>
-          <span className="text-[13px] font-bold text-gray-900">{drill.value}</span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="bg-transparent border-none cursor-pointer text-base text-gray-500 px-1 leading-none"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Filter bar */}
-        <div className="bg-slate-100 px-4 py-2 text-[11px] text-gray-500">
-          {drill.filter}
-        </div>
-
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr className="bg-gray-50">
-                {drill.columns.map((col) => (
-                  <th
-                    key={col}
-                    className="px-3 py-2 text-left font-semibold text-gray-500 text-[11px] border-b border-gray-200 whitespace-nowrap"
-                  >
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {drill.rows.map((row, rowIdx) => (
-                <tr key={rowIdx} className="border-b border-gray-100 hover:bg-gray-50">
+          {/* Table */}
+          <ScrollArea className="flex-1">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
                   {drill.columns.map((col) => (
-                    <td key={col} className="px-3 py-2 text-gray-700">
-                      {row[col] ?? '—'}
-                    </td>
+                    <TableHead
+                      key={col}
+                      className="text-[11px] font-semibold text-gray-500 whitespace-nowrap"
+                    >
+                      {col}
+                    </TableHead>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {drill.rows.map((row, rowIdx) => (
+                  <TableRow key={rowIdx}>
+                    {drill.columns.map((col) => (
+                      <TableCell key={col} className="text-gray-700 text-xs">
+                        {row[col] ?? '—'}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
 
-        {/* Footer */}
-        <div className="flex justify-between items-center px-4 py-2.5 border-t border-gray-200 text-xs">
-          <a
-            href="#"
-            className="text-blue-600 no-underline font-medium"
-            onClick={(e) => e.preventDefault()}
-          >
-            Open all in {drill.source} ↗
-          </a>
-          <span className="text-gray-400">{drill.rows.length} records</span>
-        </div>
-      </div>
-    </div>
-  );
-};
+          {/* Footer */}
+          <div className="flex justify-between items-center px-4 py-2.5 border-t border-gray-200 text-xs flex-shrink-0">
+            <a
+              href="#"
+              className="text-blue-600 no-underline font-medium"
+              onClick={(e) => e.preventDefault()}
+            >
+              Open all in {drill.source} ↗
+            </a>
+            <span className="text-gray-400">{drill.rows.length} records</span>
+          </div>
+        </>
+      )}
+    </DialogContent>
+  </Dialog>
+);
 
 export default DrillModal;

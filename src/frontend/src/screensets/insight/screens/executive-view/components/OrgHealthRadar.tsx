@@ -10,8 +10,9 @@ import {
   PolarAngleAxis,
   Radar,
   ResponsiveContainer,
-  Tooltip,
+  ChartTooltipContent,
 } from '@hai3/uikit';
+import { Tooltip } from 'recharts';
 import type { OrgKpis } from '../../../types';
 import { CHART_BLUE } from '../../../uikit/base/chartColors';
 
@@ -44,7 +45,7 @@ export const OrgHealthRadar: React.FC<OrgHealthRadarProps> = ({ orgKpis }) => {
             fillOpacity={0.15}
             strokeWidth={2}
           />
-          <Tooltip />
+          <Tooltip content={<ChartTooltipContent />} />
         </RadarChart>
       </ResponsiveContainer>
     </div>

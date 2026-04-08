@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { Badge, Card } from '@hai3/uikit';
 import type { TeamKpi } from '../../../types';
 
 export interface TeamHeroStripProps {
@@ -32,18 +33,18 @@ const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
     </div>
     <div className="text-[11px] font-semibold text-gray-900">{kpi.label}</div>
     {kpi.sublabel && <div className="text-[10px] text-gray-400">{kpi.sublabel}</div>}
-    <span className={`mt-1 w-fit inline-block rounded-full px-1.5 py-px text-[10px] font-bold ${CHIP_CLASS[kpi.status]}`}>
+    <Badge className={`mt-1 text-[10px] font-bold ${CHIP_CLASS[kpi.status]}`}>
       {kpi.chipLabel ?? kpi.status}
-    </span>
+    </Badge>
   </div>
 );
 
 export const TeamHeroStrip: React.FC<TeamHeroStripProps> = ({ teamKpis }) => (
-  <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+  <Card className="overflow-hidden">
     <div className="grid grid-cols-2 sm:grid-cols-4">
       {teamKpis.slice(0, 4).map((kpi, i) => (
         <KpiCard key={kpi.metric_key} kpi={kpi} idx={i} />
       ))}
     </div>
-  </div>
+  </Card>
 );

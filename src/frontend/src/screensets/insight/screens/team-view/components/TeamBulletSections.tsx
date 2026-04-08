@@ -45,7 +45,7 @@ const TwoColCard: React.FC<{ title: string; subtitle: string; metrics: BulletMet
           <span className="text-[10px] text-gray-400">{subtitle}</span>
         </div>
         <Legend />
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div className="flex flex-col gap-4">{left.map((m) => <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />)}</div>
           <div className="flex flex-col gap-4">{right.map((m) => <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />)}</div>
         </div>
@@ -69,7 +69,7 @@ const EstimationCard: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: st
         <span className="text-[10px] text-gray-400">Team median vs company median · Source: Jira</span>
       </div>
       <Legend />
-      <div className="grid grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
         {ESTIMATION_GROUPS.map(({ label, keys }) => {
           const groupMetrics = metrics.filter((m) => keys.includes(m.metric_key));
           return (
@@ -95,7 +95,7 @@ const AiAdoptionSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id:
     <div className="px-4 py-3">
       <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2.5">Cursor · Claude Code · Codex</div>
       <Legend />
-      <div className="grid grid-cols-2 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         <div className="flex flex-col gap-4">
           {metrics.filter((m) => AI_ADOPTION_LEFT_KEYS.includes(m.metric_key)).map((m) => (
             <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />
@@ -121,7 +121,7 @@ const COLLAB_COLUMNS = [
 const CollaborationSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: string) => void }> = ({ metrics, onDrillClick }) => (
   <CollapsibleSection title="Collaboration" defaultOpen={false}>
     <div className="px-4 py-3">
-      <div className="grid grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
         {COLLAB_COLUMNS.map(({ title, keys }) => (
           <div key={title}>
             <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2.5">{title}</div>
@@ -151,7 +151,7 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({ bulletSe
     <div className="flex flex-col gap-3.5">
       {/* Task Delivery + Code & Quality — side by side */}
       {(taskDelivery || codeQuality) && (
-        <div className="grid grid-cols-2 gap-3.5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           {taskDelivery && (
             <TwoColCard
               title="Task Delivery"

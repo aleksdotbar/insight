@@ -13,10 +13,11 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
   ResponsiveContainer,
+  ChartTooltipContent,
+  ChartLegendContent,
 } from '@hai3/uikit';
-import { Legend } from 'recharts';
+import { Tooltip, Legend } from 'recharts';
 import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_PURPLE, CHART_GREEN } from '../base/chartColors';
 import type { PeriodValue } from '../../types';
 
@@ -95,8 +96,8 @@ const DeliveryTrends: React.FC<DeliveryTrendsProps> = ({ data, period = 'month' 
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_TRACK_BG} />
         <XAxis dataKey="week" tick={{ fontSize: 10, fill: CHART_GRAY }} axisLine={false} tickLine={false} />
         <YAxis tick={{ fontSize: 10, fill: CHART_GRAY }} axisLine={false} tickLine={false} allowDecimals={false} />
-        <Tooltip />
-        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
+        <Tooltip content={<ChartTooltipContent />} />
+        <Legend content={<ChartLegendContent />} wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
         <Line type="monotone" dataKey="Commits" stroke={CHART_BLUE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
         <Line type="monotone" dataKey="PRs Merged" stroke={CHART_PURPLE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
         <Line type="monotone" dataKey="Tasks Done" stroke={CHART_GREEN} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />

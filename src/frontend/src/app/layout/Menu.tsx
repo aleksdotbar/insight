@@ -22,9 +22,11 @@ import { HAI3LogoTextIcon } from '@/app/icons/HAI3LogoTextIcon';
 
 export interface MenuProps {
   children?: React.ReactNode;
+  /** Called after a navigation action — use to close mobile sheet */
+  onNavigate?: () => void;
 }
 
-export const Menu: React.FC<MenuProps> = ({ children }) => {
+export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
   const menuState = useAppSelector((state) => state['layout/menu'] as MenuState | undefined);
   const activeParam = useAppSelector((state) => {
     const s = state as Record<string, unknown>;
@@ -50,6 +52,7 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
     } else {
       navigateToScreen(currentScreenset ?? '', itemId);
     }
+    onNavigate?.();
   };
 
   const toggleGroup = (id: string) =>
@@ -109,7 +112,7 @@ export const Menu: React.FC<MenuProps> = ({ children }) => {
   };
 
   return (
-    <Sidebar collapsed={collapsed}>
+    <Sidebar collapsed={collapsed} className="h-full">
       <SidebarHeader
         logo={<HAI3LogoIcon />}
         logoText={!collapsed ? <HAI3LogoTextIcon /> : undefined}

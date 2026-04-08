@@ -156,6 +156,7 @@ export interface IcKpi {
   value: string;
   unit: string;
   sublabel: string;
+  description?: string;
   delta: string;
   delta_type: 'good' | 'warn' | 'bad' | 'neutral';
 }

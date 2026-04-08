@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Card, CardContent } from '@hai3/uikit';
+import { Badge, Button, Card, CardContent } from '@hai3/uikit';
 import type { TeamMember } from '../../../types';
 
 export interface AttentionNeededProps {
@@ -80,17 +80,18 @@ export const AttentionNeeded: React.FC<AttentionNeededProps> = ({ members, onNav
             <div className="flex-1 min-w-0">
               <div className="text-[12px] font-bold text-gray-900 mb-0.5">{alert.title}</div>
               <div className="text-[11px] text-gray-500">{alert.description}</div>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => onNavigate(alert.member.person_id)}
-                className="mt-1 text-[11px] text-blue-600 font-semibold cursor-pointer bg-transparent border-none p-0"
+                className="mt-1 h-auto p-0 text-[11px] text-blue-600 font-semibold"
               >
                 → Open IC dashboard
-              </button>
+              </Button>
             </div>
-            <span className={`inline-flex text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${SEVERITY_BADGE_CLASS[alert.severity]}`}>
+            <Badge className={`text-[10px] font-bold flex-shrink-0 ${SEVERITY_BADGE_CLASS[alert.severity]}`}>
               {alert.declineBadge}
-            </span>
+            </Badge>
           </div>
         ))}
       </CardContent>

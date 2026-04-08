@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { Badge } from '@hai3/uikit';
 import { ProgressTrack } from '../base/ProgressTrack';
 import type { BulletMetric } from '../../types';
 
@@ -100,10 +101,9 @@ const BulletChart: React.FC<BulletChartProps> = ({
           {unit && <span className="text-[11px] text-gray-400">{unit}</span>}
           {suffix && <span className="text-[9px] text-gray-400">{suffix}</span>}
         </div>
-        <div className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-semibold ${STATUS_BADGE_CLASS[status]}`}>
-          <span>{STATUS_ARROW[status]}</span>
-          <span>{median_label}</span>
-        </div>
+        <Badge className={`text-[10px] font-semibold gap-1 ${STATUS_BADGE_CLASS[status]}`}>
+          {STATUS_ARROW[status]} {median_label}
+        </Badge>
       </div>
     );
   }
