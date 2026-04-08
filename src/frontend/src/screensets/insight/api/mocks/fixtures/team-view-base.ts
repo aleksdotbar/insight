@@ -13,6 +13,7 @@ import type {
   BulletSection,
   PeriodValue,
   TeamViewConfig,
+  DataAvailability,
 } from '../../../types';
 
 // ---------------------------------------------------------------------------
@@ -20,18 +21,18 @@ import type {
 // ---------------------------------------------------------------------------
 
 export const TEAM_MEMBERS_MONTH: TeamMember[] = [
-  { person_id: 'p1',  period: 'month', name: 'Alice Kim',      seniority: 'Senior', tasks_closed: 12, bugs_fixed: 5, dev_time_h: 14, prs_merged: 11, build_success_pct: 97, focus_time_pct: 72, ai_tools: ['Cursor', 'Claude Code'], ai_loc_share_pct: 27 },
-  { person_id: 'p2',  period: 'month', name: 'Ben Clarke',     seniority: 'Middle', tasks_closed: 2,  bugs_fixed: 1, dev_time_h: 31, prs_merged: 2,  build_success_pct: 78, focus_time_pct: 48, ai_tools: [],                         ai_loc_share_pct: 0,  trend_label: '3 months declining' },
-  { person_id: 'p3',  period: 'month', name: 'Tom Sullivan',   seniority: 'Middle', tasks_closed: 3,  bugs_fixed: 2, dev_time_h: 26, prs_merged: 3,  build_success_pct: 82, focus_time_pct: 55, ai_tools: ['Codex'],                   ai_loc_share_pct: 8,  trend_label: '2 months declining' },
-  { person_id: 'p4',  period: 'month', name: 'Sara Jansen',    seniority: 'Junior', tasks_closed: 5,  bugs_fixed: 3, dev_time_h: 18, prs_merged: 4,  build_success_pct: 85, focus_time_pct: 62, ai_tools: ['Cursor'],                  ai_loc_share_pct: 12 },
-  { person_id: 'p5',  period: 'month', name: 'Mike Chen',      seniority: 'Senior', tasks_closed: 10, bugs_fixed: 4, dev_time_h: 12, prs_merged: 9,  build_success_pct: 94, focus_time_pct: 68, ai_tools: ['Cursor', 'Claude Code'], ai_loc_share_pct: 31 },
-  { person_id: 'p6',  period: 'month', name: 'Emma Davis',     seniority: 'Lead',   tasks_closed: 8,  bugs_fixed: 2, dev_time_h: 10, prs_merged: 7,  build_success_pct: 96, focus_time_pct: 81, ai_tools: ['Claude Code'],            ai_loc_share_pct: 22 },
-  { person_id: 'p7',  period: 'month', name: 'Carlos Ruiz',    seniority: 'Middle', tasks_closed: 6,  bugs_fixed: 3, dev_time_h: 16, prs_merged: 5,  build_success_pct: 88, focus_time_pct: 59, ai_tools: ['Cursor'],                  ai_loc_share_pct: 14, trend_label: '2 months declining' },
-  { person_id: 'p8',  period: 'month', name: 'Priya Patel',    seniority: 'Senior', tasks_closed: 9,  bugs_fixed: 4, dev_time_h: 13, prs_merged: 8,  build_success_pct: 92, focus_time_pct: 74, ai_tools: ['Cursor', 'Codex'],         ai_loc_share_pct: 19 },
-  { person_id: 'p9',  period: 'month', name: 'James Wilson',   seniority: 'Junior', tasks_closed: 4,  bugs_fixed: 2, dev_time_h: 20, prs_merged: 3,  build_success_pct: 80, focus_time_pct: 42, ai_tools: [],                         ai_loc_share_pct: 0,  trend_label: '3 months declining' },
-  { person_id: 'p10', period: 'month', name: 'Ana Kovac',      seniority: 'Middle', tasks_closed: 7,  bugs_fixed: 3, dev_time_h: 15, prs_merged: 6,  build_success_pct: 89, focus_time_pct: 65, ai_tools: ['Cursor'],                  ai_loc_share_pct: 16 },
-  { person_id: 'p11', period: 'month', name: 'Leo Zhang',      seniority: 'Senior', tasks_closed: 11, bugs_fixed: 6, dev_time_h: 11, prs_merged: 10, build_success_pct: 95, focus_time_pct: 76, ai_tools: ['Claude Code', 'Codex'],   ai_loc_share_pct: 34 },
-  { person_id: 'p12', period: 'month', name: 'Nina Ross',      seniority: 'Junior', tasks_closed: 3,  bugs_fixed: 1, dev_time_h: 22, prs_merged: 2,  build_success_pct: 83, focus_time_pct: 53, ai_tools: ['Cursor'],                  ai_loc_share_pct: 10, trend_label: '2 months declining' },
+  { person_id: 'p1',  period: 'month', name: 'Alice Kim',    seniority: 'Senior', tasks_closed: 12, bugs_fixed: 5, dev_time_h: 14, prs_merged: 11, build_success_pct: 96, focus_time_pct: 72, ai_tools: ['Cursor', 'Claude Code'], ai_loc_share_pct: 27 },
+  { person_id: 'p2',  period: 'month', name: 'Ben Clarke',   seniority: 'Middle', tasks_closed: 2,  bugs_fixed: 1, dev_time_h: 31, prs_merged: 2,  build_success_pct: 78, focus_time_pct: 48, ai_tools: [],                        ai_loc_share_pct: 0,  trend_label: '3 months declining' },
+  { person_id: 'p3',  period: 'month', name: 'Tom Sullivan', seniority: 'Middle', tasks_closed: 3,  bugs_fixed: 2, dev_time_h: 26, prs_merged: 3,  build_success_pct: 83, focus_time_pct: 55, ai_tools: ['Codex'],                  ai_loc_share_pct: 8,  trend_label: '2 months declining' },
+  { person_id: 'p4',  period: 'month', name: 'Sara Jansen',  seniority: 'Junior', tasks_closed: 5,  bugs_fixed: 3, dev_time_h: 18, prs_merged: 4,  build_success_pct: 91, focus_time_pct: 62, ai_tools: ['Cursor'],                 ai_loc_share_pct: 12 },
+  { person_id: 'p5',  period: 'month', name: 'Mike Chen',    seniority: 'Senior', tasks_closed: 10, bugs_fixed: 4, dev_time_h: 12, prs_merged: 9,  build_success_pct: 97, focus_time_pct: 68, ai_tools: ['Cursor', 'Claude Code'], ai_loc_share_pct: 31 },
+  { person_id: 'p6',  period: 'month', name: 'Emma Davis',   seniority: 'Lead',   tasks_closed: 8,  bugs_fixed: 2, dev_time_h: 10, prs_merged: 7,  build_success_pct: 99, focus_time_pct: 81, ai_tools: ['Claude Code'],           ai_loc_share_pct: 22 },
+  { person_id: 'p7',  period: 'month', name: 'Carlos Ruiz',  seniority: 'Middle', tasks_closed: 6,  bugs_fixed: 3, dev_time_h: 16, prs_merged: 5,  build_success_pct: 88, focus_time_pct: 59, ai_tools: ['Cursor'],                 ai_loc_share_pct: 14, trend_label: '2 months declining' },
+  { person_id: 'p8',  period: 'month', name: 'Priya Patel',  seniority: 'Senior', tasks_closed: 9,  bugs_fixed: 4, dev_time_h: 13, prs_merged: 8,  build_success_pct: 94, focus_time_pct: 74, ai_tools: ['Cursor', 'Codex'],        ai_loc_share_pct: 19 },
+  { person_id: 'p9',  period: 'month', name: 'James Wilson', seniority: 'Junior', tasks_closed: 4,  bugs_fixed: 2, dev_time_h: 20, prs_merged: 3,  build_success_pct: 82, focus_time_pct: 42, ai_tools: [],                        ai_loc_share_pct: 0,  trend_label: '3 months declining' },
+  { person_id: 'p10', period: 'month', name: 'Ana Kovac',    seniority: 'Middle', tasks_closed: 7,  bugs_fixed: 3, dev_time_h: 15, prs_merged: 6,  build_success_pct: 92, focus_time_pct: 65, ai_tools: ['Cursor'],                 ai_loc_share_pct: 16 },
+  { person_id: 'p11', period: 'month', name: 'Leo Zhang',    seniority: 'Senior', tasks_closed: 11, bugs_fixed: 6, dev_time_h: 11, prs_merged: 10, build_success_pct: 98, focus_time_pct: 76, ai_tools: ['Claude Code', 'Codex'],  ai_loc_share_pct: 34 },
+  { person_id: 'p12', period: 'month', name: 'Nina Ross',    seniority: 'Junior', tasks_closed: 3,  bugs_fixed: 1, dev_time_h: 22, prs_merged: 2,  build_success_pct: 79, focus_time_pct: 53, ai_tools: ['Cursor'],                 ai_loc_share_pct: 10, trend_label: '2 months declining' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -318,15 +319,24 @@ export const TEAM_KPIS_BY_PERIOD: Record<PeriodValue, TeamKpi[]> = {
 
 export const TEAM_VIEW_CONFIG: TeamViewConfig = {
   alert_thresholds: [
+    { metric_key: 'build_success_pct', trigger: 90, bad: 80, reason: 'Build success rate below 90% target' },
     { metric_key: 'focus_time_pct',    trigger: 60, bad: 48, reason: 'Focus time below 60% target' },
-    { metric_key: 'build_success_pct', trigger: 90, bad: 72, reason: 'Build success rate below target' },
     { metric_key: 'ai_loc_share_pct',  trigger: 10, bad: 8,  reason: 'Low AI tool adoption' },
   ],
   column_thresholds: [
-    { metric_key: 'bugs_fixed',        good: 15, warn: 8,   higher_is_better: true },
-    { metric_key: 'dev_time_h',        good: 14, warn: 20,  higher_is_better: false },
-    { metric_key: 'build_success_pct', good: 90, warn: 80,  higher_is_better: true },
-    { metric_key: 'focus_time_pct',    good: 60, warn: 50,  higher_is_better: true },
-    { metric_key: 'ai_loc_share_pct',  good: 20, warn: 10,  higher_is_better: true },
+    { metric_key: 'bugs_fixed',        good: 15, warn: 8,  higher_is_better: true },
+    { metric_key: 'dev_time_h',        good: 14, warn: 20, higher_is_better: false },
+    { metric_key: 'build_success_pct', good: 90, warn: 80, higher_is_better: true },
+    { metric_key: 'focus_time_pct',    good: 60, warn: 50, higher_is_better: true },
+    { metric_key: 'ai_loc_share_pct',  good: 20, warn: 10, higher_is_better: true },
   ],
+};
+
+export const TEAM_DATA_AVAILABILITY: DataAvailability = {
+  git:   'available',
+  tasks: 'available',
+  ci:    'available',
+  comms: 'available',
+  hr:    'available',
+  ai:    'available',
 };

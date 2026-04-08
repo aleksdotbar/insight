@@ -6,6 +6,7 @@
 import React from 'react';
 import { Badge, Button, Card, CardContent } from '@hai3/uikit';
 import type { TeamMember, AlertThreshold } from '../../../types';
+import { METRIC_KEYS } from '../../../types';
 
 export interface AttentionNeededProps {
   members: TeamMember[];
@@ -31,17 +32,21 @@ const SEVERITY_BADGE_CLASS: Record<Severity, string> = {
 
 
 function buildDescription(metricKey: string, m: TeamMember, trigger: number): string {
-  const val = m[metricKey as keyof TeamMember] as number;
-  switch (metricKey) {
-    case 'focus_time_pct':
-      return `Focus time is ${val}% vs ${trigger}% target. ${m.tasks_closed} tasks completed this period.`;
-    case 'build_success_pct':
-      return `Build success rate is ${val}% vs ${trigger}% target. ${m.prs_merged} PRs merged this period.`;
-    case 'ai_loc_share_pct':
-      return `AI LOC share is ${val}% vs ${trigger}% target. ${m.ai_tools.length === 0 ? 'No AI tools active.' : `Active tools: ${m.ai_tools.join(', ')}.`}`;
-    default:
-      return `${metricKey} is ${val} vs ${trigger} target.`;
-  }
+  const val  = m[metricKey as keyof TeamMember] as number;
+  const def  = METRIC_KEYS[metricKey as keyof typeof METRIC_KEYS];
+  const unit = def?.unit ?? '';
+  const label = def?.label ?? metricKey;
+
+  const base = `${label} is ${val}${unit} vs ${trigger}${unit} target.`;
+
+  if (metricKey === 'focus_time_pct')
+    return `${base} ${m.tasks_closed} tasks completed this period.`;
+  if (metricKey === 'build_success_pct')
+    return `${base} ${m.prs_merged} PRs merged this period.`;
+  if (metricKey === 'ai_loc_share_pct')
+    return `${base} ${m.ai_tools.length === 0 ? 'No AI tools active.' : `Active tools: ${m.ai_tools.join(', ')}.`}`;
+
+  return base;
 }
 
 function computeAlerts(members: TeamMember[], alertThresholds: AlertThreshold[]): AlertItem[] {

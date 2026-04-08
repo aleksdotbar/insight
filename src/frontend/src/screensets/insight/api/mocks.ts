@@ -31,8 +31,8 @@ import type {
 // ---------------------------------------------------------------------------
 // Fixture imports
 // ---------------------------------------------------------------------------
-import { EXEC_TEAMS_MONTH, EXEC_ORG_KPIS_MONTH, EXEC_VIEW_CONFIG } from './mocks/fixtures/executive-view';
-import { TEAM_MEMBERS_MONTH, BULLET_SECTIONS_MONTH, TEAM_KPIS_BY_PERIOD, TEAM_VIEW_CONFIG } from './mocks/fixtures/team-view-base';
+import { EXEC_TEAMS_MONTH, EXEC_ORG_KPIS_MONTH, EXEC_VIEW_CONFIG, EXEC_DATA_AVAILABILITY } from './mocks/fixtures/executive-view';
+import { TEAM_MEMBERS_MONTH, BULLET_SECTIONS_MONTH, TEAM_KPIS_BY_PERIOD, TEAM_VIEW_CONFIG, TEAM_DATA_AVAILABILITY } from './mocks/fixtures/team-view-base';
 import { IC_DASHBOARD_MOCK } from './mocks/fixtures/ic-alice';
 import { TEAM_DRILLS } from './mocks/fixtures/team-drills';
 
@@ -101,13 +101,15 @@ type RateDeltas = { build: number; focus: number; ai: number; aiLoc: number; cyc
 function scaleExecTeams(teams: ExecTeamRow[], factor: number, rates?: RateDeltas): ExecTeamRow[] {
   return teams.map((t) => ({
     ...t,
-    tasks_closed: Math.round(t.tasks_closed * factor),
-    bugs_fixed: Math.round(t.bugs_fixed * factor),
-    build_success_pct: rates ? Math.min(100, Math.max(0, t.build_success_pct + rates.build)) : t.build_success_pct,
-    focus_time_pct:    rates ? Math.min(100, Math.max(0, t.focus_time_pct    + rates.focus)) : t.focus_time_pct,
-    ai_adoption_pct:   rates ? Math.min(100, Math.max(0, t.ai_adoption_pct   + rates.ai))   : t.ai_adoption_pct,
-    ai_loc_share_pct:  rates ? Math.min(100, Math.max(0, t.ai_loc_share_pct  + rates.aiLoc)): t.ai_loc_share_pct,
-    pr_cycle_time_h:   rates ? Math.max(1,               t.pr_cycle_time_h   + rates.cycle)  : t.pr_cycle_time_h,
+    tasks_closed:      t.tasks_closed !== null ? Math.round(t.tasks_closed * factor) : null,
+    bugs_fixed:        t.bugs_fixed   !== null ? Math.round(t.bugs_fixed   * factor) : null,
+    build_success_pct: t.build_success_pct !== null
+      ? (rates ? Math.min(100, Math.max(0, t.build_success_pct + rates.build)) : t.build_success_pct)
+      : null,
+    focus_time_pct:    rates ? Math.min(100, Math.max(0, t.focus_time_pct   + rates.focus)) : t.focus_time_pct,
+    ai_adoption_pct:   rates ? Math.min(100, Math.max(0, t.ai_adoption_pct  + rates.ai))   : t.ai_adoption_pct,
+    ai_loc_share_pct:  rates ? Math.min(100, Math.max(0, t.ai_loc_share_pct + rates.aiLoc)): t.ai_loc_share_pct,
+    pr_cycle_time_h:   rates ? Math.max(1,               t.pr_cycle_time_h  + rates.cycle)  : t.pr_cycle_time_h,
   }));
 }
 
@@ -116,21 +118,25 @@ export const EXEC_VIEW_MOCK: Record<PeriodValue, ExecViewData> = {
     teams: scaleExecTeams(EXEC_TEAMS_MONTH, 0.25, { build: +2, focus: -3, ai: -5, aiLoc: -4, cycle: -3 }),
     orgKpis: { avgBuildSuccess: 93, avgAiAdoption: 55, avgFocus: 61, bugResolutionScore: 80, prCycleScore: 68 },
     config: EXEC_VIEW_CONFIG,
+    data_availability: EXEC_DATA_AVAILABILITY,
   },
   month: {
     teams: EXEC_TEAMS_MONTH,
     orgKpis: EXEC_ORG_KPIS_MONTH,
     config: EXEC_VIEW_CONFIG,
+    data_availability: EXEC_DATA_AVAILABILITY,
   },
   quarter: {
     teams: scaleExecTeams(EXEC_TEAMS_MONTH, 3, { build: -2, focus: +2, ai: +4, aiLoc: +2, cycle: +2 }),
     orgKpis: { avgBuildSuccess: 88, avgAiAdoption: 62, avgFocus: 64, bugResolutionScore: 76, prCycleScore: 63 },
     config: EXEC_VIEW_CONFIG,
+    data_availability: EXEC_DATA_AVAILABILITY,
   },
   year: {
     teams: scaleExecTeams(EXEC_TEAMS_MONTH, 12, { build: -3, focus: +3, ai: -2, aiLoc: -3, cycle: +4 }),
     orgKpis: { avgBuildSuccess: 87, avgAiAdoption: 57, avgFocus: 62, bugResolutionScore: 75, prCycleScore: 62 },
     config: EXEC_VIEW_CONFIG,
+    data_availability: EXEC_DATA_AVAILABILITY,
   },
 };
 
@@ -200,10 +206,10 @@ const _quarterMembers = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'quarter', 3);
 const _yearMembers    = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'year', 12);
 
 export const TEAM_VIEW_MOCK: Record<PeriodValue, TeamViewData> = {
-  week:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    _weekMembers),    members: _weekMembers,           bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG },
-  month:   { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   TEAM_MEMBERS_MONTH), members: TEAM_MEMBERS_MONTH,  bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG },
-  quarter: { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, _quarterMembers), members: _quarterMembers,         bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG },
-  year:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    _yearMembers),    members: _yearMembers,             bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG },
+  week:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    _weekMembers),    members: _weekMembers,           bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+  month:   { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   TEAM_MEMBERS_MONTH), members: TEAM_MEMBERS_MONTH,  bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+  quarter: { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, _quarterMembers), members: _quarterMembers,         bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+  year:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    _yearMembers),    members: _yearMembers,             bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
 };
 
 // ---------------------------------------------------------------------------
@@ -294,8 +300,8 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
     bm(period, 'task_delivery', 'task_reopen_rate', 'Task Reopen Rate', 'Jira \u00b7 closed then reopened within 14 days \u00b7 lower = better',
       '4', '%', '0%', '15%', '5', 'Median: 5%', 27, 33, 'good', 'task-reopen'),
     bm(period, 'task_delivery', 'due_date_compliance', 'Due Date Compliance', 'Jira \u00b7 tasks closed by due date',
-      String(Math.min(100, Math.round(60 + build / 4))), '%', '40%', '100%', '72', 'Median: 72%',
-      barPct(60 + build / 4, 40, 100), 53, 'good', ''),
+      String(Math.min(100, Math.round(60 + (build ?? 80) / 4))), '%', '40%', '100%', '72', 'Median: 72%',
+      barPct(60 + (build ?? 80) / 4, 40, 100), 53, 'good', ''),
     // git_output
     bm(period, 'git_output', 'commits', 'Commits Created', 'Bitbucket \u00b7 commits authored',
       String(commits), 'count', '2', '55', '22', 'Median: 22',
@@ -311,8 +317,9 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
       String(reviews), 'count', '0', '20', '8', 'Median: 8',
       barPct(reviews, 0, 20), 40, reviews >= 8 ? 'good' : 'warn', 'reviews'),
     bm(period, 'code_quality', 'build_success', 'Build Success Rate', 'CI \u00b7 passed \u00f7 total runs \u00b7 target \u226590%',
-      String(build), '%', '78%', '100%', '87', 'Median: 87%',
-      barPct(build, 78, 100), 41, build >= 90 ? 'good' : build >= 80 ? 'warn' : 'bad', 'builds'),
+      build !== null ? String(build) : '\u2014', '%', '78%', '100%', '87', 'Median: 87%',
+      build !== null ? barPct(build, 78, 100) : 0, 41,
+      build !== null ? (build >= 90 ? 'good' : build >= 80 ? 'warn' : 'bad') : 'warn', 'builds'),
     bm(period, 'code_quality', 'bugs_fixed', 'Bugs Fixed', 'Jira \u00b7 bug-type issues closed',
       String(bugs), 'count', '0', '30', '9', 'Median: 9',
       barPct(bugs, 0, 30), 30, 'good', 'bugs-fixed'),
@@ -450,15 +457,15 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
       rows: reviewRows,
     },
     'builds': {
-      title: 'Build Results', source: 'Bitbucket', srcClass: 'bg-blue-800',
-      value: `${build}%`,
-      filter: `author = ${login} AND build.date >= 2026-03-01`,
+      title: 'Build Results', source: 'CI', srcClass: 'bg-gray-600',
+      value: build !== null ? `${build}%` : '\u2014',
+      filter: build !== null ? `author = ${login} AND build.date >= 2026-03-01` : 'CI connector not configured',
       columns: ['Build', 'Branch', 'Status', 'Duration'],
-      rows: [
-        { Build: `build-${1000 + pid * 10 + 2}`, Branch: 'feat/main-feature', Status: 'Passed',                  Duration: '3m 12s' },
+      rows: build !== null ? [
+        { Build: `build-${1000 + pid * 10 + 2}`, Branch: 'feat/main-feature', Status: 'Passed',                       Duration: '3m 12s' },
         { Build: `build-${1000 + pid * 10 + 1}`, Branch: 'feat/main-feature', Status: build < 90 ? 'Failed' : 'Passed', Duration: '2m 08s' },
-        { Build: `build-${1000 + pid * 10}`,     Branch: 'fix/bug-fix',        Status: 'Passed',                  Duration: '3m 01s' },
-      ],
+        { Build: `build-${1000 + pid * 10}`,     Branch: 'fix/bug-fix',        Status: 'Passed',                       Duration: '3m 01s' },
+      ] : [],
     },
     'bugs-fixed': {
       title: 'Bugs Fixed', source: 'Jira', srcClass: 'bg-blue-600',
@@ -476,6 +483,7 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
     charts: { locTrend, deliveryTrend },
     timeOffNotice: null,
     drills,
+    data_availability: EXEC_DATA_AVAILABILITY,
   };
 }
 

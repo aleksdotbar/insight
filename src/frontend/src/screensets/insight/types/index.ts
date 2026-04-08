@@ -3,6 +3,51 @@
  * Shared type definitions for this screenset
  */
 
+// ---------------------------------------------------------------------------
+// Metric Key Catalog
+// Single source of truth for metric labels, units, and data source annotations.
+// ---------------------------------------------------------------------------
+
+export type MetricV1Status = 'available' | 'pending' | 'missing';
+
+export interface MetricKeyDef {
+  key:       string;
+  label:     string;
+  unit:      string;
+  sourceTag: string;   // human-readable data source, e.g. "GitHub / Bitbucket"
+  v1Status:  MetricV1Status;
+}
+
+export const METRIC_KEYS = {
+  // --- delivery ---
+  tasks_closed:      { key: 'tasks_closed',      label: 'Tasks Closed',        unit: '',   sourceTag: 'Jira',                  v1Status: 'pending'   },
+  bugs_fixed:        { key: 'bugs_fixed',         label: 'Bugs Fixed',          unit: '',   sourceTag: 'Jira',                  v1Status: 'pending'   },
+  tasks_per_sprint:  { key: 'tasks_per_sprint',   label: 'Tasks per Sprint',    unit: '',   sourceTag: 'Jira',                  v1Status: 'pending'   },
+  // --- git ---
+  prs_merged:        { key: 'prs_merged',         label: 'PRs Merged',          unit: '',   sourceTag: 'GitHub / Bitbucket',    v1Status: 'available' },
+  pr_cycle_time_h:   { key: 'pr_cycle_time_h',    label: 'PR Cycle Time',       unit: 'h',  sourceTag: 'GitHub / Bitbucket',    v1Status: 'available' },
+  pr_review_time_h:  { key: 'pr_review_time_h',   label: 'PR Review Time',      unit: 'h',  sourceTag: 'GitHub / Bitbucket',    v1Status: 'available' },
+  loc_per_day:       { key: 'loc_per_day',         label: 'LOC per Day',         unit: '',   sourceTag: 'GitHub / Bitbucket',    v1Status: 'available' },
+  loc:               { key: 'loc',                 label: 'Clean LOC',           unit: '',   sourceTag: 'GitHub / Bitbucket',    v1Status: 'available' },
+  // --- CI ---
+  build_success_pct: { key: 'build_success_pct',  label: 'Build Success Rate',  unit: '%',  sourceTag: 'CI',                    v1Status: 'available' },
+  // --- focus / comms ---
+  focus_time_pct:    { key: 'focus_time_pct',      label: 'Focus Time',          unit: '%',  sourceTag: 'Calendar / M365',       v1Status: 'available' },
+  dev_time_h:        { key: 'dev_time_h',           label: 'Dev Time',            unit: 'h',  sourceTag: 'Calendar / M365',       v1Status: 'available' },
+  // --- AI ---
+  ai_loc_share_pct:  { key: 'ai_loc_share_pct',    label: 'AI LOC Share',        unit: '%',  sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
+  ai_adoption_pct:   { key: 'ai_adoption_pct',     label: 'AI Adoption',         unit: '%',  sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
+  ai_sessions:       { key: 'ai_sessions',          label: 'AI Sessions',         unit: '',   sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
+  // --- computed ---
+  at_risk_count:     { key: 'at_risk_count',        label: 'Members at Risk',     unit: '',   sourceTag: 'computed',              v1Status: 'available' },
+  focus_gte_60:      { key: 'focus_gte_60',         label: 'Focus ≥ 60%',         unit: '',   sourceTag: 'computed',              v1Status: 'available' },
+  not_using_ai:      { key: 'not_using_ai',         label: 'Not Using AI',        unit: '',   sourceTag: 'computed',              v1Status: 'available' },
+  avg_pr_cycle:      { key: 'avg_pr_cycle',         label: 'Avg PR Cycle',        unit: 'h',  sourceTag: 'GitHub / Bitbucket',    v1Status: 'available' },
+  total_loc:         { key: 'total_loc',            label: 'Total LOC',           unit: '',   sourceTag: 'GitHub / Bitbucket',    v1Status: 'available' },
+} as const satisfies Record<string, MetricKeyDef>;
+
+export type MetricKeyName = keyof typeof METRIC_KEYS;
+
 export type UserRole = 'executive' | 'team_lead' | 'ic';
 
 export interface CurrentUser {
@@ -71,13 +116,22 @@ export interface ExecViewConfig {
 }
 
 // Executive View
+export type DataAvailability = {
+  git:   'available' | 'no-connector' | 'syncing';
+  tasks: 'available' | 'no-connector' | 'syncing';
+  ci:    'available' | 'no-connector' | 'syncing';
+  comms: 'available' | 'no-connector' | 'syncing';
+  hr:    'available' | 'no-connector' | 'syncing';
+  ai:    'available' | 'no-connector' | 'syncing';
+};
+
 export interface ExecTeamRow {
   team_id: string;
   team_name: string;
   headcount: number;
-  tasks_closed: number;
-  bugs_fixed: number;
-  build_success_pct: number;
+  tasks_closed: number | null;   // null when [tasks] connector not configured
+  bugs_fixed: number | null;     // null when [tasks] connector not configured
+  build_success_pct: number | null; // null when [ci] connector not configured
   focus_time_pct: number;
   ai_adoption_pct: number;
   ai_loc_share_pct: number;
@@ -85,16 +139,17 @@ export interface ExecTeamRow {
   status: 'good' | 'warn' | 'bad';
 }
 export interface OrgKpis {
-  avgBuildSuccess: number;
+  avgBuildSuccess: number | null;    // null when [ci] not configured
   avgAiAdoption: number;
   avgFocus: number;
-  bugResolutionScore: number;
+  bugResolutionScore: number | null; // null when [tasks] not configured
   prCycleScore: number;
 }
 export interface ExecViewData {
   teams: ExecTeamRow[];
   orgKpis: OrgKpis;
   config: ExecViewConfig;
+  data_availability: DataAvailability;
 }
 
 // Team View
@@ -117,7 +172,7 @@ export interface TeamMember {
   bugs_fixed: number;
   dev_time_h: number;
   prs_merged: number;
-  build_success_pct: number;
+  build_success_pct: number | null; // null when [ci] connector not configured
   focus_time_pct: number;
   ai_tools: string[];
   ai_loc_share_pct: number;
@@ -169,6 +224,7 @@ export interface TeamViewData {
   members: TeamMember[];
   bulletSections: BulletSection[];
   config: TeamViewConfig;
+  data_availability: DataAvailability;
 }
 
 // IC Dashboard
@@ -229,4 +285,5 @@ export interface IcDashboardData {
   charts: IcChartsData;
   timeOffNotice: TimeOffNotice | null;
   drills: Record<string, DrillData>;
+  data_availability: DataAvailability;
 }

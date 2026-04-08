@@ -47,7 +47,7 @@ function isGoodByThreshold(value: number, metricKey: string, thresholds: ExecCol
 
 export const OrgKpiCards: React.FC<OrgKpiCardsProps> = ({ teams, orgKpis, columnThresholds }) => {
   const teamsAtRisk = (teams ?? []).filter((t) => t.status === 'warn' || t.status === 'bad').length;
-  const avgBuildSuccess = orgKpis?.avgBuildSuccess ?? 0;
+  const avgBuildSuccess = orgKpis?.avgBuildSuccess ?? null;
   const avgAiAdoption = orgKpis?.avgAiAdoption ?? 0;
   const avgFocus = orgKpis?.avgFocus ?? 0;
 
@@ -58,8 +58,12 @@ export const OrgKpiCards: React.FC<OrgKpiCardsProps> = ({ teams, orgKpis, column
   const cards: KpiCardDef[] = [
     { label: 'Teams at Risk', value: teamsAtRisk, isGood: teamsAtRisk === 0,
       description: 'Teams with warn or bad status across key delivery and quality metrics.' },
-    { label: 'Avg Build Success', value: `${avgBuildSuccess}%`, isGood: isGoodByThreshold(avgBuildSuccess, 'build_success_pct', columnThresholds),
-      description: `Average CI/CD build pass rate across all teams. Target ≥${buildT}%.` },
+    { label: 'Avg Build Success',
+      value: avgBuildSuccess !== null ? `${avgBuildSuccess}%` : '—',
+      isGood: avgBuildSuccess !== null ? isGoodByThreshold(avgBuildSuccess, 'build_success_pct', columnThresholds) : true,
+      description: avgBuildSuccess !== null
+        ? `Average CI/CD build pass rate across all teams. Target ≥${buildT}%.`
+        : 'Not configured — CI connector not set up.' },
     { label: 'Avg AI Adoption', value: `${avgAiAdoption}%`, isGood: isGoodByThreshold(avgAiAdoption, 'ai_adoption_pct', columnThresholds),
       description: `Average share of members actively using AI tools this period. Target ≥${aiT}%.` },
     { label: 'Avg Focus Time', value: `${avgFocus}%`, isGood: isGoodByThreshold(avgFocus, 'focus_time_pct', columnThresholds),

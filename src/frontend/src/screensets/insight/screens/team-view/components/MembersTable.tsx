@@ -18,7 +18,8 @@ export interface MembersTableProps {
   onCellDrill?: (personId: string, drillId: string) => void;
 }
 
-function colClass(v: number, t: ColumnThreshold, type: 'text' | 'bg'): string {
+function colClass(v: number | null, t: ColumnThreshold, type: 'text' | 'bg'): string {
+  if (v === null) return type === 'text' ? 'text-gray-400' : '';
   const prefix = type === 'text' ? 'text' : 'bg';
   const good = t.higher_is_better ? v >= t.good : v <= t.good;
   const warn = t.higher_is_better ? v >= t.warn : v <= t.warn;
@@ -153,8 +154,8 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
                   </TableCell>
                   <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.bugs_fixed, tBugs, 'text')}`}>
                     {onCellDrill ? (
-                      <DrillCell onClick={drill(m.person_id, 'bugs-fixed')} className={colClass(m.bugs_fixed, tBugs, 'text')}>{m.bugs_fixed}</DrillCell>
-                    ) : m.bugs_fixed}
+                      <DrillCell onClick={drill(m.person_id, 'bugs-fixed')} className={colClass(m.bugs_fixed, tBugs, 'text')}>{m.bugs_fixed ?? '—'}</DrillCell>
+                    ) : (m.bugs_fixed ?? '—')}
                   </TableCell>
                   <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.dev_time_h, tDev, 'text')}`}>
                     {onCellDrill ? (
@@ -168,8 +169,10 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
                   </TableCell>
                   <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.build_success_pct, tBuild, 'text')}`}>
                     {onCellDrill ? (
-                      <DrillCell onClick={drill(m.person_id, 'builds')} className={colClass(m.build_success_pct, tBuild, 'text')}>{m.build_success_pct}%</DrillCell>
-                    ) : `${m.build_success_pct}%`}
+                      <DrillCell onClick={drill(m.person_id, 'builds')} className={colClass(m.build_success_pct, tBuild, 'text')}>
+                        {m.build_success_pct !== null ? `${m.build_success_pct}%` : '—'}
+                      </DrillCell>
+                    ) : (m.build_success_pct !== null ? `${m.build_success_pct}%` : '—')}
                   </TableCell>
                   <TableCell className="px-3 py-2.5">
                     <FocusBar pct={m.focus_time_pct} threshold={tFocus} />

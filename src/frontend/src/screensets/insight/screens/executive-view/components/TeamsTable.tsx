@@ -20,7 +20,8 @@ const statusBadgeClass = (status: 'good' | 'warn' | 'bad'): string => {
   return 'bg-insight-red-bg text-insight-red border-insight-red/20';
 };
 
-function thresholdClass(pct: number, metricKey: string, thresholds: ExecColumnThreshold[]): string {
+function thresholdClass(pct: number | null, metricKey: string, thresholds: ExecColumnThreshold[]): string {
+  if (pct === null) return 'font-semibold text-gray-400';
   const t = thresholds.find((x) => x.metric_key === metricKey);
   if (!t) return 'font-semibold';
   return pct >= t.threshold ? 'text-insight-green font-semibold' : 'text-insight-amber font-semibold';
@@ -70,10 +71,10 @@ export const TeamsTable: React.FC<TeamsTableProps> = ({ teams, columnThresholds,
               <TableRow key={team.team_id}>
                 <TableCell className="font-semibold">{team.team_name}</TableCell>
                 <TableCell>{team.headcount}</TableCell>
-                <TableCell>{team.tasks_closed}</TableCell>
-                <TableCell>{team.bugs_fixed}</TableCell>
+                <TableCell>{team.tasks_closed ?? '—'}</TableCell>
+                <TableCell>{team.bugs_fixed ?? '—'}</TableCell>
                 <TableCell className={thresholdClass(team.build_success_pct, 'build_success_pct', columnThresholds)}>
-                  {team.build_success_pct}%
+                  {team.build_success_pct !== null ? `${team.build_success_pct}%` : '—'}
                 </TableCell>
                 <TableCell className={thresholdClass(team.focus_time_pct, 'focus_time_pct', columnThresholds)}>
                   {team.focus_time_pct}%

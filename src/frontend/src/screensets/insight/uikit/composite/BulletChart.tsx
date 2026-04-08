@@ -7,7 +7,9 @@
 import React from 'react';
 import { Badge } from '@hai3/uikit';
 import { ProgressTrack } from '../base/ProgressTrack';
+import MetricInfo from '../base/MetricInfo';
 import type { BulletMetric } from '../../types';
+import { METRIC_KEYS } from '../../types';
 
 // Status class maps
 const STATUS_BAR_CLASS: Record<'good' | 'warn' | 'bad', string> = {
@@ -58,6 +60,7 @@ const BulletChart: React.FC<BulletChartProps> = ({
   personName,
 }) => {
   const {
+    metric_key,
     label,
     sublabel,
     value,
@@ -75,6 +78,8 @@ const BulletChart: React.FC<BulletChartProps> = ({
 
   const suffix = getPeriodSuffix(unit, period);
   const isDrillable = !!drill_id;
+  const catalogDef = METRIC_KEYS[metric_key as keyof typeof METRIC_KEYS];
+  const sourceTooltip = catalogDef ? `Source: ${catalogDef.sourceTag}` : undefined;
 
   const handleDrillClick = () => {
     if (isDrillable && onDrillClick) {
@@ -115,6 +120,7 @@ const BulletChart: React.FC<BulletChartProps> = ({
       <div className="flex justify-between items-start">
         <div>
           <span className="text-[12px] text-gray-500 font-medium leading-snug">{label}</span>
+          {sourceTooltip && <MetricInfo description={sourceTooltip} side="top" />}
           {fullSublabel && (
             <div className="text-[9px] text-gray-400 font-normal">{fullSublabel}</div>
           )}

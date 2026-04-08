@@ -8,6 +8,7 @@
 
 import type {
   BulletMetric,
+  DataAvailability,
   IcKpi,
   IcDashboardData,
   LocDataPoint,
@@ -15,6 +16,15 @@ import type {
   DrillData,
   PeriodValue,
 } from '../../../types';
+
+const ALICE_DATA_AVAILABILITY: DataAvailability = {
+  git:   'available',
+  tasks: 'available',
+  ci:    'available',
+  comms: 'available',
+  hr:    'available',
+  ai:    'available',
+};
 
 // ---------------------------------------------------------------------------
 // Drills — 8 drill types with full row data
@@ -417,6 +427,7 @@ export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardDa
       },
       timeOffNotice: null,
       drills: ALICE_DRILLS,
+      data_availability: ALICE_DATA_AVAILABILITY,
     },
     month: {
       person: { person_id: 'p1', name: 'Alice Kim', role: 'Senior Backend Developer', seniority: 'Senior' },
@@ -425,6 +436,7 @@ export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardDa
       charts: ALICE_CHARTS_MONTH,
       timeOffNotice: { days: 5, dateRange: 'Jul 14\u201318', bambooHrUrl: '#bamboo' },
       drills: ALICE_DRILLS,
+      data_availability: ALICE_DATA_AVAILABILITY,
     },
     quarter: {
       person: { person_id: 'p1', name: 'Alice Kim', role: 'Senior Backend Developer', seniority: 'Senior' },
@@ -444,6 +456,7 @@ export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardDa
       },
       timeOffNotice: { days: 5, dateRange: 'Jul 14\u201318', bambooHrUrl: '#bamboo' },
       drills: ALICE_DRILLS,
+      data_availability: ALICE_DATA_AVAILABILITY,
     },
     year: {
       person: { person_id: 'p1', name: 'Alice Kim', role: 'Senior Backend Developer', seniority: 'Senior' },
@@ -465,6 +478,7 @@ export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardDa
       },
       timeOffNotice: { days: 5, dateRange: 'Jul 14\u201318', bambooHrUrl: '#bamboo' },
       drills: ALICE_DRILLS,
+      data_availability: ALICE_DATA_AVAILABILITY,
     },
   },
 };
