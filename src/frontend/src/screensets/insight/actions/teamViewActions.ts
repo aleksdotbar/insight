@@ -12,9 +12,9 @@ import type { PeriodValue } from '../types';
 /**
  * Load team view data for the given period
  */
-export const loadTeamView = (period: PeriodValue): void => {
+export const loadTeamView = (teamId: string, period: PeriodValue): void => {
   eventBus.emit(TeamViewEvents.TeamViewLoadStarted);
-  void apiRegistry.getService(InsightApiService).getTeamViewData(period)
+  void apiRegistry.getService(InsightApiService).getTeamViewData(teamId, period)
     .then((data) => { eventBus.emit(TeamViewEvents.TeamViewLoaded, data); })
     .catch((err: unknown) => { eventBus.emit(TeamViewEvents.TeamViewLoadFailed, String(err)); });
 };

@@ -201,16 +201,39 @@ function withComputedKpis(teamKpis: TeamKpi[], members: TeamMember[]): TeamKpi[]
   });
 }
 
-const _weekMembers    = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'week', 0.25);
-const _quarterMembers = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'quarter', 3);
-const _yearMembers    = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'year', 12);
-
-export const TEAM_VIEW_MOCK: Record<PeriodValue, TeamViewData> = {
-  week:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    _weekMembers),    members: _weekMembers,           bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-  month:   { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   TEAM_MEMBERS_MONTH), members: TEAM_MEMBERS_MONTH,  bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-  quarter: { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, _quarterMembers), members: _quarterMembers,         bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-  year:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    _yearMembers),    members: _yearMembers,             bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+// Team roster — maps teamId to member person_ids (must match ORG in currentUserEffects)
+const TEAM_ROSTER: Record<string, { label: string; leadId: string; memberIds: string[] }> = {
+  backend:  { label: 'Backend',  leadId: 'p5',  memberIds: ['p1', 'p3', 'p4'] },
+  platform: { label: 'Platform', leadId: 'p6',  memberIds: ['p2', 'p8'] },
+  frontend: { label: 'Frontend', leadId: 'p11', memberIds: ['p7', 'p9', 'p10', 'p12'] },
 };
+
+function buildTeamViewMock(teamId: string): Record<PeriodValue, TeamViewData> {
+  const roster = TEAM_ROSTER[teamId];
+  if (!roster) return {} as Record<PeriodValue, TeamViewData>;
+
+  const allIds = [roster.leadId, ...roster.memberIds];
+  const monthMembers = TEAM_MEMBERS_MONTH.filter((m) => allIds.includes(m.person_id));
+  const weekMembers    = scaleTeamMembers(monthMembers, 'week', 0.25);
+  const quarterMembers = scaleTeamMembers(monthMembers, 'quarter', 3);
+  const yearMembers    = scaleTeamMembers(monthMembers, 'year', 12);
+
+  return {
+    week:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    weekMembers),    members: weekMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+    month:   { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   monthMembers),   members: monthMembers,   bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+    quarter: { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, quarterMembers), members: quarterMembers, bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+    year:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    yearMembers),    members: yearMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+  };
+}
+
+const TEAM_VIEW_MOCKS: Record<string, Record<PeriodValue, TeamViewData>> = {
+  backend:  buildTeamViewMock('backend'),
+  platform: buildTeamViewMock('platform'),
+  frontend: buildTeamViewMock('frontend'),
+};
+
+// Legacy export (defaults to backend)
+export const TEAM_VIEW_MOCK = TEAM_VIEW_MOCKS['backend'];
 
 // ---------------------------------------------------------------------------
 // IC Dashboard Generator
@@ -585,11 +608,13 @@ export const insightMockMap = {
   'GET /api/v1/analytics/views/executive?period=month':   (): ExecViewData => EXEC_VIEW_MOCK['month'],
   'GET /api/v1/analytics/views/executive?period=quarter': (): ExecViewData => EXEC_VIEW_MOCK['quarter'],
   'GET /api/v1/analytics/views/executive?period=year':    (): ExecViewData => EXEC_VIEW_MOCK['year'],
-  // Team View — one entry per period
-  'GET /api/v1/analytics/views/team?period=week':    (): TeamViewData => TEAM_VIEW_MOCK['week'],
-  'GET /api/v1/analytics/views/team?period=month':   (): TeamViewData => TEAM_VIEW_MOCK['month'],
-  'GET /api/v1/analytics/views/team?period=quarter': (): TeamViewData => TEAM_VIEW_MOCK['quarter'],
-  'GET /api/v1/analytics/views/team?period=year':    (): TeamViewData => TEAM_VIEW_MOCK['year'],
+  // Team View — one entry per teamId + period
+  ...Object.entries(TEAM_VIEW_MOCKS).reduce<Record<string, () => TeamViewData>>((acc, [tid, periods]) => {
+    for (const p of ['week', 'month', 'quarter', 'year'] as PeriodValue[]) {
+      acc[`GET /api/v1/analytics/views/team/${tid}?period=${p}`] = (): TeamViewData => periods[p];
+    }
+    return acc;
+  }, {}),
   // IC Dashboard — flat paths per personId + period (wildcards ignored by mock framework)
   ...IC_MOCK_ENTRIES,
   // Team View drills — one entry per drill ID per period
