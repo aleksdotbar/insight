@@ -33,5 +33,14 @@ jobs:
         with:
           extra_args: --all-files
 
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
       - name: Architecture check
         run: npm run arch:check

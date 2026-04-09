@@ -6,10 +6,7 @@ export default {
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
-    // Monorepo: scan local package sources
-    './packages/*/src/**/*.{js,ts,jsx,tsx}',
-    './packages/*/dist/**/*.{js,mjs}',
-    // Standalone: scan installed @hai3 packages from node_modules
+    // Scan installed @hai3 packages from node_modules
     './node_modules/@hai3/*/dist/**/*.{js,mjs}',
   ],
   safelist: [
@@ -32,9 +29,9 @@ export default {
   theme: {
     extend: {
       fontSize: {
-        '2xs':  ['0.625rem',  { lineHeight: '0.875rem' }],  // 10px — sublabels, hints, footers
-        'xs':   ['0.75rem',   { lineHeight: '1rem' }],      // 12px — section headings, badges, small labels
-        'sm':   ['0.875rem',  { lineHeight: '1.25rem' }],   // 14px — metric labels, table data, body
+        '2xs':  ['0.75rem',   { lineHeight: '1.0625rem' }],   // 12px/17px — sublabels, hints, footers
+        'xs':   ['0.8125rem', { lineHeight: '1.125rem' }],  // 13px/18px — section headings, badges, small labels
+        'sm':   ['0.9375rem', { lineHeight: '1.3125rem' }], // 15px/21px — metric labels, table data, body
         'base': ['1rem',      { lineHeight: '1.5rem' }],    // 16px — page titles, person names
         'lg':   ['1.125rem',  { lineHeight: '1.75rem' }],   // 18px — subheadings, docs h3
         'xl':   ['1.25rem',   { lineHeight: '1.75rem' }],   // 20px — hero KPI numbers

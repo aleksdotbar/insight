@@ -6,21 +6,13 @@
 
 import React from 'react';
 import { Avatar, AvatarFallback, Card, CardContent } from '@hai3/uikit';
+import { getInitials } from '../../../utils/getInitials';
 import type { PersonData } from '../../../types';
 
 export interface PersonHeaderProps {
   person: PersonData | null;
   /** When true, renders without outer card wrapper (for embedding in a header row) */
   inline?: boolean;
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0].toUpperCase())
-    .join('');
 }
 
 const PersonHeader: React.FC<PersonHeaderProps> = ({ person, inline = false }) => {

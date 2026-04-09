@@ -50,10 +50,3 @@ export const openDrill = (personId: string, drillId: string): void => {
 export const closeDrill = (): void => {
   eventBus.emit(IcDashboardEvents.DrillClosed);
 };
-
-/**
- * Set view mode — stub; viewMode managed with useState in screen
- */
-export const setViewModeAction = (_mode: string): void => {
-  // viewMode is UI-only state managed via useState in IcDashboardScreen
-};

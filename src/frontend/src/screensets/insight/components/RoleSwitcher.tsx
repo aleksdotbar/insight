@@ -7,6 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAppSelector, type MenuState } from '@hai3/react';
 import { selectCurrentUser } from '../slices/currentUserSlice';
 import { switchUser, MOCK_USERS } from '../actions/currentUserActions';
+import { getInitials } from '../utils/getInitials';
 import type { UserRole } from '../types';
 
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -29,10 +30,6 @@ const ROLE_BADGE_DARK: Record<UserRole, string> = {
   ic: 'bg-white/10 text-gray-300',
 };
 
-function initials(name: string): string {
-  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
-}
-
 export const RoleSwitcher: React.FC = () => {
   const currentUser = useAppSelector(selectCurrentUser);
   const menuState = useAppSelector((state) => state['layout/menu'] as MenuState | undefined);
@@ -50,8 +47,8 @@ export const RoleSwitcher: React.FC = () => {
   }, []);
 
   const avatar = (
-    <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
-      <span className="text-xs font-bold text-white">{initials(currentUser.name)}</span>
+    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+      <span className="text-xs font-bold text-white">{getInitials(currentUser.name)}</span>
     </div>
   );
 
@@ -99,8 +96,8 @@ export const RoleSwitcher: React.FC = () => {
                 user.personId === currentUser.personId ? 'bg-blue-50' : ''
               }`}
             >
-              <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-indigo-600">{initials(user.name)}</span>
+              <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-indigo-600">{getInitials(user.name)}</span>
               </div>
               <div>
                 <div className="text-sm font-semibold text-gray-800 leading-tight">{user.name}</div>
