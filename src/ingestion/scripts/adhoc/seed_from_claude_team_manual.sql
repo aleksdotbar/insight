@@ -30,7 +30,7 @@ WITH latest AS (
     SELECT email, name, role, type, tenant_id
     FROM bronze_claude_team.claude_team_users
     WHERE email IS NOT NULL AND email != ''
-    QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), tenant_id ORDER BY _airbyte_extracted_at DESC) = 1
+    QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), coalesce(tenant_id, '') ORDER BY _airbyte_extracted_at DESC) = 1
 )
 SELECT
     generateUUIDv7(),
@@ -65,7 +65,7 @@ WITH latest AS (
     SELECT id AS source_id, email, name, tenant_id
     FROM bronze_claude_team.claude_team_users
     WHERE email IS NOT NULL AND email != ''
-    QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), tenant_id ORDER BY _airbyte_extracted_at DESC) = 1
+    QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), coalesce(tenant_id, '') ORDER BY _airbyte_extracted_at DESC) = 1
 ),
 source AS (
     SELECT
@@ -127,7 +127,7 @@ WITH latest AS (
     SELECT id AS source_id, email, name, tenant_id
     FROM bronze_claude_team.claude_team_users
     WHERE email IS NOT NULL AND email != ''
-    QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), tenant_id ORDER BY _airbyte_extracted_at DESC) = 1
+    QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), coalesce(tenant_id, '') ORDER BY _airbyte_extracted_at DESC) = 1
 ),
 observations AS (
     SELECT source_id AS source_account_id, tenant_id,

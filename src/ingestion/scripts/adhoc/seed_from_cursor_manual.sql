@@ -43,7 +43,7 @@ SELECT
      + if(role IS NOT NULL AND role != '', 1, 0)) / 7.0
 FROM bronze_cursor.cursor_members cm
 WHERE cm.email IS NOT NULL AND cm.email != ''
-QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), tenant_id ORDER BY _airbyte_extracted_at DESC) = 1
+QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), coalesce(tenant_id, '') ORDER BY _airbyte_extracted_at DESC) = 1
   AND NOT EXISTS (
       SELECT 1 FROM person.persons ex
       WHERE lower(ex.email) = lower(trim(cm.email))
