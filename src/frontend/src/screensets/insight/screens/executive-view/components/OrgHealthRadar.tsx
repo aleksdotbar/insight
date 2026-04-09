@@ -14,7 +14,7 @@ import {
 } from '@hai3/uikit';
 import { Tooltip } from 'recharts';
 import type { OrgKpis } from '../../../types';
-import { CHART_BLUE } from '../../../uikit/base/chartColors';
+import { CHART_BLUE, CHART_FONT_TICK } from '../../../uikit/base/chartColors';
 
 export interface OrgHealthRadarProps {
   orgKpis: OrgKpis;
@@ -37,7 +37,7 @@ export const OrgHealthRadar: React.FC<OrgHealthRadarProps> = ({ orgKpis }) => {
       <ResponsiveContainer width="100%" height={220}>
         <RadarChart data={data}>
           <PolarGrid />
-          <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
+          <PolarAngleAxis dataKey="metric" tick={{ fontSize: CHART_FONT_TICK }} />
           <Radar
             dataKey="value"
             stroke={CHART_BLUE}

@@ -73,27 +73,27 @@ const KpiCell: React.FC<{ kpi: KpiStripKpi; index: number; total: number }> = ({
       <div className="flex items-baseline gap-px">
         <span className="text-xl font-extrabold text-gray-900 leading-tight">{kpi.value}</span>
         {kpi.unit && (
-          <sup className="text-[11px] font-semibold text-gray-400">{kpi.unit}</sup>
+          <sup className="text-xs font-semibold text-gray-400">{kpi.unit}</sup>
         )}
         {suffix && (
-          <span className="text-[9px] text-gray-400 ml-0.5">{suffix}</span>
+          <span className="text-2xs text-gray-400 ml-0.5">{suffix}</span>
         )}
       </div>
 
       {/* Label + optional tooltip */}
       <div className="flex items-center mt-0.5">
-        <span className="text-[11px] font-semibold text-gray-900">{kpi.label}</span>
+        <span className="text-sm font-semibold text-gray-900">{kpi.label}</span>
         {kpi.description && <MetricInfo description={kpi.description} />}
       </div>
 
       {/* Sublabel (data source) */}
       {kpi.sublabel && (
-        <div className="text-[10px] text-gray-400">{kpi.sublabel}</div>
+        <div className="text-2xs text-gray-400">{kpi.sublabel}</div>
       )}
 
       {/* Delta badge */}
       {kpi.delta && deltaClass && (
-        <Badge className={`mt-1 text-[10px] font-bold ${deltaClass}`}>
+        <Badge className={`mt-1 text-xs font-bold ${deltaClass}`}>
           {kpi.delta}
         </Badge>
       )}

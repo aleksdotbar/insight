@@ -10,9 +10,9 @@ import type { CurrentUser, UserRole } from '../types';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/currentUser` as const;
 
-interface CurrentUserState {
+type CurrentUserState = {
   currentUser: CurrentUser;
-}
+};
 
 const initialState: CurrentUserState = {
   currentUser: {

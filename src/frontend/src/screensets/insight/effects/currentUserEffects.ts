@@ -19,13 +19,13 @@ import {
 // ---------------------------------------------------------------------------
 // Org structure — single source of truth for hierarchy
 // ---------------------------------------------------------------------------
-interface OrgTeam {
+type OrgTeam = {
   teamId: string;
   label: string;
   leadId: string;
   memberIds: string[];
   subTeams?: OrgTeam[];
-}
+};
 
 export const ORG: OrgTeam[] = [
   {

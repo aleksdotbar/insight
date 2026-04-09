@@ -14,12 +14,12 @@ export interface OrgKpiCardsProps {
   columnThresholds: ExecColumnThreshold[];
 }
 
-interface KpiCardDef {
+type KpiCardDef = {
   label: string;
   value: number | string;
   isGood: boolean;
   description: string;
-}
+};
 
 const KpiCard: React.FC<{ label: string; value: number | string; isGood: boolean; description: string }> = ({
   label,

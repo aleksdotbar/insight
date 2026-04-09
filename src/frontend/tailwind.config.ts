@@ -31,6 +31,17 @@ export default {
   ],
   theme: {
     extend: {
+      fontSize: {
+        '2xs':  ['0.625rem',  { lineHeight: '0.875rem' }],  // 10px — sublabels, hints, footers
+        'xs':   ['0.75rem',   { lineHeight: '1rem' }],      // 12px — section headings, badges, small labels
+        'sm':   ['0.875rem',  { lineHeight: '1.25rem' }],   // 14px — metric labels, table data, body
+        'base': ['1rem',      { lineHeight: '1.5rem' }],    // 16px — page titles, person names
+        'lg':   ['1.125rem',  { lineHeight: '1.75rem' }],   // 18px — subheadings, docs h3
+        'xl':   ['1.25rem',   { lineHeight: '1.75rem' }],   // 20px — hero KPI numbers
+        '2xl':  ['1.5rem',    { lineHeight: '2rem' }],      // 24px — large tile values
+        '3xl':  ['1.875rem',  { lineHeight: '2.25rem' }],   // 30px — dashboard stat values
+        '4xl':  ['2.25rem',   { lineHeight: '2.5rem' }],    // 36px — icons, emoji
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

@@ -44,17 +44,17 @@ const DrillModal: React.FC<DrillModalProps> = ({ drill, open, onClose }) => (
         <>
           {/* Header */}
           <DialogHeader className="flex-row items-center gap-2.5 px-4 pr-12 py-3.5 border-b border-gray-200 space-y-0">
-            <DialogTitle className="flex-1 text-[15px] font-bold text-gray-900">
+            <DialogTitle className="flex-1 text-base font-bold text-gray-900">
               {drill.title}
             </DialogTitle>
-            <span className={`text-[10px] font-semibold text-white rounded px-2 py-0.5 ${drill.srcClass}`}>
+            <span className={`text-xs font-semibold text-white rounded px-2 py-0.5 ${drill.srcClass}`}>
               {drill.source}
             </span>
-            <span className="text-[13px] font-bold text-gray-900">{drill.value}</span>
+            <span className="text-sm font-bold text-gray-900">{drill.value}</span>
           </DialogHeader>
 
           {/* Filter bar */}
-          <div className="bg-slate-100 px-4 py-2 text-[11px] text-gray-500 flex-shrink-0">
+          <div className="bg-slate-100 px-4 py-2 text-xs text-gray-500 flex-shrink-0">
             {drill.filter}
           </div>
 
@@ -66,7 +66,7 @@ const DrillModal: React.FC<DrillModalProps> = ({ drill, open, onClose }) => (
                   {drill.columns.map((col) => (
                     <TableHead
                       key={col}
-                      className="text-[11px] font-semibold text-gray-500 whitespace-nowrap"
+                      className="text-xs font-semibold text-gray-500 whitespace-nowrap"
                     >
                       {col}
                     </TableHead>

@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from '@hai3/uikit';
 import type { SpeedData } from '../../../types';
+import { CHART_FONT_LABEL, CHART_FONT_VALUE, CHART_FONT_HERO } from '../../../uikit/base/chartColors';
 
 interface SpeedGaugeProps {
   data: SpeedData;
@@ -106,7 +107,7 @@ const renderTicks = (
           textAnchor="middle"
           dominantBaseline="middle"
           className="fill-foreground text-xs font-medium"
-          fontSize={12}
+          fontSize={CHART_FONT_LABEL}
         >
           {Math.round(tickValue)}
         </text>
@@ -138,7 +139,7 @@ export const SpeedGauge: React.FC<SpeedGaugeProps> = ({ data }) => {
 
   return (
     <div className="flex flex-col items-center">
-      <div className="w-[400px] h-[240px]">
+      <div className="w-[25rem] h-[15rem]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             {/* Background arc */}
@@ -201,7 +202,7 @@ export const SpeedGauge: React.FC<SpeedGaugeProps> = ({ data }) => {
               y={cy - 20}
               textAnchor="middle"
               className="fill-foreground font-bold"
-              fontSize={36}
+              fontSize={CHART_FONT_HERO}
             >
               {value}
             </text>
@@ -210,7 +211,7 @@ export const SpeedGauge: React.FC<SpeedGaugeProps> = ({ data }) => {
               y={cy + 5}
               textAnchor="middle"
               className="fill-muted-foreground"
-              fontSize={14}
+              fontSize={CHART_FONT_VALUE}
             >
               {unit}
             </text>

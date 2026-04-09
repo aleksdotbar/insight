@@ -21,18 +21,18 @@ const CC_KEYS = ['cc_sessions', 'cc_lines', 'cc_tool_accept'];
 const ChartLegend: React.FC = () => (
   <div className="flex gap-4 items-center mt-2">
     <div className="flex items-center gap-1">
-      <div className="w-0.5 h-[11px] bg-blue-600/50 rounded" />
-      <span className="text-[9px] text-gray-400">Team median</span>
+      <div className="w-0.5 h-3 bg-blue-600/50 rounded" />
+      <span className="text-2xs text-gray-400">Team median</span>
     </div>
     <div className="flex items-center gap-1">
-      <div className="w-[18px] h-[5px] rounded bg-gradient-to-r from-green-600 via-amber-600 to-red-600" />
-      <span className="text-[9px] text-gray-400">Your result · color = vs target</span>
+      <div className="w-4 h-1.5 rounded bg-gradient-to-r from-green-600 via-amber-600 to-red-600" />
+      <span className="text-2xs text-gray-400">Your result · color = vs target</span>
     </div>
   </div>
 );
 
 const SectionHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-2">
+  <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
     {children}
   </div>
 );

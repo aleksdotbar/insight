@@ -30,14 +30,14 @@ const ChartLegend: React.FC = () => (
   <div className="flex gap-4 items-center mt-2">
     {/* Team median swatch */}
     <div className="flex items-center gap-1">
-      <div className="w-0.5 h-[11px] bg-blue-600/50 rounded" />
-      <span className="text-[9px] text-gray-400">Team median</span>
+      <div className="w-0.5 h-3 bg-blue-600/50 rounded" />
+      <span className="text-2xs text-gray-400">Team median</span>
     </div>
 
     {/* Gradient swatch */}
     <div className="flex items-center gap-1">
-      <div className="w-[18px] h-[5px] rounded bg-gradient-to-r from-green-600 via-amber-600 to-red-600" />
-      <span className="text-[9px] text-gray-400">Your result · color = vs target</span>
+      <div className="w-4 h-1.5 rounded bg-gradient-to-r from-green-600 via-amber-600 to-red-600" />
+      <span className="text-2xs text-gray-400">Your result · color = vs target</span>
     </div>
   </div>
 );
@@ -54,7 +54,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
     return (
       <Card>
         <CardContent className="px-3.5 py-3">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-2">
+          <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">
             {title}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -88,10 +88,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
       <CardContent className="px-3.5 py-3">
         {/* Header */}
         <div className="flex justify-between items-start">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-gray-500">
+          <span className="text-xs font-bold uppercase tracking-wide text-gray-500">
             {title}
           </span>
-          <span className="text-[10px] text-gray-400">vs team range</span>
+          <span className="text-xs text-gray-400">vs team range</span>
         </div>
 
         {/* Legend */}

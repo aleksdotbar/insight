@@ -15,7 +15,7 @@ const TimeOffBanner: React.FC<TimeOffBannerProps> = ({ notice }) => {
   if (!notice) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-800">
+    <div className="flex flex-wrap items-center gap-2 px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
       <span className="text-base leading-none">📅</span>
       <span>
         <strong>{notice.days} days off</strong> this month ({notice.dateRange})

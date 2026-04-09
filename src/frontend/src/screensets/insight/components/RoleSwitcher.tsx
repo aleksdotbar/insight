@@ -51,7 +51,7 @@ export const RoleSwitcher: React.FC = () => {
 
   const avatar = (
     <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
-      <span className="text-[10px] font-bold text-white">{initials(currentUser.name)}</span>
+      <span className="text-xs font-bold text-white">{initials(currentUser.name)}</span>
     </div>
   );
 
@@ -70,24 +70,24 @@ export const RoleSwitcher: React.FC = () => {
         {!collapsed && (
           <>
             <div className="flex-1 text-left min-w-0">
-              <div className="text-[12px] font-semibold text-white/90 truncate leading-tight">
+              <div className="text-sm font-semibold text-white/90 truncate leading-tight">
                 {currentUser.name}
               </div>
-              <span className={`text-[9px] font-bold px-1.5 py-px rounded ${ROLE_BADGE_DARK[currentUser.role]}`}>
+              <span className={`text-2xs font-bold px-1.5 py-px rounded ${ROLE_BADGE_DARK[currentUser.role]}`}>
                 {ROLE_LABEL[currentUser.role]}
               </span>
             </div>
-            <span className="text-white/30 text-[10px]">▾</span>
+            <span className="text-white/30 text-xs">▾</span>
           </>
         )}
       </button>
 
       {/* Dropdown — light popup, floats above sidebar */}
       {open && (
-        <div className={`absolute bottom-full mb-2 bg-white border border-gray-200 rounded-xl shadow-xl z-50 min-w-[196px] py-1 ${
+        <div className={`absolute bottom-full mb-2 bg-white border border-gray-200 rounded-xl shadow-xl z-50 min-w-48 py-1 ${
           collapsed ? 'left-full ml-2' : 'left-0'
         }`}>
-          <div className="px-3 py-2 text-[9px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100">
+          <div className="px-3 py-2 text-2xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100">
             Switch User (Demo)
           </div>
           {MOCK_USERS.map((user) => (
@@ -100,16 +100,16 @@ export const RoleSwitcher: React.FC = () => {
               }`}
             >
               <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                <span className="text-[10px] font-bold text-indigo-600">{initials(user.name)}</span>
+                <span className="text-xs font-bold text-indigo-600">{initials(user.name)}</span>
               </div>
               <div>
-                <div className="text-[12px] font-semibold text-gray-800 leading-tight">{user.name}</div>
-                <span className={`text-[9px] font-bold px-1.5 py-px rounded ${ROLE_BADGE[user.role]}`}>
+                <div className="text-sm font-semibold text-gray-800 leading-tight">{user.name}</div>
+                <span className={`text-2xs font-bold px-1.5 py-px rounded ${ROLE_BADGE[user.role]}`}>
                   {ROLE_LABEL[user.role]}
                 </span>
               </div>
               {user.personId === currentUser.personId && (
-                <span className="ml-auto text-blue-500 text-[10px]">✓</span>
+                <span className="ml-auto text-blue-500 text-xs">✓</span>
               )}
             </button>
           ))}

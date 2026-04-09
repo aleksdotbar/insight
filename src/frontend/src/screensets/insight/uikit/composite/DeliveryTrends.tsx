@@ -18,7 +18,7 @@ import {
   ChartLegendContent,
 } from '@hai3/uikit';
 import { Tooltip, Legend } from 'recharts';
-import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_PURPLE, CHART_GREEN } from '../base/chartColors';
+import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_PURPLE, CHART_GREEN, CHART_FONT_TICK } from '../base/chartColors';
 
 export interface DeliveryTrendsProps {
   data: Array<{ label: string; commits: number; prsMerged: number; tasksDone: number }>;
@@ -38,10 +38,10 @@ const DeliveryTrends: React.FC<DeliveryTrendsProps> = ({ data }) => {
     <ResponsiveContainer width="100%" height={180}>
       <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_TRACK_BG} />
-        <XAxis dataKey="label" tick={{ fontSize: 10, fill: CHART_GRAY }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 10, fill: CHART_GRAY }} axisLine={false} tickLine={false} allowDecimals={false} />
+        <XAxis dataKey="label" tick={{ fontSize: CHART_FONT_TICK, fill: CHART_GRAY }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: CHART_FONT_TICK, fill: CHART_GRAY }} axisLine={false} tickLine={false} allowDecimals={false} />
         <Tooltip content={<ChartTooltipContent />} />
-        <Legend content={<ChartLegendContent />} wrapperStyle={{ fontSize: 10, paddingTop: 8 }} />
+        <Legend content={<ChartLegendContent />} wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
         <Line type="monotone" dataKey="Commits" stroke={CHART_BLUE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
         <Line type="monotone" dataKey="PRs Merged" stroke={CHART_PURPLE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
         <Line type="monotone" dataKey="Tasks Done" stroke={CHART_GREEN} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />

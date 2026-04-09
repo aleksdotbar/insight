@@ -126,9 +126,9 @@ const IcDashboardScreen: React.FC = () => {
     return (
       <div className="flex items-center justify-center p-6">
         <div className="bg-white border border-gray-200 rounded-xl px-12 py-8 text-center">
-          <div className="text-[32px] mb-3">👤</div>
+          <div className="text-4xl mb-3">👤</div>
           <div className="text-base font-bold text-gray-900 mb-1.5">Person not found</div>
-          <div className="text-[13px] text-gray-500">
+          <div className="text-sm text-gray-500">
             No data available for person ID: {personId}
           </div>
         </div>

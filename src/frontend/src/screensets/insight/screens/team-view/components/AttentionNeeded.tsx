@@ -16,12 +16,12 @@ export interface AttentionNeededProps {
 
 type Severity = 'bad' | 'warn';
 
-interface AlertItem {
+type AlertItem = {
   member: TeamMember;
   title: string;
   description: string;
   severity: Severity;
-}
+};
 
 const SEVERITY_ICON: Record<Severity, string> = { bad: '🔴', warn: '🟡' };
 const SEVERITY_ICON_BG: Record<Severity, string> = { bad: 'bg-insight-red-bg', warn: 'bg-insight-amber-bg' };
@@ -73,9 +73,9 @@ export const AttentionNeeded: React.FC<AttentionNeededProps> = ({ members, alert
   if (alerts.length === 0) return null;
 
   return (
-    <Card className="shadow-sm rounded-[10px]">
+    <Card className="shadow-sm rounded-xl">
       <div className="px-4 pt-3.5 pb-0">
-        <span className="text-[13px] font-bold text-gray-900">Attention Needed</span>
+        <span className="text-sm font-bold text-gray-900">Attention Needed</span>
       </div>
       <CardContent className="px-4 py-3">
         {alerts.map((alert, i) => (
@@ -87,19 +87,19 @@ export const AttentionNeeded: React.FC<AttentionNeededProps> = ({ members, alert
               {SEVERITY_ICON[alert.severity]}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[12px] font-bold text-gray-900 mb-0.5">{alert.title}</div>
-              <div className="text-[11px] text-gray-500">{alert.description}</div>
+              <div className="text-sm font-bold text-gray-900 mb-0.5">{alert.title}</div>
+              <div className="text-xs text-gray-500">{alert.description}</div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => onNavigate(alert.member.person_id)}
-                className="mt-1 h-auto p-0 text-[11px] text-blue-600 font-semibold"
+                className="mt-1 h-auto p-0 text-xs text-blue-600 font-semibold"
               >
                 → Open IC dashboard
               </Button>
             </div>
             {alert.member.trend_label && (
-              <Badge className={`text-[10px] font-bold flex-shrink-0 ${SEVERITY_BADGE_CLASS[alert.severity]}`}>
+              <Badge className={`text-xs font-bold flex-shrink-0 ${SEVERITY_BADGE_CLASS[alert.severity]}`}>
                 {alert.member.trend_label}
               </Badge>
             )}
