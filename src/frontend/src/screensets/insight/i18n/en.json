@@ -1,28 +1,19 @@
 {
   "menu_items": {
     "executive-view": {
-      "label": "Executive View"
+      "label": "Organization"
     },
     "team-view": {
-      "label": "Team View"
+      "label": "Team"
     },
     "ic-dashboard": {
-      "label": "IC Dashboard"
+      "label": "People"
     },
     "my-dashboard": {
       "label": "My Dashboard"
     },
-    "documentation": {
-      "label": "Documentation"
-    },
-    "dashboard": {
-      "label": "Dashboard"
-    },
-    "speed": {
-      "label": "Speed"
-    },
-    "uikit": {
-      "label": "UIKit Elements"
+    "team-members": {
+      "label": "Team Members"
     }
   }
 }

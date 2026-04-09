@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { useAppSelector, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
+import { useAppSelector, useScreenTranslations, useTranslation, I18nRegistry, Language } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID, EXECUTIVE_VIEW_SCREEN_ID } from '../../ids';
 import { usePeriod } from '../../hooks/usePeriod';
 import { loadExecutiveView } from '../../actions/executiveViewActions';
@@ -59,6 +59,7 @@ const translations = I18nRegistry.createLoader({
 
 const ExecutiveViewScreen: React.FC = () => {
   useScreenTranslations(INSIGHT_SCREENSET_ID, EXECUTIVE_VIEW_SCREEN_ID, translations);
+  const { t } = useTranslation();
   const period = usePeriod();
   const customRange = useAppSelector(selectCustomRange);
   const teams = useAppSelector(selectTeams);
@@ -78,8 +79,8 @@ const ExecutiveViewScreen: React.FC = () => {
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-base font-bold text-gray-900 leading-tight">Executive View</div>
-          <div className="text-xs text-gray-400">All teams · Organization overview</div>
+          <div className="text-base font-bold text-gray-900 leading-tight">{t('header.title')}</div>
+          <div className="text-xs text-gray-400">{t('header.subtitle')}</div>
         </div>
         <PeriodSelectorBar
           period={period}

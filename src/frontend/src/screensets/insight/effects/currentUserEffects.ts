@@ -7,14 +7,18 @@ import { type AppDispatch, eventBus, setMenuItems } from '@hai3/react';
 import { CurrentUserEvents } from '../events/currentUserEvents';
 import { setCurrentUser } from '../slices/currentUserSlice';
 import { setSelectedPersonId } from '../slices/icDashboardSlice';
+import { setSelectedTeamId } from '../slices/teamViewSlice';
 import { TEAM_MEMBERS_MONTH } from '../api/mocks';
 import type { CurrentUser, UserRole, TeamMember } from '../types';
 import {
+  INSIGHT_SCREENSET_ID,
   EXECUTIVE_VIEW_SCREEN_ID,
   TEAM_VIEW_SCREEN_ID,
   IC_DASHBOARD_SCREEN_ID,
   MY_DASHBOARD_SCREEN_ID,
 } from '../ids';
+
+const menuKey = (key: string) => `screenset.${INSIGHT_SCREENSET_ID}:menu_items.${key}.label`;
 
 // ---------------------------------------------------------------------------
 // Org structure — single source of truth for hierarchy
@@ -29,24 +33,22 @@ type OrgTeam = {
 
 export const ORG: OrgTeam[] = [
   {
-    teamId: 'infra',
-    label: 'Infrastructure Squad',
-    leadId: 'p6',
-    memberIds: ['p1', 'p2'],
-    subTeams: [
-      {
-        teamId: 'infra-backend',
-        label: 'Backend',
-        leadId: 'p5',
-        memberIds: ['p3', 'p4'],
-      },
-    ],
+    teamId: 'backend',
+    label: 'Backend',
+    leadId: 'p5',
+    memberIds: ['p1', 'p3', 'p4'],
   },
   {
-    teamId: 'devx',
-    label: 'Developer Experience',
+    teamId: 'platform',
+    label: 'Platform',
+    leadId: 'p6',
+    memberIds: ['p2', 'p8'],
+  },
+  {
+    teamId: 'frontend',
+    label: 'Frontend',
     leadId: 'p11',
-    memberIds: ['p7', 'p8', 'p9', 'p10', 'p12'],
+    memberIds: ['p7', 'p9', 'p10', 'p12'],
   },
 ];
 
@@ -65,18 +67,21 @@ const memberItem = (m: TeamMember | undefined, isLead = false) =>
       }
     : null;
 
-/** Recursively build MenuItem children for a team */
-function teamToMenuItem(team: OrgTeam): object {
+/** Recursively build MenuItem children for a team, excluding the viewer */
+function teamToMenuItem(team: OrgTeam, excludeId?: string): object {
   const lead = byId(team.leadId);
-  const members = team.memberIds.map((id) => memberItem(byId(id))).filter(Boolean);
-  const subTeamItems = (team.subTeams ?? []).map(teamToMenuItem);
+  const members = team.memberIds
+    .filter((id) => id !== excludeId)
+    .map((id) => memberItem(byId(id)))
+    .filter(Boolean);
+  const subTeamItems = (team.subTeams ?? []).map((t) => teamToMenuItem(t, excludeId));
 
   return {
-    id: `team-group-${team.teamId}`,
+    id: `${TEAM_VIEW_SCREEN_ID}::${team.teamId}`,
     label: team.label,
     icon: 'lucide:users',
     children: [
-      ...(lead ? [memberItem(lead, true)!] : []),
+      ...(lead && lead.person_id !== excludeId ? [memberItem(lead, true)!] : []),
       ...members,
       ...subTeamItems,
     ],
@@ -87,20 +92,18 @@ function teamToMenuItem(team: OrgTeam): object {
 // Menu builder
 // ---------------------------------------------------------------------------
 function buildMenu(role: UserRole, user: CurrentUser) {
-  const execItem   = { id: EXECUTIVE_VIEW_SCREEN_ID, label: 'Executive View',  icon: 'lucide:bar-chart-2' };
-  const teamItem   = { id: TEAM_VIEW_SCREEN_ID,      label: 'Team View',       icon: 'lucide:layout-dashboard' };
-  const myDashItem = { id: MY_DASHBOARD_SCREEN_ID,   label: 'My Dashboard',    icon: 'lucide:user-circle' };
+  const execItem   = { id: EXECUTIVE_VIEW_SCREEN_ID, label: menuKey('executive-view'), icon: 'lucide:building-2' };
+  const teamItem   = { id: TEAM_VIEW_SCREEN_ID,      label: menuKey('team-view'),      icon: 'lucide:users' };
+  const myDashItem = { id: MY_DASHBOARD_SCREEN_ID,   label: menuKey('my-dashboard'),   icon: 'lucide:user-circle' };
 
   switch (role) {
     case 'executive':
-      // Show all teams with their members
       return [
         execItem,
-        ...ORG.map(teamToMenuItem),
+        ...ORG.map((t) => teamToMenuItem(t, user.personId)),
       ];
 
     case 'team_lead': {
-      // Find which team this lead owns
       const myTeam = ORG.find((t) => t.leadId === user.personId);
       const myMembers = (myTeam?.memberIds ?? [])
         .filter((id) => id !== user.personId)
@@ -111,7 +114,7 @@ function buildMenu(role: UserRole, user: CurrentUser) {
         myDashItem,
         teamItem,
         ...(myTeam
-          ? [{ id: `team-members-${myTeam.teamId}`, label: 'Team Members', icon: 'lucide:users-2', children: myMembers }]
+          ? [{ id: `team-members-${myTeam.teamId}`, label: menuKey('team-members'), icon: 'lucide:users-2', children: myMembers }]
           : []),
       ];
     }
@@ -129,6 +132,7 @@ export const initializeCurrentUserEffects = (dispatch: AppDispatch): void => {
     dispatch(setCurrentUser(user));
     dispatch(setMenuItems(buildMenu(user.role, user) as Parameters<typeof setMenuItems>[0]));
     dispatch(setSelectedPersonId(user.personId));
+    if (user.teamId) dispatch(setSelectedTeamId(user.teamId));
   });
 
   // Menu items with "screenId::param" — set context before navigation
@@ -136,5 +140,12 @@ export const initializeCurrentUserEffects = (dispatch: AppDispatch): void => {
     if (screenId === IC_DASHBOARD_SCREEN_ID) {
       dispatch(setSelectedPersonId(param));
     }
+    if (screenId === TEAM_VIEW_SCREEN_ID) {
+      dispatch(setSelectedTeamId(param));
+    }
   });
+
+  // Build initial menu for default user on startup
+  const defaultUser: CurrentUser = { personId: 'p0', name: 'David Park', role: 'executive', teamId: '' };
+  dispatch(setMenuItems(buildMenu(defaultUser.role, defaultUser) as Parameters<typeof setMenuItems>[0]));
 };

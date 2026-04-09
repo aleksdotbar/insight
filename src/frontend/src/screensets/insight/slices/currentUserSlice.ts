@@ -16,10 +16,10 @@ type CurrentUserState = {
 
 const initialState: CurrentUserState = {
   currentUser: {
-    personId: 'p1',
-    name: 'Alice Kim',
+    personId: 'p0',
+    name: 'David Park',
     role: 'executive',
-    teamId: 'team-1',
+    teamId: '',
   },
 };
 
