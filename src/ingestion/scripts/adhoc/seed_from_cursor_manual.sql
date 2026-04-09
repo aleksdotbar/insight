@@ -43,9 +43,12 @@ SELECT
      + if(role IS NOT NULL AND role != '', 1, 0)) / 7.0
 FROM bronze_cursor.cursor_members cm
 WHERE cm.email IS NOT NULL AND cm.email != ''
-QUALIFY row_number() OVER (PARTITION BY lower(trim(email)) ORDER BY _airbyte_extracted_at DESC) = 1
-  AND lower(trim(cm.email)) NOT IN (
-      SELECT lower(email) FROM person.persons WHERE is_deleted = 0
+QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), tenant_id ORDER BY _airbyte_extracted_at DESC) = 1
+  AND NOT EXISTS (
+      SELECT 1 FROM person.persons ex
+      WHERE lower(ex.email) = lower(trim(cm.email))
+        AND ex.insight_tenant_id = UUIDNumToString(sipHash128(coalesce(cm.tenant_id, '')))
+        AND ex.is_deleted = 0
   );
 
 
@@ -66,6 +69,7 @@ WITH source AS (
         p.insight_tenant_id
     FROM bronze_cursor.cursor_members cm
     INNER JOIN person.persons p ON lower(trim(cm.email)) = lower(p.email)
+        AND UUIDNumToString(sipHash128(coalesce(cm.tenant_id, ''))) = p.insight_tenant_id  -- TEMPORARY: until tenants table
     WHERE cm.email IS NOT NULL AND cm.email != ''
 ),
 new_aliases AS (

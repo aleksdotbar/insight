@@ -48,6 +48,7 @@ SELECT
     0                                                       AS is_deleted
 FROM {{ source('bronze_cursor', 'cursor_members') }} cm
 WHERE cm.email IS NOT NULL AND cm.email != ''
+QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), tenant_id ORDER BY _airbyte_extracted_at DESC) = 1
 {% if is_incremental() %}
   AND NOT EXISTS (
       SELECT 1 FROM {{ this }} ex

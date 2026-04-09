@@ -20,7 +20,7 @@ WITH latest AS (
     SELECT email, name, role, type, tenant_id
     FROM {{ source('bronze_claude_team', 'claude_team_users') }}
     WHERE email IS NOT NULL AND email != ''
-    QUALIFY row_number() OVER (PARTITION BY email ORDER BY _airbyte_extracted_at DESC) = 1
+    QUALIFY row_number() OVER (PARTITION BY lower(trim(email)), tenant_id ORDER BY _airbyte_extracted_at DESC) = 1
 )
 
 SELECT
