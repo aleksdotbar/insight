@@ -298,6 +298,57 @@ class GitHubGraphQLStream(HttpStream, ABC):
         if remaining is not None and remaining < 100:
             logger.warning(f"GraphQL rate limit low: {remaining} remaining")
 
+    def _send_graphql(self, query: str, variables: dict, max_retries: int = 5) -> dict:
+        """Execute a standalone GraphQL request with retry/backoff.
+
+        Uses the same should_retry/backoff_time logic as CDK-managed requests.
+        Returns the parsed JSON body on success.
+        """
+        headers = graphql_headers(self._token)
+        payload = {"query": query, "variables": variables}
+
+        for attempt in range(max_retries + 1):
+            try:
+                resp = requests.post(
+                    "https://api.github.com/graphql",
+                    json=payload,
+                    headers=headers,
+                    timeout=self.request_timeout,
+                )
+            except requests.RequestException as exc:
+                if attempt >= max_retries:
+                    raise
+                logger.warning(f"GraphQL connection error (attempt {attempt + 1}), retrying in 60s: {exc}")
+                time.sleep(60.0)
+                continue
+
+            if self.should_retry(resp):
+                if attempt >= max_retries:
+                    raise RuntimeError(
+                        f"GraphQL request failed after {max_retries + 1} attempts "
+                        f"({resp.status_code}): {resp.text[:200]}"
+                    )
+                wait = self.backoff_time(resp) or 60.0
+                logger.warning(
+                    f"GraphQL retryable error {resp.status_code} (attempt {attempt + 1}), "
+                    f"retrying in {wait}s"
+                )
+                time.sleep(wait)
+                continue
+
+            if resp.status_code != 200:
+                raise RuntimeError(f"GraphQL request failed ({resp.status_code}): {resp.text[:200]}")
+
+            body = resp.json()
+            self._update_graphql_rate_limit(body, resp)
+
+            if "errors" in body and not body.get("data"):
+                raise RuntimeError(f"GraphQL query failed: {body['errors']}")
+
+            return body
+
+        raise RuntimeError("GraphQL request failed: exhausted retries")
+
     def _add_envelope(self, record: dict, pk_parts: Optional[list] = None) -> dict:
         record = dict(record)  # shallow copy — prevent mutating cached dicts
         record["tenant_id"] = self._tenant_id

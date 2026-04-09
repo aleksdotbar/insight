@@ -13,9 +13,6 @@ Overflow handling (all GraphQL):
 import logging
 from typing import Any, Iterable, Mapping, MutableMapping, Optional
 
-import requests
-
-from source_github_v2.auth import graphql_headers
 from source_github_v2.queries import PR_REVIEW_THREADS_QUERY, PR_THREAD_COMMENTS_QUERY
 from source_github_v2.streams.base import (
     GitHubAuthError,
@@ -180,32 +177,12 @@ class ReviewCommentsStream(GitHubGraphQLStream):
             f"paginating from {page_info.get('endCursor')}"
         )
         after = page_info.get("endCursor")
-        headers = graphql_headers(self._token)
 
         while after:
-            body = {
-                "query": PR_THREAD_COMMENTS_QUERY,
-                "variables": {"threadId": thread_id, "first": 100, "after": after},
-            }
-            resp = requests.post(
-                "https://api.github.com/graphql",
-                json=body,
-                headers=headers,
-                timeout=120,
+            body = self._send_graphql(
+                PR_THREAD_COMMENTS_QUERY,
+                {"threadId": thread_id, "first": 100, "after": after},
             )
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"Thread comment overflow failed ({resp.status_code}) "
-                    f"for thread {thread_id[:20]}...: {resp.text[:200]}"
-                )
-
-            body = resp.json()
-            self._update_graphql_rate_limit(body, resp)
-            if "errors" in body and not body.get("data"):
-                raise RuntimeError(
-                    f"Thread comment overflow GraphQL error "
-                    f"for thread {thread_id[:20]}...: {body['errors']}"
-                )
 
             payload = body.get("data", {}) or {}
             node_data = payload.get("node") or {}
