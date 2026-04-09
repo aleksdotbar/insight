@@ -21,7 +21,7 @@ export interface TeamBulletSectionsProps {
 const Legend: React.FC = () => (
   <div className="flex items-center gap-3 text-2xs text-gray-400 mb-2.5">
     <span className="flex items-center gap-1">
-      <span className="w-0.5 h-3 bg-blue-600/50 rounded inline-block" />
+      <span className="w-[2px] h-3 bg-gray-800/60 rounded inline-block" />
       Company median
     </span>
     <span className="flex items-center gap-1">

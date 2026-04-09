@@ -127,12 +127,12 @@ const BulletChart: React.FC<BulletChartProps> = ({
         </div>
         <div className="text-right">
           <span
-            className={`text-sm font-extrabold text-gray-900 ${isDrillable ? 'border-b border-dotted border-blue-600 cursor-pointer' : 'cursor-default'}`}
+            className={`text-lg font-extrabold text-gray-900 leading-none ${isDrillable ? 'border-b border-dotted border-blue-600 cursor-pointer' : 'cursor-default'}`}
             onClick={isDrillable ? handleDrillClick : undefined}
           >
             {value}
           </span>
-          {unit && <span className="text-xs text-gray-400 ml-0.5">{unit}</span>}
+          {unit && <span className="text-xs text-gray-400 ml-1">{unit}</span>}
           {suffix && <span className="text-2xs text-gray-300 ml-0.5">{suffix}</span>}
         </div>
       </div>
@@ -148,7 +148,7 @@ const BulletChart: React.FC<BulletChartProps> = ({
       {/* Footer */}
       <div className="flex justify-between mt-0.5 text-2xs text-gray-400">
         <span>{range_min}</span>
-        <span>{median_label}</span>
+        <span className="text-gray-500 font-medium">{median_label}</span>
         <span>{range_max}</span>
       </div>
     </div>
