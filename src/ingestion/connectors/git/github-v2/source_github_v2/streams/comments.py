@@ -37,6 +37,7 @@ class CommentsStream(GitHubGraphQLStream):
     def __init__(self, parent, **kwargs):
         super().__init__(**kwargs)
         self._parent = parent
+        self._partitions_with_errors: set = set()
 
     def _query(self) -> str:
         return PR_COMMENTS_QUERY
@@ -156,7 +157,9 @@ class CommentsStream(GitHubGraphQLStream):
                 raise RuntimeError(
                     f"GraphQL errors for {owner}/{repo} PR#{pr_number} comments: {body['errors']}"
                 )
-            logger.warning(f"GraphQL partial errors (continuing with data): {body['errors']}")
+            logger.warning(f"GraphQL partial errors (emitting data, freezing cursor): {body['errors']}")
+            partition_key = s.get("partition_key", f"{owner}/{repo}/{pr_number}")
+            self._partitions_with_errors.add(partition_key)
 
         data = body.get("data", {})
         nodes = self._extract_nodes(data)
@@ -220,6 +223,8 @@ class CommentsStream(GitHubGraphQLStream):
         repo = latest_record.get("repo_name", "")
         pr_number = latest_record.get("pr_number")
         partition_key = f"{owner}/{repo}/{pr_number}" if (owner and repo and pr_number) else ""
+        if partition_key in self._partitions_with_errors:
+            return current_stream_state
         pr_updated_at = latest_record.get("pull_request_updated_at", "")
         if partition_key and pr_updated_at:
             current_stream_state[partition_key] = {"synced_at": pr_updated_at}

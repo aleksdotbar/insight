@@ -42,6 +42,7 @@ class ReviewCommentsStream(GitHubGraphQLStream):
         super().__init__(**kwargs)
         self._parent = parent
         self._deferred_state_updates: dict[str, str] = {}  # partition_key → pr_updated_at
+        self._partitions_with_errors: set = set()
 
     def _query(self) -> str:
         return PR_REVIEW_THREADS_QUERY
@@ -184,6 +185,12 @@ class ReviewCommentsStream(GitHubGraphQLStream):
                 {"threadId": thread_id, "first": 100, "after": after},
             )
 
+            if "errors" in body:
+                pk = (stream_slice or {}).get("partition_key", "")
+                if pk:
+                    logger.warning(f"GraphQL partial errors in thread overflow (freezing cursor): {body['errors']}")
+                    self._partitions_with_errors.add(pk)
+
             payload = body.get("data", {}) or {}
             node_data = payload.get("node") or {}
             thread_info = {"isResolved": node_data.get("isResolved", thread.get("isResolved"))}
@@ -213,7 +220,9 @@ class ReviewCommentsStream(GitHubGraphQLStream):
                 raise RuntimeError(
                     f"GraphQL errors for {owner}/{repo} PR#{pr_number} review threads: {body['errors']}"
                 )
-            logger.warning(f"GraphQL partial errors (continuing with data): {body['errors']}")
+            logger.warning(f"GraphQL partial errors (emitting data, freezing cursor): {body['errors']}")
+            partition_key = s.get("partition_key", f"{owner}/{repo}/{pr_number}")
+            self._partitions_with_errors.add(partition_key)
 
         data = body.get("data", {})
         thread_nodes = self._extract_nodes(data)
@@ -295,6 +304,8 @@ class ReviewCommentsStream(GitHubGraphQLStream):
         repo = latest_record.get("repo_name", "")
         pr_number = latest_record.get("pr_number")
         partition_key = f"{owner}/{repo}/{pr_number}" if (owner and repo and pr_number) else ""
+        if partition_key in self._partitions_with_errors:
+            return current_stream_state
         pr_updated_at = latest_record.get("pull_request_updated_at", "")
         if partition_key and pr_updated_at:
             current_stream_state[partition_key] = {"synced_at": pr_updated_at}
