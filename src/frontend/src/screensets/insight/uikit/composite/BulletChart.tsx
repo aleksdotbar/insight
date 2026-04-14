@@ -94,19 +94,30 @@ const BulletChart: React.FC<BulletChartProps> = ({
       : sublabel
     : undefined;
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.key === 'Enter' || e.key === ' ') && isDrillable) {
+      e.preventDefault();
+      handleDrillClick();
+    }
+  };
+
   if (mode === 'tile') {
     return (
       <div
-        className={`bg-slate-100 rounded-lg px-3.5 py-3 ${isDrillable ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`bg-slate-100 rounded-lg px-3.5 py-3 ${isDrillable ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2' : 'cursor-default'}`}
+        role={isDrillable ? 'button' : undefined}
+        tabIndex={isDrillable ? 0 : undefined}
         onClick={isDrillable ? handleDrillClick : undefined}
+        onKeyDown={isDrillable ? handleKeyDown : undefined}
+        aria-label={isDrillable ? `${label}: ${value} ${unit}` : undefined}
       >
-        <div className="text-xs text-gray-500 font-medium mb-0.5">{label}</div>
+        <div className="text-sm text-gray-500 font-medium mb-0.5">{label}</div>
         <div className="flex items-baseline gap-0.5 mb-1">
           <span className="text-2xl font-extrabold text-gray-900 tracking-tight">{value}</span>
-          {unit && <span className="text-xs text-gray-400">{unit}</span>}
-          {suffix && <span className="text-2xs text-gray-400">{suffix}</span>}
+          {unit && <span className="text-sm text-gray-400">{unit}</span>}
+          {suffix && <span className="text-xs text-gray-400">{suffix}</span>}
         </div>
-        <Badge className={`text-xs font-semibold gap-1 ${STATUS_BADGE_CLASS[status]}`}>
+        <Badge className={`text-sm font-semibold gap-1 ${STATUS_BADGE_CLASS[status]}`}>
           {STATUS_ARROW[status]} {median_label}
         </Badge>
       </div>
@@ -119,21 +130,25 @@ const BulletChart: React.FC<BulletChartProps> = ({
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <span className="text-sm text-gray-700 font-semibold leading-snug">{label}</span>
+          <span className="text-base text-gray-700 font-semibold leading-snug">{label}</span>
           {sourceTooltip && <MetricInfo description={sourceTooltip} side="top" />}
           {fullSublabel && (
-            <div className="text-2xs text-gray-400 font-normal leading-tight">{fullSublabel}</div>
+            <div className="text-xs text-gray-400 font-normal leading-tight">{fullSublabel}</div>
           )}
         </div>
         <div className="text-right">
           <span
-            className={`text-lg font-extrabold text-gray-900 leading-none ${isDrillable ? 'border-b border-dotted border-blue-600 cursor-pointer' : 'cursor-default'}`}
+            className={`text-xl font-extrabold text-gray-900 leading-none ${isDrillable ? 'border-b border-dotted border-blue-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1 rounded-sm' : 'cursor-default'}`}
+            role={isDrillable ? 'button' : undefined}
+            tabIndex={isDrillable ? 0 : undefined}
             onClick={isDrillable ? handleDrillClick : undefined}
+            onKeyDown={isDrillable ? handleKeyDown : undefined}
+            aria-label={isDrillable ? `Drill into ${label}` : undefined}
           >
             {value}
           </span>
-          {unit && <span className="text-xs text-gray-400 ml-1">{unit}</span>}
-          {suffix && <span className="text-2xs text-gray-300 ml-0.5">{suffix}</span>}
+          {unit && <span className="text-sm text-gray-400 ml-1">{unit}</span>}
+          {suffix && <span className="text-xs text-gray-300 ml-0.5">{suffix}</span>}
         </div>
       </div>
 
@@ -146,7 +161,7 @@ const BulletChart: React.FC<BulletChartProps> = ({
       />
 
       {/* Footer */}
-      <div className="flex justify-between mt-0.5 text-2xs text-gray-400">
+      <div className="flex justify-between mt-0.5 text-xs text-gray-400">
         <span>{range_min}</span>
         <span className="text-gray-500 font-medium">{median_label}</span>
         <span>{range_max}</span>

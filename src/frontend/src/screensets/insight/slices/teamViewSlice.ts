@@ -15,6 +15,7 @@ const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/teamView` as const;
  * State interface
  */
 export interface TeamViewState {
+  selectedTeamId: string;
   teamName: string;
   members: TeamMember[];
   teamKpis: TeamKpi[];
@@ -25,6 +26,7 @@ export interface TeamViewState {
 }
 
 const initialState: TeamViewState = {
+  selectedTeamId: '',
   teamName: '',
   members: [],
   teamKpis: [],
@@ -38,6 +40,9 @@ export const teamViewSlice = createSlice({
   name: SLICE_KEY,
   initialState,
   reducers: {
+    setSelectedTeamId: (state, action: PayloadAction<string>) => {
+      state.selectedTeamId = action.payload;
+    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
@@ -56,7 +61,7 @@ export const teamViewSlice = createSlice({
 });
 
 // Export actions
-export const { setLoading, setTeamViewData, setError } = teamViewSlice.actions;
+export const { setSelectedTeamId, setLoading, setTeamViewData, setError } = teamViewSlice.actions;
 
 // Export the slice object (not just the reducer) for registerSlice()
 export default teamViewSlice;
@@ -93,4 +98,8 @@ export const selectTeamName = (state: RootState): string => {
 
 export const selectTeamViewConfig = (state: RootState): TeamViewConfig | null => {
   return state[SLICE_KEY]?.config ?? null;
+};
+
+export const selectSelectedTeamId = (state: RootState): string => {
+  return state[SLICE_KEY]?.selectedTeamId ?? '';
 };

@@ -16,7 +16,7 @@ const MetricInfo: React.FC<MetricInfoProps> = ({ description, side = 'top' }) =>
   <TooltipProvider delayDuration={200}>
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline text-xs text-gray-400 cursor-help leading-none select-none ml-1">ⓘ</span>
+        <span tabIndex={0} role="button" className="inline text-xs text-gray-400 cursor-help leading-none select-none ml-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded-sm">ⓘ</span>
       </TooltipTrigger>
       <TooltipContent side={side} className="max-w-56 text-xs leading-snug">
         {description}

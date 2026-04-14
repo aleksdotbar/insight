@@ -28,10 +28,14 @@ export interface MenuProps {
 
 export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
   const menuState = useAppSelector((state) => state['layout/menu'] as MenuState | undefined);
-  const activeParam = useAppSelector((state) => {
+  const { activePersonParam, activeTeamParam } = useAppSelector((state) => {
     const s = state as Record<string, unknown>;
-    const icSlice = s['insight/icDashboard'] as { selectedPersonId?: string } | undefined;
-    return icSlice?.selectedPersonId ?? null;
+    const icSlice   = s['insight/icDashboard'] as { selectedPersonId?: string } | undefined;
+    const teamSlice = s['insight/teamView']     as { selectedTeamId?: string }   | undefined;
+    return {
+      activePersonParam: icSlice?.selectedPersonId ?? null,
+      activeTeamParam:   teamSlice?.selectedTeamId  ?? null,
+    };
   });
   const { currentScreen, navigateToScreen, currentScreenset } = useNavigation();
   const { t } = useTranslation();
@@ -64,7 +68,10 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
     return item.children.some((child) => {
       const [screenId, param] = child.id.split('::');
       const isLeaf = !child.children?.length;
-      if (isLeaf && param) return currentScreen === screenId && activeParam === param;
+      if (isLeaf && param) {
+        const activeParam = activeTeamParam === param ? activeTeamParam : activePersonParam;
+        return currentScreen === screenId && activeParam === param;
+      }
       if (isLeaf) return currentScreen === child.id;
       return hasActiveDescendant(child);
     });
@@ -75,6 +82,9 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
     const hasChildren = (item.children?.length ?? 0) > 0;
     const isExpanded = expandedGroups[item.id] ?? true;
     const [screenId, param] = item.id.split('::');
+    const activeParam = param
+      ? (activeTeamParam === param ? activeTeamParam : activePersonParam)
+      : null;
     const isSelfActive = param
       ? currentScreen === screenId && activeParam === param
       : currentScreen === item.id;
@@ -85,18 +95,25 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
       <SidebarMenuItem key={item.id}>
         <SidebarMenuButton
           isActive={isSelfActive}
-          onClick={() => hasChildren ? toggleGroup(item.id) : handleItemClick(item.id)}
+          onClick={() => {
+            if (hasChildren) {
+              toggleGroup(item.id);
+              if (item.id.includes('::')) handleItemClick(item.id);
+            } else {
+              handleItemClick(item.id);
+            }
+          }}
           tooltip={collapsed && depth === 0 ? t(item.label) : undefined}
-          className={`${indent} ${depth > 0 ? 'text-[12px]' : ''} ${isActive && !isSelfActive ? 'text-sidebar-foreground/80' : ''}`}
+          className={`${indent} ${depth > 0 ? 'text-xs' : ''} ${isActive && !isSelfActive ? 'text-sidebar-foreground/80' : ''}`}
         >
           {item.icon && (
             <SidebarMenuIcon>
-              <Icon icon={item.icon} className={depth > 0 ? 'w-3 h-3' : 'w-4 h-4'} />
+              <Icon icon={item.icon} className={depth > 0 ? 'w-3.5 h-3.5' : 'w-5 h-5'} />
             </SidebarMenuIcon>
           )}
           <span>{t(item.label)}</span>
           {hasChildren && !collapsed && (
-            <span className="ml-auto text-[10px] opacity-40">
+            <span className="ml-auto text-2xs opacity-40">
               {isExpanded ? '▾' : '▸'}
             </span>
           )}
