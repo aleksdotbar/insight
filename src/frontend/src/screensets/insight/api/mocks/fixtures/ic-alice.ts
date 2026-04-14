@@ -8,7 +8,6 @@
 
 import type {
   BulletMetric,
-  DataAvailability,
   IcKpi,
   IcDashboardData,
   LocDataPoint,
@@ -16,15 +15,6 @@ import type {
   DrillData,
   PeriodValue,
 } from '../../../types';
-
-const ALICE_DATA_AVAILABILITY: DataAvailability = {
-  git:   'available',
-  tasks: 'available',
-  ci:    'available',
-  comms: 'available',
-  hr:    'available',
-  ai:    'available',
-};
 
 // ---------------------------------------------------------------------------
 // Drills — 8 drill types with full row data
@@ -406,7 +396,6 @@ function scaleAliceBullets(metrics: BulletMetric[], period: PeriodValue, factor:
 export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardData>> = {
   p1: {
     week: {
-      person: { person_id: 'p1', name: 'Alice Kim', role: 'Senior Backend Developer', seniority: 'Senior' },
       kpis: scaleAliceKpis(ALICE_KPIS_MONTH, 'week', 0.25),
       bulletMetrics: scaleAliceBullets(ALICE_BULLET_METRICS_MONTH, 'week', 0.25),
       charts: {
@@ -427,19 +416,15 @@ export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardDa
       },
       timeOffNotice: null,
       drills: ALICE_DRILLS,
-      data_availability: ALICE_DATA_AVAILABILITY,
     },
     month: {
-      person: { person_id: 'p1', name: 'Alice Kim', role: 'Senior Backend Developer', seniority: 'Senior' },
       kpis: ALICE_KPIS_MONTH,
       bulletMetrics: ALICE_BULLET_METRICS_MONTH,
       charts: ALICE_CHARTS_MONTH,
       timeOffNotice: { days: 5, dateRange: 'Jul 14\u201318', bambooHrUrl: '#bamboo' },
       drills: ALICE_DRILLS,
-      data_availability: ALICE_DATA_AVAILABILITY,
     },
     quarter: {
-      person: { person_id: 'p1', name: 'Alice Kim', role: 'Senior Backend Developer', seniority: 'Senior' },
       kpis: scaleAliceKpis(ALICE_KPIS_MONTH, 'quarter', 3),
       bulletMetrics: scaleAliceBullets(ALICE_BULLET_METRICS_MONTH, 'quarter', 3),
       charts: {
@@ -456,10 +441,8 @@ export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardDa
       },
       timeOffNotice: { days: 5, dateRange: 'Jul 14\u201318', bambooHrUrl: '#bamboo' },
       drills: ALICE_DRILLS,
-      data_availability: ALICE_DATA_AVAILABILITY,
     },
     year: {
-      person: { person_id: 'p1', name: 'Alice Kim', role: 'Senior Backend Developer', seniority: 'Senior' },
       kpis: scaleAliceKpis(ALICE_KPIS_MONTH, 'year', 12),
       bulletMetrics: scaleAliceBullets(ALICE_BULLET_METRICS_MONTH, 'year', 12),
       charts: {
@@ -478,7 +461,6 @@ export const IC_DASHBOARD_MOCK: Record<string, Record<PeriodValue, IcDashboardDa
       },
       timeOffNotice: { days: 5, dateRange: 'Jul 14\u201318', bambooHrUrl: '#bamboo' },
       drills: ALICE_DRILLS,
-      data_availability: ALICE_DATA_AVAILABILITY,
     },
   },
 };

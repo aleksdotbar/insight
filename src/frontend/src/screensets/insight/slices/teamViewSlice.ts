@@ -7,7 +7,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { TeamMember, TeamKpi, BulletSection, TeamViewData, TeamViewConfig } from '../types';
+import type { TeamMember, TeamKpi, BulletSection, TeamViewData, TeamViewConfig, DataAvailability } from '../types';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/teamView` as const;
 
@@ -21,6 +21,7 @@ export interface TeamViewState {
   teamKpis: TeamKpi[];
   bulletSections: BulletSection[];
   config: TeamViewConfig | null;
+  availability: DataAvailability | null;
   loading: boolean;
   error: string | null;
 }
@@ -32,6 +33,7 @@ const initialState: TeamViewState = {
   teamKpis: [],
   bulletSections: [],
   config: null,
+  availability: null,
   loading: false,
   error: null,
 };
@@ -54,6 +56,9 @@ export const teamViewSlice = createSlice({
       state.config = action.payload.config;
       state.loading = false;
     },
+    setAvailability: (state, action: PayloadAction<DataAvailability>) => {
+      state.availability = action.payload;
+    },
     setError: (state, action: PayloadAction<string>) => {
       state.error = action.payload;
     },
@@ -61,7 +66,7 @@ export const teamViewSlice = createSlice({
 });
 
 // Export actions
-export const { setSelectedTeamId, setLoading, setTeamViewData, setError } = teamViewSlice.actions;
+export const { setSelectedTeamId, setLoading, setTeamViewData, setAvailability, setError } = teamViewSlice.actions;
 
 // Export the slice object (not just the reducer) for registerSlice()
 export default teamViewSlice;
@@ -102,4 +107,8 @@ export const selectTeamViewConfig = (state: RootState): TeamViewConfig | null =>
 
 export const selectSelectedTeamId = (state: RootState): string => {
   return state[SLICE_KEY]?.selectedTeamId ?? '';
+};
+
+export const selectTeamAvailability = (state: RootState): DataAvailability | null => {
+  return state[SLICE_KEY]?.availability ?? null;
 };

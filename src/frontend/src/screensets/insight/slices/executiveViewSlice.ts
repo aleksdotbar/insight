@@ -7,7 +7,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { ExecTeamRow, OrgKpis, ExecViewData, ExecViewConfig } from '../types';
+import type { ExecTeamRow, OrgKpis, ExecViewData, ExecViewConfig, DataAvailability } from '../types';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/executiveView` as const;
 
@@ -18,6 +18,7 @@ export interface ExecutiveViewState {
   teams: ExecTeamRow[];
   orgKpis: OrgKpis | null;
   config: ExecViewConfig | null;
+  availability: DataAvailability | null;
   loading: boolean;
   error: string | null;
 }
@@ -26,6 +27,7 @@ const initialState: ExecutiveViewState = {
   teams: [],
   orgKpis: null,
   config: null,
+  availability: null,
   loading: false,
   error: null,
 };
@@ -38,10 +40,13 @@ export const executiveViewSlice = createSlice({
       state.loading = action.payload;
     },
     setExecutiveViewData: (state, action: PayloadAction<ExecViewData>) => {
-      state.teams = action.payload.teams;
-      state.orgKpis = action.payload.orgKpis;
-      state.config = action.payload.config;
-      state.loading = false;
+      state.teams    = action.payload.teams;
+      state.orgKpis  = action.payload.orgKpis;
+      state.config   = action.payload.config;
+      state.loading  = false;
+    },
+    setAvailability: (state, action: PayloadAction<DataAvailability>) => {
+      state.availability = action.payload;
     },
     setError: (state, action: PayloadAction<string>) => {
       state.error = action.payload;
@@ -50,7 +55,7 @@ export const executiveViewSlice = createSlice({
 });
 
 // Export actions
-export const { setLoading, setExecutiveViewData, setError } = executiveViewSlice.actions;
+export const { setLoading, setExecutiveViewData, setAvailability, setError } = executiveViewSlice.actions;
 
 // Export the slice object (not just the reducer) for registerSlice()
 export default executiveViewSlice;
@@ -83,4 +88,8 @@ export const selectExecError = (state: RootState): string | null => {
 
 export const selectExecViewConfig = (state: RootState): ExecViewConfig | null => {
   return state[SLICE_KEY]?.config ?? null;
+};
+
+export const selectExecAvailability = (state: RootState): DataAvailability | null => {
+  return state[SLICE_KEY]?.availability ?? null;
 };

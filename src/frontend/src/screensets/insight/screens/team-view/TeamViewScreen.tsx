@@ -22,6 +22,7 @@ import DrillModal from '../../uikit/composite/DrillModal';
 import { INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID, TEAM_VIEW_SCREEN_ID } from '../../ids';
 import { apiRegistry } from '@hai3/react';
 import { InsightApiService } from '../../api/insightApiService';
+import { METRIC_REGISTRY } from '../../api/metricRegistry';
 import { getInitials } from '../../utils/getInitials';
 import type { ViewMode, CustomRange, DrillData } from '../../types';
 
@@ -102,9 +103,14 @@ const TeamViewScreen: React.FC = () => {
 
   const handleDrillClick = async (drillId: string): Promise<void> => {
     const api = apiRegistry.getService(InsightApiService);
-    const data = await api.getTeamDrillData(drillId, period);
-    setDrillData(data);
-    setDrillOpen(true);
+    const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
+      $filter: `org_unit_id eq '${teamId}' and drill_id eq '${drillId}'`,
+    });
+    const data = resp.items[0];
+    if (data) {
+      setDrillData(data);
+      setDrillOpen(true);
+    }
   };
 
   const handleMembersDrill = async (): Promise<void> => {
@@ -113,9 +119,14 @@ const TeamViewScreen: React.FC = () => {
 
   const handleCellDrill = async (personId: string, drillId: string): Promise<void> => {
     const api = apiRegistry.getService(InsightApiService);
-    const data = await api.getIcDrillData(personId, drillId);
-    setDrillData(data);
-    setDrillOpen(true);
+    const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
+      $filter: `person_id eq '${personId}' and drill_id eq '${drillId}'`,
+    });
+    const data = resp.items[0];
+    if (data) {
+      setDrillData(data);
+      setDrillOpen(true);
+    }
   };
 
   const handleCloseDrill = (): void => {

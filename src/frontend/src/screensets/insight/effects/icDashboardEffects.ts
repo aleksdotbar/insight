@@ -10,6 +10,8 @@ import {
   setSelectedPersonId,
   setLoading,
   setIcDashboardData,
+  setPerson,
+  setAvailability,
   setError,
   setDrillState,
   clearDrill,
@@ -32,6 +34,14 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
 
   eventBus.on(IcDashboardEvents.IcDashboardLoaded, (data) => {
     dispatch(setIcDashboardData(data));
+  });
+
+  eventBus.on(IcDashboardEvents.IcPersonLoaded, (person) => {
+    dispatch(setPerson(person));
+  });
+
+  eventBus.on(IcDashboardEvents.IcDashboardAvailabilityLoaded, (availability) => {
+    dispatch(setAvailability(availability));
   });
 
   eventBus.on(IcDashboardEvents.IcDashboardLoadFailed, (msg) => {

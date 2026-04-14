@@ -15,6 +15,7 @@ import type {
   TimeOffNotice,
   DrillData,
   IcDashboardData,
+  DataAvailability,
   ViewMode,
 } from '../types';
 
@@ -25,6 +26,7 @@ const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/icDashboard` as const;
  */
 export interface IcDashboardState {
   selectedPersonId: string;
+  /** Loaded separately via IdentityResolutionService */
   person: PersonData | null;
   kpis: IcKpi[];
   bulletMetrics: BulletMetric[];
@@ -32,6 +34,8 @@ export interface IcDashboardState {
   timeOffNotice: TimeOffNotice | null;
   drillId: string | null;
   drillData: DrillData | null;
+  /** Loaded separately via ConnectorManagerService */
+  availability: DataAvailability | null;
   viewMode: ViewMode;
   loading: boolean;
   error: string | null;
@@ -46,6 +50,7 @@ const initialState: IcDashboardState = {
   timeOffNotice: null,
   drillId: null,
   drillData: null,
+  availability: null,
   viewMode: 'chart',
   loading: false,
   error: null,
@@ -62,13 +67,18 @@ export const icDashboardSlice = createSlice({
       state.loading = action.payload;
     },
     setIcDashboardData: (state, action: PayloadAction<IcDashboardData>) => {
-      state.person = action.payload.person;
-      state.kpis = action.payload.kpis;
+      state.kpis          = action.payload.kpis;
       state.bulletMetrics = action.payload.bulletMetrics;
-      state.charts = action.payload.charts;
+      state.charts        = action.payload.charts;
       state.timeOffNotice = action.payload.timeOffNotice;
-      state.loading = false;
-      state.error = null;
+      state.loading       = false;
+      state.error         = null;
+    },
+    setPerson: (state, action: PayloadAction<PersonData>) => {
+      state.person = action.payload;
+    },
+    setAvailability: (state, action: PayloadAction<DataAvailability>) => {
+      state.availability = action.payload;
     },
     setError: (state, action: PayloadAction<string>) => {
       state.error = action.payload;
@@ -96,6 +106,8 @@ export const {
   setSelectedPersonId,
   setLoading,
   setIcDashboardData,
+  setPerson,
+  setAvailability,
   setError,
   setDrillState,
   clearDrill,
@@ -149,6 +161,10 @@ export const selectViewMode = (state: RootState): ViewMode => {
 
 export const selectIcLoading = (state: RootState): boolean => {
   return state[SLICE_KEY]?.loading ?? false;
+};
+
+export const selectIcAvailability = (state: RootState): DataAvailability | null => {
+  return state[SLICE_KEY]?.availability ?? null;
 };
 
 export const selectSelectedPersonId = (state: RootState): string => {

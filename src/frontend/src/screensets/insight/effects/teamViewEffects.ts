@@ -6,7 +6,7 @@
 
 import { type AppDispatch, eventBus } from '@hai3/react';
 import { TeamViewEvents } from '../events/teamViewEvents';
-import { setLoading, setTeamViewData, setError } from '../slices/teamViewSlice';
+import { setLoading, setTeamViewData, setAvailability, setError } from '../slices/teamViewSlice';
 
 /**
  * Initialize effects
@@ -21,6 +21,10 @@ export const initializeTeamViewEffects = (appDispatch: AppDispatch): void => {
 
   eventBus.on(TeamViewEvents.TeamViewLoaded, (data) => {
     dispatch(setTeamViewData(data));
+  });
+
+  eventBus.on(TeamViewEvents.TeamViewAvailabilityLoaded, (availability) => {
+    dispatch(setAvailability(availability));
   });
 
   eventBus.on(TeamViewEvents.TeamViewLoadFailed, (msg) => {
