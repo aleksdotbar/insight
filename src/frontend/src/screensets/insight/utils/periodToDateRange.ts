@@ -6,20 +6,23 @@
 import type { PeriodValue } from '../types';
 
 function toISODate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /** Returns { from, to } ISO date strings for the given period ending today. */
 export function periodToDateRange(period: PeriodValue): { from: string; to: string } {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
   const from = new Date(today);
 
   switch (period) {
-    case 'week':    from.setDate(from.getDate() - 7);        break;
-    case 'month':   from.setMonth(from.getMonth() - 1);      break;
-    case 'quarter': from.setMonth(from.getMonth() - 3);      break;
-    case 'year':    from.setFullYear(from.getFullYear() - 1); break;
+    case 'week':    from.setUTCDate(from.getUTCDate() - 7);              break;
+    case 'month':   from.setUTCMonth(from.getUTCMonth() - 1);            break;
+    case 'quarter': from.setUTCMonth(from.getUTCMonth() - 3);            break;
+    case 'year':    from.setUTCFullYear(from.getUTCFullYear() - 1);      break;
   }
 
   return { from: toISODate(from), to: toISODate(today) };

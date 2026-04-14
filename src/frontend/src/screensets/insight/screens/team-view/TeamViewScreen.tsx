@@ -102,14 +102,18 @@ const TeamViewScreen: React.FC = () => {
   };
 
   const handleDrillClick = async (drillId: string): Promise<void> => {
-    const api = apiRegistry.getService(InsightApiService);
-    const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
-      $filter: `org_unit_id eq '${teamId}' and drill_id eq '${drillId}'`,
-    });
-    const data = resp.items[0];
-    if (data) {
-      setDrillData(data);
-      setDrillOpen(true);
+    try {
+      const api = apiRegistry.getService(InsightApiService);
+      const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
+        $filter: `org_unit_id eq '${teamId}' and drill_id eq '${drillId}'`,
+      });
+      const data = resp.items[0];
+      if (data) {
+        setDrillData(data);
+        setDrillOpen(true);
+      }
+    } catch (err) {
+      console.error('Failed to load drill data:', err);
     }
   };
 
@@ -118,14 +122,18 @@ const TeamViewScreen: React.FC = () => {
   };
 
   const handleCellDrill = async (personId: string, drillId: string): Promise<void> => {
-    const api = apiRegistry.getService(InsightApiService);
-    const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
-      $filter: `person_id eq '${personId}' and drill_id eq '${drillId}'`,
-    });
-    const data = resp.items[0];
-    if (data) {
-      setDrillData(data);
-      setDrillOpen(true);
+    try {
+      const api = apiRegistry.getService(InsightApiService);
+      const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
+        $filter: `person_id eq '${personId}' and drill_id eq '${drillId}'`,
+      });
+      const data = resp.items[0];
+      if (data) {
+        setDrillData(data);
+        setDrillOpen(true);
+      }
+    } catch (err) {
+      console.error('Failed to load drill data:', err);
     }
   };
 

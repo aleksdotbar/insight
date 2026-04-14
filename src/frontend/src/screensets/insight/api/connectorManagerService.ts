@@ -43,13 +43,18 @@ export class ConnectorManagerService extends BaseApiService {
 
   /** Fetches availability for all known connectors in parallel. */
   async getDataAvailability(): Promise<DataAvailability> {
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       CONNECTION_IDS.map((id) =>
         this.protocol(RestProtocol).get<ConnectorStatus>(`/connections/${id}/status`),
       ),
     );
     return Object.fromEntries(
-      results.map((r) => [r.id, r.status]),
+      CONNECTION_IDS.map((id, i) => {
+        const result = settled[i];
+        const status: ConnectorAvailability =
+          result?.status === 'fulfilled' ? result.value.status : 'no-connector';
+        return [id, status];
+      }),
     ) as DataAvailability;
   }
 }

@@ -24,6 +24,7 @@ import type {
   DeliveryDataPoint,
   DrillData,
   DrillRow,
+  TimeOffNotice,
   PeriodValue,
   ODataParams,
   ODataResponse,
@@ -37,7 +38,6 @@ import { METRIC_REGISTRY } from './metricRegistry';
 import { EXEC_TEAMS_MONTH, EXEC_ORG_KPIS_MONTH, EXEC_VIEW_CONFIG } from './mocks/fixtures/executive-view';
 import { TEAM_MEMBERS_MONTH, BULLET_SECTIONS_MONTH, TEAM_KPIS_BY_PERIOD, TEAM_VIEW_CONFIG } from './mocks/fixtures/team-view-base';
 import { IC_DASHBOARD_MOCK } from './mocks/fixtures/ic-alice';
-import { TEAM_DRILLS } from './mocks/fixtures/team-drills';
 
 // Re-export for external consumers
 export { TEAM_MEMBERS_MONTH, IC_DASHBOARD_MOCK };
@@ -579,6 +579,9 @@ function team(filter: string): string {
 function wrap<T>(items: T[]): ODataResponse<T> {
   return { items, page_info: { has_next: false, cursor: null } };
 }
+function drillId(filter: string): string {
+  return /drill_id eq '([^']+)'/.exec(filter)?.[1] ?? '';
+}
 
 // ---------------------------------------------------------------------------
 // Mock map — POST /api/analytics/v1/metrics/{uuid}/query
@@ -683,22 +686,18 @@ export const insightMockMap = {
       return wrap(ALL_IC[`${person(f)}/${p}`]?.charts.deliveryTrend ?? []);
     },
 
-  // IC drills — drill_id used as $select param; person from $filter
+  // IC drills — drill_id extracted from $filter; person also from $filter
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_DRILL}/query`]:
     (body: unknown): ODataResponse<DrillData> => {
       const f       = odata(body).$filter ?? '';
-      const drillId = odata(body).$select ?? '';
+      const did     = drillId(f);
       const pid     = person(f);
       const monthData = ALL_IC[`${pid}/month`];
-      const drill = monthData?.drills[drillId];
+      const drill = monthData?.drills[did];
       return wrap(drill ? [drill] : []);
     },
 
-  // Team drills — keyed by drill-id prefix in $select
+  // IC time-off notices — returns empty by default (no time off scheduled)
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_TIMEOFF}/query`]:
-    (body: unknown): ODataResponse<DrillData> => {
-      const drillId = odata(body).$select ?? '';
-      const drill = TEAM_DRILLS[drillId as keyof typeof TEAM_DRILLS];
-      return wrap(drill ? [drill] : []);
-    },
+    (_body: unknown): ODataResponse<TimeOffNotice> => wrap([]),
 } satisfies MockMap;

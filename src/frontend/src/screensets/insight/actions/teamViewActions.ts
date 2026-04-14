@@ -67,22 +67,19 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
 
   const teamFilter = `org_unit_id eq '${teamId}' and ${odataDateFilter(period)}`;
 
+  // Critical path — metric data only
   void Promise.all([
-    // Member rows
     api.queryMetric<TeamMember>(METRIC_REGISTRY.TEAM_MEMBER, {
       $filter:  teamFilter,
       $orderby: 'display_name asc',
       $top:     200,
     }),
-    // Bullet sections — four parallel queries
     api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_DELIVERY, { $filter: teamFilter }),
     api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_QUALITY,  { $filter: teamFilter }),
     api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_COLLAB,   { $filter: teamFilter }),
     api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_AI,       { $filter: teamFilter }),
-    // Availability
-    connectors.getDataAvailability(),
   ])
-    .then(([membersResp, delivery, quality, collab, ai, availability]) => {
+    .then(([membersResp, delivery, quality, collab, ai]) => {
       const members = membersResp.items;
 
       const bulletSections = [
@@ -92,8 +89,10 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
         { id: 'ai_adoption',    title: 'AI Adoption',    metrics: ai.items       },
       ].filter((s) => s.metrics.length > 0);
 
+      const teamName = teamId.charAt(0).toUpperCase() + teamId.slice(1);
+
       const data: TeamViewData = {
-        teamName:      teamId,    // TODO: resolve from org_unit_name in member rows
+        teamName,
         teamKpis:      deriveTeamKpis(members, period),
         members,
         bulletSections,
@@ -101,9 +100,15 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
       };
 
       eventBus.emit(TeamViewEvents.TeamViewLoaded, data);
-      eventBus.emit(TeamViewEvents.TeamViewAvailabilityLoaded, availability);
     })
     .catch((err: unknown) => {
       eventBus.emit(TeamViewEvents.TeamViewLoadFailed, String(err));
     });
+
+  // Best-effort — availability does not block the view
+  void connectors.getDataAvailability()
+    .then((availability) => {
+      eventBus.emit(TeamViewEvents.TeamViewAvailabilityLoaded, availability);
+    })
+    .catch(() => { /* availability is optional */ });
 };

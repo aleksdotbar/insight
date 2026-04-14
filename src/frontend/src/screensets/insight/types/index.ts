@@ -82,7 +82,7 @@ export interface ODataParams {
   $orderby?: string;
   $top?:     number;
   $select?:  string;
-  $skip?:    string;
+  $skip?:    number;
 }
 
 /** Standard paginated response envelope from Analytics API */
@@ -199,11 +199,11 @@ export interface ExecTeamRow {
   status: 'good' | 'warn' | 'bad';
 }
 export interface OrgKpis {
-  avgBuildSuccess: number | null;    // null when [ci] not configured
-  avgAiAdoption: number;
-  avgFocus: number;
-  bugResolutionScore: number | null; // null when [tasks] not configured
-  prCycleScore: number;
+  avgBuildSuccess:    number | null;  // null when [ci] not configured
+  avgAiAdoption:      number | null;  // null when no team data
+  avgFocus:           number | null;  // null when no team data
+  bugResolutionScore: number | null;  // null when [tasks] not configured
+  prCycleScore:       number | null;  // null when no team data
 }
 export interface ExecViewData {
   teams: ExecTeamRow[];

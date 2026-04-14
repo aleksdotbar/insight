@@ -24,42 +24,47 @@ export const loadExecutiveView = (period: PeriodValue): void => {
   const connectors = apiRegistry.getService(ConnectorManagerService);
   const filter     = odataDateFilter(period);
 
-  void Promise.all([
-    api.queryMetric<ExecTeamRow>(METRIC_REGISTRY.EXEC_SUMMARY, {
-      $filter:  filter,
-      $orderby: 'org_unit_name asc',
-      $top:     200,
-    }),
-    connectors.getDataAvailability(),
-  ])
-    .then(([summaryResp, availability]) => {
+  // Critical path — metric data only
+  void api.queryMetric<ExecTeamRow>(METRIC_REGISTRY.EXEC_SUMMARY, {
+    $filter:  filter,
+    $orderby: 'org_unit_name asc',
+    $top:     200,
+  })
+    .then((summaryResp) => {
       const teams = summaryResp.items;
 
-      // Org KPIs are derived from team rows
       const withValue = <T>(vals: (T | null)[]): T[] =>
         vals.filter((v): v is T => v !== null);
 
-      const buildVals  = withValue(teams.map((t) => t.build_success_pct));
-      const bugVals    = withValue(teams.map((t) => t.tasks_closed));
-      const avg        = (arr: number[]) =>
+      const buildVals = withValue(teams.map((t) => t.build_success_pct));
+      const bugVals   = withValue(teams.map((t) => t.tasks_closed));
+      const avg       = (arr: number[]): number | null =>
         arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
 
       const data: ExecViewData = {
         teams,
         orgKpis: {
           avgBuildSuccess:    avg(buildVals),
-          avgAiAdoption:      avg(teams.map((t) => t.ai_adoption_pct)) ?? 0,
-          avgFocus:           avg(teams.map((t) => t.focus_time_pct))  ?? 0,
-          bugResolutionScore: bugVals.length ? Math.min(100, Math.round(avg(bugVals) ?? 0)) : null,
-          prCycleScore:       Math.max(0, 100 - Math.round((avg(teams.map((t) => t.pr_cycle_time_h)) ?? 24))),
+          avgAiAdoption:      avg(withValue(teams.map((t) => t.ai_adoption_pct))),
+          avgFocus:           avg(withValue(teams.map((t) => t.focus_time_pct))),
+          bugResolutionScore: bugVals.length ? Math.min(100, avg(bugVals) ?? 0) : null,
+          prCycleScore:       teams.length
+            ? Math.max(0, 100 - (avg(withValue(teams.map((t) => t.pr_cycle_time_h))) ?? 0))
+            : null,
         },
         config: EXEC_VIEW_CONFIG,
       };
 
       eventBus.emit(ExecutiveViewEvents.ExecutiveViewLoaded, data);
-      eventBus.emit(ExecutiveViewEvents.ExecutiveViewAvailabilityLoaded, availability);
     })
     .catch((err: unknown) => {
       eventBus.emit(ExecutiveViewEvents.ExecutiveViewLoadFailed, String(err));
     });
+
+  // Best-effort — availability does not block the view
+  void connectors.getDataAvailability()
+    .then((availability) => {
+      eventBus.emit(ExecutiveViewEvents.ExecutiveViewAvailabilityLoaded, availability);
+    })
+    .catch(() => { /* availability is optional */ });
 };

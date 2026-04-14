@@ -100,6 +100,9 @@ export const openDrill = (personId: string, drillId: string): void => {
       if (drillData) {
         eventBus.emit(IcDashboardEvents.DrillOpened, { drillId, drillData });
       }
+    })
+    .catch((err: unknown) => {
+      console.error('Failed to load drill data:', err);
     });
 };
 

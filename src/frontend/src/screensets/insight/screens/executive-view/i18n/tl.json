@@ -1,4 +1,8 @@
 {
+  "header": {
+    "title": "Executive View",
+    "subtitle": "All teams · Organization overview"
+  },
   "kpi_cards": {
     "teams_at_risk": "Teams at Risk",
     "avg_build_success": "Avg Build Success",
