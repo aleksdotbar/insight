@@ -130,6 +130,9 @@ class FileChangesStream(GitHubRestStream):
             }
 
     def read_records(self, sync_mode=None, stream_slice=None, stream_state=None, **kwargs):
+        s = stream_slice or {}
+        if not (s.get("owner") and s.get("repo") and s.get("sha")):
+            return
         try:
             yield from super().read_records(
                 sync_mode=sync_mode, stream_slice=stream_slice,
@@ -138,7 +141,6 @@ class FileChangesStream(GitHubRestStream):
         except GitHubAuthError:
             raise
         except Exception as exc:
-            s = stream_slice or {}
             logger.error(f"Failed file_changes for {s.get('owner')}/{s.get('repo')}/{s.get('sha', '?')[:8]}: {exc}")
             raise
 

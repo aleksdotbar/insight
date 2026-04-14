@@ -59,6 +59,7 @@ class GitHubRestStream(HttpStream, ABC):
 
     url_base = "https://api.github.com/"
     primary_key = "unique_key"
+    raise_on_http_errors = False  # We handle 404/409/401/403 in parse_response
 
     @property
     def request_timeout(self) -> Optional[int]:
@@ -122,6 +123,10 @@ class GitHubRestStream(HttpStream, ABC):
         return None
 
     def parse_response(self, response: requests.Response, **kwargs) -> Iterable[Mapping[str, Any]]:
+        if response.status_code in (401, 403) and not _is_rate_limit_403(response):
+            raise GitHubAuthError(
+                f"GitHub auth error ({response.status_code}): {response.text[:200]}"
+            )
         if response.status_code == 404:
             logger.warning(f"Resource not found (404): {response.url}")
             return
