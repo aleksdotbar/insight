@@ -85,6 +85,32 @@ Before sharing your work, ask the AI to validate it:
 
 The AI will check your code and report any issues.
 
+## Docker Image
+
+### Prerequisites
+
+1. Create a GitHub Personal Access Token (classic) with `write:packages` scope
+2. If the repo is in an org, authorize the token for SSO (Settings → Developer settings → PAT → Configure SSO)
+3. Log in to GHCR:
+   ```bash
+   echo "YOUR_TOKEN" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
+   ```
+
+### Build & Push
+
+```bash
+./scripts/ghcr-push.sh          # pushes as :latest
+./scripts/ghcr-push.sh 0.1.0    # pushes as :0.1.0
+```
+
+Image: `ghcr.io/cyberfabric/insight-front`
+
+### Pull
+
+```bash
+docker pull ghcr.io/cyberfabric/insight-front:latest
+```
+
 ## Getting Help
 
 - Type `/hai3-quick-ref` for common patterns

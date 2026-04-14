@@ -5,7 +5,7 @@
  * Application-specific service (copied from CLI template)
  */
 
-import { BaseApiService, RestProtocol, RestMockPlugin } from '@hai3/react';
+import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import type { GetCurrentUserResponse } from './types';
 import { accountsMockMap } from './mocks';
 
@@ -43,6 +43,4 @@ export class AccountsApiService extends BaseApiService {
   }
 }
 
-// NOTE: With class-based API registration, register services using:
-// import { AccountsApiService, apiRegistry } from '@/api';
-// apiRegistry.register(AccountsApiService);
+apiRegistry.register(AccountsApiService);

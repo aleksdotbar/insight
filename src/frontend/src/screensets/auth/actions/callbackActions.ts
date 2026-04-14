@@ -25,7 +25,7 @@ export function handleOidcCallback(): void {
 
   void OidcManager.handleCallback(callbackUrl)
     .then((returnUrl) => {
-      window.location.replace(returnUrl);
+      eventBus.emit(AuthEvent.CallbackCompleted, { returnUrl });
     })
     .catch((err) => {
       console.error('[handleOidcCallback] failed:', err);

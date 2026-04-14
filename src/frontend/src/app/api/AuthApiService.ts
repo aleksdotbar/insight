@@ -3,7 +3,7 @@
  * Fetches OIDC bootstrap config from the API gateway (public endpoint, no token needed)
  */
 
-import { BaseApiService, RestProtocol, RestMockPlugin } from '@hai3/react';
+import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import type { OidcConfig } from '@/app/types/auth';
 
 const authMockMap = {
@@ -32,3 +32,5 @@ export class AuthApiService extends BaseApiService {
     return this.protocol(RestProtocol).get<OidcConfig>('/auth/config');
   }
 }
+
+apiRegistry.register(AuthApiService);
