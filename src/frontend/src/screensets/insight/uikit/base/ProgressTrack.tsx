@@ -21,17 +21,24 @@ export const ProgressTrack: React.FC<ProgressTrackProps> = ({
   barWidthPct,
   medianLeftPct,
   barColorClass,
-}) => (
-  <div className="relative h-5 bg-slate-200 rounded mt-1.5">
-    {/* Value bar */}
-    <div
-      style={{ left: `${barLeftPct}%`, width: `${barWidthPct}%` }}
-      className={`absolute top-[3px] bottom-[3px] rounded-sm transition-[width] duration-500 ease-in-out ${barColorClass}`}
-    />
-    {/* Median line */}
-    <div
-      style={{ left: `${medianLeftPct}%` }}
-      className="absolute w-[2px] -top-0.5 -bottom-0.5 bg-gray-800/60 rounded"
-    />
-  </div>
-);
+}) => {
+  const clampPct = (v: number) => Math.max(0, Math.min(100, v));
+  const safeLeft   = clampPct(barLeftPct);
+  const safeWidth  = Math.min(clampPct(barWidthPct), 100 - safeLeft);
+  const safeMedian = clampPct(medianLeftPct);
+
+  return (
+    <div className="relative h-5 bg-slate-200 rounded mt-1.5">
+      {/* Value bar */}
+      <div
+        style={{ left: `${safeLeft}%`, width: `${safeWidth}%` }}
+        className={`absolute top-[3px] bottom-[3px] rounded-sm transition-[width] duration-500 ease-in-out ${barColorClass}`}
+      />
+      {/* Median line */}
+      <div
+        style={{ left: `${safeMedian}%` }}
+        className="absolute w-[2px] -top-0.5 -bottom-0.5 bg-gray-800/60 rounded"
+      />
+    </div>
+  );
+};

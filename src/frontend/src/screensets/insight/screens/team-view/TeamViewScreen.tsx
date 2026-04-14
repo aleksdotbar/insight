@@ -4,12 +4,12 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { useAppSelector, useNavigation, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
+import { useAppSelector, useNavigation, useScreenTranslations, useTranslation, I18nRegistry, Language } from '@hai3/react';
 import { usePeriod } from '../../hooks/usePeriod';
 import { loadTeamView } from '../../actions/teamViewActions';
 import { selectIcPerson } from '../../actions/icDashboardActions';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
-import { selectMembers, selectTeamKpis, selectBulletSections, selectTeamViewLoading, selectTeamName, selectTeamViewConfig } from '../../slices/teamViewSlice';
+import { selectMembers, selectTeamKpis, selectBulletSections, selectTeamViewLoading, selectTeamName, selectTeamViewConfig, selectSelectedTeamId } from '../../slices/teamViewSlice';
 import { selectCurrentUser } from '../../slices/currentUserSlice';
 import { selectCustomRange } from '../../slices/periodSlice';
 import { TeamHeroStrip } from './components/TeamHeroStrip';
@@ -22,6 +22,7 @@ import DrillModal from '../../uikit/composite/DrillModal';
 import { INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID, TEAM_VIEW_SCREEN_ID } from '../../ids';
 import { apiRegistry } from '@hai3/react';
 import { InsightApiService } from '../../api/insightApiService';
+import { getInitials } from '../../utils/getInitials';
 import type { ViewMode, CustomRange, DrillData } from '../../types';
 
 const translations = I18nRegistry.createLoader({
@@ -65,11 +66,14 @@ const translations = I18nRegistry.createLoader({
 
 const TeamViewScreen: React.FC = () => {
   useScreenTranslations(INSIGHT_SCREENSET_ID, TEAM_VIEW_SCREEN_ID, translations);
+  const { t } = useTranslation();
   const period = usePeriod();
   const customRange = useAppSelector(selectCustomRange);
+  const selectedTeamId = useAppSelector(selectSelectedTeamId);
+  const currentUser = useAppSelector(selectCurrentUser);
+  const teamId = selectedTeamId || currentUser.teamId || 'backend';
   const loading = useAppSelector(selectTeamViewLoading);
   const allMembers = useAppSelector(selectMembers);
-  const currentUser = useAppSelector(selectCurrentUser);
   // Team Lead sees their own data via "My Dashboard" — exclude from the team table
   const members = currentUser.role === 'team_lead'
     ? allMembers.filter((m) => m.person_id !== currentUser.personId)
@@ -84,8 +88,8 @@ const TeamViewScreen: React.FC = () => {
   const { navigateToScreen } = useNavigation();
 
   useEffect(() => {
-    loadTeamView(period);
-  }, [period]);
+    loadTeamView(teamId, period);
+  }, [teamId, period]);
 
   const handleNavigateToIc = (personId: string): void => {
     selectIcPerson(personId);
@@ -126,14 +130,14 @@ const TeamViewScreen: React.FC = () => {
         <div className="flex items-center gap-3">
           {teamName && (
             <>
-              <div className="w-8 h-8 bg-indigo-50 rounded-full flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 bg-indigo-50 rounded-full flex items-center justify-center flex-shrink-0" role="img" aria-label={teamName}>
                 <span className="text-sm font-extrabold text-indigo-600">
-                  {teamName.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')}
+                  {getInitials(teamName)}
                 </span>
               </div>
               <div>
                 <div className="text-base font-bold text-gray-900 leading-tight">{teamName}</div>
-                <div className="text-xs text-gray-400">Team Dashboard</div>
+                <div className="text-xs text-gray-400">{t('header.subtitle')}</div>
               </div>
             </>
           )}

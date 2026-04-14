@@ -56,8 +56,8 @@ export class InsightApiService extends BaseApiService {
   /**
    * Get team view data for a given period
    */
-  async getTeamViewData(period: PeriodValue): Promise<TeamViewData> {
-    return this.protocol(RestProtocol).get<TeamViewData>(`/views/team?period=${period}`);
+  async getTeamViewData(teamId: string, period: PeriodValue): Promise<TeamViewData> {
+    return this.protocol(RestProtocol).get<TeamViewData>(`/views/team/${teamId}?period=${period}`);
   }
 
   /**

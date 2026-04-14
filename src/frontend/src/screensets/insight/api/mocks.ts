@@ -201,16 +201,39 @@ function withComputedKpis(teamKpis: TeamKpi[], members: TeamMember[]): TeamKpi[]
   });
 }
 
-const _weekMembers    = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'week', 0.25);
-const _quarterMembers = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'quarter', 3);
-const _yearMembers    = scaleTeamMembers(TEAM_MEMBERS_MONTH, 'year', 12);
-
-export const TEAM_VIEW_MOCK: Record<PeriodValue, TeamViewData> = {
-  week:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    _weekMembers),    members: _weekMembers,           bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-  month:   { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   TEAM_MEMBERS_MONTH), members: TEAM_MEMBERS_MONTH,  bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-  quarter: { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, _quarterMembers), members: _quarterMembers,         bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-  year:    { teamName: 'Platform Engineering', teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    _yearMembers),    members: _yearMembers,             bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+// Team roster — maps teamId to member person_ids (must match ORG in currentUserEffects)
+const TEAM_ROSTER: Record<string, { label: string; leadId: string; memberIds: string[] }> = {
+  backend:  { label: 'Backend',  leadId: 'p5',  memberIds: ['p1', 'p3', 'p4'] },
+  platform: { label: 'Platform', leadId: 'p6',  memberIds: ['p2', 'p8'] },
+  frontend: { label: 'Frontend', leadId: 'p11', memberIds: ['p7', 'p9', 'p10', 'p12'] },
 };
+
+function buildTeamViewMock(teamId: string): Record<PeriodValue, TeamViewData> {
+  const roster = TEAM_ROSTER[teamId];
+  if (!roster) return {} as Record<PeriodValue, TeamViewData>;
+
+  const allIds = [roster.leadId, ...roster.memberIds];
+  const monthMembers = TEAM_MEMBERS_MONTH.filter((m) => allIds.includes(m.person_id));
+  const weekMembers    = scaleTeamMembers(monthMembers, 'week', 0.25);
+  const quarterMembers = scaleTeamMembers(monthMembers, 'quarter', 3);
+  const yearMembers    = scaleTeamMembers(monthMembers, 'year', 12);
+
+  return {
+    week:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    weekMembers),    members: weekMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+    month:   { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   monthMembers),   members: monthMembers,   bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+    quarter: { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, quarterMembers), members: quarterMembers, bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+    year:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    yearMembers),    members: yearMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+  };
+}
+
+const TEAM_VIEW_MOCKS: Record<string, Record<PeriodValue, TeamViewData>> = {
+  backend:  buildTeamViewMock('backend'),
+  platform: buildTeamViewMock('platform'),
+  frontend: buildTeamViewMock('frontend'),
+};
+
+// Legacy export (defaults to backend)
+export const TEAM_VIEW_MOCK = TEAM_VIEW_MOCKS['backend'];
 
 // ---------------------------------------------------------------------------
 // IC Dashboard Generator
@@ -328,8 +351,8 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
       barPct(m.dev_time_h, 0, 72), 33, m.dev_time_h <= 18 ? 'good' : m.dev_time_h <= 26 ? 'warn' : 'bad', 'pull-requests'),
     // collab — Slack
     bm(period, 'collab', 'slack_thread_participation', 'Thread Participation', 'Slack \u00b7 replies to others\' threads',
-      String(Math.round(20 + pid * 3)), 'replies', '0', '80', '29', 'Median: 29',
-      barPct(20 + pid * 3, 0, 80), 36, 'good', ''),
+      String(Math.round((20 + pid * 3) * f)), 'replies', '0', '80', '29', 'Median: 29',
+      barPct(Math.round((20 + pid * 3) * f), 0, 80), 36, 'good', ''),
     bm(period, 'collab', 'slack_message_engagement', 'Message Engagement', 'Slack \u00b7 avg replies per thread',
       (1.4 + pid * 0.15).toFixed(1), 'avg', '0', '5', '1.8', 'Median: 1.8',
       barPct(1.4 + pid * 0.15, 0, 5), 36, 'good', ''),
@@ -338,56 +361,56 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
       Math.round(18 + pid * 2), 28, 'good', ''),
     // collab — M365
     bm(period, 'collab', 'm365_teams_messages', 'Teams Messages', 'Microsoft Teams \u00b7 all channels sent',
-      String(Math.round(120 + pid * 12)), '/mo', '0', '400', '148', 'Median: 148',
-      barPct(120 + pid * 12, 0, 400), 37, 'good', ''),
+      String(Math.round((120 + pid * 12) * f)), 'msgs', '0', '400', '148', 'Median: 148',
+      barPct(Math.round((120 + pid * 12) * f), 0, 400), 37, 'good', ''),
     bm(period, 'collab', 'm365_emails_sent', 'Emails Sent', 'M365 \u00b7 avg per member \u00b7 lower = better',
-      String(Math.round(22 + pid * 3)), '/mo', '0', '120', '35', 'Median: 35 \u00b7 lower = better',
-      barPct(22 + pid * 3, 0, 120), 29, 'good', ''),
+      String(Math.round((22 + pid * 3) * f)), 'emails', '0', '120', '35', 'Median: 35 \u00b7 lower = better',
+      barPct(Math.round((22 + pid * 3) * f), 0, 120), 29, 'good', ''),
     bm(period, 'collab', 'm365_files_shared', 'Files Shared', 'M365 \u00b7 avg per member',
-      String(Math.round(5 + pid)), '/mo', '0', '30', '8', 'Median: 8',
-      barPct(5 + pid, 0, 30), 27, 'good', ''),
+      String(Math.round((5 + pid) * f)), 'files', '0', '30', '8', 'Median: 8',
+      barPct(Math.round((5 + pid) * f), 0, 30), 27, 'good', ''),
     // collab — Focus & Meetings
     bm(period, 'collab', 'focus_time_pct', 'Focus Time', 'Calendar / M365 \u00b7 uninterrupted blocks \u226560 min',
       String(focus), '%', '42%', '81%', '63', 'Median: 63%',
       barPct(focus, 42, 81), 54, focus >= 60 ? 'good' : focus >= 50 ? 'warn' : 'bad', ''),
     bm(period, 'collab', 'meeting_hours', 'Meeting Hours', 'Zoom \u00b7 meeting duration + M365 audioDuration \u00b7 lower = more focus time',
-      String(Math.round(40 - focus / 5)), 'h/mo', '4h', '28h', '16', 'Median: 16h',
-      barPct(40 - focus / 5, 4, 28), 50, focus >= 60 ? 'good' : 'warn', ''),
+      String(Math.min(Math.round((40 - focus / 5) * f), 28)), 'h', '4h', '28h', '16', 'Median: 16h',
+      barPct(Math.min(Math.round((40 - focus / 5) * f), 28), 4, 28), 50, focus >= 60 ? 'good' : 'warn', ''),
     bm(period, 'collab', 'zoom_calls', 'Zoom Calls', 'Zoom API \u00b7 avg calls attended per member',
-      String(Math.round(7 + pid * 0.8)), '/mo', '0', '20', '9', 'Median: 9',
-      barPct(7 + pid * 0.8, 0, 20), 45, 'good', ''),
+      String(Math.round((7 + pid * 0.8) * f)), 'calls', '0', '20', '9', 'Median: 9',
+      barPct(Math.round((7 + pid * 0.8) * f), 0, 20), 45, 'good', ''),
     bm(period, 'collab', 'meeting_free', 'Meeting-Free Days', 'Zoom \u00b7 days with no meetings + M365 \u00b7 avg \u00b7 higher = better',
       String(Math.round(3 + focus / 20)), 'days', '0', '10', '4', 'Median: 4',
       barPct(3 + focus / 20, 0, 10), 40, focus >= 60 ? 'good' : 'warn', ''),
     // ai_tools — only if member uses AI
     ...(m.ai_tools.length > 0 ? [
-      bm(period, 'ai_tools', 'cursor_completions', 'Cursor Completions', 'Cursor \u00b7 completions suggested this month',
-        String(Math.round(600 + pid * 120)), 'count', '200', '5k', '800', 'Median: 800',
-        barPct(600 + pid * 120, 200, 5000), 16, 'good', ''),
+      bm(period, 'ai_tools', 'cursor_completions', 'Cursor Completions', 'Cursor \u00b7 completions suggested in period',
+        String(Math.round((600 + pid * 120) * f)), 'count', '200', '5k', '800', 'Median: 800',
+        barPct(Math.round((600 + pid * 120) * f), 200, 5000), 16, 'good', ''),
       bm(period, 'ai_tools', 'cursor_agents', 'Cursor Agent Sessions', 'Cursor \u00b7 agentic sessions started',
-        String(Math.round(8 + pid * 2)), 'count', '2', '40', '10', 'Median: 10',
-        barPct(8 + pid * 2, 2, 40), 25, 'good', ''),
+        String(Math.round((8 + pid * 2) * f)), 'count', '2', '40', '10', 'Median: 10',
+        barPct(Math.round((8 + pid * 2) * f), 2, 40), 25, 'good', ''),
       bm(period, 'ai_tools', 'cursor_lines', 'Lines Accepted', 'Cursor \u00b7 lines of code accepted',
-        String(Math.round(1200 + pid * 400)), 'count', '0', '5k', '1.8k', 'Median: 1.8k',
-        barPct(1200 + pid * 400, 0, 5000), 36, 'good', ''),
-      bm(period, 'ai_tools', 'cc_sessions', 'Claude Code Sessions', 'Anthropic Enterprise API \u00b7 sessions this month',
-        String(Math.round(10 + pid * 3)), 'count', '0', '60', '12', 'Median: 12',
-        barPct(10 + pid * 3, 0, 60), 20, 'good', ''),
+        String(Math.round((1200 + pid * 400) * f)), 'count', '0', '5k', '1.8k', 'Median: 1.8k',
+        barPct(Math.round((1200 + pid * 400) * f), 0, 5000), 36, 'good', ''),
+      bm(period, 'ai_tools', 'cc_sessions', 'Claude Code Sessions', 'Anthropic Enterprise API \u00b7 sessions in period',
+        String(Math.round((10 + pid * 3) * f)), 'count', '0', '60', '12', 'Median: 12',
+        barPct(Math.round((10 + pid * 3) * f), 0, 60), 20, 'good', ''),
       bm(period, 'ai_tools', 'cc_tool_accept', 'Tool Acceptance Rate', 'Anthropic Enterprise API \u00b7 accepted \u00f7 offered',
         String(Math.round(60 + pid * 3)), '%', '0%', '100%', '64', 'Median: 64%',
         Math.round(60 + pid * 3), 64, 'good', ''),
       bm(period, 'ai_tools', 'cc_lines', 'Lines Added (Claude Code)', 'Anthropic Enterprise API \u00b7 lines added by Claude Code',
-        String(Math.round(400 + pid * 120)), 'count', '0', '3k', '600', 'Median: 600',
-        barPct(400 + pid * 120, 0, 3000), 20, 'good', ''),
+        String(Math.round((400 + pid * 120) * f)), 'count', '0', '3k', '600', 'Median: 600',
+        barPct(Math.round((400 + pid * 120) * f), 0, 3000), 20, 'good', ''),
       bm(period, 'ai_tools', 'ai_loc_share2', 'AI LOC Share', 'Cursor + Claude Code \u00b7 accepted lines \u00f7 clean LOC',
         String(aiLoc), '%', '0%', '34%', '18', 'Median: 18%',
         barPct(aiLoc, 0, 34), 53, aiLoc >= 18 ? 'good' : aiLoc >= 8 ? 'warn' : 'bad', ''),
-      bm(period, 'ai_tools', 'claude_web', 'Claude Web Usage', 'Claude Web \u00b7 conversations this month',
-        String(Math.round(14 + pid * 4)), 'count', '0', '80', '18', 'Median: 18',
-        barPct(14 + pid * 4, 0, 80), 23, 'good', ''),
-      bm(period, 'ai_tools', 'chatgpt', 'ChatGPT Usage', 'ChatGPT \u00b7 conversations this month',
-        String(Math.round(4 + pid * 2)), 'count', '0', '40', '12', 'Median: 12',
-        barPct(4 + pid * 2, 0, 40), 30, 'good', ''),
+      bm(period, 'ai_tools', 'claude_web', 'Claude Web Usage', 'Claude Web \u00b7 conversations in period',
+        String(Math.round((14 + pid * 4) * f)), 'count', '0', '80', '18', 'Median: 18',
+        barPct(Math.round((14 + pid * 4) * f), 0, 80), 23, 'good', ''),
+      bm(period, 'ai_tools', 'chatgpt', 'ChatGPT Usage', 'ChatGPT \u00b7 conversations in period',
+        String(Math.round((4 + pid * 2) * f)), 'count', '0', '40', '12', 'Median: 12',
+        barPct(Math.round((4 + pid * 2) * f), 0, 40), 30, 'good', ''),
     ] : []),
   ];
 
@@ -585,11 +608,13 @@ export const insightMockMap = {
   'GET /api/v1/analytics/views/executive?period=month':   (): ExecViewData => EXEC_VIEW_MOCK['month'],
   'GET /api/v1/analytics/views/executive?period=quarter': (): ExecViewData => EXEC_VIEW_MOCK['quarter'],
   'GET /api/v1/analytics/views/executive?period=year':    (): ExecViewData => EXEC_VIEW_MOCK['year'],
-  // Team View — one entry per period
-  'GET /api/v1/analytics/views/team?period=week':    (): TeamViewData => TEAM_VIEW_MOCK['week'],
-  'GET /api/v1/analytics/views/team?period=month':   (): TeamViewData => TEAM_VIEW_MOCK['month'],
-  'GET /api/v1/analytics/views/team?period=quarter': (): TeamViewData => TEAM_VIEW_MOCK['quarter'],
-  'GET /api/v1/analytics/views/team?period=year':    (): TeamViewData => TEAM_VIEW_MOCK['year'],
+  // Team View — one entry per teamId + period
+  ...Object.entries(TEAM_VIEW_MOCKS).reduce<Record<string, () => TeamViewData>>((acc, [tid, periods]) => {
+    for (const p of ['week', 'month', 'quarter', 'year'] as PeriodValue[]) {
+      acc[`GET /api/v1/analytics/views/team/${tid}?period=${p}`] = (): TeamViewData => periods[p];
+    }
+    return acc;
+  }, {}),
   // IC Dashboard — flat paths per personId + period (wildcards ignored by mock framework)
   ...IC_MOCK_ENTRIES,
   // Team View drills — one entry per drill ID per period
