@@ -28,10 +28,14 @@ export interface MenuProps {
 
 export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
   const menuState = useAppSelector((state) => state['layout/menu'] as MenuState | undefined);
-  const activeParam = useAppSelector((state) => {
+  const { activePersonParam, activeTeamParam } = useAppSelector((state) => {
     const s = state as Record<string, unknown>;
-    const icSlice = s['insight/icDashboard'] as { selectedPersonId?: string } | undefined;
-    return icSlice?.selectedPersonId ?? null;
+    const icSlice   = s['insight/icDashboard'] as { selectedPersonId?: string } | undefined;
+    const teamSlice = s['insight/teamView']     as { selectedTeamId?: string }   | undefined;
+    return {
+      activePersonParam: icSlice?.selectedPersonId ?? null,
+      activeTeamParam:   teamSlice?.selectedTeamId  ?? null,
+    };
   });
   const { currentScreen, navigateToScreen, currentScreenset } = useNavigation();
   const { t } = useTranslation();
@@ -64,7 +68,10 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
     return item.children.some((child) => {
       const [screenId, param] = child.id.split('::');
       const isLeaf = !child.children?.length;
-      if (isLeaf && param) return currentScreen === screenId && activeParam === param;
+      if (isLeaf && param) {
+        const activeParam = activeTeamParam === param ? activeTeamParam : activePersonParam;
+        return currentScreen === screenId && activeParam === param;
+      }
       if (isLeaf) return currentScreen === child.id;
       return hasActiveDescendant(child);
     });
@@ -75,6 +82,9 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
     const hasChildren = (item.children?.length ?? 0) > 0;
     const isExpanded = expandedGroups[item.id] ?? true;
     const [screenId, param] = item.id.split('::');
+    const activeParam = param
+      ? (activeTeamParam === param ? activeTeamParam : activePersonParam)
+      : null;
     const isSelfActive = param
       ? currentScreen === screenId && activeParam === param
       : currentScreen === item.id;

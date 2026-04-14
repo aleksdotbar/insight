@@ -1,4 +1,7 @@
 {
+  "header": {
+    "subtitle": "Team Dashboard"
+  },
   "hero": {
     "at_risk": "At Risk",
     "team_dev_time": "Task Dev Time",

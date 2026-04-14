@@ -104,7 +104,7 @@ const BulletChart: React.FC<BulletChartProps> = ({
   if (mode === 'tile') {
     return (
       <div
-        className={`bg-slate-100 rounded-lg px-3.5 py-3 ${isDrillable ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`bg-slate-100 rounded-lg px-3.5 py-3 ${isDrillable ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2' : 'cursor-default'}`}
         role={isDrillable ? 'button' : undefined}
         tabIndex={isDrillable ? 0 : undefined}
         onClick={isDrillable ? handleDrillClick : undefined}
@@ -138,7 +138,7 @@ const BulletChart: React.FC<BulletChartProps> = ({
         </div>
         <div className="text-right">
           <span
-            className={`text-xl font-extrabold text-gray-900 leading-none ${isDrillable ? 'border-b border-dotted border-blue-600 cursor-pointer' : 'cursor-default'}`}
+            className={`text-xl font-extrabold text-gray-900 leading-none ${isDrillable ? 'border-b border-dotted border-blue-600 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-1 rounded-sm' : 'cursor-default'}`}
             role={isDrillable ? 'button' : undefined}
             tabIndex={isDrillable ? 0 : undefined}
             onClick={isDrillable ? handleDrillClick : undefined}
