@@ -5,3 +5,5 @@ cypilot
 docs
 .ai
 *.md
+.env
+.env.*

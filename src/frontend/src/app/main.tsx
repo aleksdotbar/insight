@@ -3,9 +3,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, type ThemeApplyFn } from '@hai3/react';
 import { Toaster, applyTheme } from '@hai3/uikit';
-import { AccountsApiService } from '@/app/api';
-import { AuthApiService } from '@/app/api/AuthApiService';
-import { IdentityApiService } from '@/app/api/IdentityApiService';
+// Side-effect imports — services self-register with apiRegistry
+import '@/app/api/AccountsApiService';
+import '@/app/api/AuthApiService';
+import '@/app/api/IdentityApiService';
 import '@hai3/uikit/styles'; // UI Kit styles
 import '@/screensets/screensetRegistry'; // Auto-registers screensets (includes API services + mocks + i18n loaders)
 import '@/app/events/bootstrapEvents'; // Register app-level events (type augmentation)
@@ -25,12 +26,7 @@ import { DRACULA_LARGE_THEME_ID, draculaLargeTheme } from '@/app/themes/dracula-
 import { storeStartUrl } from '@/app/auth/startUrl';
 storeStartUrl();
 
-// Register application-level API services
-apiRegistry.register(AccountsApiService);
-apiRegistry.register(AuthApiService);
-apiRegistry.register(IdentityApiService);
-
-// Initialize API services
+// Initialize API services (services self-register via module side-effects above)
 apiRegistry.initialize({});
 
 // Create HAI3 app instance with theme apply function (constructor injection)

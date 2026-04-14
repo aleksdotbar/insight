@@ -17,6 +17,10 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml;
+    gzip_min_length 256;
+
     location / {
         try_files $uri $uri/ /index.html;
     }
@@ -28,6 +32,7 @@ server {
 
     location /healthz {
         access_log off;
+        default_type text/plain;
         return 200 "ok";
     }
 }

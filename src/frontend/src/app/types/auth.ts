@@ -22,6 +22,9 @@ export type OidcManagerConfig = {
   automaticSilentRenew: boolean;
 }
 
+/** State passed through OIDC redirect flow */
+export type OidcSigninState = { returnUrl?: string };
+
 /** RFC 9457 Problem Details — standard error format from the backend */
 export type ProblemDetail = {
   type: string;

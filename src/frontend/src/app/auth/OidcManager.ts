@@ -11,7 +11,7 @@ import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
 import { eventBus, apiRegistry } from '@hai3/react';
 import { AuthEvent } from '@/app/events/authEvents';
 import { AuthApiService } from '@/app/api/AuthApiService';
-import type { OidcConfig } from '@/app/types/auth';
+import type { OidcConfig, OidcSigninState } from '@/app/types/auth';
 
 let userManager: UserManager | null = null;
 let initPromise: Promise<void> | null = null;
@@ -104,7 +104,7 @@ export const OidcManager = {
 
     sessionStorage.setItem('__debug_signIn_called', Date.now().toString());
     await userManager.signinRedirect({
-      state: { returnUrl: window.location.pathname + window.location.search },
+      state: { returnUrl: window.location.pathname + window.location.search } satisfies OidcSigninState,
     });
     // Won't reach here — browser redirects
   },
@@ -117,7 +117,8 @@ export const OidcManager = {
 
     const user = await userManager.signinRedirectCallback(callbackUrl);
     authReadyResolve(user);
-    const returnUrl = (user.state as { returnUrl?: string })?.returnUrl ?? '/';
+    const state = user.state as OidcSigninState | undefined;
+    const returnUrl = state?.returnUrl ?? '/';
     return returnUrl;
   },
 

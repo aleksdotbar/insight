@@ -3,7 +3,7 @@
  * Fetches current user identity from the identity service
  */
 
-import { BaseApiService, RestProtocol, RestMockPlugin } from '@hai3/react';
+import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import { AuthPlugin } from '@/app/plugins/AuthPlugin';
 import type { PersonData } from '@/app/types/identity';
 
@@ -35,3 +35,5 @@ export class IdentityApiService extends BaseApiService {
     return this.protocol(RestProtocol).get<PersonData>('/persons/me');
   }
 }
+
+apiRegistry.register(IdentityApiService);
