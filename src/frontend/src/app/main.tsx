@@ -21,6 +21,10 @@ import { LIGHT_THEME_ID, lightTheme } from '@/app/themes/light';
 import { DRACULA_THEME_ID, draculaTheme } from '@/app/themes/dracula';
 import { DRACULA_LARGE_THEME_ID, draculaLargeTheme } from '@/app/themes/dracula-large';
 
+// Capture the initial URL before any router modifies it
+import { storeStartUrl } from '@/app/auth/startUrl';
+storeStartUrl();
+
 // Register application-level API services
 apiRegistry.register(AccountsApiService);
 apiRegistry.register(AuthApiService);
@@ -50,17 +54,12 @@ app.themeRegistry.apply(DEFAULT_THEME_ID);
 
 /**
  * Render application
- * Bootstrap happens automatically when Layout mounts
- *
- * Flow:
- * 1. App renders → Layout mounts → bootstrap dispatched
- * 2. Components show skeleton loaders (translationsReady = false)
- * 3. User fetched → language set → translations loaded
- * 4. Components re-render with actual text (translationsReady = true)
- * 5. HAI3Provider includes AppRouter for URL-based navigation
+ * Auth flow:
+ * - Layout mounts → initAuth() action → restore session or redirect to Okta
+ * - /callback screen → handleOidcCallback() action → exchange code for tokens
+ * - authEffects listen → dispatch to authSlice → components react
  *
  * Note: Mock API is controlled via the HAI3 Studio panel.
- * The mock plugin (included in full preset) handles mock plugin lifecycle automatically.
  */
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -20,6 +20,11 @@
  * - Development tools for theme/screenset switching
  * - Language selection
  * - API mode toggle (services register their own mocks)
+ *
+ * Auth:
+ * - OIDC bootstrap runs in main.tsx BEFORE React renders
+ * - By the time App mounts, user is already authenticated
+ * - AuthPlugin handles token injection and 401 → re-auth
  */
 
 import { AppRouter } from '@hai3/react';

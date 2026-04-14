@@ -34,10 +34,15 @@ export const authSlice = createSlice({
     setStatus: (state, action: PayloadAction<AuthState['status']>) => {
       state.status = action.payload;
     },
+    clearAuth: (state) => {
+      state.token = null;
+      state.config = null;
+      state.status = 'idle';
+    },
   },
 });
 
-export const { setToken, setConfig, setStatus } = authSlice.actions;
+export const { setToken, setConfig, setStatus, clearAuth } = authSlice.actions;
 export default authSlice;
 
 declare module '@hai3/react' {

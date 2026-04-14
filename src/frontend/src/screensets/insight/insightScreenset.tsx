@@ -13,6 +13,7 @@ import {
   i18nRegistry,
 } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID, DOCUMENTATION_SCREEN_ID, DASHBOARD_SCREEN_ID, SPEED_SCREEN_ID, UIKIT_SCREEN_ID, EXECUTIVE_VIEW_SCREEN_ID, TEAM_VIEW_SCREEN_ID, IC_DASHBOARD_SCREEN_ID, MY_DASHBOARD_SCREEN_ID } from './ids';
+import { withAuth } from '@/app/auth/withAuth';
 import insightSlice from './slices/insightSlice';
 import { initializeInsightEffects } from './effects/insightEffects';
 import periodSlice from './slices/periodSlice';
@@ -118,7 +119,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.executive-view.label`,
         icon: 'lucide:bar-chart-2',
       },
-      screen: () => import('./screens/executive-view/ExecutiveViewScreen'),
+      screen: withAuth(() => import('./screens/executive-view/ExecutiveViewScreen')),
     },
     {
       menuItem: {
@@ -126,7 +127,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.team-view.label`,
         icon: 'lucide:users',
       },
-      screen: () => import('./screens/team-view/TeamViewScreen'),
+      screen: withAuth(() => import('./screens/team-view/TeamViewScreen')),
     },
     {
       menuItem: {
@@ -134,7 +135,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.ic-dashboard.label`,
         icon: 'lucide:user',
       },
-      screen: () => import('./screens/ic-dashboard/IcDashboardScreen'),
+      screen: withAuth(() => import('./screens/ic-dashboard/IcDashboardScreen')),
     },
     {
       menuItem: {
@@ -142,7 +143,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.my-dashboard.label`,
         icon: 'lucide:user-circle',
       },
-      screen: () => import('./screens/ic-dashboard/IcDashboardScreen'),
+      screen: withAuth(() => import('./screens/ic-dashboard/IcDashboardScreen')),
     },
     {
       menuItem: {
@@ -150,7 +151,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.documentation.label`,
         icon: 'lucide:book-open',
       },
-      screen: () => import('./screens/documentation/DocumentationScreen'),
+      screen: withAuth(() => import('./screens/documentation/DocumentationScreen')),
     },
     {
       menuItem: {
@@ -158,7 +159,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.dashboard.label`,
         icon: 'lucide:layout-dashboard',
       },
-      screen: () => import('./screens/dashboard/DashboardScreen'),
+      screen: withAuth(() => import('./screens/dashboard/DashboardScreen')),
     },
     {
       menuItem: {
@@ -166,7 +167,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.speed.label`,
         icon: 'lucide:gauge',
       },
-      screen: () => import('./screens/speed/SpeedScreen'),
+      screen: withAuth(() => import('./screens/speed/SpeedScreen')),
     },
     {
       menuItem: {
@@ -174,7 +175,7 @@ export const insightScreenset: ScreensetConfig = {
         label: `screenset.${INSIGHT_SCREENSET_ID}:menu_items.uikit.label`,
         icon: 'lucide:palette',
       },
-      screen: () => import('./screens/uikit/UIKitElementsScreen'),
+      screen: withAuth(() => import('./screens/uikit/UIKitElementsScreen')),
     },
   ],
 };

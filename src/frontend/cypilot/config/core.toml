@@ -1,6 +1,12 @@
-# Cypilot project configuration
-
 version = "1.0"
 project_root = ".."
 
 [kits]
+sdlc = "config/kits/sdlc"
+[workspace]
+version = "1.0"
+
+[workspace.sources]
+[workspace.sources.insight-backend]
+path = "../insight"
+role = "artifacts"

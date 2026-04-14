@@ -27,6 +27,10 @@ export class AuthPlugin extends RestPlugin {
     if (token) extraHeaders['Authorization'] = `Bearer ${token}`;
     if (tenantId) extraHeaders['X-Tenant-ID'] = tenantId;
 
+    if (import.meta.env.DEV) {
+      console.log(`[AuthPlugin] ${context.method ?? 'GET'} ${context.url} → Bearer ${token ? 'present' : 'none'}`);
+    }
+
     return { ...context, headers: { ...context.headers, ...extraHeaders } };
   }
 

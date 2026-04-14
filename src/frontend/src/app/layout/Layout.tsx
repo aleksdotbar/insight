@@ -10,6 +10,7 @@ import React, { useEffect, useState } from 'react';
 import { Sheet, SheetContent } from '@hai3/uikit';
 import { Icon } from '@iconify/react';
 import { fetchCurrentUser } from '@/app/actions/bootstrapActions';
+import { initAuth } from '@/app/actions/authActions';
 import { Footer } from './Footer';
 import { Menu } from './Menu';
 import { Sidebar } from './Sidebar';
@@ -40,7 +41,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    // Bootstrap application on mount - fetch current user
+    // Bootstrap: init auth session, then fetch current user
+    initAuth();
     fetchCurrentUser();
   }, []);
 

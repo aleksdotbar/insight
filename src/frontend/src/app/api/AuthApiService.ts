@@ -8,9 +8,9 @@ import type { OidcConfig } from '@/app/types/auth';
 
 const authMockMap = {
   'GET /auth/config': (): OidcConfig => ({
-    issuer_url: 'http://localhost:9000',
-    client_id: 'insight-local',
-    redirect_uri: 'http://localhost:5173/callback',
+    issuer_url: 'https://integrator-4985807.okta.com',
+    client_id: '0oa11soqqraMNbjZK698',
+    redirect_uri: `${window.location.origin}/callback`,
     scopes: ['openid', 'profile', 'email'],
     response_type: 'code',
   }),

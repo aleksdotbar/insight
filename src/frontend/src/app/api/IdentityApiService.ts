@@ -4,6 +4,7 @@
  */
 
 import { BaseApiService, RestProtocol, RestMockPlugin } from '@hai3/react';
+import { AuthPlugin } from '@/app/plugins/AuthPlugin';
 import type { PersonData } from '@/app/types/identity';
 
 const identityMockMap = {
@@ -25,6 +26,9 @@ export class IdentityApiService extends BaseApiService {
       restProtocol,
       new RestMockPlugin({ mockMap: identityMockMap, delay: 50 })
     );
+
+    // Inject auth headers on every request
+    restProtocol.plugins.add(new AuthPlugin());
   }
 
   async getMe(): Promise<PersonData> {

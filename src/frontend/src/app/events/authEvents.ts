@@ -9,9 +9,10 @@ const APP_ID = 'app';
 const DOMAIN_ID = 'auth';
 
 export const AuthEvent = {
-  ConfigLoaded:   `${APP_ID}/${DOMAIN_ID}/configLoaded`,
-  TokenStored:    `${APP_ID}/${DOMAIN_ID}/tokenStored`,
-  SessionExpired: `${APP_ID}/${DOMAIN_ID}/sessionExpired`,
+  ConfigLoaded:    `${APP_ID}/${DOMAIN_ID}/configLoaded`,
+  TokenStored:     `${APP_ID}/${DOMAIN_ID}/tokenStored`,
+  SessionExpired:  `${APP_ID}/${DOMAIN_ID}/sessionExpired`,
+  LogoutRequested: `${APP_ID}/${DOMAIN_ID}/logoutRequested`,
 } as const;
 
 declare module '@hai3/react' {
@@ -22,5 +23,7 @@ declare module '@hai3/react' {
     'app/auth/tokenStored': { token: string };
     /** 401 received — session expired, re-initiate OIDC flow */
     'app/auth/sessionExpired': void;
+    /** User requested logout */
+    'app/auth/logoutRequested': void;
   }
 }
