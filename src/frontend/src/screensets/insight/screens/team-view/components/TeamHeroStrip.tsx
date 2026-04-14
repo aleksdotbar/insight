@@ -27,13 +27,13 @@ const CARD_BORDER: Record<number, string> = {
 
 const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
   <div className={`flex flex-col gap-0.5 p-3 bg-white ${CARD_BORDER[idx] ?? 'border-l border-gray-200'}`}>
-    <div className="text-[20px] font-extrabold text-gray-900 leading-tight tracking-tight">
+    <div className="text-xl font-extrabold text-gray-900 leading-tight tracking-tight">
       {kpi.value}
-      {kpi.unit && <span className="text-[11px] font-semibold text-gray-400 ml-0.5">{kpi.unit}</span>}
+      {kpi.unit && <span className="text-xs font-semibold text-gray-400 ml-0.5">{kpi.unit}</span>}
     </div>
-    <div className="text-[11px] font-semibold text-gray-900">{kpi.label}</div>
-    {kpi.sublabel && <div className="text-[10px] text-gray-400">{kpi.sublabel}</div>}
-    <Badge className={`mt-1 text-[10px] font-bold ${CHIP_CLASS[kpi.status]}`}>
+    <div className="text-sm font-semibold text-gray-900">{kpi.label}</div>
+    {kpi.sublabel && <div className="text-2xs text-gray-400">{kpi.sublabel}</div>}
+    <Badge className={`mt-1 text-xs font-bold ${CHIP_CLASS[kpi.status]}`}>
       {kpi.chipLabel ?? kpi.status}
     </Badge>
   </div>

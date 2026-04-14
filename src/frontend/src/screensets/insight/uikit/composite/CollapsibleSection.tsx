@@ -34,16 +34,16 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           className="flex items-start justify-between w-full px-4 py-3 bg-white border-none cursor-pointer text-left hover:bg-black/[0.03] transition-colors"
         >
           <div>
-            <span className="text-[13px] font-semibold text-gray-900">{title}</span>
+            <span className="text-sm font-semibold text-gray-900">{title}</span>
             {subtitle && (
-              <div className="text-[10px] text-gray-400 mt-0.5">{subtitle}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{subtitle}</div>
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <span className="text-[10px] text-gray-500 bg-slate-100 rounded px-1.5 py-px">
+            <span className="text-xs text-gray-500 bg-slate-100 rounded px-1.5 py-px">
               {open ? 'Expanded' : 'Collapsed'}
             </span>
-            <span className="text-[10px] text-gray-500">{open ? '▴' : '▾'}</span>
+            <span className="text-xs text-gray-500">{open ? '▴' : '▾'}</span>
           </div>
         </button>
       </CollapsibleTrigger>

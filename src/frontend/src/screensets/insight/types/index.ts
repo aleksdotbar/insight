@@ -34,10 +34,34 @@ export const METRIC_KEYS = {
   // --- focus / comms ---
   focus_time_pct:    { key: 'focus_time_pct',      label: 'Focus Time',          unit: '%',  sourceTag: 'Calendar / M365',       v1Status: 'available' },
   dev_time_h:        { key: 'dev_time_h',           label: 'Dev Time',            unit: 'h',  sourceTag: 'Calendar / M365',       v1Status: 'available' },
+  // --- collab / Slack ---
+  slack_thread_participation: { key: 'slack_thread_participation', label: 'Thread Participation', unit: 'msgs', sourceTag: 'Slack',               v1Status: 'pending' },
+  slack_message_engagement:   { key: 'slack_message_engagement',   label: 'Message Engagement',   unit: 'avg replies', sourceTag: 'Slack',          v1Status: 'pending' },
+  slack_dm_ratio:             { key: 'slack_dm_ratio',             label: 'DM Ratio',             unit: '%',   sourceTag: 'Slack',               v1Status: 'pending' },
+  // --- collab / M365 ---
+  m365_teams_messages: { key: 'm365_teams_messages', label: 'Teams Messages', unit: 'msgs',   sourceTag: 'Microsoft Teams',   v1Status: 'pending' },
+  m365_emails_sent:    { key: 'm365_emails_sent',    label: 'Emails Sent',    unit: 'emails', sourceTag: 'M365',              v1Status: 'pending' },
+  m365_files_shared:   { key: 'm365_files_shared',   label: 'Files Shared',   unit: 'files',  sourceTag: 'M365',              v1Status: 'pending' },
+  // --- collab / meetings ---
+  meeting_hours: { key: 'meeting_hours', label: 'Meeting Hours',      unit: 'h',    sourceTag: 'Zoom / M365',       v1Status: 'pending' },
+  zoom_calls:    { key: 'zoom_calls',    label: 'Zoom Calls',         unit: 'calls',sourceTag: 'Zoom',              v1Status: 'pending' },
+  meeting_free:  { key: 'meeting_free',  label: 'Meeting-Free Days',  unit: 'days', sourceTag: 'Zoom / M365',       v1Status: 'pending' },
   // --- AI ---
   ai_loc_share_pct:  { key: 'ai_loc_share_pct',    label: 'AI LOC Share',        unit: '%',  sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
   ai_adoption_pct:   { key: 'ai_adoption_pct',     label: 'AI Adoption',         unit: '%',  sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
   ai_sessions:       { key: 'ai_sessions',          label: 'AI Sessions',         unit: '',   sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
+  // --- AI tools / Cursor ---
+  cursor_completions: { key: 'cursor_completions', label: 'Cursor Completions',        unit: '',   sourceTag: 'Cursor',                      v1Status: 'pending' },
+  cursor_agents:      { key: 'cursor_agents',      label: 'Cursor Agent Sessions',     unit: '',   sourceTag: 'Cursor',                      v1Status: 'pending' },
+  cursor_lines:       { key: 'cursor_lines',       label: 'Lines Accepted',            unit: '',   sourceTag: 'Cursor',                      v1Status: 'pending' },
+  // --- AI tools / Claude Code ---
+  cc_sessions:    { key: 'cc_sessions',    label: 'Claude Code Sessions',    unit: '',   sourceTag: 'Anthropic Enterprise API',    v1Status: 'pending' },
+  cc_tool_accept: { key: 'cc_tool_accept', label: 'Tool Acceptance Rate',    unit: '%',  sourceTag: 'Anthropic Enterprise API',    v1Status: 'pending' },
+  cc_lines:       { key: 'cc_lines',       label: 'Lines Added (Claude Code)', unit: '', sourceTag: 'Anthropic Enterprise API',    v1Status: 'pending' },
+  ai_loc_share2:  { key: 'ai_loc_share2',  label: 'AI LOC Share',            unit: '%',  sourceTag: 'Cursor + Claude Code',        v1Status: 'pending' },
+  // --- AI tools / web ---
+  claude_web: { key: 'claude_web', label: 'Claude Web Usage', unit: '',  sourceTag: 'Claude Web',  v1Status: 'pending' },
+  chatgpt:    { key: 'chatgpt',    label: 'ChatGPT Usage',    unit: '',  sourceTag: 'ChatGPT',     v1Status: 'pending' },
   // --- computed ---
   at_risk_count:     { key: 'at_risk_count',        label: 'Members at Risk',     unit: '',   sourceTag: 'computed',              v1Status: 'available' },
   focus_gte_60:      { key: 'focus_gte_60',         label: 'Focus ≥ 60%',         unit: '',   sourceTag: 'computed',              v1Status: 'available' },

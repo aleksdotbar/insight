@@ -22,16 +22,16 @@ export const ProgressTrack: React.FC<ProgressTrackProps> = ({
   medianLeftPct,
   barColorClass,
 }) => (
-  <div className="relative h-6 bg-slate-100 rounded mt-1">
-    {/* Median line */}
-    <div
-      style={{ left: `${medianLeftPct}%` }}
-      className="absolute w-0.5 -top-0.5 -bottom-0.5 bg-blue-600/50 rounded"
-    />
+  <div className="relative h-5 bg-slate-200 rounded mt-1.5">
     {/* Value bar */}
     <div
       style={{ left: `${barLeftPct}%`, width: `${barWidthPct}%` }}
-      className={`absolute top-1.5 h-3 rounded transition-[width] duration-500 ease-in-out ${barColorClass}`}
+      className={`absolute top-[3px] bottom-[3px] rounded-sm transition-[width] duration-500 ease-in-out ${barColorClass}`}
+    />
+    {/* Median line */}
+    <div
+      style={{ left: `${medianLeftPct}%` }}
+      className="absolute w-[2px] -top-0.5 -bottom-0.5 bg-gray-800/60 rounded"
     />
   </div>
 );

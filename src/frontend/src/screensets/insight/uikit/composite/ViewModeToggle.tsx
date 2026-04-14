@@ -22,13 +22,13 @@ export const ViewModeToggle: React.FC<ViewModeToggleProps> = ({ mode, onChange }
   >
     <ToggleGroupItem
       value="chart"
-      className="px-3 py-1 rounded-md text-[11px] font-semibold data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:shadow-sm data-[state=off]:text-gray-500"
+      className="px-3 py-1 rounded-md text-xs font-semibold data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:shadow-sm data-[state=off]:text-gray-500"
     >
       ▬ Charts
     </ToggleGroupItem>
     <ToggleGroupItem
       value="tile"
-      className="px-3 py-1 rounded-md text-[11px] font-semibold data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:shadow-sm data-[state=off]:text-gray-500"
+      className="px-3 py-1 rounded-md text-xs font-semibold data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:shadow-sm data-[state=off]:text-gray-500"
     >
       ⊞ Tiles
     </ToggleGroupItem>

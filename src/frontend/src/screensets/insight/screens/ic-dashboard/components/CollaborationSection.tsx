@@ -15,10 +15,10 @@ export interface CollaborationSectionProps {
   personName?: string;
 }
 
-const MEETING_KEYS = ['meeting_hours', 'zoom_calls', 'meeting_free'];
+const MEETING_KEYS = ['focus_time_pct', 'meeting_hours', 'zoom_calls', 'meeting_free'];
 
 const ColumnHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2.5">
+  <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">
     {children}
   </div>
 );

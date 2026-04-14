@@ -78,8 +78,8 @@ const ExecutiveViewScreen: React.FC = () => {
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[15px] font-bold text-gray-900 leading-tight">Executive View</div>
-          <div className="text-[10px] text-gray-400">All teams · Organization overview</div>
+          <div className="text-base font-bold text-gray-900 leading-tight">Executive View</div>
+          <div className="text-xs text-gray-400">All teams · Organization overview</div>
         </div>
         <PeriodSelectorBar
           period={period}

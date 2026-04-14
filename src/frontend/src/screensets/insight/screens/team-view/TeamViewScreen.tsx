@@ -127,13 +127,13 @@ const TeamViewScreen: React.FC = () => {
           {teamName && (
             <>
               <div className="w-8 h-8 bg-indigo-50 rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-[13px] font-extrabold text-indigo-600">
+                <span className="text-sm font-extrabold text-indigo-600">
                   {teamName.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')}
                 </span>
               </div>
               <div>
-                <div className="text-[15px] font-bold text-gray-900 leading-tight">{teamName}</div>
-                <div className="text-[10px] text-gray-400">Team Dashboard</div>
+                <div className="text-base font-bold text-gray-900 leading-tight">{teamName}</div>
+                <div className="text-xs text-gray-400">Team Dashboard</div>
               </div>
             </>
           )}

@@ -51,7 +51,7 @@ const FocusBar: React.FC<{ pct: number; threshold: ColumnThreshold }> = ({ pct, 
     <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
       <DynamicWidthBar pct={pct} colorClass={colClass(pct, threshold, 'bg')} />
     </div>
-    <span className={`text-[12px] font-bold ${colClass(pct, threshold, 'text')}`}>{pct}%</span>
+    <span className={`text-sm font-bold ${colClass(pct, threshold, 'text')}`}>{pct}%</span>
   </div>
 );
 
@@ -99,14 +99,14 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
   return (
   <Card>
     <div className="px-4 pt-3.5 pb-3 border-b border-gray-200 flex items-center justify-between">
-      <span className="text-[13px] font-bold text-gray-900">Team Members</span>
+      <span className="text-sm font-bold text-gray-900">Team Members</span>
       <div className="flex items-center gap-3">
         {onDetailsDrill && (
-          <Button variant="ghost" size="sm" onClick={onDetailsDrill} className="h-auto p-0 text-[11px] font-medium text-blue-600 hover:text-blue-700">
+          <Button variant="ghost" size="sm" onClick={onDetailsDrill} className="h-auto p-0 text-xs font-medium text-blue-600 hover:text-blue-700">
             View team stats ↗
           </Button>
         )}
-        <span className="text-[10px] text-gray-400">Click member to open IC dashboard</span>
+        <span className="text-xs text-gray-400">Click member to open IC dashboard</span>
       </div>
     </div>
     <CardContent className="p-0">
@@ -115,13 +115,13 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
           <TableHeader>
             <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
               {colHeaders.map((col) => (
-                <TableHead key={col.label} className="text-[10px] font-bold uppercase tracking-[0.4px] text-gray-400 h-9 px-3 bg-gray-50">
+                <TableHead key={col.label} className="text-xs font-bold uppercase tracking-wide text-gray-400 h-9 px-3 bg-gray-50">
                   <span>{col.label}</span>
                   {col.info && <MetricInfo description={col.info} side="bottom" />}
                   {col.sub && (
                     <>
                       <br />
-                      <span className="font-normal text-gray-300 normal-case tracking-normal text-[9px]">{col.sub}</span>
+                      <span className="font-normal text-gray-300 normal-case tracking-normal text-2xs">{col.sub}</span>
                     </>
                   )}
                 </TableHead>
@@ -144,30 +144,30 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
                 >
                   {/* Name + Seniority stacked */}
                   <TableCell className="px-3 py-2.5">
-                    <div className="text-[12px] font-bold text-gray-900">{m.name}</div>
-                    <div className="text-[10px] text-gray-400">{m.seniority}</div>
+                    <div className="text-sm font-bold text-gray-900">{m.name}</div>
+                    <div className="text-xs text-gray-400">{m.seniority}</div>
                   </TableCell>
-                  <TableCell className="px-3 py-2.5 text-[12px]">
+                  <TableCell className="px-3 py-2.5 text-sm">
                     {onCellDrill ? (
                       <DrillCell onClick={drill(m.person_id, 'tasks-completed')}>{m.tasks_closed}</DrillCell>
                     ) : m.tasks_closed}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.bugs_fixed, tBugs, 'text')}`}>
+                  <TableCell className={`px-3 py-2.5 text-sm font-bold ${colClass(m.bugs_fixed, tBugs, 'text')}`}>
                     {onCellDrill ? (
                       <DrillCell onClick={drill(m.person_id, 'bugs-fixed')} className={colClass(m.bugs_fixed, tBugs, 'text')}>{m.bugs_fixed ?? '—'}</DrillCell>
                     ) : (m.bugs_fixed ?? '—')}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.dev_time_h, tDev, 'text')}`}>
+                  <TableCell className={`px-3 py-2.5 text-sm font-bold ${colClass(m.dev_time_h, tDev, 'text')}`}>
                     {onCellDrill ? (
                       <DrillCell onClick={drill(m.person_id, 'cycle-time')} className={colClass(m.dev_time_h, tDev, 'text')}>{m.dev_time_h}h</DrillCell>
                     ) : `${m.dev_time_h}h`}
                   </TableCell>
-                  <TableCell className="px-3 py-2.5 text-[12px]">
+                  <TableCell className="px-3 py-2.5 text-sm">
                     {onCellDrill ? (
                       <DrillCell onClick={drill(m.person_id, 'pull-requests')}>{m.prs_merged}</DrillCell>
                     ) : m.prs_merged}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.build_success_pct, tBuild, 'text')}`}>
+                  <TableCell className={`px-3 py-2.5 text-sm font-bold ${colClass(m.build_success_pct, tBuild, 'text')}`}>
                     {onCellDrill ? (
                       <DrillCell onClick={drill(m.person_id, 'builds')} className={colClass(m.build_success_pct, tBuild, 'text')}>
                         {m.build_success_pct !== null ? `${m.build_success_pct}%` : '—'}
@@ -183,14 +183,14 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {m.ai_tools.map((tool) => (
-                          <Badge key={tool} variant="outline" className="text-[9px] font-bold px-1.5 py-0 h-auto rounded bg-gray-50 border-gray-200 text-gray-400">
+                          <Badge key={tool} variant="outline" className="text-2xs font-bold px-1.5 py-0 h-auto rounded bg-gray-50 border-gray-200 text-gray-400">
                             {tool}
                           </Badge>
                         ))}
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className={`px-3 py-2.5 text-[12px] font-bold ${colClass(m.ai_loc_share_pct, tAiLoc, 'text')}`}>
+                  <TableCell className={`px-3 py-2.5 text-sm font-bold ${colClass(m.ai_loc_share_pct, tAiLoc, 'text')}`}>
                     {m.ai_loc_share_pct > 0 ? `${m.ai_loc_share_pct}%` : <span className="text-gray-400">0%</span>}
                   </TableCell>
                 </TableRow>

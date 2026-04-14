@@ -6,10 +6,7 @@ export default {
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
-    // Monorepo: scan local package sources
-    './packages/*/src/**/*.{js,ts,jsx,tsx}',
-    './packages/*/dist/**/*.{js,mjs}',
-    // Standalone: scan installed @hai3 packages from node_modules
+    // Scan installed @hai3 packages from node_modules
     './node_modules/@hai3/*/dist/**/*.{js,mjs}',
   ],
   safelist: [
@@ -31,6 +28,17 @@ export default {
   ],
   theme: {
     extend: {
+      fontSize: {
+        '2xs':  ['0.75rem',   { lineHeight: '1.0625rem' }],   // 12px/17px — sublabels, hints, footers
+        'xs':   ['0.8125rem', { lineHeight: '1.125rem' }],  // 13px/18px — section headings, badges, small labels
+        'sm':   ['0.9375rem', { lineHeight: '1.3125rem' }], // 15px/21px — metric labels, table data, body
+        'base': ['1rem',      { lineHeight: '1.5rem' }],    // 16px — page titles, person names
+        'lg':   ['1.125rem',  { lineHeight: '1.75rem' }],   // 18px — subheadings, docs h3
+        'xl':   ['1.25rem',   { lineHeight: '1.75rem' }],   // 20px — hero KPI numbers
+        '2xl':  ['1.5rem',    { lineHeight: '2rem' }],      // 24px — large tile values
+        '3xl':  ['1.875rem',  { lineHeight: '2.25rem' }],   // 30px — dashboard stat values
+        '4xl':  ['2.25rem',   { lineHeight: '2.5rem' }],    // 36px — icons, emoji
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

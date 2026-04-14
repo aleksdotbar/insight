@@ -50,7 +50,7 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
     : null;
 
   return (
-    <div className="flex items-center gap-0 bg-[#F0F2F7] rounded-lg p-[3px]">
+    <div className="flex items-center gap-0 bg-slate-100 rounded-lg p-[3px]">
       {/* Period tabs — segmented control */}
       <ToggleGroup
         type="single"
@@ -62,7 +62,7 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
           <ToggleGroupItem
             key={value}
             value={value}
-            className="px-3 py-1 rounded-md text-[12px] font-medium data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:[box-shadow:0_1px_3px_rgba(0,0,0,0.1)] data-[state=off]:text-gray-500"
+            className="px-3 py-1 rounded-md text-sm font-medium data-[state=on]:bg-white data-[state=on]:text-gray-900 data-[state=on]:[box-shadow:0_1px_3px_rgba(0,0,0,0.1)] data-[state=off]:text-gray-500"
           >
             <span className="hidden sm:inline">{label}</span>
             <span className="sm:hidden">{short}</span>
@@ -78,7 +78,7 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors flex items-center gap-1 ${
+            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${
               customRange
                 ? 'bg-white text-blue-600 [box-shadow:0_1px_3px_rgba(0,0,0,0.1)]'
                 : 'text-gray-500 hover:text-gray-700'
@@ -92,12 +92,12 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
         <PopoverContent className="p-0 w-auto" align="end">
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-center gap-2">
-              <span className="text-[12px] font-bold text-gray-900">Custom date range</span>
-              <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-px rounded-full">Custom</span>
+              <span className="text-sm font-bold text-gray-900">Custom date range</span>
+              <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-px rounded-full">Custom</span>
             </div>
-            <p className="text-[11px] text-gray-500 mt-0.5">Select start date, then end date.</p>
+            <p className="text-xs text-gray-500 mt-0.5">Select start date, then end date.</p>
             {tempRange?.from && (
-              <p className="text-[11px] font-semibold text-gray-900 mt-1.5">
+              <p className="text-xs font-semibold text-gray-900 mt-1.5">
                 {tempRange.from.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 {tempRange.to
                   ? ` – ${tempRange.to.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
@@ -113,12 +113,12 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
           />
           <div className="px-4 py-2 border-t border-gray-100 flex gap-3">
             {customRange && (
-              <Button variant="ghost" size="sm" className="h-auto p-0 text-[11px] text-gray-500"
+              <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-gray-500"
                 onClick={() => { setTempRange(undefined); onRangeChange(null); onPeriodChange('month'); setCalOpen(false); }}>
                 Clear
               </Button>
             )}
-            <Button variant="ghost" size="sm" className="h-auto p-0 text-[11px] text-gray-500" onClick={() => setCalOpen(false)}>
+            <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-gray-500" onClick={() => setCalOpen(false)}>
               Cancel
             </Button>
           </div>
