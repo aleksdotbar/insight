@@ -5,7 +5,7 @@
 
 import '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { IcDashboardData, DrillData } from '../types';
+import type { IcDashboardData, DrillData, PersonData, DataAvailability } from '../types';
 
 const DOMAIN_ID = 'icDashboard';
 
@@ -13,12 +13,14 @@ const DOMAIN_ID = 'icDashboard';
  * Events enum
  */
 export enum IcDashboardEvents {
-  PersonSelected = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/personSelected`,
-  IcDashboardLoadStarted = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadStarted`,
-  IcDashboardLoaded = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loaded`,
-  IcDashboardLoadFailed = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadFailed`,
-  DrillOpened = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillOpened`,
-  DrillClosed = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillClosed`,
+  PersonSelected              = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/personSelected`,
+  IcDashboardLoadStarted      = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadStarted`,
+  IcDashboardLoaded           = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loaded`,
+  IcPersonLoaded              = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/personLoaded`,
+  IcDashboardAvailabilityLoaded = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/availabilityLoaded`,
+  IcDashboardLoadFailed       = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadFailed`,
+  DrillOpened                 = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillOpened`,
+  DrillClosed                 = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillClosed`,
 }
 
 /**
@@ -26,11 +28,13 @@ export enum IcDashboardEvents {
  */
 declare module '@hai3/react' {
   interface EventPayloadMap {
-    [IcDashboardEvents.PersonSelected]: string;
-    [IcDashboardEvents.IcDashboardLoadStarted]: void;
-    [IcDashboardEvents.IcDashboardLoaded]: IcDashboardData;
-    [IcDashboardEvents.IcDashboardLoadFailed]: string;
-    [IcDashboardEvents.DrillOpened]: { drillId: string; drillData: DrillData };
-    [IcDashboardEvents.DrillClosed]: void;
+    [IcDashboardEvents.PersonSelected]:               string;
+    [IcDashboardEvents.IcDashboardLoadStarted]:       void;
+    [IcDashboardEvents.IcDashboardLoaded]:            IcDashboardData;
+    [IcDashboardEvents.IcPersonLoaded]:               PersonData;
+    [IcDashboardEvents.IcDashboardAvailabilityLoaded]: DataAvailability;
+    [IcDashboardEvents.IcDashboardLoadFailed]:        string;
+    [IcDashboardEvents.DrillOpened]:                  { drillId: string; drillData: DrillData };
+    [IcDashboardEvents.DrillClosed]:                  void;
   }
 }

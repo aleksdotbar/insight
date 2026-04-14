@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Badge, Button, Card, CardContent } from '@hai3/uikit';
+import { Button, Card, CardContent } from '@hai3/uikit';
 import type { TeamMember, AlertThreshold } from '../../../types';
 import { METRIC_KEYS } from '../../../types';
 
@@ -25,10 +25,6 @@ type AlertItem = {
 
 const SEVERITY_ICON: Record<Severity, string> = { bad: '🔴', warn: '🟡' };
 const SEVERITY_ICON_BG: Record<Severity, string> = { bad: 'bg-insight-red-bg', warn: 'bg-insight-amber-bg' };
-const SEVERITY_BADGE_CLASS: Record<Severity, string> = {
-  bad: 'bg-insight-red-bg text-insight-red',
-  warn: 'bg-insight-amber-bg text-insight-amber',
-};
 
 
 function buildDescription(metricKey: string, m: TeamMember, trigger: number): string {
@@ -98,11 +94,6 @@ export const AttentionNeeded: React.FC<AttentionNeededProps> = ({ members, alert
                 → Open IC dashboard
               </Button>
             </div>
-            {alert.member.trend_label && (
-              <Badge className={`text-xs font-bold flex-shrink-0 ${SEVERITY_BADGE_CLASS[alert.severity]}`}>
-                {alert.member.trend_label}
-              </Badge>
-            )}
           </div>
         ))}
       </CardContent>

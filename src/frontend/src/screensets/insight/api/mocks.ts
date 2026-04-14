@@ -16,7 +16,6 @@ import type {
   TeamViewData,
   TeamMember,
   TeamKpi,
-
   BulletMetric,
   BulletSection,
   IcDashboardData,
@@ -25,16 +24,20 @@ import type {
   DeliveryDataPoint,
   DrillData,
   DrillRow,
+  TimeOffNotice,
   PeriodValue,
+  ODataParams,
+  ODataResponse,
 } from '../types';
+import { inferPeriodFromODataFilter } from '../utils/periodToDateRange';
+import { METRIC_REGISTRY } from './metricRegistry';
 
 // ---------------------------------------------------------------------------
 // Fixture imports
 // ---------------------------------------------------------------------------
-import { EXEC_TEAMS_MONTH, EXEC_ORG_KPIS_MONTH, EXEC_VIEW_CONFIG, EXEC_DATA_AVAILABILITY } from './mocks/fixtures/executive-view';
-import { TEAM_MEMBERS_MONTH, BULLET_SECTIONS_MONTH, TEAM_KPIS_BY_PERIOD, TEAM_VIEW_CONFIG, TEAM_DATA_AVAILABILITY } from './mocks/fixtures/team-view-base';
+import { EXEC_TEAMS_MONTH, EXEC_ORG_KPIS_MONTH, EXEC_VIEW_CONFIG } from './mocks/fixtures/executive-view';
+import { TEAM_MEMBERS_MONTH, BULLET_SECTIONS_MONTH, TEAM_KPIS_BY_PERIOD, TEAM_VIEW_CONFIG } from './mocks/fixtures/team-view-base';
 import { IC_DASHBOARD_MOCK } from './mocks/fixtures/ic-alice';
-import { TEAM_DRILLS } from './mocks/fixtures/team-drills';
 
 // Re-export for external consumers
 export { TEAM_MEMBERS_MONTH, IC_DASHBOARD_MOCK };
@@ -118,25 +121,21 @@ export const EXEC_VIEW_MOCK: Record<PeriodValue, ExecViewData> = {
     teams: scaleExecTeams(EXEC_TEAMS_MONTH, 0.25, { build: +2, focus: -3, ai: -5, aiLoc: -4, cycle: -3 }),
     orgKpis: { avgBuildSuccess: 93, avgAiAdoption: 55, avgFocus: 61, bugResolutionScore: 80, prCycleScore: 68 },
     config: EXEC_VIEW_CONFIG,
-    data_availability: EXEC_DATA_AVAILABILITY,
   },
   month: {
     teams: EXEC_TEAMS_MONTH,
     orgKpis: EXEC_ORG_KPIS_MONTH,
     config: EXEC_VIEW_CONFIG,
-    data_availability: EXEC_DATA_AVAILABILITY,
   },
   quarter: {
     teams: scaleExecTeams(EXEC_TEAMS_MONTH, 3, { build: -2, focus: +2, ai: +4, aiLoc: +2, cycle: +2 }),
     orgKpis: { avgBuildSuccess: 88, avgAiAdoption: 62, avgFocus: 64, bugResolutionScore: 76, prCycleScore: 63 },
     config: EXEC_VIEW_CONFIG,
-    data_availability: EXEC_DATA_AVAILABILITY,
   },
   year: {
     teams: scaleExecTeams(EXEC_TEAMS_MONTH, 12, { build: -3, focus: +3, ai: -2, aiLoc: -3, cycle: +4 }),
     orgKpis: { avgBuildSuccess: 87, avgAiAdoption: 57, avgFocus: 62, bugResolutionScore: 75, prCycleScore: 62 },
     config: EXEC_VIEW_CONFIG,
-    data_availability: EXEC_DATA_AVAILABILITY,
   },
 };
 
@@ -219,10 +218,10 @@ function buildTeamViewMock(teamId: string): Record<PeriodValue, TeamViewData> {
   const yearMembers    = scaleTeamMembers(monthMembers, 'year', 12);
 
   return {
-    week:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    weekMembers),    members: weekMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-    month:   { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   monthMembers),   members: monthMembers,   bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-    quarter: { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, quarterMembers), members: quarterMembers, bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
-    year:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    yearMembers),    members: yearMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG, data_availability: TEAM_DATA_AVAILABILITY },
+    week:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.week,    weekMembers),    members: weekMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'week'),    config: TEAM_VIEW_CONFIG },
+    month:   { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.month,   monthMembers),   members: monthMembers,   bulletSections: BULLET_SECTIONS_MONTH,                                 config: TEAM_VIEW_CONFIG },
+    quarter: { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.quarter, quarterMembers), members: quarterMembers, bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'quarter'), config: TEAM_VIEW_CONFIG },
+    year:    { teamName: roster.label, teamKpis: withComputedKpis(TEAM_KPIS_BY_PERIOD.year,    yearMembers),    members: yearMembers,    bulletSections: applyRateOverrides(BULLET_SECTIONS_MONTH, 'year'),    config: TEAM_VIEW_CONFIG },
   };
 }
 
@@ -243,12 +242,6 @@ export const TEAM_VIEW_MOCK = TEAM_VIEW_MOCKS['backend'];
 
 const PERIOD_FACTOR: Record<PeriodValue, number> = { week: 0.25, month: 1, quarter: 3, year: 12 };
 
-function memberRole(seniority: string): string {
-  if (seniority === 'Lead')   return 'Team Lead';
-  if (seniority === 'Senior') return 'Senior Software Engineer';
-  if (seniority === 'Middle') return 'Software Engineer';
-  return 'Junior Software Engineer';
-}
 
 function barPct(value: number, min: number, max: number): number {
   return Math.max(0, Math.min(100, Math.round(((value - min) / (max - min)) * 100)));
@@ -289,7 +282,6 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
 
   const cleanLocK = Math.max(1, Math.round(prs * 1.2 * 1000));
   const login     = toLower(m.name).replace(' ', '.');
-  const role      = memberRole(m.seniority);
 
   // -- KPIs --
   const kpis: IcKpi[] = [
@@ -550,13 +542,11 @@ function generateIcDashboard(baseMember: TeamMember, period: PeriodValue): IcDas
   };
 
   return {
-    person: { person_id: m.person_id, name: m.name, role, seniority: m.seniority },
     kpis,
     bulletMetrics,
     charts: { locTrend, deliveryTrend },
     timeOffNotice: null,
     drills,
-    data_availability: EXEC_DATA_AVAILABILITY,
   };
 }
 
@@ -573,95 +563,141 @@ for (const member of TEAM_MEMBERS_MONTH) {
   }
 }
 
-// Flat mock-map entries (no wildcards — framework cannot read URL params).
-const IC_MOCK_ENTRIES: Record<string, () => IcDashboardData | null> = {};
-const IC_DRILL_ENTRIES: Record<string, () => DrillData | null> = {};
-for (const member of TEAM_MEMBERS_MONTH) {
-  for (const p of ALL_IC_PERIODS) {
-    const data = ALL_IC[`${member.person_id}/${p}`];
-    IC_MOCK_ENTRIES[`GET /api/v1/analytics/views/ic/${member.person_id}?period=${p}`] = () => data ?? null;
-  }
-  // Drills are period-agnostic — use month data as source of truth
-  const monthData = ALL_IC[`${member.person_id}/month`];
-  if (monthData) {
-    for (const drillId of Object.keys(monthData.drills)) {
-      const drill = monthData.drills[drillId];
-      IC_DRILL_ENTRIES[`GET /api/v1/analytics/views/ic/${member.person_id}/drill/${drillId}`] =
-        () => drill ?? null;
-    }
-  }
+// ---------------------------------------------------------------------------
+// Mock handler helpers
+// ---------------------------------------------------------------------------
+
+function odata(body: unknown): ODataParams {
+  return (body ?? {}) as ODataParams;
+}
+function person(filter: string): string {
+  return /person_id eq '([^']+)'/.exec(filter)?.[1] ?? 'p1';
+}
+function team(filter: string): string {
+  return /org_unit_id eq '([^']+)'/.exec(filter)?.[1] ?? 'backend';
+}
+function wrap<T>(items: T[]): ODataResponse<T> {
+  return { items, page_info: { has_next: false, cursor: null } };
+}
+function drillId(filter: string): string {
+  return /drill_id eq '([^']+)'/.exec(filter)?.[1] ?? '';
 }
 
 // ---------------------------------------------------------------------------
-// Mock map
+// Mock map — POST /api/analytics/v1/metrics/{uuid}/query
 // ---------------------------------------------------------------------------
 
 /**
- * Mock map for insight API service
- * Period is embedded in the URL path so the mock plugin can route correctly.
+ * Each handler receives the OData POST body, infers period / person / team from
+ * $filter, and returns the matching mock data wrapped in ODataResponse.
+ *
+ * Legacy GET entries for dashboard/speed are retained unchanged.
  */
 export const insightMockMap = {
-  'GET /api/v1/analytics/dashboard': (): DashboardData => mockDashboardData,
-  'GET /api/v1/analytics/speed': (): SpeedData => mockSpeedData,
-  // Executive View — one entry per period
-  'GET /api/v1/analytics/views/executive?period=week':    (): ExecViewData => EXEC_VIEW_MOCK['week'],
-  'GET /api/v1/analytics/views/executive?period=month':   (): ExecViewData => EXEC_VIEW_MOCK['month'],
-  'GET /api/v1/analytics/views/executive?period=quarter': (): ExecViewData => EXEC_VIEW_MOCK['quarter'],
-  'GET /api/v1/analytics/views/executive?period=year':    (): ExecViewData => EXEC_VIEW_MOCK['year'],
-  // Team View — one entry per teamId + period
-  ...Object.entries(TEAM_VIEW_MOCKS).reduce<Record<string, () => TeamViewData>>((acc, [tid, periods]) => {
-    for (const p of ['week', 'month', 'quarter', 'year'] as PeriodValue[]) {
-      acc[`GET /api/v1/analytics/views/team/${tid}?period=${p}`] = (): TeamViewData => periods[p];
-    }
+  // Legacy screens (not yet migrated to metric queries)
+  'GET /api/analytics/v1/dashboard': (): DashboardData => mockDashboardData,
+  'GET /api/analytics/v1/speed':     (): SpeedData => mockSpeedData,
+
+  // Executive summary — returns ExecTeamRow[]
+  [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.EXEC_SUMMARY}/query`]:
+    (body: unknown): ODataResponse<ExecTeamRow> => {
+      const p = inferPeriodFromODataFilter(odata(body).$filter ?? '');
+      return wrap(EXEC_VIEW_MOCK[p].teams);
+    },
+
+  // Team members — returns TeamMember[]
+  [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.TEAM_MEMBER}/query`]:
+    (body: unknown): ODataResponse<TeamMember> => {
+      const f = odata(body).$filter ?? '';
+      const p = inferPeriodFromODataFilter(f);
+      const t = team(f);
+      const data = TEAM_VIEW_MOCKS[t] ?? TEAM_VIEW_MOCKS['backend']!;
+      return wrap(data[p].members);
+    },
+
+  // Team bullet sections (delivery, quality, collab, AI) — return BulletMetric[]
+  ...((['TEAM_BULLET_DELIVERY', 'TEAM_BULLET_QUALITY', 'TEAM_BULLET_COLLAB', 'TEAM_BULLET_AI'] as const).reduce<
+    Record<string, (body: unknown) => ODataResponse<BulletMetric>>
+  >((acc, key) => {
+    const sectionMap: Record<typeof key, string> = {
+      TEAM_BULLET_DELIVERY: 'task_delivery',
+      TEAM_BULLET_QUALITY:  'code_quality',
+      TEAM_BULLET_COLLAB:   'collaboration',
+      TEAM_BULLET_AI:       'ai_adoption',
+    };
+    const sectionId = sectionMap[key];
+    acc[`POST /api/analytics/v1/metrics/${METRIC_REGISTRY[key]}/query`] =
+      (body: unknown): ODataResponse<BulletMetric> => {
+        const f  = odata(body).$filter ?? '';
+        const p  = inferPeriodFromODataFilter(f);
+        const t  = team(f);
+        const tv = TEAM_VIEW_MOCKS[t] ?? TEAM_VIEW_MOCKS['backend']!;
+        const items = tv[p].bulletSections
+          .find((s: BulletSection) => s.id === sectionId)?.metrics ?? [];
+        return wrap(items);
+      };
     return acc;
-  }, {}),
-  // IC Dashboard — flat paths per personId + period (wildcards ignored by mock framework)
-  ...IC_MOCK_ENTRIES,
-  // Team View drills — one entry per drill ID per period
-  'GET /api/v1/analytics/views/team/drill/team-tasks?period=week':    (): DrillData => TEAM_DRILLS['team-tasks']!,
-  'GET /api/v1/analytics/views/team/drill/team-tasks?period=month':   (): DrillData => TEAM_DRILLS['team-tasks']!,
-  'GET /api/v1/analytics/views/team/drill/team-tasks?period=quarter': (): DrillData => TEAM_DRILLS['team-tasks']!,
-  'GET /api/v1/analytics/views/team/drill/team-tasks?period=year':    (): DrillData => TEAM_DRILLS['team-tasks']!,
-  'GET /api/v1/analytics/views/team/drill/team-dev-time?period=week':    (): DrillData => TEAM_DRILLS['team-dev-time']!,
-  'GET /api/v1/analytics/views/team/drill/team-dev-time?period=month':   (): DrillData => TEAM_DRILLS['team-dev-time']!,
-  'GET /api/v1/analytics/views/team/drill/team-dev-time?period=quarter': (): DrillData => TEAM_DRILLS['team-dev-time']!,
-  'GET /api/v1/analytics/views/team/drill/team-dev-time?period=year':    (): DrillData => TEAM_DRILLS['team-dev-time']!,
-  'GET /api/v1/analytics/views/team/drill/team-build?period=week':    (): DrillData => TEAM_DRILLS['team-build']!,
-  'GET /api/v1/analytics/views/team/drill/team-build?period=month':   (): DrillData => TEAM_DRILLS['team-build']!,
-  'GET /api/v1/analytics/views/team/drill/team-build?period=quarter': (): DrillData => TEAM_DRILLS['team-build']!,
-  'GET /api/v1/analytics/views/team/drill/team-build?period=year':    (): DrillData => TEAM_DRILLS['team-build']!,
-  'GET /api/v1/analytics/views/team/drill/team-prs?period=week':    (): DrillData => TEAM_DRILLS['team-prs']!,
-  'GET /api/v1/analytics/views/team/drill/team-prs?period=month':   (): DrillData => TEAM_DRILLS['team-prs']!,
-  'GET /api/v1/analytics/views/team/drill/team-prs?period=quarter': (): DrillData => TEAM_DRILLS['team-prs']!,
-  'GET /api/v1/analytics/views/team/drill/team-prs?period=year':    (): DrillData => TEAM_DRILLS['team-prs']!,
-  'GET /api/v1/analytics/views/team/drill/team-pr-cycle?period=week':    (): DrillData => TEAM_DRILLS['team-pr-cycle']!,
-  'GET /api/v1/analytics/views/team/drill/team-pr-cycle?period=month':   (): DrillData => TEAM_DRILLS['team-pr-cycle']!,
-  'GET /api/v1/analytics/views/team/drill/team-pr-cycle?period=quarter': (): DrillData => TEAM_DRILLS['team-pr-cycle']!,
-  'GET /api/v1/analytics/views/team/drill/team-pr-cycle?period=year':    (): DrillData => TEAM_DRILLS['team-pr-cycle']!,
-  'GET /api/v1/analytics/views/team/drill/team-bugs?period=week':    (): DrillData => TEAM_DRILLS['team-bugs']!,
-  'GET /api/v1/analytics/views/team/drill/team-bugs?period=month':   (): DrillData => TEAM_DRILLS['team-bugs']!,
-  'GET /api/v1/analytics/views/team/drill/team-bugs?period=quarter': (): DrillData => TEAM_DRILLS['team-bugs']!,
-  'GET /api/v1/analytics/views/team/drill/team-bugs?period=year':    (): DrillData => TEAM_DRILLS['team-bugs']!,
-  'GET /api/v1/analytics/views/team/drill/team-focus?period=week':    (): DrillData => TEAM_DRILLS['team-focus']!,
-  'GET /api/v1/analytics/views/team/drill/team-focus?period=month':   (): DrillData => TEAM_DRILLS['team-focus']!,
-  'GET /api/v1/analytics/views/team/drill/team-focus?period=quarter': (): DrillData => TEAM_DRILLS['team-focus']!,
-  'GET /api/v1/analytics/views/team/drill/team-focus?period=year':    (): DrillData => TEAM_DRILLS['team-focus']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-active?period=week':    (): DrillData => TEAM_DRILLS['team-ai-active']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-active?period=month':   (): DrillData => TEAM_DRILLS['team-ai-active']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-active?period=quarter': (): DrillData => TEAM_DRILLS['team-ai-active']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-active?period=year':    (): DrillData => TEAM_DRILLS['team-ai-active']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-loc?period=week':    (): DrillData => TEAM_DRILLS['team-ai-loc']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-loc?period=month':   (): DrillData => TEAM_DRILLS['team-ai-loc']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-loc?period=quarter': (): DrillData => TEAM_DRILLS['team-ai-loc']!,
-  'GET /api/v1/analytics/views/team/drill/team-ai-loc?period=year':    (): DrillData => TEAM_DRILLS['team-ai-loc']!,
-  'GET /api/v1/analytics/views/team/drill/team-reopen?period=week':    (): DrillData => TEAM_DRILLS['team-reopen']!,
-  'GET /api/v1/analytics/views/team/drill/team-reopen?period=month':   (): DrillData => TEAM_DRILLS['team-reopen']!,
-  'GET /api/v1/analytics/views/team/drill/team-reopen?period=quarter': (): DrillData => TEAM_DRILLS['team-reopen']!,
-  'GET /api/v1/analytics/views/team/drill/team-reopen?period=year':    (): DrillData => TEAM_DRILLS['team-reopen']!,
-  'GET /api/v1/analytics/views/team/drill/team-members?period=week':    (): DrillData => TEAM_DRILLS['team-members']!,
-  'GET /api/v1/analytics/views/team/drill/team-members?period=month':   (): DrillData => TEAM_DRILLS['team-members']!,
-  'GET /api/v1/analytics/views/team/drill/team-members?period=quarter': (): DrillData => TEAM_DRILLS['team-members']!,
-  'GET /api/v1/analytics/views/team/drill/team-members?period=year':    (): DrillData => TEAM_DRILLS['team-members']!,
-  // IC Dashboard drills — flat paths per personId + drillId
-  ...IC_DRILL_ENTRIES,
+  }, {})),
+
+  // IC KPIs
+  [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_KPIS}/query`]:
+    (body: unknown): ODataResponse<IcKpi> => {
+      const f = odata(body).$filter ?? '';
+      const p = inferPeriodFromODataFilter(f);
+      return wrap(ALL_IC[`${person(f)}/${p}`]?.kpis ?? []);
+    },
+
+  // IC bullet metrics (delivery, collab, AI tools)
+  // IC_BULLET_DELIVERY covers task_delivery + git_output + code_quality sections.
+  // Client-side filtering in IcDashboardScreen then splits them by section.
+  ...((['IC_BULLET_DELIVERY', 'IC_BULLET_COLLAB', 'IC_BULLET_AI'] as const).reduce<
+    Record<string, (body: unknown) => ODataResponse<BulletMetric>>
+  >((acc, key) => {
+    const sectionMap: Record<typeof key, readonly string[]> = {
+      IC_BULLET_DELIVERY: ['task_delivery', 'git_output', 'code_quality'],
+      IC_BULLET_COLLAB:   ['collab'],
+      IC_BULLET_AI:       ['ai_tools'],
+    };
+    const sectionIds = sectionMap[key];
+    acc[`POST /api/analytics/v1/metrics/${METRIC_REGISTRY[key]}/query`] =
+      (body: unknown): ODataResponse<BulletMetric> => {
+        const f = odata(body).$filter ?? '';
+        const p = inferPeriodFromODataFilter(f);
+        const items = (ALL_IC[`${person(f)}/${p}`]?.bulletMetrics ?? [])
+          .filter((m: BulletMetric) => sectionIds.includes(m.section));
+        return wrap(items);
+      };
+    return acc;
+  }, {})),
+
+  // IC chart: LOC trend
+  [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_CHART_LOC}/query`]:
+    (body: unknown): ODataResponse<LocDataPoint> => {
+      const f = odata(body).$filter ?? '';
+      const p = inferPeriodFromODataFilter(f);
+      return wrap(ALL_IC[`${person(f)}/${p}`]?.charts.locTrend ?? []);
+    },
+
+  // IC chart: delivery trend
+  [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_CHART_DELIVERY}/query`]:
+    (body: unknown): ODataResponse<DeliveryDataPoint> => {
+      const f = odata(body).$filter ?? '';
+      const p = inferPeriodFromODataFilter(f);
+      return wrap(ALL_IC[`${person(f)}/${p}`]?.charts.deliveryTrend ?? []);
+    },
+
+  // IC drills — drill_id extracted from $filter; person also from $filter
+  [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_DRILL}/query`]:
+    (body: unknown): ODataResponse<DrillData> => {
+      const f       = odata(body).$filter ?? '';
+      const did     = drillId(f);
+      const pid     = person(f);
+      const monthData = ALL_IC[`${pid}/month`];
+      const drill = monthData?.drills[did];
+      return wrap(drill ? [drill] : []);
+    },
+
+  // IC time-off notices — returns empty by default (no time off scheduled)
+  [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_TIMEOFF}/query`]:
+    (_body: unknown): ODataResponse<TimeOffNotice> => wrap([]),
 } satisfies MockMap;

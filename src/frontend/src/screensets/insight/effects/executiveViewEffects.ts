@@ -6,7 +6,7 @@
 
 import { type AppDispatch, eventBus } from '@hai3/react';
 import { ExecutiveViewEvents } from '../events/executiveViewEvents';
-import { setLoading, setExecutiveViewData, setError } from '../slices/executiveViewSlice';
+import { setLoading, setExecutiveViewData, setAvailability, setError } from '../slices/executiveViewSlice';
 
 /**
  * Initialize effects
@@ -21,6 +21,10 @@ export const initializeExecutiveViewEffects = (appDispatch: AppDispatch): void =
 
   eventBus.on(ExecutiveViewEvents.ExecutiveViewLoaded, (data) => {
     dispatch(setExecutiveViewData(data));
+  });
+
+  eventBus.on(ExecutiveViewEvents.ExecutiveViewAvailabilityLoaded, (availability) => {
+    dispatch(setAvailability(availability));
   });
 
   eventBus.on(ExecutiveViewEvents.ExecutiveViewLoadFailed, (msg) => {

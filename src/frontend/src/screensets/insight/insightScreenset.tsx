@@ -27,8 +27,10 @@ import { initializeIcDashboardEffects } from './effects/icDashboardEffects';
 import currentUserSlice from './slices/currentUserSlice';
 import { initializeCurrentUserEffects } from './effects/currentUserEffects';
 
-// Import for side effect - register API service
+// Import for side effect - register API services
 import './api/insightApiService';
+import './api/connectorManagerService';
+import './api/identityResolutionService';
 
 // NOTE: Mocks are now registered globally via MockPlugin in main.tsx
 // If this screenset needs mocks, add them to the global mockMap in main.tsx

@@ -5,7 +5,7 @@
 
 import '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { ExecViewData } from '../types';
+import type { ExecViewData, DataAvailability } from '../types';
 
 const DOMAIN_ID = 'executiveView';
 
@@ -13,9 +13,10 @@ const DOMAIN_ID = 'executiveView';
  * Events enum
  */
 export enum ExecutiveViewEvents {
-  ExecutiveViewLoadStarted = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadStarted`,
-  ExecutiveViewLoaded = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loaded`,
-  ExecutiveViewLoadFailed = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadFailed`,
+  ExecutiveViewLoadStarted        = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadStarted`,
+  ExecutiveViewLoaded             = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loaded`,
+  ExecutiveViewAvailabilityLoaded = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/availabilityLoaded`,
+  ExecutiveViewLoadFailed         = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadFailed`,
 }
 
 /**
@@ -23,8 +24,9 @@ export enum ExecutiveViewEvents {
  */
 declare module '@hai3/react' {
   interface EventPayloadMap {
-    [ExecutiveViewEvents.ExecutiveViewLoadStarted]: void;
-    [ExecutiveViewEvents.ExecutiveViewLoaded]: ExecViewData;
-    [ExecutiveViewEvents.ExecutiveViewLoadFailed]: string;
+    [ExecutiveViewEvents.ExecutiveViewLoadStarted]:        void;
+    [ExecutiveViewEvents.ExecutiveViewLoaded]:             ExecViewData;
+    [ExecutiveViewEvents.ExecutiveViewAvailabilityLoaded]: DataAvailability;
+    [ExecutiveViewEvents.ExecutiveViewLoadFailed]:         string;
   }
 }

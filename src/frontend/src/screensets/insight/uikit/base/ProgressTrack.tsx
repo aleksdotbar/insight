@@ -37,7 +37,7 @@ export const ProgressTrack: React.FC<ProgressTrackProps> = ({
       {/* Median line */}
       <div
         style={{ left: `${safeMedian}%` }}
-        className="absolute w-[2px] -top-0.5 -bottom-0.5 bg-gray-800/60 rounded"
+        className="absolute w-[2px] -top-0.5 -bottom-0.5 -translate-x-1/2 bg-gray-800/60 rounded"
       />
     </div>
   );

@@ -72,6 +72,42 @@ export const METRIC_KEYS = {
 
 export type MetricKeyName = keyof typeof METRIC_KEYS;
 
+// ---------------------------------------------------------------------------
+// Analytics API — OData query contract
+// ---------------------------------------------------------------------------
+
+/** OData parameters sent in the POST body to /api/analytics/v1/metrics/{id}/query */
+export interface ODataParams {
+  $filter?:  string;
+  $orderby?: string;
+  $top?:     number;
+  $select?:  string;
+  $skip?:    number;
+}
+
+/** Standard paginated response envelope from Analytics API */
+export interface ODataResponse<T> {
+  items:     T[];
+  page_info: { has_next: boolean; cursor: string | null };
+}
+
+/** Per-field threshold evaluation attached to each query response row by the backend */
+export type ThresholdLevel = 'good' | 'warning' | 'critical';
+export type Thresholds = Record<string, ThresholdLevel>;
+
+// ---------------------------------------------------------------------------
+// Connector Manager — data availability
+// ---------------------------------------------------------------------------
+
+export type ConnectorAvailability = 'available' | 'no-connector' | 'syncing';
+
+/** Raw response from GET /api/connectors/v1/connections/{id}/status */
+export interface ConnectorStatus {
+  id:     string;
+  name:   string;
+  status: ConnectorAvailability;
+}
+
 export type UserRole = 'executive' | 'team_lead' | 'ic';
 
 export interface CurrentUser {
@@ -163,17 +199,17 @@ export interface ExecTeamRow {
   status: 'good' | 'warn' | 'bad';
 }
 export interface OrgKpis {
-  avgBuildSuccess: number | null;    // null when [ci] not configured
-  avgAiAdoption: number;
-  avgFocus: number;
-  bugResolutionScore: number | null; // null when [tasks] not configured
-  prCycleScore: number;
+  avgBuildSuccess:    number | null;  // null when [ci] not configured
+  avgAiAdoption:      number | null;  // null when no team data
+  avgFocus:           number | null;  // null when no team data
+  bugResolutionScore: number | null;  // null when [tasks] not configured
+  prCycleScore:       number | null;  // null when no team data
 }
 export interface ExecViewData {
   teams: ExecTeamRow[];
   orgKpis: OrgKpis;
   config: ExecViewConfig;
-  data_availability: DataAvailability;
+  // data_availability loaded separately via ConnectorManagerService
 }
 
 // Team View
@@ -200,8 +236,7 @@ export interface TeamMember {
   focus_time_pct: number;
   ai_tools: string[];
   ai_loc_share_pct: number;
-  /** Human-readable trend label from the backend, e.g. "3 months declining" */
-  trend_label?: string;
+  // trend_label dropped — frontend derives trend from multi-period delta (see FE-08)
 }
 export interface BulletMetric {
   period: PeriodValue;
@@ -248,7 +283,7 @@ export interface TeamViewData {
   members: TeamMember[];
   bulletSections: BulletSection[];
   config: TeamViewConfig;
-  data_availability: DataAvailability;
+  // data_availability loaded separately via ConnectorManagerService
 }
 
 // IC Dashboard
@@ -303,11 +338,11 @@ export interface DrillData {
   rows: DrillRow[];
 }
 export interface IcDashboardData {
-  person: PersonData;
+  // person loaded separately via IdentityResolutionService
   kpis: IcKpi[];
   bulletMetrics: BulletMetric[];
   charts: IcChartsData;
   timeOffNotice: TimeOffNotice | null;
   drills: Record<string, DrillData>;
-  data_availability: DataAvailability;
+  // data_availability loaded separately via ConnectorManagerService
 }
