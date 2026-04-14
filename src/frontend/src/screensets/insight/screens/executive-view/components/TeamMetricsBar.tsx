@@ -22,7 +22,7 @@ export interface TeamMetricsBarProps {
 
 const LEGEND_ITEMS = [
   { color: CHART_BLUE,   colorClass: 'bg-blue-600',   label: 'Build Success %' },
-  { color: CHART_PURPLE, colorClass: 'bg-purple-600', label: 'AI Adoption %' },
+  { color: CHART_PURPLE, colorClass: 'bg-violet-600', label: 'AI Adoption %' },
   { color: CHART_GREEN,  colorClass: 'bg-green-600',  label: 'Focus Time %' },
 ];
 
