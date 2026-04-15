@@ -90,17 +90,11 @@ class FileChangesStream(BitbucketCloudRestStream):
         return {"pagelen": "100"}
 
     def parse_response(self, response, stream_slice=None, **kwargs):
-        self._check_near_limit(response)
-
         s = stream_slice or {}
         workspace = s.get("workspace", "")
         slug = s.get("slug", "")
 
-        if response.status_code == 404:
-            logger.warning(
-                f"Skipping {workspace}/{slug} file_changes (404): "
-                f"sha={s.get('sha', '?')[:8]}"
-            )
+        if not self._guard_response(response):
             return
 
         data = response.json()

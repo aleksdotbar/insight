@@ -74,15 +74,12 @@ class PRCommitsStream(BitbucketCloudRestStream):
             )
 
     def parse_response(self, response, stream_slice=None, **kwargs):
-        self._check_near_limit(response)
-
         s = stream_slice or {}
         workspace = s.get("workspace", "")
         slug = s.get("repo_slug", "")
         pr_id = s.get("pr_id")
 
-        if response.status_code == 404:
-            logger.warning(f"Skipping commits for {workspace}/{slug} PR#{pr_id} (404)")
+        if not self._guard_response(response):
             return
 
         data = response.json()

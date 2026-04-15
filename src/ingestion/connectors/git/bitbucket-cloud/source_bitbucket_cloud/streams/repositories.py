@@ -45,11 +45,8 @@ class RepositoriesStream(BitbucketCloudRestStream):
             yield {"workspace": workspace}
 
     def parse_response(self, response, stream_slice=None, **kwargs):
-        self._check_near_limit(response)
-
         workspace = (stream_slice or {}).get("workspace", "")
-        if response.status_code == 404:
-            logger.warning(f"Skipping repos for workspace {workspace} (404)")
+        if not self._guard_response(response):
             return
         data = response.json()
         repos = data.get("values", [])

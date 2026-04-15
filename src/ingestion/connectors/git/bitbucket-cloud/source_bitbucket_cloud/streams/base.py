@@ -120,25 +120,26 @@ class BitbucketCloudRestStream(HttpStream, ABC):
             return 60.0
         return None
 
+    def _guard_response(self, response: requests.Response) -> bool:
+        """Check rate limit, auth errors, and unexpected status codes.
+        Returns True if safe to parse JSON. Raises on auth errors."""
+        self._check_near_limit(response)
+        if response.status_code in (401, 403):
+            raise BitbucketAuthError(
+                f"Bitbucket auth error ({response.status_code}): {response.text[:200]}"
+            )
+        if response.status_code >= 400:
+            logger.error(f"Unexpected HTTP {response.status_code}: {response.url} — {response.text[:200]}")
+            return False
+        return True
+
     def parse_response(
         self,
         response: requests.Response,
         stream_slice: Optional[Mapping[str, Any]] = None,
         **kwargs,
     ) -> Iterable[Mapping[str, Any]]:
-        self._check_near_limit(response)
-
-        if response.status_code in (401, 403):
-            raise BitbucketAuthError(
-                f"Bitbucket auth error ({response.status_code}): {response.text[:200]}"
-            )
-
-        if response.status_code == 404:
-            logger.warning(f"Resource not found (404): {response.url}")
-            return
-
-        if response.status_code >= 400:
-            logger.error(f"Unexpected HTTP {response.status_code}: {response.url} — {response.text[:200]}")
+        if not self._guard_response(response):
             return
 
         data = response.json()

@@ -34,6 +34,7 @@ class PullRequestsStream(BitbucketCloudRestStream):
         self._start_date = start_date
         self._partitions_with_errors: set = set()
         self._child_slice_cache: dict[tuple, dict] = {}
+        self._child_cache_built: bool = False
         self._current_cursor_value: Optional[str] = None
 
     def _path(self, stream_slice: Optional[Mapping[str, Any]] = None, **kwargs) -> str:
@@ -75,6 +76,7 @@ class PullRequestsStream(BitbucketCloudRestStream):
                     pk = repo_slice.get("partition_key", "?")
                     self._partitions_with_errors.add(pk)
                     logger.error(f"Failed pull_requests slice {pk}, cursor frozen: {exc}")
+            self._child_cache_built = True
         else:
             yield from super().read_records(
                 sync_mode=sync_mode, stream_slice=stream_slice,
@@ -135,11 +137,7 @@ class PullRequestsStream(BitbucketCloudRestStream):
     # ------------------------------------------------------------------
 
     def parse_response(self, response, stream_slice=None, **kwargs):
-        self._check_near_limit(response)
-
-        if response.status_code == 404:
-            s = stream_slice or {}
-            logger.warning(f"Skipping PRs for {s.get('workspace')}/{s.get('slug')} (404)")
+        if not self._guard_response(response):
             return
 
         data = response.json()
@@ -237,7 +235,7 @@ class PullRequestsStream(BitbucketCloudRestStream):
 
     def get_child_slices(self) -> list:
         """Return minimal PR metadata for child streams to build slices from."""
-        if self._child_slice_cache:
+        if self._child_cache_built:
             return list(self._child_slice_cache.values())
         # Fallback: trigger read if not yet populated
         list(self.read_records(sync_mode=None))

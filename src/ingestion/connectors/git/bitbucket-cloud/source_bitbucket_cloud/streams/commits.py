@@ -286,8 +286,6 @@ class CommitsStream(BitbucketCloudRestStream):
     # ------------------------------------------------------------------
 
     def parse_response(self, response, stream_slice=None, **kwargs):
-        self._check_near_limit(response)
-
         s = stream_slice or {}
         self._current_skipped_siblings = s.get("_skipped_siblings", [])
         self._current_stop_at_sha = s.get("stop_at_sha")
@@ -297,8 +295,7 @@ class CommitsStream(BitbucketCloudRestStream):
 
         partition_key = f"{s.get('workspace', '')}/{s.get('slug', '')}/{s.get('branch', '')}"
 
-        if response.status_code == 404:
-            logger.warning(f"Skipping commits for {partition_key} (404)")
+        if not self._guard_response(response):
             return
 
         data = response.json()
