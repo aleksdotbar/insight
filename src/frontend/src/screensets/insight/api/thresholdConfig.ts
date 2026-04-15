@@ -85,6 +85,7 @@ export type IcKpiDef = {
   label: string;
   unit: string;
   sublabel: string;
+  description: string;
   higher_is_better: boolean;
   format: 'integer' | 'decimal1' | 'percent' | 'hours';
 };
@@ -97,9 +98,9 @@ export type IcKpiDef = {
  * according to `format`.
  */
 export const IC_KPI_DEFS: IcKpiDef[] = [
-  { metric_key: 'bugs_fixed',     raw_field: 'bugs_fixed',       label: 'Bugs Fixed',    unit: '',  sublabel: 'Jira',                 higher_is_better: true,  format: 'integer'  },
-  { metric_key: 'clean_loc',      raw_field: 'loc',              label: 'Clean LOC',     unit: '',  sublabel: 'Bitbucket',            higher_is_better: true,  format: 'integer'  },
-  { metric_key: 'ai_loc_share',   raw_field: 'ai_loc_share_pct', label: 'AI LOC Share',  unit: '%', sublabel: 'Cursor + Claude Code', higher_is_better: true,  format: 'percent'  },
-  { metric_key: 'focus_time_pct', raw_field: 'focus_time_pct',   label: 'Focus Time',    unit: '%', sublabel: 'Calendar / M365',      higher_is_better: true,  format: 'percent'  },
-  { metric_key: 'tasks_closed',   raw_field: 'tasks_closed',     label: 'Tasks Closed',  unit: '',  sublabel: 'Jira',                 higher_is_better: true,  format: 'integer'  },
+  { metric_key: 'bugs_fixed',     raw_field: 'bugs_fixed',       label: 'Bugs Fixed',    unit: '',  sublabel: 'Jira',                 description: 'Bug-type Jira issues closed in the selected period. Reflects quality contribution and team reliability.',                                          higher_is_better: true,  format: 'integer'  },
+  { metric_key: 'clean_loc',      raw_field: 'loc',              label: 'Clean LOC',     unit: '',  sublabel: 'Bitbucket',            description: 'Authored lines of code excluding AI-generated and config/spec lines. Reflects hands-on coding output.',                                          higher_is_better: true,  format: 'integer'  },
+  { metric_key: 'ai_loc_share',   raw_field: 'ai_loc_share_pct', label: 'AI LOC Share',  unit: '%', sublabel: 'Cursor + Claude Code', description: 'Share of authored lines accepted from AI suggestions (Cursor + Claude Code). Reflects how much AI tooling contributes to actual output.',       higher_is_better: true,  format: 'percent'  },
+  { metric_key: 'focus_time_pct', raw_field: 'focus_time_pct',   label: 'Focus Time',    unit: '%', sublabel: 'Calendar / M365',      description: 'Share of work time spent in uninterrupted 60-minute+ blocks. Higher means fewer context switches and more deep work.',                          higher_is_better: true,  format: 'percent'  },
+  { metric_key: 'tasks_closed',   raw_field: 'tasks_closed',     label: 'Tasks Closed',  unit: '',  sublabel: 'Jira',                 description: 'Jira tasks moved to Done in the selected period. Direct measure of delivery throughput.',                                                      higher_is_better: true,  format: 'integer'  },
 ];

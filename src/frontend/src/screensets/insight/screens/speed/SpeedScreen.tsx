@@ -90,7 +90,7 @@ export const SpeedScreen: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-8">
+    <div className="flex flex-col gap-6 p-4 sm:p-8">
       <div className="flex flex-col gap-2">
         <TextLoader skeletonClassName="h-10 w-64">
           <h1 className="text-4xl font-bold">
@@ -120,7 +120,7 @@ export const SpeedScreen: React.FC = () => {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-6 text-center">
             <TextLoader skeletonClassName="h-4 w-12">

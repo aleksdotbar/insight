@@ -6,6 +6,7 @@
 import React from 'react';
 import { Badge, Card } from '@hai3/uikit';
 import type { TeamKpi } from '../../../types';
+import MetricInfo from '../../../uikit/base/MetricInfo';
 
 export interface TeamHeroStripProps {
   teamKpis: TeamKpi[];
@@ -31,7 +32,10 @@ const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
       {kpi.value}
       {kpi.unit && <span className="text-xs font-semibold text-gray-400 ml-0.5">{kpi.unit}</span>}
     </div>
-    <div className="text-sm font-semibold text-gray-900">{kpi.label}</div>
+    <div className="flex items-center gap-0.5">
+      <span className="text-sm font-semibold text-gray-900">{kpi.label}</span>
+      {kpi.description && <MetricInfo description={kpi.description} />}
+    </div>
     {kpi.sublabel && <div className="text-2xs text-gray-400">{kpi.sublabel}</div>}
     <Badge className={`mt-1 text-xs font-bold ${CHIP_CLASS[kpi.status]}`}>
       {kpi.chipLabel ?? kpi.status}

@@ -36,10 +36,10 @@ const DeliveryTrends: React.FC<DeliveryTrendsProps> = ({ data }) => {
 
   return (
     <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+      <LineChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_TRACK_BG} />
         <XAxis dataKey="label" tick={{ fontSize: CHART_FONT_TICK, fill: CHART_GRAY }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: CHART_FONT_TICK, fill: CHART_GRAY }} axisLine={false} tickLine={false} allowDecimals={false} />
+        <YAxis width={28} tick={{ fontSize: CHART_FONT_TICK, fill: CHART_GRAY }} axisLine={false} tickLine={false} allowDecimals={false} />
         <Tooltip content={<ChartTooltipContent />} />
         <Legend content={<ChartLegendContent />} wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
         <Line type="monotone" dataKey="Commits" stroke={CHART_BLUE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />

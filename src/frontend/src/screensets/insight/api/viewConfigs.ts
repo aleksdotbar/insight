@@ -49,27 +49,27 @@ export const TEAM_VIEW_CONFIG: TeamViewConfig = {
 
 export const TEAM_KPIS_BY_PERIOD: Record<PeriodValue, TeamKpi[]> = {
   week: [
-    { metric_key: 'at_risk_count', label: 'At Risk', value: '1', unit: '', sublabel: 'Declining across 2+ metrics this week', chipLabel: 'Needs attention', status: 'warn', section: 'overview' },
-    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '13h', unit: '', sublabel: 'Team median \u00b7 Task Delivery', chipLabel: '\u2193 vs company 16h', status: 'good', section: 'overview' },
-    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '10 / 12', unit: '', sublabel: '2 members below target', chipLabel: 'On track', status: 'good', section: 'overview' },
-    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '6', unit: '', sublabel: 'No AI activity logged this week', chipLabel: 'Action needed', status: 'bad', section: 'overview' },
+    { metric_key: 'at_risk_count', label: 'At Risk', value: '1', unit: '', sublabel: 'Declining across 2+ metrics this week', chipLabel: 'Needs attention', description: 'Members whose key metrics (tasks, focus, build, AI adoption) are declining across two or more dimensions.', status: 'warn', section: 'overview' },
+    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '13h', unit: '', sublabel: 'Team median \u00b7 Task Delivery', chipLabel: '\u2193 vs company 16h', description: 'Team median time a task spends in In Progress state. Lower means tasks flow through development faster.', status: 'good', section: 'overview' },
+    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '10 / 12', unit: '', sublabel: '2 members below target', chipLabel: 'On track', description: 'Members with 60%+ of their work time in uninterrupted 60-minute+ blocks. Fewer interruptions enables deeper, more effective work.', status: 'good', section: 'overview' },
+    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '6', unit: '', sublabel: 'No AI activity logged this week', chipLabel: 'Action needed', description: 'Members with no AI tool activity (Cursor, Claude Code, Codex) logged in the selected period.', status: 'bad', section: 'overview' },
   ],
   month: [
-    { metric_key: 'at_risk_count', label: 'At Risk', value: '2', unit: '', sublabel: 'Declining across 2+ metrics for 2+ months', chipLabel: 'Needs attention', status: 'bad', section: 'overview' },
-    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '14h', unit: '', sublabel: 'Team median \u00b7 Task Delivery', chipLabel: '\u2193 vs company 16h', status: 'good', section: 'overview' },
-    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '9 / 12', unit: '', sublabel: '3 members below target', chipLabel: 'Monitor closely', status: 'warn', section: 'overview' },
-    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '5', unit: '', sublabel: 'No AI activity logged this month', chipLabel: 'Action needed', status: 'bad', section: 'overview' },
+    { metric_key: 'at_risk_count', label: 'At Risk', value: '2', unit: '', sublabel: 'Declining across 2+ metrics for 2+ months', chipLabel: 'Needs attention', description: 'Members whose key metrics (tasks, focus, build, AI adoption) are declining across two or more dimensions.', status: 'bad', section: 'overview' },
+    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '14h', unit: '', sublabel: 'Team median \u00b7 Task Delivery', chipLabel: '\u2193 vs company 16h', description: 'Team median time a task spends in In Progress state. Lower means tasks flow through development faster.', status: 'good', section: 'overview' },
+    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '9 / 12', unit: '', sublabel: '3 members below target', chipLabel: 'Monitor closely', description: 'Members with 60%+ of their work time in uninterrupted 60-minute+ blocks. Fewer interruptions enables deeper, more effective work.', status: 'warn', section: 'overview' },
+    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '5', unit: '', sublabel: 'No AI activity logged this month', chipLabel: 'Action needed', description: 'Members with no AI tool activity (Cursor, Claude Code, Codex) logged in the selected period.', status: 'bad', section: 'overview' },
   ],
   quarter: [
-    { metric_key: 'at_risk_count', label: 'At Risk', value: '3', unit: '', sublabel: 'Declining across 2+ metrics for 2+ quarters', chipLabel: 'Needs attention', status: 'bad', section: 'overview' },
-    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '15h', unit: '', sublabel: 'Team median \u00b7 Task Delivery', chipLabel: '\u2191 vs company 16h', status: 'warn', section: 'overview' },
-    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '8 / 12', unit: '', sublabel: '4 members below target', chipLabel: 'Monitor closely', status: 'warn', section: 'overview' },
-    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '4', unit: '', sublabel: 'No AI activity logged this quarter', chipLabel: 'Action needed', status: 'bad', section: 'overview' },
+    { metric_key: 'at_risk_count', label: 'At Risk', value: '3', unit: '', sublabel: 'Declining across 2+ metrics for 2+ quarters', chipLabel: 'Needs attention', description: 'Members whose key metrics (tasks, focus, build, AI adoption) are declining across two or more dimensions.', status: 'bad', section: 'overview' },
+    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '15h', unit: '', sublabel: 'Team median \u00b7 Task Delivery', chipLabel: '\u2191 vs company 16h', description: 'Team median time a task spends in In Progress state. Lower means tasks flow through development faster.', status: 'warn', section: 'overview' },
+    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '8 / 12', unit: '', sublabel: '4 members below target', chipLabel: 'Monitor closely', description: 'Members with 60%+ of their work time in uninterrupted 60-minute+ blocks. Fewer interruptions enables deeper, more effective work.', status: 'warn', section: 'overview' },
+    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '4', unit: '', sublabel: 'No AI activity logged this quarter', chipLabel: 'Action needed', description: 'Members with no AI tool activity (Cursor, Claude Code, Codex) logged in the selected period.', status: 'bad', section: 'overview' },
   ],
   year: [
-    { metric_key: 'at_risk_count', label: 'At Risk', value: '2', unit: '', sublabel: 'Declining across 2+ metrics over the year', chipLabel: 'Needs attention', status: 'bad', section: 'overview' },
-    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '14h', unit: '', sublabel: 'Team median \u00b7 Task Delivery \u00b7 annual avg', chipLabel: '\u2193 vs company 16h', status: 'good', section: 'overview' },
-    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '9 / 12', unit: '', sublabel: '3 members below target \u00b7 annual avg', chipLabel: 'Monitor closely', status: 'warn', section: 'overview' },
-    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '5', unit: '', sublabel: 'No AI activity logged this year', chipLabel: 'Action needed', status: 'bad', section: 'overview' },
+    { metric_key: 'at_risk_count', label: 'At Risk', value: '2', unit: '', sublabel: 'Declining across 2+ metrics over the year', chipLabel: 'Needs attention', description: 'Members whose key metrics (tasks, focus, build, AI adoption) are declining across two or more dimensions.', status: 'bad', section: 'overview' },
+    { metric_key: 'team_dev_time', label: 'Task Dev Time', value: '14h', unit: '', sublabel: 'Team median \u00b7 Task Delivery \u00b7 annual avg', chipLabel: '\u2193 vs company 16h', description: 'Team median time a task spends in In Progress state. Lower means tasks flow through development faster.', status: 'good', section: 'overview' },
+    { metric_key: 'focus_gte_60', label: 'Focus \u226560%', value: '9 / 12', unit: '', sublabel: '3 members below target \u00b7 annual avg', chipLabel: 'Monitor closely', description: 'Members with 60%+ of their work time in uninterrupted 60-minute+ blocks. Fewer interruptions enables deeper, more effective work.', status: 'warn', section: 'overview' },
+    { metric_key: 'not_using_ai', label: 'Not Using AI Tools', value: '5', unit: '', sublabel: 'No AI activity logged this year', chipLabel: 'Action needed', description: 'Members with no AI tool activity (Cursor, Claude Code, Codex) logged in the selected period.', status: 'bad', section: 'overview' },
   ],
 };

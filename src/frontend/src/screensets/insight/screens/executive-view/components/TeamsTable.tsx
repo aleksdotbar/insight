@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Card, ScrollArea, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge, Skeleton } from '@hai3/uikit';
+import { Card, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge, Skeleton } from '@hai3/uikit';
 import type { ExecTeamRow, ExecColumnThreshold } from '../../../types';
 import MetricInfo from '../../../uikit/base/MetricInfo';
 
@@ -43,8 +43,7 @@ export const TeamsTable: React.FC<TeamsTableProps> = ({ teams, columnThresholds,
   const aiT    = columnThresholds.find((t) => t.metric_key === 'ai_adoption_pct')?.threshold ?? 60;
   return (
   <Card>
-    <ScrollArea className="w-full">
-      <Table>
+    <Table className="min-w-max">
         <TableHeader>
           <TableRow>
             <TableHead>Team</TableHead>
@@ -94,7 +93,6 @@ export const TeamsTable: React.FC<TeamsTableProps> = ({ teams, columnThresholds,
           )}
         </TableBody>
       </Table>
-    </ScrollArea>
   </Card>
   );
 };

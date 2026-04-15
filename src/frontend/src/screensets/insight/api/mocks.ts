@@ -419,6 +419,11 @@ export const insightMockMap = {
   // IC KPIs -- returns RawIcAggregateRow[]
   // Chooses current vs previous aggregate by inspecting the date range in $filter.
   // A filter whose end date (metric_date lt) is already in the past is a previous-period request.
+  //
+  // KNOWN MOCK LIMITATION: IC KPI values do not vary across week/month/quarter/year periods.
+  // The mock returns the same scenario.kpiAggregate regardless of period granularity.
+  // On a real backend, aggregates would differ meaningfully per period.
+  // inferPeriodFromODataFilter() is available in periodToDateRange.ts if period-aware variation is added later.
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_KPIS}/query`]:
     (body: unknown): ODataResponse<RawIcAggregateRow> => {
       const f = odata(body).$filter ?? '';
@@ -438,6 +443,8 @@ export const insightMockMap = {
       IC_BULLET_AI:       ['ai_tools'],
     };
     const sectionIds = sectionMap[key];
+    // KNOWN MOCK LIMITATION: IC bullet metrics ignore the period filter entirely.
+    // All periods (week/month/quarter/year) return identical scenario.bullets data.
     acc[`POST /api/analytics/v1/metrics/${METRIC_REGISTRY[key]}/query`] =
       (body: unknown): ODataResponse<RawBulletAggregateRow> => {
         const f = odata(body).$filter ?? '';
@@ -450,6 +457,8 @@ export const insightMockMap = {
   }, {})),
 
   // IC chart: LOC trend -- returns RawLocTrendRow[]
+  // KNOWN MOCK LIMITATION: chart data points are identical across periods.
+  // Only the x-axis labels reformat (Mon/Tue for week, W1/W2 for month, etc.) via transforms.ts formatDateLabel().
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_CHART_LOC}/query`]:
     (body: unknown): ODataResponse<RawLocTrendRow> => {
       const f = odata(body).$filter ?? '';

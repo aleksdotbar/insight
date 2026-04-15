@@ -18,7 +18,7 @@ export const ViewModeToggle: React.FC<ViewModeToggleProps> = ({ mode, onChange }
     type="single"
     value={mode}
     onValueChange={(v) => { if (v) onChange(v as ViewMode); }}
-    className="bg-gray-100 rounded-lg p-[3px] gap-px"
+    className="hidden sm:flex bg-gray-100 rounded-lg p-[3px] gap-px"
   >
     <ToggleGroupItem
       value="chart"

@@ -77,7 +77,7 @@ const ExecutiveViewScreen: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-base font-bold text-gray-900 leading-tight">{t('header.title')}</div>
           <div className="text-xs text-gray-400">{t('header.subtitle')}</div>
@@ -91,7 +91,7 @@ const ExecutiveViewScreen: React.FC = () => {
       </div>
       <OrgKpiCards teams={teams} orgKpis={orgKpis} columnThresholds={execConfig?.column_thresholds ?? []} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
           {orgKpis ? (
             <OrgHealthRadar orgKpis={orgKpis} />

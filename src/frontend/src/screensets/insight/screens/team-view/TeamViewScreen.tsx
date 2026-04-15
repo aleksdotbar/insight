@@ -145,7 +145,7 @@ const TeamViewScreen: React.FC = () => {
   return (
     <div className="flex flex-col gap-4 p-6">
       {/* Screen header: team name left, controls right */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {teamName && (
             <>
