@@ -15,7 +15,7 @@ import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { IdentityResolutionService } from '../api/identityResolutionService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter } from '../utils/periodToDateRange';
+import { odataDateFilter, odataEscapeValue } from '../utils/periodToDateRange';
 import type {
   PeriodValue,
   IcKpi,
@@ -49,7 +49,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
   const connectors = apiRegistry.getService(ConnectorManagerService);
   const identity   = apiRegistry.getService(IdentityResolutionService);
 
-  const personFilter = `person_id eq '${personId}' and ${odataDateFilter(period)}`;
+  const personFilter = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(period)}`;
 
   void Promise.all([
     api.queryMetric<IcKpi>(METRIC_REGISTRY.IC_KPIS,              { $filter: personFilter }),
@@ -93,7 +93,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
 export const openDrill = (personId: string, drillId: string): void => {
   void apiRegistry.getService(InsightApiService)
     .queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
-      $filter: `person_id eq '${personId}' and drill_id eq '${drillId}'`,
+      $filter: `person_id eq '${odataEscapeValue(personId)}' and drill_id eq '${odataEscapeValue(drillId)}'`,
     })
     .then((resp) => {
       const drillData = resp.items[0];

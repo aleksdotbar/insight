@@ -82,7 +82,7 @@ export interface ODataParams {
   $orderby?: string;
   $top?:     number;
   $select?:  string;
-  $skip?:    number;
+  $skip?:    string;
 }
 
 /** Standard paginated response envelope from Analytics API */

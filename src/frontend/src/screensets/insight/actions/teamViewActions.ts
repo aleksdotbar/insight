@@ -13,7 +13,7 @@ import { TeamViewEvents } from '../events/teamViewEvents';
 import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter } from '../utils/periodToDateRange';
+import { odataDateFilter, odataEscapeValue } from '../utils/periodToDateRange';
 import type {
   PeriodValue,
   TeamMember,
@@ -65,7 +65,7 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
 
-  const teamFilter = `org_unit_id eq '${teamId}' and ${odataDateFilter(period)}`;
+  const teamFilter = `org_unit_id eq '${odataEscapeValue(teamId)}' and ${odataDateFilter(period)}`;
 
   // Critical path — metric data only
   void Promise.all([
