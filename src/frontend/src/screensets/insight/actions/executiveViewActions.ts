@@ -14,7 +14,9 @@ import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
 import { odataDateFilter } from '../utils/periodToDateRange';
-import type { PeriodValue, ExecTeamRow, ExecViewData } from '../types';
+import { transformExecRows } from '../api/transforms';
+import type { PeriodValue, ExecViewData } from '../types';
+import type { RawExecSummaryRow } from '../api/rawTypes';
 import { EXEC_VIEW_CONFIG } from '../api/mocks/fixtures/executive-view';
 
 export const loadExecutiveView = (period: PeriodValue): void => {
@@ -25,13 +27,13 @@ export const loadExecutiveView = (period: PeriodValue): void => {
   const filter     = odataDateFilter(period);
 
   // Critical path — metric data only
-  void api.queryMetric<ExecTeamRow>(METRIC_REGISTRY.EXEC_SUMMARY, {
+  void api.queryMetric<RawExecSummaryRow>(METRIC_REGISTRY.EXEC_SUMMARY, {
     $filter:  filter,
     $orderby: 'org_unit_name asc',
     $top:     200,
   })
     .then((summaryResp) => {
-      const teams = summaryResp.items;
+      const teams = transformExecRows(summaryResp.items, EXEC_VIEW_CONFIG.column_thresholds);
 
       const withValue = <T>(vals: (T | null)[]): T[] =>
         vals.filter((v): v is T => v !== null);

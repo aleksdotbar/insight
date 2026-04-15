@@ -56,6 +56,13 @@ function wireEvents(um: UserManager): void {
 }
 
 async function doInit(): Promise<void> {
+  // In dev mode without OIDC config, skip real auth and emit a fake token
+  if (import.meta.env.DEV && !window.__OIDC_CONFIG__?.issuer_url) {
+    console.warn('[OidcManager] Dev mode: OIDC skipped (no issuer_url). Using mock auth.');
+    eventBus.emit(AuthEvent.TokenStored, { token: 'dev-token' });
+    return;
+  }
+
   const authService = apiRegistry.getService(AuthApiService);
   const config = await authService.getConfig();
 

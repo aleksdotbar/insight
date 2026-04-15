@@ -19,12 +19,19 @@ export function initAuth(): void {
     .then((user) => {
       if (user && !user.expired) {
         OidcManager.resolveAuth(user);
+      } else if (import.meta.env.DEV && !window.__OIDC_CONFIG__?.issuer_url) {
+        // Dev mode without OIDC: resolve with a fake User-like object
+        OidcManager.resolveAuth({ access_token: 'dev-token', expired: false } as unknown as import('oidc-client-ts').User);
       } else {
         OidcManager.resolveAuth(null);
       }
     })
     .catch(() => {
-      OidcManager.resolveAuth(null);
+      if (import.meta.env.DEV) {
+        OidcManager.resolveAuth({ access_token: 'dev-token', expired: false } as unknown as import('oidc-client-ts').User);
+      } else {
+        OidcManager.resolveAuth(null);
+      }
     });
 }
 

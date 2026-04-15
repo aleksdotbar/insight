@@ -1,0 +1,95 @@
+/**
+ * Raw API response types
+ *
+ * TypeScript interfaces for the snake_case rows returned by ClickHouse via
+ * the Analytics API.  These mirror the backend column names exactly.
+ *
+ * The transform layer (transforms.ts) maps these into the UI types defined
+ * in ../types/index.ts.
+ */
+
+// ---------------------------------------------------------------------------
+// Executive View  (POST /metrics/{EXEC_SUMMARY}/query)
+// ---------------------------------------------------------------------------
+
+export type RawExecSummaryRow = {
+  org_unit_id: string;
+  org_unit_name: string;
+  headcount: number;
+  tasks_closed: number | null;
+  bugs_fixed: number | null;
+  build_success_pct: number | null;
+  focus_time_pct: number;
+  ai_adoption_pct: number;
+  ai_loc_share_pct: number;
+  pr_cycle_time_h: number;
+};
+
+// ---------------------------------------------------------------------------
+// IC KPIs  (POST /metrics/{IC_KPIS}/query)
+// ---------------------------------------------------------------------------
+
+export type RawIcAggregateRow = {
+  person_id: string;
+  loc: number;
+  ai_loc_share_pct: number;
+  prs_merged: number;
+  pr_cycle_time_h: number;
+  focus_time_pct: number;
+  tasks_closed: number;
+  bugs_fixed: number;
+  build_success_pct: number | null;
+  ai_sessions: number;
+};
+
+// ---------------------------------------------------------------------------
+// Team Members  (POST /metrics/{TEAM_MEMBER}/query)
+// ---------------------------------------------------------------------------
+
+export type RawTeamMemberRow = {
+  person_id: string;
+  display_name: string;
+  seniority: string;
+  tasks_closed: number;
+  bugs_fixed: number;
+  dev_time_h: number;
+  prs_merged: number;
+  build_success_pct: number | null;
+  focus_time_pct: number;
+  ai_tools: string[];
+  ai_loc_share_pct: number;
+};
+
+// ---------------------------------------------------------------------------
+// Charts  (POST /metrics/{IC_CHART_LOC}/query)
+// ---------------------------------------------------------------------------
+
+export type RawLocTrendRow = {
+  date_bucket: string;
+  ai_loc: number;
+  code_loc: number;
+  spec_lines: number;
+};
+
+// ---------------------------------------------------------------------------
+// Charts  (POST /metrics/{IC_CHART_DELIVERY}/query)
+// ---------------------------------------------------------------------------
+
+export type RawDeliveryTrendRow = {
+  date_bucket: string;
+  commits: number;
+  prs_merged: number;
+  tasks_done: number;
+};
+
+// ---------------------------------------------------------------------------
+// Bullet Aggregates  (POST /metrics/{*_BULLET_*}/query)
+// ---------------------------------------------------------------------------
+
+export type RawBulletAggregateRow = {
+  metric_key: string;
+  value: number;
+  median: number | null;
+  p5: number | null;
+  p95: number | null;
+};

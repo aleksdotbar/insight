@@ -14,12 +14,13 @@ import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
 import { odataDateFilter, odataEscapeValue } from '../utils/periodToDateRange';
+import { transformTeamMembers, transformBulletMetrics } from '../api/transforms';
 import type {
   PeriodValue,
   TeamMember,
-  BulletMetric,
   TeamViewData,
 } from '../types';
+import type { RawTeamMemberRow, RawBulletAggregateRow } from '../api/rawTypes';
 import {
   TEAM_KPIS_BY_PERIOD,
   TEAM_VIEW_CONFIG,
@@ -69,24 +70,24 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
 
   // Critical path — metric data only
   void Promise.all([
-    api.queryMetric<TeamMember>(METRIC_REGISTRY.TEAM_MEMBER, {
+    api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, {
       $filter:  teamFilter,
       $orderby: 'display_name asc',
       $top:     200,
     }),
-    api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_DELIVERY, { $filter: teamFilter }),
-    api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_QUALITY,  { $filter: teamFilter }),
-    api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_COLLAB,   { $filter: teamFilter }),
-    api.queryMetric<BulletMetric>(METRIC_REGISTRY.TEAM_BULLET_AI,       { $filter: teamFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_DELIVERY, { $filter: teamFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_QUALITY,  { $filter: teamFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_COLLAB,   { $filter: teamFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_AI,       { $filter: teamFilter }),
   ])
     .then(([membersResp, delivery, quality, collab, ai]) => {
-      const members = membersResp.items;
+      const members = transformTeamMembers(membersResp.items, period);
 
       const bulletSections = [
-        { id: 'task_delivery',  title: 'Task Delivery',  metrics: delivery.items },
-        { id: 'code_quality',   title: 'Code & Quality', metrics: quality.items  },
-        { id: 'collaboration',  title: 'Collaboration',  metrics: collab.items   },
-        { id: 'ai_adoption',    title: 'AI Adoption',    metrics: ai.items       },
+        { id: 'task_delivery',  title: 'Task Delivery',  metrics: transformBulletMetrics(delivery.items, 'task_delivery', period) },
+        { id: 'code_quality',   title: 'Code & Quality', metrics: transformBulletMetrics(quality.items,  'code_quality',  period) },
+        { id: 'collaboration',  title: 'Collaboration',  metrics: transformBulletMetrics(collab.items,   'collaboration', period) },
+        { id: 'ai_adoption',    title: 'AI Adoption',    metrics: transformBulletMetrics(ai.items,       'ai_adoption',   period) },
       ].filter((s) => s.metrics.length > 0);
 
       const teamName = teamId.charAt(0).toUpperCase() + teamId.slice(1);

@@ -29,6 +29,14 @@ import type {
   ODataParams,
   ODataResponse,
 } from '../types';
+import type {
+  RawExecSummaryRow,
+  RawTeamMemberRow,
+  RawBulletAggregateRow,
+  RawIcAggregateRow,
+  RawLocTrendRow,
+  RawDeliveryTrendRow,
+} from './rawTypes';
 import { inferPeriodFromODataFilter } from '../utils/periodToDateRange';
 import { METRIC_REGISTRY } from './metricRegistry';
 
@@ -584,6 +592,90 @@ function drillId(filter: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Raw-type converters — translate UI mock data into backend-shaped responses
+// ---------------------------------------------------------------------------
+
+function toRawExec(row: ExecTeamRow): RawExecSummaryRow {
+  return {
+    org_unit_id: row.team_id,
+    org_unit_name: row.team_name,
+    headcount: row.headcount,
+    tasks_closed: row.tasks_closed,
+    bugs_fixed: row.bugs_fixed,
+    build_success_pct: row.build_success_pct,
+    focus_time_pct: row.focus_time_pct,
+    ai_adoption_pct: row.ai_adoption_pct,
+    ai_loc_share_pct: row.ai_loc_share_pct,
+    pr_cycle_time_h: row.pr_cycle_time_h,
+  };
+}
+
+function toRawTeamMember(row: TeamMember): RawTeamMemberRow {
+  return {
+    person_id: row.person_id,
+    display_name: row.name,
+    seniority: row.seniority,
+    tasks_closed: row.tasks_closed,
+    bugs_fixed: row.bugs_fixed,
+    dev_time_h: row.dev_time_h,
+    prs_merged: row.prs_merged,
+    build_success_pct: row.build_success_pct,
+    focus_time_pct: row.focus_time_pct,
+    ai_tools: row.ai_tools,
+    ai_loc_share_pct: row.ai_loc_share_pct,
+  };
+}
+
+function toRawBullet(m: BulletMetric): RawBulletAggregateRow {
+  return {
+    metric_key: m.metric_key,
+    value: parseFloat(m.value) || 0,
+    median: m.median ? parseFloat(m.median) : null,
+    p5: null,
+    p95: null,
+  };
+}
+
+function toRawIcAggregate(kpis: IcKpi[]): RawIcAggregateRow {
+  const kpiMap = new Map(kpis.map((k) => [k.metric_key, k]));
+  const parseKpi = (key: string): number => {
+    const v = kpiMap.get(key)?.value ?? '0';
+    return parseFloat(v.replace('k', '000')) || 0;
+  };
+
+  return {
+    person_id: 'p1',
+    loc: parseKpi('clean_loc'),
+    ai_loc_share_pct: parseKpi('ai_loc_share'),
+    prs_merged: 0,
+    pr_cycle_time_h: 0,
+    focus_time_pct: parseKpi('focus_time_pct'),
+    tasks_closed: parseKpi('tasks_closed'),
+    bugs_fixed: parseKpi('bugs_fixed'),
+    build_success_pct: null,
+    ai_sessions: 0,
+  };
+}
+
+function toRawLocTrend(pt: LocDataPoint): RawLocTrendRow {
+  return {
+    date_bucket: pt.label,
+    ai_loc: pt.aiLoc,
+    code_loc: pt.codeLoc,
+    spec_lines: pt.specLines,
+  };
+}
+
+function toRawDeliveryTrend(pt: DeliveryDataPoint): RawDeliveryTrendRow {
+  return {
+    date_bucket: pt.label,
+    commits: pt.commits,
+    prs_merged: pt.prsMerged,
+    tasks_done: pt.tasksDone,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Mock map — POST /api/analytics/v1/metrics/{uuid}/query
 // ---------------------------------------------------------------------------
 
@@ -598,26 +690,26 @@ export const insightMockMap = {
   'GET /api/analytics/v1/dashboard': (): DashboardData => mockDashboardData,
   'GET /api/analytics/v1/speed':     (): SpeedData => mockSpeedData,
 
-  // Executive summary — returns ExecTeamRow[]
+  // Executive summary — returns RawExecSummaryRow[]
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.EXEC_SUMMARY}/query`]:
-    (body: unknown): ODataResponse<ExecTeamRow> => {
+    (body: unknown): ODataResponse<RawExecSummaryRow> => {
       const p = inferPeriodFromODataFilter(odata(body).$filter ?? '');
-      return wrap(EXEC_VIEW_MOCK[p].teams);
+      return wrap(EXEC_VIEW_MOCK[p].teams.map(toRawExec));
     },
 
-  // Team members — returns TeamMember[]
+  // Team members — returns RawTeamMemberRow[]
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.TEAM_MEMBER}/query`]:
-    (body: unknown): ODataResponse<TeamMember> => {
+    (body: unknown): ODataResponse<RawTeamMemberRow> => {
       const f = odata(body).$filter ?? '';
       const p = inferPeriodFromODataFilter(f);
       const t = team(f);
       const data = TEAM_VIEW_MOCKS[t] ?? TEAM_VIEW_MOCKS['backend']!;
-      return wrap(data[p].members);
+      return wrap(data[p].members.map(toRawTeamMember));
     },
 
-  // Team bullet sections (delivery, quality, collab, AI) — return BulletMetric[]
+  // Team bullet sections (delivery, quality, collab, AI) — return RawBulletAggregateRow[]
   ...((['TEAM_BULLET_DELIVERY', 'TEAM_BULLET_QUALITY', 'TEAM_BULLET_COLLAB', 'TEAM_BULLET_AI'] as const).reduce<
-    Record<string, (body: unknown) => ODataResponse<BulletMetric>>
+    Record<string, (body: unknown) => ODataResponse<RawBulletAggregateRow>>
   >((acc, key) => {
     const sectionMap: Record<typeof key, string> = {
       TEAM_BULLET_DELIVERY: 'task_delivery',
@@ -627,31 +719,33 @@ export const insightMockMap = {
     };
     const sectionId = sectionMap[key];
     acc[`POST /api/analytics/v1/metrics/${METRIC_REGISTRY[key]}/query`] =
-      (body: unknown): ODataResponse<BulletMetric> => {
+      (body: unknown): ODataResponse<RawBulletAggregateRow> => {
         const f  = odata(body).$filter ?? '';
         const p  = inferPeriodFromODataFilter(f);
         const t  = team(f);
         const tv = TEAM_VIEW_MOCKS[t] ?? TEAM_VIEW_MOCKS['backend']!;
         const items = tv[p].bulletSections
           .find((s: BulletSection) => s.id === sectionId)?.metrics ?? [];
-        return wrap(items);
+        return wrap(items.map(toRawBullet));
       };
     return acc;
   }, {})),
 
-  // IC KPIs
+  // IC KPIs — returns RawIcAggregateRow[]
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_KPIS}/query`]:
-    (body: unknown): ODataResponse<IcKpi> => {
+    (body: unknown): ODataResponse<RawIcAggregateRow> => {
       const f = odata(body).$filter ?? '';
       const p = inferPeriodFromODataFilter(f);
-      return wrap(ALL_IC[`${person(f)}/${p}`]?.kpis ?? []);
+      const dashboard = ALL_IC[`${person(f)}/${p}`];
+      if (!dashboard) return wrap([]);
+      return wrap([toRawIcAggregate(dashboard.kpis)]);
     },
 
-  // IC bullet metrics (delivery, collab, AI tools)
+  // IC bullet metrics (delivery, collab, AI tools) — return RawBulletAggregateRow[]
   // IC_BULLET_DELIVERY covers task_delivery + git_output + code_quality sections.
   // Client-side filtering in IcDashboardScreen then splits them by section.
   ...((['IC_BULLET_DELIVERY', 'IC_BULLET_COLLAB', 'IC_BULLET_AI'] as const).reduce<
-    Record<string, (body: unknown) => ODataResponse<BulletMetric>>
+    Record<string, (body: unknown) => ODataResponse<RawBulletAggregateRow>>
   >((acc, key) => {
     const sectionMap: Record<typeof key, readonly string[]> = {
       IC_BULLET_DELIVERY: ['task_delivery', 'git_output', 'code_quality'],
@@ -660,30 +754,31 @@ export const insightMockMap = {
     };
     const sectionIds = sectionMap[key];
     acc[`POST /api/analytics/v1/metrics/${METRIC_REGISTRY[key]}/query`] =
-      (body: unknown): ODataResponse<BulletMetric> => {
+      (body: unknown): ODataResponse<RawBulletAggregateRow> => {
         const f = odata(body).$filter ?? '';
         const p = inferPeriodFromODataFilter(f);
         const items = (ALL_IC[`${person(f)}/${p}`]?.bulletMetrics ?? [])
-          .filter((m: BulletMetric) => sectionIds.includes(m.section));
+          .filter((m: BulletMetric) => sectionIds.includes(m.section))
+          .map(toRawBullet);
         return wrap(items);
       };
     return acc;
   }, {})),
 
-  // IC chart: LOC trend
+  // IC chart: LOC trend — returns RawLocTrendRow[]
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_CHART_LOC}/query`]:
-    (body: unknown): ODataResponse<LocDataPoint> => {
+    (body: unknown): ODataResponse<RawLocTrendRow> => {
       const f = odata(body).$filter ?? '';
       const p = inferPeriodFromODataFilter(f);
-      return wrap(ALL_IC[`${person(f)}/${p}`]?.charts.locTrend ?? []);
+      return wrap((ALL_IC[`${person(f)}/${p}`]?.charts.locTrend ?? []).map(toRawLocTrend));
     },
 
-  // IC chart: delivery trend
+  // IC chart: delivery trend — returns RawDeliveryTrendRow[]
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_CHART_DELIVERY}/query`]:
-    (body: unknown): ODataResponse<DeliveryDataPoint> => {
+    (body: unknown): ODataResponse<RawDeliveryTrendRow> => {
       const f = odata(body).$filter ?? '';
       const p = inferPeriodFromODataFilter(f);
-      return wrap(ALL_IC[`${person(f)}/${p}`]?.charts.deliveryTrend ?? []);
+      return wrap((ALL_IC[`${person(f)}/${p}`]?.charts.deliveryTrend ?? []).map(toRawDeliveryTrend));
     },
 
   // IC drills — drill_id extracted from $filter; person also from $filter
