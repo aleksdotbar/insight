@@ -93,3 +93,27 @@ export type RawBulletAggregateRow = {
   p5: number | null;
   p95: number | null;
 };
+
+// ---------------------------------------------------------------------------
+// Time Off  (POST /metrics/{IC_TIMEOFF}/query)
+// ---------------------------------------------------------------------------
+
+export type RawTimeOffRow = {
+  days: number;
+  date_range: string;
+  bamboo_hr_url: string;
+};
+
+// ---------------------------------------------------------------------------
+// Drill Detail  (POST /metrics/{IC_DRILL}/query)
+// ---------------------------------------------------------------------------
+
+export type RawDrillRow = {
+  title: string;
+  source: string;
+  src_class: string;
+  value: string;
+  filter: string;
+  columns: string[];
+  rows: Array<Record<string, string | number>>;
+};

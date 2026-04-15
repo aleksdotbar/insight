@@ -21,11 +21,11 @@ import {
   transformBulletMetrics,
   transformLocTrend,
   transformDeliveryTrend,
+  transformTimeOff,
+  transformDrill,
 } from '../api/transforms';
 import type {
   PeriodValue,
-  TimeOffNotice,
-  DrillData,
   IcDashboardData,
 } from '../types';
 import type {
@@ -33,6 +33,8 @@ import type {
   RawBulletAggregateRow,
   RawLocTrendRow,
   RawDeliveryTrendRow,
+  RawTimeOffRow,
+  RawDrillRow,
 } from '../api/rawTypes';
 
 import { settled, emptyOdata } from '../utils/settledResult';
@@ -66,7 +68,7 @@ function previousPeriodFilter(personId: string, period: PeriodValue): string {
     return d.toISOString().slice(0, 10);
   };
 
-  return `person_id eq '${personId}' and metric_date ge '${shiftBack(from)}' and metric_date lt '${shiftBack(to)}'`;
+  return `person_id eq '${odataEscapeValue(personId)}' and metric_date ge '${shiftBack(from)}' and metric_date lt '${shiftBack(to)}'`;
 }
 
 /**
@@ -83,7 +85,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
   const identity   = apiRegistry.getService(IdentityResolutionService);
 
   const personFilter     = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(period)}`;
-  const prevPersonFilter = previousPeriodFilter(odataEscapeValue(personId), period);
+  const prevPersonFilter = previousPeriodFilter(personId, period);
 
   void Promise.allSettled([
     api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS,         { $filter: personFilter }),
@@ -93,7 +95,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
     api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_AI,       { $filter: personFilter }),
     api.queryMetric<RawLocTrendRow>(METRIC_REGISTRY.IC_CHART_LOC,              { $filter: personFilter }),
     api.queryMetric<RawDeliveryTrendRow>(METRIC_REGISTRY.IC_CHART_DELIVERY,    { $filter: personFilter }),
-    api.queryMetric<TimeOffNotice>(METRIC_REGISTRY.IC_TIMEOFF,                 { $filter: personFilter }),
+    api.queryMetric<RawTimeOffRow>(METRIC_REGISTRY.IC_TIMEOFF,                 { $filter: personFilter }),
     identity.getPerson(personId),
     connectors.getDataAvailability(),
   ])
@@ -105,7 +107,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
       const aiResp           = settled(r4, emptyOdata<RawBulletAggregateRow>(), 'IC_BULLET_AI');
       const locResp          = settled(r5, emptyOdata<RawLocTrendRow>(), 'IC_CHART_LOC');
       const deliveryTrendResp = settled(r6, emptyOdata<RawDeliveryTrendRow>(), 'IC_CHART_DELIVERY');
-      const timeOffResp      = settled(r7, emptyOdata<TimeOffNotice>(), 'IC_TIMEOFF');
+      const timeOffResp      = settled(r7, emptyOdata<RawTimeOffRow>(), 'IC_TIMEOFF');
       const person           = settled(r8, { person_id: personId, display_name: personId, name: personId, role: '', seniority: '' } as unknown as Awaited<ReturnType<typeof identity.getPerson>>, 'IDENTITY');
       const availability     = settled(r9, { git: 'no-connector', tasks: 'no-connector', ci: 'no-connector', comms: 'no-connector', hr: 'no-connector', ai: 'no-connector' } as unknown as Awaited<ReturnType<typeof connectors.getDataAvailability>>, 'CONNECTORS');
 
@@ -120,7 +122,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
           locTrend:      transformLocTrend(locResp.items, period),
           deliveryTrend: transformDeliveryTrend(deliveryTrendResp.items, period),
         },
-        timeOffNotice: timeOffResp.items[0] ?? null,
+        timeOffNotice: timeOffResp.items[0] ? transformTimeOff(timeOffResp.items[0]) : null,
         drills:        {},
       };
 
@@ -140,13 +142,13 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
  */
 export const openDrill = (personId: string, drillId: string): void => {
   void apiRegistry.getService(InsightApiService)
-    .queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
+    .queryMetric<RawDrillRow>(METRIC_REGISTRY.IC_DRILL, {
       $filter: `person_id eq '${odataEscapeValue(personId)}' and drill_id eq '${odataEscapeValue(drillId)}'`,
     })
     .then((resp) => {
       const drillData = resp.items[0];
       if (drillData) {
-        eventBus.emit(IcDashboardEvents.DrillOpened, { drillId, drillData });
+        eventBus.emit(IcDashboardEvents.DrillOpened, { drillId, drillData: transformDrill(drillData) });
       }
     })
     .catch((err: unknown) => {
