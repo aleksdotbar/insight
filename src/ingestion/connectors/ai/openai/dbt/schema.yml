@@ -1,8 +1,8 @@
 version: 2
 
 sources:
-  - name: bronze
-    schema: raw
+  - name: bronze_openai
+    schema: bronze_openai
     tables:
       - name: users
       - name: usage_completions

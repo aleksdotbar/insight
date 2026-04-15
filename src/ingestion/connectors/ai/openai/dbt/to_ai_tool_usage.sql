@@ -1,7 +1,7 @@
 -- Bronze → Silver step 1: OpenAI completions usage → class_ai_tool_usage
 -- Maps per-user, per-model, per-project daily completion metrics.
 -- bucket_start_time is Unix seconds — converted to date for report_date.
-{{ config(materialized='incremental', unique_key='unique_id') }}
+{{ config(materialized='incremental', unique_key='unique_id', tags=['openai']) }}
 
 SELECT
     tenant_id,
@@ -30,7 +30,7 @@ SELECT
     'openai'                                        AS provider,
     'openai_api'                                    AS client,
     'insight_openai'                                AS data_source
-FROM {{ source('bronze', 'usage_completions') }}
+FROM {{ source('bronze_openai', 'usage_completions') }}
 {% if is_incremental() %}
 WHERE toDate(fromUnixTimestamp(CAST(bucket_start_time AS UInt32)))
     > (SELECT max(report_date) FROM {{ this }})

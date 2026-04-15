@@ -147,6 +147,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -172,16 +174,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -267,17 +261,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}-{{ record.get('model', '') }}-{{ record.get('user_id', '') }}
 
   # ── Stream 3: usage_embeddings (incremental) ──
@@ -301,6 +295,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -326,16 +322,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -397,17 +385,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}-{{ record.get('model', '') }}-{{ record.get('user_id', '') }}
 
   # ── Stream 4: usage_moderations (incremental) ──
@@ -431,6 +419,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -456,16 +446,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -527,17 +509,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}-{{ record.get('model', '') }}-{{ record.get('user_id', '') }}
 
   # ── Stream 5: usage_images (incremental) ──
@@ -561,6 +543,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -586,16 +570,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -665,17 +641,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}-{{ record.get('model', '') }}-{{ record.get('user_id', '') }}
 
   # ── Stream 6: usage_audio_speeches (incremental) ──
@@ -699,6 +675,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -724,16 +702,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -795,17 +765,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}-{{ record.get('model', '') }}-{{ record.get('user_id', '') }}
 
   # ── Stream 7: usage_audio_transcriptions (incremental) ──
@@ -829,6 +799,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -854,16 +826,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -925,17 +889,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}-{{ record.get('model', '') }}-{{ record.get('user_id', '') }}
 
   # ── Stream 8: usage_vector_stores (incremental) ──
@@ -959,6 +923,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -984,16 +950,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -1043,17 +1001,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}
 
   # ── Stream 9: usage_code_interpreter (incremental) ──
@@ -1077,6 +1035,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -1102,16 +1062,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -1161,17 +1113,17 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('project_id',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('project_id',
               '') }}
 
   # ── Stream 10: costs (incremental) ──
@@ -1195,6 +1147,8 @@ streams:
         request_parameters:
           bucket_width: 1d
           limit: "31"
+          start_time: "{{ stream_slice['start_time'] }}"
+          end_time: "{{ stream_slice['start_time'] | int + 86400 }}"
       paginator:
         $ref: "#/definitions/linked/UsagePaginator"
       record_selector:
@@ -1220,16 +1174,8 @@ streams:
         type: MinMaxDatetime
         datetime: "{{ now_utc().strftime('%Y-%m-%d') }}"
         datetime_format: "%Y-%m-%d"
-      step: P31D
-      cursor_granularity: P1D
-      start_time_option:
-        type: RequestOption
-        field_name: start_time
-        inject_into: request_parameter
-      end_time_option:
-        type: RequestOption
-        field_name: end_time
-        inject_into: request_parameter
+      step: P1D
+      cursor_granularity: PT1S
     schema_loader:
       type: InlineSchemaLoader
       schema:
@@ -1287,11 +1233,11 @@ streams:
           - type: AddedFieldDefinition
             path:
               - bucket_start_time
-            value: "{{ record.get('start_time', '') }}"
+            value: "{{ stream_slice['start_time'] }}"
           - type: AddedFieldDefinition
             path:
               - bucket_end_time
-            value: "{{ record.get('end_time', '') }}"
+            value: "{{ stream_slice['end_time'] }}"
           - type: AddedFieldDefinition
             path:
               - amount_value
@@ -1305,7 +1251,7 @@ streams:
               - unique_key
             value: >-
               {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
-              }}-{{ record.get('start_time', '') }}-{{ record.get('line_item',
+              }}-{{ stream_slice['start_time'] }}-{{ record.get('line_item',
               '') }}-{{ record.get('project_id', '') }}
 
 concurrency_level:
