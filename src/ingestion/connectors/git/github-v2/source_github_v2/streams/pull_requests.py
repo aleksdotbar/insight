@@ -1,6 +1,5 @@
 """GitHub pull requests stream (GraphQL, incremental, child of repos)."""
 
-import atexit
 import json
 import logging
 import os
@@ -59,7 +58,6 @@ class PullRequestsStream(GitHubGraphQLStream):
             mode="w", prefix="insight_pr_embedded_", suffix=".jsonl", delete=False,
         )
         self._embedded_data_path = self._embedded_data_file.name
-        atexit.register(lambda p=self._embedded_data_path: os.unlink(p) if os.path.exists(p) else None)
 
     def _query(self) -> str:
         return self._pr_query

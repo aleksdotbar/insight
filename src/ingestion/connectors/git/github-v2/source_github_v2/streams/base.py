@@ -133,6 +133,9 @@ class GitHubRestStream(HttpStream, ABC):
         if response.status_code == 409:
             logger.warning(f"Empty repository (409): {response.url}")
             return
+        if response.status_code >= 400:
+            logger.error(f"Unexpected HTTP {response.status_code}: {response.url} — {response.text[:200]}")
+            return
         data = response.json()
         records = data if isinstance(data, list) else [data]
         for record in records:
@@ -323,7 +326,7 @@ class GitHubGraphQLStream(HttpStream, ABC):
             except requests.RequestException as exc:
                 if attempt >= max_retries:
                     raise
-                logger.warning(f"GraphQL connection error (attempt {attempt + 1}), retrying in 60s: {exc}")
+                logger.warning(f"GraphQL connection error (attempt {attempt + 1}), sleeping 60s: {exc}")
                 time.sleep(60.0)
                 continue
 
