@@ -1,0 +1,9 @@
+services:
+  insight-front:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+    restart: unless-stopped

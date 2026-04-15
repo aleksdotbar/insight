@@ -6,10 +6,14 @@
 import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import type { OidcConfig } from '@/app/types/auth';
 
+// Runtime OIDC config injected by Docker entrypoint via window.__OIDC_CONFIG__
+declare global { interface Window { __OIDC_CONFIG__?: Partial<OidcConfig> } }
+const runtimeConfig = window.__OIDC_CONFIG__;
+
 const authMockMap = {
   'GET /auth/config': (): OidcConfig => ({
-    issuer_url: 'https://integrator-4985807.okta.com',
-    client_id: '0oa11soqqraMNbjZK698',
+    issuer_url: runtimeConfig?.issuer_url ?? '',
+    client_id: runtimeConfig?.client_id ?? '',
     redirect_uri: `${window.location.origin}/callback`,
     scopes: ['openid', 'profile', 'email'],
     response_type: 'code',
