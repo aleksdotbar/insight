@@ -34,6 +34,11 @@ export function odataDateFilter(period: PeriodValue): string {
   return `metric_date ge '${from}' and metric_date lt '${to}'`;
 }
 
+/** Escape a value for use inside OData single-quoted string literals. */
+export function odataEscapeValue(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
 /**
  * Mock-side inverse: infer PeriodValue from an OData $filter string.
  * Used so a single mock handler can return period-appropriate data.
