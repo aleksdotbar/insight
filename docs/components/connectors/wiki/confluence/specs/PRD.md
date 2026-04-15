@@ -249,7 +249,9 @@ The analytics viewers endpoint is paginated (default limit: 100 per response). T
 
 #### Resolve Email from accountId
 
-- [ ] `p1` - **ID**: `cpt-insightspec-fr-conf-email-resolution`
+- [ ] `p2` - **ID**: `cpt-insightspec-fr-conf-email-resolution`
+
+> **Phase 1 deferral**: Email resolution is delivered by the Silver/dbt layer via JOIN with the `jira_user` stream (shared Atlassian `accountId` namespace). The Confluence connector emits `accountId` only on `author_id` / `last_editor_id`; `author_email` / `last_editor_email` are populated downstream. Rationale: the v1 `/rest/api/user/bulk` endpoint cannot be expressed in the declarative YAML runtime without a CDK fallback, and the `jira_user` JOIN provides equivalent coverage for any organization that also operates Jira. Priority reduced from `p1` to `p2` per DESIGN §1.1 and §3.2 (driver row 5). Restore to `p1` with a dedicated User API stream when connector-level resolution is required (e.g., Confluence-only deployments with no Jira connector).
 
 The connector **MUST** collect all unique `accountId` values encountered in page responses (`authorId`, `version.authorId`) and analytics viewer records, and batch-resolve them to email via `GET /rest/api/user/bulk?accountId={id1}&accountId={id2}` (v1 API, up to 200 IDs per request).
 
@@ -271,13 +273,15 @@ Records with unresolvable email **MUST** retain the `accountId` in `user_id` and
 
 #### Preserve User Directory History (SCD Type 2)
 
-- [ ] `p1` - **ID**: `cpt-insightspec-fr-conf-user-scd`
+- [ ] `p2` - **ID**: `cpt-insightspec-fr-conf-user-scd`
+
+> **Phase 1 deferral**: The `wiki_users` stream is not emitted by the Confluence connector in Phase 1 (see FR `cpt-insightspec-fr-conf-email-resolution` deferral). SCD Type 2 versioning is therefore delivered by whichever Silver model assembles the canonical person timeline (from `jira_user`, HR, and any future connector-level Confluence user stream). Priority reduced from `p1` to `p2` per DESIGN §1.1 and §3.2 (driver row 5). Restore to `p1` alongside a dedicated `wiki_users` stream when connector-level user emission is required.
 
 The `wiki_users` table **MUST** preserve historical state changes using the SCD Type 2 pattern. When the connector detects a change in a user's attributes (email, display name, active status) between the current resolution and the most recent stored record, it **MUST** close the previous record and insert a new record with updated state.
 
 The Airbyte sync mode for `wiki_users` **MUST** be **Full Refresh | Append** (not overwrite). SCD Type 2 versioning (`valid_from`/`valid_to` or equivalent) **MUST** be applied at the destination layer via merge logic (e.g., ClickHouse ReplacingMergeTree with `_version` column, or destination-level MERGE statement). The implementation approach is deferred to DESIGN; note that Declarative YAML does not natively support stateful change detection, so destination-level MERGE is the expected path.
 
-**Note on Bronze schema**: The current `wiki_users` Bronze schema in `README.md` does not define `valid_from`/`valid_to` columns. SCD Type 2 is implemented at the destination/Silver level, not as explicit Bronze columns emitted by the connector. The connector emits the current-state snapshot with `_version` (millisecond timestamp) for deduplication; the destination merge logic derives `valid_from`/`valid_to` from successive snapshots.
+**Note on Bronze schema**: The current `wiki_users` Bronze schema in `README.md` does not define `valid_from`/`valid_to` columns. SCD Type 2 is implemented at the destination/Silver level, not as explicit Bronze columns emitted by the connector. If a future `wiki_users` stream is added, it would emit the current-state snapshot and rely on the framework-managed version column (`_airbyte_extracted_at`, not a custom `_version`) for deduplication; the destination merge logic derives `valid_from`/`valid_to` from successive snapshots.
 
 **Rationale**: The User API returns current state only. Without SCD Type 2, an email change or account deactivation silently overwrites history, breaking historical identity resolution.
 
@@ -313,9 +317,9 @@ Activity records use `(insight_source_id, page_id, user_id, date, data_source)` 
 
 The Airbyte sync mode for `wiki_pages` and `wiki_spaces` **MUST** be **Incremental | Append + Deduped** (upsert semantics). The `wiki_page_activity` stream **MUST** use **Incremental | Append + Deduped** with the composite key. The `wiki_users` stream **MUST** use **Full Refresh | Append** with SCD Type 2 handling.
 
-Every record **MUST** include a `_version` field set to `current_timestamp_ms()` at emit time (millisecond Unix timestamp). This field is the deduplication version column used by the destination (e.g., ClickHouse ReplacingMergeTree) to resolve which record wins during merge — later records always supersede earlier ones.
+Every record **MUST** be deduplicated deterministically at the destination: later records supersede earlier ones for the same `unique_key`. In Phase 1 this is satisfied by Airbyte's destination framework, which auto-generates `_airbyte_extracted_at` (DateTime64, per-write timestamp) on every row and creates the table as `ReplacingMergeTree(_airbyte_extracted_at) ORDER BY unique_key`. No custom `_version` field is emitted by the manifest — project-wide convention shared with other nocode connectors (jira, zoom). See DESIGN §3.7.
 
-**Rationale**: Without upsert semantics, overlapping incremental windows produce duplicate rows. URN keys provide unambiguous cross-instance identity. `_version` ensures deterministic merge resolution at the destination layer.
+**Rationale**: Without upsert semantics, overlapping incremental windows produce duplicate rows. URN keys provide unambiguous cross-instance identity. The framework-managed `_airbyte_extracted_at` ensures deterministic merge resolution at the destination layer.
 
 **Actors**: `cpt-insightspec-actor-conf-api`
 
@@ -521,10 +525,10 @@ The connector **MUST** extract all pages and versions matching the configured sp
 - [ ] View analytics extracted on Premium tier instances (with paginated viewer endpoint); gracefully skipped on Standard tier with null view fields
 - [ ] `wiki_pages.view_count` and `distinct_viewers` populated from analytics summary endpoint (`GET /analytics/content/{id}`); null on Standard tier
 - [ ] User directory populated via `accountId` → email resolution from User API bulk endpoint; managed/SCIM accounts with null email handled gracefully
-- [ ] User directory preserves historical state with SCD Type 2 (destination-level merge via `_version`)
+- [ ] User directory preserves historical state with SCD Type 2 (destination-level merge via framework-managed version column) — **deferred, see FR `cpt-insightspec-fr-conf-user-scd` Phase 1 note**
 - [ ] Per-space incremental cursors: second run extracts only modified pages per space; adding a new space triggers full load for that space only
 - [ ] `email` resolved and backfilled into page and activity records; null when unavailable
-- [ ] `_version` (millisecond timestamp) present on all records for deduplication
+- [ ] Every record carries a destination-level version column used for deduplication (framework-managed `_airbyte_extracted_at` in Phase 1; see DESIGN §3.7)
 - [ ] URN-based surrogate primary keys on entity streams
 - [ ] `insight_source_id` and `data_source = 'insight_confluence'` emitted by connector; `tenant_id` injected by platform
 - [ ] All timestamps stored in UTC
@@ -561,7 +565,7 @@ The connector **MUST** extract all pages and versions matching the configured sp
 - The `/rest/api/user/bulk` endpoint (v1) is accessible with `read:confluence-user` scope; `manage:confluence-user` is not required. If this assumption is incorrect, the DESIGN must specify the minimum required scope
 - The Airbyte Declarative Connector framework (YAML) can handle standard pagination and incremental sync but email resolution (batch lookup + backfill) and version-to-activity row expansion may require Python CDK components
 - The unified wiki schema (`wiki_*` tables) is shared with Outline; `data_source = 'insight_confluence'` discriminates Confluence records
-- The `wiki_*` Bronze schemas in `README.md` do not define `tenant_id` or SCD Type 2 columns (`valid_from`/`valid_to`). `tenant_id` is injected by the platform/destination layer; SCD Type 2 is implemented at the destination via merge logic using the `_version` column
+- The `wiki_*` Bronze schemas in `README.md` do not define `tenant_id` or SCD Type 2 columns (`valid_from`/`valid_to`). `tenant_id` is injected by the manifest via `AddFields`; SCD Type 2 is implemented at the destination/Silver layer via merge logic against the framework-managed version column (`_airbyte_extracted_at`)
 - `confluence_collection_runs` is a connector-specific table (not `wiki_collection_runs` from the unified schema) because it includes Confluence-specific instrumentation fields
 - `GET /spaces` returns only spaces visible to the authenticated API token user. Spaces restricted by space permissions are silently excluded — no error is returned for invisible spaces
 - ~~The `/pages` endpoint requires `?expand=version` to include `version.authorId` and `version.createdAt` in the response. Without this expansion parameter, version metadata fields are absent from the response with no error~~ **Corrected in DESIGN**: v2 returns the `version` object by default; no `expand` parameter needed (confirmed via live API testing)

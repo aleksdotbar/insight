@@ -13,6 +13,23 @@ definitions:
     username: "{{ config['confluence_email'] }}"
     password: "{{ config['confluence_api_token'] }}"
 
+  # Error handling per DESIGN §2.2 (cpt-insightspec-constraint-conf-rate-limit)
+  # and §3.6 (rows 530-534): 401/403 halt the run; 429 honours Retry-After; 503
+  # is also rate-limit on Atlassian, retry with backoff; other 5xx retry with
+  # exponential backoff.
+  error_handler:
+    type: DefaultErrorHandler
+    backoff_strategies:
+      - type: WaitTimeFromHeader
+        header: Retry-After
+    response_filters:
+      - type: HttpResponseFilter
+        action: RETRY
+        http_codes: [429, 503]
+      - type: HttpResponseFilter
+        action: FAIL
+        http_codes: [401, 403]
+
   base_requester:
     type: HttpRequester
     url_base: "{{ config['confluence_instance_url'] }}"
@@ -21,6 +38,8 @@ definitions:
       $ref: "#/definitions/auth"
     request_headers:
       Accept: application/json
+    error_handler:
+      $ref: "#/definitions/error_handler"
 
   add_fields:
     type: AddFields
@@ -83,7 +102,7 @@ definitions:
       last_editor_id: {type: ["string", "null"]}
       created_at: {type: ["string", "null"]}
       updated_at: {type: ["string", "null"]}
-      version_number: {type: ["string", "null"]}
+      version_number: {type: ["integer", "null"]}
       parent_page_id: {type: ["string", "null"]}
       collected_at: {type: ["string", "null"]}
     additionalProperties: true
@@ -101,7 +120,7 @@ definitions:
       source_id: {type: ["string", "null"]}
       data_source: {type: ["string", "null"]}
       page_id: {type: ["string", "null"]}
-      version_number: {type: ["string", "null"]}
+      version_number: {type: ["integer", "null"]}
       author_id: {type: ["string", "null"]}
       created_at: {type: ["string", "null"]}
       message: {type: ["string", "null"]}
@@ -139,6 +158,8 @@ streams:
         fields:
           - path: [space_id]
             value: "{{ record['id'] }}"
+          - path: [name]
+            value: "{{ record.get('name', '') }}"
           - path: [description]
             value: >-
               {{ (record.get('description', {}) or {}).get('plain', {}).get('value', '') }}

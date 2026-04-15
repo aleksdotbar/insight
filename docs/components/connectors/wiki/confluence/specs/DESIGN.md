@@ -67,7 +67,7 @@ Every emitted record includes `tenant_id`, `source_id`, and `unique_key` (patter
 | `cpt-insightspec-fr-conf-edit-activity` | `DeclarativeStream wiki_page_versions` as substream of `wiki_pages` via `SubstreamPartitionRouter`; fetches `GET /wiki/api/v2/pages/{page_id}/versions`; writes raw version records. **Deferred**: expansion to `wiki_page_activity` (one row per edit per user per day) happens in Silver/dbt, not at connector level |
 | `cpt-insightspec-fr-conf-view-analytics` | **Deferred to Phase 2**. Analytics endpoints live under v1 (`/wiki/rest/api/analytics/...`), not v2. Per-page iteration is expensive. `view_count` and `distinct_viewers` are NULL in Phase 1 |
 | `cpt-insightspec-fr-conf-email-resolution` | **Deferred to Silver/dbt**. Connector emits `accountId` only; email resolved via JOIN with `jira_user` (same Atlassian `accountId`). Phase 2: dedicated `/wiki/rest/api/user/bulk` resolution (max 100 IDs per request, not 200 as PRD states) |
-| `cpt-insightspec-fr-conf-deduplication` | Upsert keyed on natural PKs per table; `ReplacingMergeTree(_version)` at storage level |
+| `cpt-insightspec-fr-conf-deduplication` | Upsert keyed on natural PKs per table; `ReplacingMergeTree(_airbyte_extracted_at)` at storage level (framework-managed) |
 | `cpt-insightspec-fr-conf-incremental-sync` | `DatetimeBasedCursor` on `updated_at` (mapped from `version.createdAt`) with `is_client_side_incremental: true`; pages sorted by `-modified-date` to enable early termination |
 | `cpt-insightspec-fr-conf-identity-key` | Cloud-only — always `accountId` as `user_id`; extracted via DPath from `authorId` and `version.authorId` fields |
 | `cpt-insightspec-fr-conf-instance-context` | `AddFields` transformation injects `tenant_id`, `source_id`, `unique_key`, and `data_source` on every record |
@@ -108,7 +108,7 @@ Every emitted record includes `tenant_id`, `source_id`, and `unique_key` (patter
 | Orchestration | Trigger, schedule, state management | Argo Workflows / Airbyte platform |
 | Collection | REST pagination, cursor management, retry | Airbyte DeclarativeSource (YAML manifest) |
 | Transformation | `AddFields` for `tenant_id`, `source_id`, `unique_key`, `data_source` injection; DPath extraction | Declarative transformations |
-| Storage | Upsert to Bronze tables | ClickHouse `ReplacingMergeTree(_version)` |
+| Storage | Upsert to Bronze tables | ClickHouse `ReplacingMergeTree(_airbyte_extracted_at)` (framework-managed) |
 
 ---
 
@@ -252,7 +252,7 @@ Encapsulates authentication configuration for Confluence Cloud REST API requests
 
 - `BasicHttpAuthenticator` with Basic Auth: `Authorization: Basic base64({email}:{api_token})`.
 - Applied globally to all streams via the manifest's `requester` definitions.
-- Handles HTTP error responses: 401/403 halt the run; 404 skips the entity; 429 triggers backoff; 5xx retries with exponential backoff.
+- Handles HTTP error responses via a `DefaultErrorHandler` wired into `base_requester`: 401/403 halt the run (FAIL); 429 and 503 retry with `WaitTimeFromHeader` backoff on `Retry-After` (Atlassian uses 503 for throttling per §2.2); 404 and other unhandled responses follow Airbyte's default behaviour (skip/fail respectively).
 
 ##### Responsibility boundaries
 
@@ -349,6 +349,8 @@ Extracts user identity attributes from Confluence Cloud API page and version obj
 | Airbyte declarative manifest runtime | `DeclarativeSource`, stream definitions, `AirbyteMessage` | Connector framework |
 | `descriptor.yaml` | Connector descriptor: `schedule`, `workflow`, `dbt_select`, `connection.namespace` | Package registration per Connector Framework §4.10 |
 
+> **Phase 1 dbt scope**: `descriptor.yaml` ships with `dbt_select: ""` and `silver_targets: []`. Silver models for `class_wiki_pages` and `class_wiki_activity` are deferred to Phase 2 (see §3.7 note on `wiki_page_activity`). `dbt/schema.yml` contains Bronze source declarations only — no staging or Silver models. The Argo `dbt` step is therefore a deliberate no-op until Phase 2 lands Silver routing.
+
 **Dependency Rules**:
 - No circular dependencies between streams.
 - The manifest is the single source of truth for all stream definitions.
@@ -387,9 +389,9 @@ Extracts user identity attributes from Confluence Cloud API page and version obj
 
 | Aspect | Value |
 |--------|-------|
-| Engine | `ReplacingMergeTree(_version)` |
+| Engine | `ReplacingMergeTree(_airbyte_extracted_at)` — framework-managed; see §3.7 |
 | Write pattern | Upsert keyed on natural primary keys per table |
-| Standard columns | `tenant_id`, `source_id`, `unique_key`, `data_source`, `_version` on all tables |
+| Standard columns | `tenant_id`, `source_id`, `unique_key`, `data_source`, `collected_at` injected by manifest; `_airbyte_extracted_at`, `_airbyte_raw_id`, `_airbyte_meta`, `_airbyte_generation_id` auto-added by the destination framework |
 
 ---
 
@@ -482,9 +484,9 @@ All Bronze table schemas are defined in [`confluence.md`](../confluence.md) and 
 | `wiki_pages` | `[unique_key]` | `{tenant_id}-{source_id}-{page_id}` | `updated_at` (from `version.createdAt`) — incremental via client-side cursor |
 | `wiki_page_versions` | `[unique_key]` | `{tenant_id}-{source_id}-{page_id}-{version_number}` | Child of `wiki_pages` — scoped by parent page set |
 
-All tables use `ReplacingMergeTree(_version)` with `_version = toUnixTimestamp64Milli(now64())` for deduplication.
+All tables are created by the Airbyte ClickHouse destination as `ReplacingMergeTree(_airbyte_extracted_at) ORDER BY unique_key`. Airbyte's destination framework auto-generates `_airbyte_extracted_at` (DateTime64) on every row and uses it as the version column — no custom `_version` field is injected by the manifest. This matches the project-wide convention (jira, zoom, and the AI connectors all rely on the same framework-managed deduplication). Additional framework-generated columns present at runtime: `_airbyte_raw_id`, `_airbyte_meta`, `_airbyte_generation_id`.
 
-> **Note on schema types**: Stream schemas use explicit typed property definitions (`["string", "null"]`, `["boolean", "null"]`) to enable ClickHouse destination to create tables with correct column types. All schemas include `required: [unique_key, tenant_id, source_id]` and `additionalProperties: true`.
+> **Note on schema types**: Stream schemas use explicit typed property definitions to enable ClickHouse destination to create tables with correct column types: `["string", "null"]` for most fields, `["boolean", "null"]` for `minor_edit`, and `["integer", "null"]` for `version_number` (in both `wiki_pages` and `wiki_page_versions`, since the Confluence v2 API returns `version.number` as an integer). All schemas include `required: [unique_key, tenant_id, source_id]` and `additionalProperties: true`.
 >
 > **Note on `wiki_page_activity`**: The PRD defines a `wiki_page_activity` table with per-user per-day edit and view counts. In Phase 1, this table is NOT populated by the connector. Raw version records are stored in `wiki_page_versions`; expansion to `wiki_page_activity` (one row per edit per user per day) is deferred to Silver/dbt. View activity (analytics) is deferred to Phase 2.
 >
@@ -748,7 +750,7 @@ The following DESIGN checklist domains are intentionally omitted from this docum
 | SEC-DESIGN-004 — Security Boundaries | Not applicable | Single-direction data pull from Confluence API to Bronze. No inbound attack surface. Network segmentation is owned by deployment infrastructure. |
 | SEC-DESIGN-005 — Threat Modeling | Not applicable | Internal ETL tool pulling wiki metadata from an organization's own Confluence instance. Formal threat model deferred to the platform security team. |
 | SEC-DESIGN-006 — Audit & Compliance | Not applicable | Airbyte platform sync logs provide extraction audit trail. Log aggregation and retention are platform responsibilities. |
-| REL-DESIGN-003 — Data Consistency | Addressed in design | Upsert semantics with `ReplacingMergeTree(_version)` ensure idempotent writes. Documented in Section 3.7 and Section 4 Collection Strategy. |
+| REL-DESIGN-003 — Data Consistency | Addressed in design | Upsert semantics with `ReplacingMergeTree(_airbyte_extracted_at)` ensure idempotent writes (framework-managed). Documented in Section 3.7 and Section 4 Collection Strategy. |
 | REL-DESIGN-004 — Recovery Architecture | Not applicable | The connector owns no persistent state beyond Bronze table rows and Airbyte-managed cursor state. Recovery = re-run from cursor. |
 | REL-DESIGN-005 — Resilience Patterns | Not applicable | Fault tolerance and retry are documented in Section 2.1 and Section 4. No canary/blue-green deployment patterns apply to a batch connector. |
 | DATA-DESIGN-003 — Data Governance | Not applicable | Data lineage, catalog integration, and master data management are owned by the Gold-layer platform team, not individual connectors. |

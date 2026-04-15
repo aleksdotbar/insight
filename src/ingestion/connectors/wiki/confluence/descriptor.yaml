@@ -2,8 +2,13 @@ name: confluence
 version: "1.0"
 
 schedule: "0 4 * * *"
-dbt_select: "tag:confluence+"
 workflow: sync
+
+# Phase 1 scope: Bronze-only. Silver routing (class_wiki_pages, class_wiki_activity)
+# is deferred to Phase 2 per DESIGN §1.1 and §3.7. Empty `dbt_select` makes the
+# dbt step a deliberate no-op until Silver models are added.
+silver_targets: []
+dbt_select: ""
 
 connection:
   namespace: bronze_confluence
