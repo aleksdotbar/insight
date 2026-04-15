@@ -127,6 +127,11 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
       eventBus.emit(IcDashboardEvents.IcDashboardLoaded, data);
       eventBus.emit(IcDashboardEvents.IcPersonLoaded, person);
       eventBus.emit(IcDashboardEvents.IcDashboardAvailabilityLoaded, availability);
+    })
+    .catch((err: unknown) => {
+      // Promise.allSettled never rejects, but guard against unexpected
+      // errors in the transform/emit logic above.
+      eventBus.emit(IcDashboardEvents.IcDashboardLoadFailed, String(err));
     });
 };
 
