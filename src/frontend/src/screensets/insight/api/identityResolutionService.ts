@@ -15,23 +15,18 @@ import type { PersonData } from '../types';
 // Mock data — names/seniority aligned with TEAM_MEMBERS_MONTH in team-view-base.ts
 // ---------------------------------------------------------------------------
 
-const MOCK_PERSONS: Record<string, PersonData> = {
-  // p0 — executive persona (not a team member, has no IC metrics row)
-  p0:  { person_id: 'p0',  name: 'David Park',    role: 'Engineering Director',   seniority: 'Lead'   },
-  // p1–p12 match TEAM_MEMBERS_MONTH exactly
-  p1:  { person_id: 'p1',  name: 'Alice Kim',     role: 'Senior Software Engineer', seniority: 'Senior' },
-  p2:  { person_id: 'p2',  name: 'Ben Clarke',    role: 'Software Engineer',        seniority: 'Middle' },
-  p3:  { person_id: 'p3',  name: 'Tom Sullivan',  role: 'Software Engineer',        seniority: 'Middle' },
-  p4:  { person_id: 'p4',  name: 'Sara Jansen',   role: 'Junior Software Engineer', seniority: 'Junior' },
-  p5:  { person_id: 'p5',  name: 'Mike Chen',     role: 'Senior Software Engineer', seniority: 'Senior' },
-  p6:  { person_id: 'p6',  name: 'Emma Davis',    role: 'Tech Lead',                seniority: 'Lead'   },
-  p7:  { person_id: 'p7',  name: 'Carlos Ruiz',   role: 'Software Engineer',        seniority: 'Middle' },
-  p8:  { person_id: 'p8',  name: 'Priya Patel',   role: 'Senior Software Engineer', seniority: 'Senior' },
-  p9:  { person_id: 'p9',  name: 'James Wilson',  role: 'Junior Software Engineer', seniority: 'Junior' },
-  p10: { person_id: 'p10', name: 'Ana Kovac',     role: 'Software Engineer',        seniority: 'Middle' },
-  p11: { person_id: 'p11', name: 'Leo Zhang',     role: 'Senior Software Engineer', seniority: 'Senior' },
-  p12: { person_id: 'p12', name: 'Nina Ross',     role: 'Junior Software Engineer', seniority: 'Junior' },
-};
+// Derived from the single source of truth: registry.ts
+import { PEOPLE } from './mocks/registry';
+
+const MOCK_PERSONS: Record<string, PersonData> = Object.fromEntries([
+  // p0 — executive persona (not a team member)
+  ['p0', { person_id: 'p0', name: 'David Park', role: 'Engineering Director', seniority: 'Lead' }],
+  // All people from registry
+  ...PEOPLE.map((p) => [
+    p.person_id,
+    { person_id: p.person_id, name: p.name, role: p.role, seniority: p.seniority },
+  ]),
+]);
 
 const MOCK_IDENTITY_MAP: MockMap = Object.fromEntries(
   Object.entries(MOCK_PERSONS).map(([id, person]): [string, () => PersonData] => [

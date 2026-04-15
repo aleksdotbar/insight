@@ -17,7 +17,8 @@ import { odataDateFilter } from '../utils/periodToDateRange';
 import { transformExecRows } from '../api/transforms';
 import type { PeriodValue, ExecViewData } from '../types';
 import type { RawExecSummaryRow } from '../api/rawTypes';
-import { EXEC_VIEW_CONFIG } from '../api/mocks/fixtures/executive-view';
+import { EXEC_VIEW_CONFIG } from '../api/viewConfigs';
+import { settled, emptyOdata } from '../utils/settledResult';
 
 export const loadExecutiveView = (period: PeriodValue): void => {
   eventBus.emit(ExecutiveViewEvents.ExecutiveViewLoadStarted);
@@ -26,13 +27,16 @@ export const loadExecutiveView = (period: PeriodValue): void => {
   const connectors = apiRegistry.getService(ConnectorManagerService);
   const filter     = odataDateFilter(period);
 
-  // Critical path — metric data only
-  void api.queryMetric<RawExecSummaryRow>(METRIC_REGISTRY.EXEC_SUMMARY, {
-    $filter:  filter,
-    $orderby: 'org_unit_name asc',
-    $top:     200,
-  })
-    .then((summaryResp) => {
+  void Promise.allSettled([
+    api.queryMetric<RawExecSummaryRow>(METRIC_REGISTRY.EXEC_SUMMARY, {
+      $filter:  filter,
+      $orderby: 'org_unit_name asc',
+      $top:     200,
+    }),
+    connectors.getDataAvailability(),
+  ])
+    .then(([summaryResult, availResult]) => {
+      const summaryResp = settled(summaryResult, emptyOdata<RawExecSummaryRow>(), 'EXEC_SUMMARY');
       const teams = transformExecRows(summaryResp.items, EXEC_VIEW_CONFIG.column_thresholds);
 
       const withValue = <T>(vals: (T | null)[]): T[] =>
@@ -58,15 +62,17 @@ export const loadExecutiveView = (period: PeriodValue): void => {
       };
 
       eventBus.emit(ExecutiveViewEvents.ExecutiveViewLoaded, data);
-    })
-    .catch((err: unknown) => {
-      eventBus.emit(ExecutiveViewEvents.ExecutiveViewLoadFailed, String(err));
-    });
 
-  // Best-effort — availability does not block the view
-  void connectors.getDataAvailability()
-    .then((availability) => {
+      const availability = settled(
+        availResult,
+        { git: 'no-connector', tasks: 'no-connector', ci: 'no-connector', comms: 'no-connector', hr: 'no-connector', ai: 'no-connector' } as const,
+        'CONNECTORS',
+      );
       eventBus.emit(ExecutiveViewEvents.ExecutiveViewAvailabilityLoaded, availability);
     })
-    .catch(() => { /* availability is optional */ });
+    .catch((err: unknown) => {
+      // Promise.allSettled never rejects, but guard against unexpected
+      // errors in the transform/emit logic above.
+      eventBus.emit(ExecutiveViewEvents.ExecutiveViewLoadFailed, String(err));
+    });
 };

@@ -8,7 +8,7 @@ import { CurrentUserEvents } from '../events/currentUserEvents';
 import { setCurrentUser } from '../slices/currentUserSlice';
 import { setSelectedPersonId } from '../slices/icDashboardSlice';
 import { setSelectedTeamId } from '../slices/teamViewSlice';
-import { TEAM_MEMBERS_MONTH } from '../api/mocks';
+import { TEAMS, PEOPLE_BY_ID, teamMembers } from '../api/mocks/registry';
 import type { CurrentUser, UserRole, TeamMember } from '../types';
 import {
   INSIGHT_SCREENSET_ID,
@@ -21,7 +21,7 @@ import {
 const menuKey = (key: string) => `screenset.${INSIGHT_SCREENSET_ID}:menu_items.${key}.label`;
 
 // ---------------------------------------------------------------------------
-// Org structure — single source of truth for hierarchy
+// Org structure — derived from registry (single source of truth)
 // ---------------------------------------------------------------------------
 type OrgTeam = {
   teamId: string;
@@ -31,32 +31,29 @@ type OrgTeam = {
   subTeams?: OrgTeam[];
 };
 
-export const ORG: OrgTeam[] = [
-  {
-    teamId: 'backend',
-    label: 'Backend',
-    leadId: 'p5',
-    memberIds: ['p1', 'p3', 'p4'],
-  },
-  {
-    teamId: 'platform',
-    label: 'Platform',
-    leadId: 'p6',
-    memberIds: ['p2', 'p8'],
-  },
-  {
-    teamId: 'frontend',
-    label: 'Frontend',
-    leadId: 'p11',
-    memberIds: ['p7', 'p9', 'p10', 'p12'],
-  },
-];
+// Lead determined by is_lead flag in registry; rest are members
+export const ORG: OrgTeam[] = TEAMS.map((t) => {
+  const members = teamMembers(t.id);
+  const lead = members.find((m) => m.is_lead);
+  const rest = members.filter((m) => !m.is_lead);
+  return {
+    teamId: t.id,
+    label: t.name,
+    leadId: lead?.person_id ?? '',
+    memberIds: rest.map((m) => m.person_id),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-const byId = (id: string): TeamMember | undefined =>
-  TEAM_MEMBERS_MONTH.find((m: TeamMember) => m.person_id === id);
+const byId = (id: string): TeamMember | undefined => {
+  const p = PEOPLE_BY_ID[id];
+  if (!p) return undefined;
+  return { person_id: p.person_id, name: p.name, seniority: p.seniority, period: 'month',
+    tasks_closed: 0, bugs_fixed: 0, dev_time_h: 0, prs_merged: 0,
+    build_success_pct: null, focus_time_pct: 0, ai_tools: p.ai_tools, ai_loc_share_pct: 0 };
+};
 
 const memberItem = (m: TeamMember | undefined, isLead = false) =>
   m
@@ -146,6 +143,6 @@ export const initializeCurrentUserEffects = (dispatch: AppDispatch): void => {
   });
 
   // Build initial menu for default user on startup
-  const defaultUser: CurrentUser = { personId: 'p0', name: 'David Park', role: 'executive', teamId: '' };
+  const defaultUser: CurrentUser = { personId: 'p0', name: 'David Park', role: 'executive', teamId: TEAMS[0]?.id ?? '' };
   dispatch(setMenuItems(buildMenu(defaultUser.role, defaultUser) as Parameters<typeof setMenuItems>[0]));
 };
