@@ -37,6 +37,7 @@ import {
   mockTeamMemberRowsForTeam,
   mockTeamBulletSection,
   mockIcScenario,
+  PEOPLE,
 } from './mocks/factories';
 
 // Re-export all factory functions for test / story consumers
@@ -178,8 +179,15 @@ function cachedIcScenario(personId: string): IcScenarioCache {
   return cached;
 }
 
-// Track IC KPI call count per person to alternate kpiAggregate/prevKpiAggregate
-const icKpiCallCount = new Map<string, number>();
+/** Returns true when the OData filter describes a previous-period range (end date is in the past). */
+function isPrevPeriodFilter(filter: string): boolean {
+  const m = /metric_date lt '(\d{4}-\d{2}-\d{2})'/.exec(filter);
+  if (!m) return false;
+  const endDate = new Date(m[1]);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return endDate <= today;
+}
 
 // ---------------------------------------------------------------------------
 // IC drill generator -- simple inline drill data per drill type
@@ -275,7 +283,7 @@ function generateDrill(did: string, personId: string): DrillData {
     },
     'reviews': () => {
       const count = Math.max(2, Math.round(vary(10, seed, 5)));
-      const reviewers = ['Alice Kim', 'Ben Clarke', 'Tom Sullivan', 'Sara Jansen', 'Mike Chen', 'Emma Davis'];
+      const reviewers = PEOPLE.map((p) => p.name);
       const rows: DrillRow[] = Array.from({ length: count }, (_, i) => ({
         PR: `PR #${550 + pid * 8 - i * 4}`,
         Author: reviewers[i % reviewers.length] as string,
@@ -409,18 +417,14 @@ export const insightMockMap = {
   }, {})),
 
   // IC KPIs -- returns RawIcAggregateRow[]
-  // Alternates between kpiAggregate and prevKpiAggregate on successive calls
-  // (the action makes 2 requests for delta computation)
+  // Chooses current vs previous aggregate by inspecting the date range in $filter.
+  // A filter whose end date (metric_date lt) is already in the past is a previous-period request.
   [`POST /api/analytics/v1/metrics/${METRIC_REGISTRY.IC_KPIS}/query`]:
     (body: unknown): ODataResponse<RawIcAggregateRow> => {
       const f = odata(body).$filter ?? '';
       const pid = person(f);
       const scenario = cachedIcScenario(pid);
-      const callKey = `${pid}`;
-      const count = icKpiCallCount.get(callKey) ?? 0;
-      icKpiCallCount.set(callKey, count + 1);
-      // Even calls return current, odd calls return previous (for delta)
-      const row = count % 2 === 0 ? scenario.kpiAggregate : scenario.prevKpiAggregate;
+      const row = isPrevPeriodFilter(f) ? scenario.prevKpiAggregate : scenario.kpiAggregate;
       return wrap([row]);
     },
 

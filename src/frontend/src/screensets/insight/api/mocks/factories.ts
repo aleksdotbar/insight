@@ -337,7 +337,7 @@ export function mockIcBulletSection(section: string, seed = 0): RawBulletAggrega
     const row: RawBulletAggregateRow = {
       metric_key: def.metric_key,
       value,
-      median: def.median || null,
+      median: def.median ?? null,
       p5: null,
       p95: null,
     };
@@ -375,10 +375,7 @@ export function mockTeamScenario(teamId = 'backend'): {
   bullets: Record<string, RawBulletAggregateRow[]>;
 } {
   const teamSeed = hashStr(teamId);
-  const members = mockTeamMemberRows(8).map((m, i) => ({
-    ...m,
-    person_id: `p${i + 1}`,
-  }));
+  const members = mockTeamMemberRowsForTeam(teamId);
 
   const bulletSections = ['task_delivery', 'code_quality', 'estimation', 'ai_adoption', 'collaboration'];
   const bullets: Record<string, RawBulletAggregateRow[]> = {};

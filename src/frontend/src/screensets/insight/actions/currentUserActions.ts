@@ -5,12 +5,12 @@
 
 import { eventBus } from '@hai3/react';
 import { CurrentUserEvents } from '../events/currentUserEvents';
-import { PEOPLE } from '../api/mocks/registry';
+import { PEOPLE, TEAMS } from '../api/mocks/registry';
 import type { CurrentUser } from '../types';
 
 // Demo users derived from registry — executive + one lead + one IC per team
 export const MOCK_USERS: CurrentUser[] = [
-  { personId: 'p0', name: 'David Park', role: 'executive', teamId: '' },
+  { personId: 'p0', name: 'David Park', role: 'executive', teamId: TEAMS[0]?.id ?? '' },
   ...PEOPLE.map((p) => ({
     personId: p.person_id,
     name: p.name,
