@@ -195,6 +195,7 @@ export function transformIcKpis(
       value,
       unit: def.unit,
       sublabel: def.sublabel,
+      description: def.description,
       delta,
       delta_type: dt,
     };

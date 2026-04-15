@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Button, Card, CardContent, ScrollArea, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge, Skeleton } from '@hai3/uikit';
+import { Button, Card, CardContent, Table, TableHeader, TableBody, TableHead, TableRow, TableCell, Badge, Skeleton } from '@hai3/uikit';
 import { DynamicWidthBar } from '../../../uikit/base/DynamicWidthBar';
 import MetricInfo from '../../../uikit/base/MetricInfo';
 import type { TeamMember, ColumnThreshold } from '../../../types';
@@ -106,12 +106,11 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
             View team stats ↗
           </Button>
         )}
-        <span className="text-xs text-gray-400">Click member to open IC dashboard</span>
+        <span className="hidden sm:inline text-xs text-gray-400">Click member to open IC dashboard</span>
       </div>
     </div>
     <CardContent className="p-0">
-      <ScrollArea className="w-full">
-        <Table>
+        <Table className="min-w-max">
           <TableHeader>
             <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
               {colHeaders.map((col) => (
@@ -198,7 +197,6 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
             )}
           </TableBody>
         </Table>
-      </ScrollArea>
     </CardContent>
   </Card>
   );

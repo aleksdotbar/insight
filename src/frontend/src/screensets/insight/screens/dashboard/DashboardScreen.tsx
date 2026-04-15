@@ -95,7 +95,7 @@ export const DashboardScreen: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-8">
+    <div className="flex flex-col gap-6 p-4 sm:p-8">
       {/* Stats Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {dashboard.stats.map((stat) => (
@@ -153,7 +153,7 @@ export const DashboardScreen: React.FC = () => {
       {/* Bottom Metrics */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4">
             {dashboard.bottomMetrics.map((metric) => (
               <div key={metric.key} className="flex flex-col items-center gap-1">
                 <TextLoader skeletonClassName="h-3 w-16">
@@ -172,7 +172,7 @@ export const DashboardScreen: React.FC = () => {
           <TextLoader skeletonClassName="h-5 w-40">
             <p className="text-sm font-medium mb-4">{t(`${ns}:period_split`)}</p>
           </TextLoader>
-          <div className="grid grid-cols-3 gap-8">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-8">
             {dashboard.periodSplits.map((split) => (
               <div key={split.label} className="flex flex-col">
                 <p className="text-xs text-muted-foreground">{split.label}</p>

@@ -220,6 +220,7 @@ export interface TeamKpi {
   unit: string;
   sublabel?: string;
   chipLabel?: string;
+  description?: string;
   status: 'good' | 'warn' | 'bad';
   section: string;
 }
