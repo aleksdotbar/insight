@@ -24,7 +24,8 @@ import type { RawTeamMemberRow, RawBulletAggregateRow } from '../api/rawTypes';
 import {
   TEAM_KPIS_BY_PERIOD,
   TEAM_VIEW_CONFIG,
-} from '../api/mocks/fixtures/team-view-base';
+} from '../api/viewConfigs';
+import { settled, emptyOdata } from '../utils/settledResult';
 
 // ---------------------------------------------------------------------------
 // Team KPI derivation (§4.2 — frontend-computed from member rows)
@@ -68,8 +69,7 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
 
   const teamFilter = `org_unit_id eq '${odataEscapeValue(teamId)}' and ${odataDateFilter(period)}`;
 
-  // Critical path — metric data only
-  void Promise.all([
+  void Promise.allSettled([
     api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, {
       $filter:  teamFilter,
       $orderby: 'display_name asc',
@@ -79,15 +79,22 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
     api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_QUALITY,  { $filter: teamFilter }),
     api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_COLLAB,   { $filter: teamFilter }),
     api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_AI,       { $filter: teamFilter }),
+    connectors.getDataAvailability(),
   ])
-    .then(([membersResp, delivery, quality, collab, ai]) => {
+    .then(([membersResult, deliveryResult, qualityResult, collabResult, aiResult, availResult]) => {
+      const membersResp  = settled(membersResult,  emptyOdata<RawTeamMemberRow>(),        'TEAM_MEMBER');
+      const deliveryResp = settled(deliveryResult,  emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_DELIVERY');
+      const qualityResp  = settled(qualityResult,   emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_QUALITY');
+      const collabResp   = settled(collabResult,    emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_COLLAB');
+      const aiResp       = settled(aiResult,        emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_AI');
+
       const members = transformTeamMembers(membersResp.items, period);
 
       const bulletSections = [
-        { id: 'task_delivery',  title: 'Task Delivery',  metrics: transformBulletMetrics(delivery.items, 'task_delivery', period) },
-        { id: 'code_quality',   title: 'Code & Quality', metrics: transformBulletMetrics(quality.items,  'code_quality',  period) },
-        { id: 'collaboration',  title: 'Collaboration',  metrics: transformBulletMetrics(collab.items,   'collaboration', period) },
-        { id: 'ai_adoption',    title: 'AI Adoption',    metrics: transformBulletMetrics(ai.items,       'ai_adoption',   period) },
+        { id: 'task_delivery',  title: 'Task Delivery',  metrics: transformBulletMetrics(deliveryResp.items, 'task_delivery', period) },
+        { id: 'code_quality',   title: 'Code & Quality', metrics: transformBulletMetrics(qualityResp.items,  'code_quality',  period) },
+        { id: 'collaboration',  title: 'Collaboration',  metrics: transformBulletMetrics(collabResp.items,   'collaboration', period) },
+        { id: 'ai_adoption',    title: 'AI Adoption',    metrics: transformBulletMetrics(aiResp.items,       'ai_adoption',   period) },
       ].filter((s) => s.metrics.length > 0);
 
       const teamName = teamId.charAt(0).toUpperCase() + teamId.slice(1);
@@ -101,15 +108,17 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
       };
 
       eventBus.emit(TeamViewEvents.TeamViewLoaded, data);
-    })
-    .catch((err: unknown) => {
-      eventBus.emit(TeamViewEvents.TeamViewLoadFailed, String(err));
-    });
 
-  // Best-effort — availability does not block the view
-  void connectors.getDataAvailability()
-    .then((availability) => {
+      const availability = settled(
+        availResult,
+        { git: 'no-connector', tasks: 'no-connector', ci: 'no-connector', comms: 'no-connector', hr: 'no-connector', ai: 'no-connector' } as const,
+        'CONNECTORS',
+      );
       eventBus.emit(TeamViewEvents.TeamViewAvailabilityLoaded, availability);
     })
-    .catch(() => { /* availability is optional */ });
+    .catch((err: unknown) => {
+      // Promise.allSettled never rejects, but guard against unexpected
+      // errors in the transform/emit logic above.
+      eventBus.emit(TeamViewEvents.TeamViewLoadFailed, String(err));
+    });
 };

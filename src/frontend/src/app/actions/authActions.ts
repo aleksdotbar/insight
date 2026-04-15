@@ -27,7 +27,7 @@ export function initAuth(): void {
       }
     })
     .catch(() => {
-      if (import.meta.env.DEV) {
+      if (import.meta.env.DEV && !window.__OIDC_CONFIG__?.issuer_url) {
         OidcManager.resolveAuth({ access_token: 'dev-token', expired: false } as unknown as import('oidc-client-ts').User);
       } else {
         OidcManager.resolveAuth(null);
