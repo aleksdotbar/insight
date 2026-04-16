@@ -34,11 +34,24 @@ function buildMenuFromIdentity(user: CurrentUser) {
     return [myDashItem];
   }
 
-  const subordinateItems = identity.subordinates.map((sub) => ({
-    id: `${IC_DASHBOARD_SCREEN_ID}::${sub.email}`,
-    label: sub.display_name,
-    icon: 'lucide:user' as const,
-  }));
+  /** Recursively build menu items from subordinate tree */
+  const toMenuItems = (subs: typeof identity.subordinates): object[] =>
+    subs.map((sub) => {
+      const children = toMenuItems(sub.subordinates);
+      const item: Record<string, unknown> = {
+        id: children.length > 0
+          ? `${TEAM_VIEW_SCREEN_ID}::${sub.email}`
+          : `${IC_DASHBOARD_SCREEN_ID}::${sub.email}`,
+        label: sub.display_name,
+        icon: children.length > 0 ? 'lucide:users' : 'lucide:user',
+      };
+      if (children.length > 0) {
+        item.children = children;
+      }
+      return item;
+    });
+
+  const subordinateItems = toMenuItems(identity.subordinates);
 
   switch (role) {
     case 'executive':

@@ -16,9 +16,9 @@ type CurrentUserState = {
 
 const initialState: CurrentUserState = {
   currentUser: {
-    personId: 'p0',
-    name: 'David Park',
-    role: 'executive',
+    personId: '',
+    name: '',
+    role: 'ic',
     teamId: '',
   },
 };
