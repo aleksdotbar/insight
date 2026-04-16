@@ -8,7 +8,6 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
 import type {
-  PersonData,
   IcKpi,
   BulletMetric,
   IcChartsData,
@@ -18,6 +17,7 @@ import type {
   DataAvailability,
   ViewMode,
 } from '../types';
+import type { IdentityPerson } from '@/app/types/identity';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/icDashboard` as const;
 
@@ -27,7 +27,7 @@ const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/icDashboard` as const;
 export interface IcDashboardState {
   selectedPersonId: string;
   /** Loaded separately via IdentityResolutionService */
-  person: PersonData | null;
+  person: IdentityPerson | null;
   kpis: IcKpi[];
   bulletMetrics: BulletMetric[];
   charts: IcChartsData | null;
@@ -74,7 +74,7 @@ export const icDashboardSlice = createSlice({
       state.loading       = false;
       state.error         = null;
     },
-    setPerson: (state, action: PayloadAction<PersonData>) => {
+    setPerson: (state, action: PayloadAction<IdentityPerson>) => {
       state.person = action.payload;
     },
     setAvailability: (state, action: PayloadAction<DataAvailability>) => {
@@ -127,7 +127,7 @@ declare module '@hai3/react' {
 /**
  * Type-safe selectors
  */
-export const selectPerson = (state: RootState): PersonData | null => {
+export const selectPerson = (state: RootState): IdentityPerson | null => {
   return state[SLICE_KEY]?.person ?? null;
 };
 

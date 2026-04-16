@@ -5,15 +5,71 @@
  * Following flux architecture: Actions emit events, Effects listen and dispatch.
  */
 
-import { eventBus } from '@hai3/react';
+import { eventBus, apiRegistry } from '@hai3/react';
 import type { ApiUser } from '@/app/api';
+import { IdentityApiService } from '@/app/api/IdentityApiService';
+import { CurrentUserEvents } from '@/screensets/insight/events/currentUserEvents';
+import type { IdentityPerson } from '@/app/types/identity';
+
+/** Decode JWT payload without verification (token already validated by backend). */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+    return JSON.parse(payload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** Derive a role from identity data. MVP: has subordinates = team_lead, else ic. */
+function deriveRole(person: IdentityPerson): 'executive' | 'team_lead' | 'ic' {
+  if (person.subordinates.length > 0) return 'team_lead';
+  return 'ic';
+}
 
 /**
- * Fetch current user
- * Emits 'app/user/fetch' event
+ * Fetch current user — resolves identity from JWT sub claim.
+ * Called by Layout on mount. Emits events for header + menu updates.
  */
 export function fetchCurrentUser(): void {
   eventBus.emit('app/user/fetch');
+
+  // Fire-and-forget: read token from OIDC session, resolve identity
+  const storageKey = Object.keys(sessionStorage).find((k) => k.startsWith('oidc.user:'));
+  if (!storageKey) return;
+  const stored = sessionStorage.getItem(storageKey);
+  if (!stored) return;
+
+  let token: string;
+  try {
+    token = (JSON.parse(stored) as { access_token?: string }).access_token ?? '';
+  } catch { return; }
+  if (!token) return;
+
+  const claims = decodeJwtPayload(token);
+  const email = (claims?.sub as string) ?? '';
+  if (!email) return;
+
+  const identity = apiRegistry.getService(IdentityApiService);
+  void identity.getPersonByEmail(email).then((person) => {
+    console.log('[resolveIdentity] loaded:', person.display_name);
+
+    eventBus.emit('app/user/loaded', {
+      user: { firstName: person.first_name, lastName: person.last_name, email: person.email } as ApiUser,
+    });
+
+    eventBus.emit(CurrentUserEvents.UserChanged, {
+      personId: person.email,
+      name: person.display_name,
+      role: deriveRole(person),
+      teamId: person.department,
+      _identity: person,
+    });
+  }).catch((err: unknown) => {
+    console.warn('[resolveIdentity] failed:', err);
+  });
 }
 
 /**

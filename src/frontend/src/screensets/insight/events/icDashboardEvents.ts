@@ -5,7 +5,8 @@
 
 import '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { IcDashboardData, DrillData, PersonData, DataAvailability } from '../types';
+import type { IcDashboardData, DrillData, DataAvailability } from '../types';
+import type { IdentityPerson } from '@/app/types/identity';
 
 const DOMAIN_ID = 'icDashboard';
 
@@ -31,7 +32,7 @@ declare module '@hai3/react' {
     [IcDashboardEvents.PersonSelected]:               string;
     [IcDashboardEvents.IcDashboardLoadStarted]:       void;
     [IcDashboardEvents.IcDashboardLoaded]:            IcDashboardData;
-    [IcDashboardEvents.IcPersonLoaded]:               PersonData;
+    [IcDashboardEvents.IcPersonLoaded]:               IdentityPerson;
     [IcDashboardEvents.IcDashboardAvailabilityLoaded]: DataAvailability;
     [IcDashboardEvents.IcDashboardLoadFailed]:        string;
     [IcDashboardEvents.DrillOpened]:                  { drillId: string; drillData: DrillData };

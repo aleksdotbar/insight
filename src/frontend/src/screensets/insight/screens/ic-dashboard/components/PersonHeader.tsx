@@ -7,10 +7,10 @@
 import React from 'react';
 import { Avatar, AvatarFallback, Card, CardContent } from '@hai3/uikit';
 import { getInitials } from '../../../utils/getInitials';
-import type { PersonData } from '../../../types';
+import type { IdentityPerson } from '@/app/types/identity';
 
 export interface PersonHeaderProps {
-  person: PersonData | null;
+  person: IdentityPerson | null;
   /** When true, renders without outer card wrapper (for embedding in a header row) */
   inline?: boolean;
 }
