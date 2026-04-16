@@ -21,6 +21,8 @@ import type {
   LocDataPoint,
   DeliveryDataPoint,
   TeamMember,
+  TimeOffNotice,
+  DrillData,
 } from '../types';
 import type {
   RawExecSummaryRow,
@@ -29,6 +31,8 @@ import type {
   RawLocTrendRow,
   RawDeliveryTrendRow,
   RawTeamMemberRow,
+  RawTimeOffRow,
+  RawDrillRow,
 } from './rawTypes';
 import { BULLET_DEFS, IC_KPI_DEFS } from './thresholdConfig';
 import type { BulletThresholdDef, IcKpiDef } from './thresholdConfig';
@@ -319,4 +323,32 @@ export function transformTeamMembers(
     ai_tools: r.ai_tools,
     ai_loc_share_pct: r.ai_loc_share_pct,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// 6. Time-off notice
+// ---------------------------------------------------------------------------
+
+export function transformTimeOff(row: RawTimeOffRow): TimeOffNotice {
+  return {
+    days: row.days,
+    dateRange: row.date_range,
+    bambooHrUrl: row.bamboo_hr_url,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 7. Drill data
+// ---------------------------------------------------------------------------
+
+export function transformDrill(row: RawDrillRow): DrillData {
+  return {
+    title: row.title,
+    source: row.source,
+    srcClass: row.src_class,
+    value: row.value,
+    filter: row.filter,
+    columns: row.columns,
+    rows: row.rows,
+  };
 }
