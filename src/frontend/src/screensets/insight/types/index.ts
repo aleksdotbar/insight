@@ -115,6 +115,8 @@ export interface CurrentUser {
   name: string;
   role: UserRole;
   teamId: string;
+  /** Identity Resolution data — attached when loaded from real service */
+  _identity?: import('@/app/types/identity').IdentityPerson;
 }
 
 export type ChartDataPoint = {
