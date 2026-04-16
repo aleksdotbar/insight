@@ -12,6 +12,7 @@ import { setCurrentUser } from '../slices/currentUserSlice';
 import { setSelectedPersonId } from '../slices/icDashboardSlice';
 import { setSelectedTeamId } from '../slices/teamViewSlice';
 import type { CurrentUser } from '../types';
+import type { IdentityPerson } from '@/app/types/identity';
 import {
   INSIGHT_SCREENSET_ID,
   EXECUTIVE_VIEW_SCREEN_ID,
@@ -35,7 +36,7 @@ function buildMenuFromIdentity(user: CurrentUser) {
   }
 
   /** Recursively build menu items from subordinate tree */
-  const toMenuItems = (subs: typeof identity.subordinates): object[] =>
+  const toMenuItems = (subs: IdentityPerson[]): object[] =>
     subs.map((sub) => {
       const children = toMenuItems(sub.subordinates);
       const item: Record<string, unknown> = {
