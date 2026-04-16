@@ -49,12 +49,12 @@ export function fetchCurrentUser(): void {
   if (!token) return;
 
   const claims = decodeJwtPayload(token);
-  const email = (claims?.sub as string) ?? '';
+  const email = typeof claims?.sub === 'string' ? claims.sub : '';
   if (!email) return;
 
   const identity = apiRegistry.getService(IdentityApiService);
   void identity.getPersonByEmail(email).then((person) => {
-    console.log('[resolveIdentity] loaded:', person.display_name);
+    console.log('[resolveIdentity] loaded');
 
     eventBus.emit('app/user/loaded', {
       user: { firstName: person.first_name, lastName: person.last_name, email: person.email } as ApiUser,
@@ -67,8 +67,8 @@ export function fetchCurrentUser(): void {
       teamId: person.department,
       _identity: person,
     });
-  }).catch((err: unknown) => {
-    console.warn('[resolveIdentity] failed:', err);
+  }).catch(() => {
+    console.warn('[resolveIdentity] failed');
   });
 }
 
