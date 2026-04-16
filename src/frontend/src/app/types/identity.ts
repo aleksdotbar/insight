@@ -9,14 +9,7 @@ export type PersonData = {
   seniority: string;
 };
 
-/** Subordinate summary from Identity Resolution */
-export type SubordinateData = {
-  email: string;
-  display_name: string;
-  job_title: string;
-};
-
-/** Raw response from Identity Resolution service */
+/** Raw response from Identity Resolution service — recursive subordinate tree */
 export type IdentityPersonRaw = {
   email: string;
   display_name: string;
@@ -28,11 +21,11 @@ export type IdentityPersonRaw = {
   status: string;
   supervisor_email: string | null;
   supervisor_name: string | null;
-  subordinates: SubordinateData[];
+  subordinates: IdentityPersonRaw[];
 };
 
 /** Enriched person — raw response + compatibility aliases for UI components */
-export type IdentityPerson = IdentityPersonRaw & {
+export type IdentityPerson = Omit<IdentityPersonRaw, 'subordinates'> & {
   /** Alias for display_name — used by UI components */
   name: string;
   /** Alias for email — used as person identifier in MVP */
@@ -41,9 +34,11 @@ export type IdentityPerson = IdentityPersonRaw & {
   role: string;
   /** Placeholder — not available from BambooHR */
   seniority: string;
+  /** Recursive subordinate tree */
+  subordinates: IdentityPerson[];
 };
 
-/** Convert raw Identity Resolution response to enriched person */
+/** Convert raw Identity Resolution response to enriched person (recursive) */
 export function toIdentityPerson(raw: IdentityPersonRaw): IdentityPerson {
   return {
     ...raw,
@@ -51,5 +46,6 @@ export function toIdentityPerson(raw: IdentityPersonRaw): IdentityPerson {
     person_id: raw.email,
     role: raw.job_title,
     seniority: '',
+    subordinates: raw.subordinates.map(toIdentityPerson),
   };
 }

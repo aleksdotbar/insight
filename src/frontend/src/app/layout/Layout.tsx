@@ -8,9 +8,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { Sheet, SheetContent } from '@hai3/uikit';
+import { useAppSelector } from '@hai3/react';
 import { Icon } from '@iconify/react';
 import { fetchCurrentUser } from '@/app/actions/bootstrapActions';
 import { initAuth } from '@/app/actions/authActions';
+import { selectAuthStatus } from '@/app/slices/authSlice';
 import { Footer } from './Footer';
 import { Menu } from './Menu';
 import { Sidebar } from './Sidebar';
@@ -40,11 +42,18 @@ const MobileRoleSwitcherSlot = (
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const authStatus = useAppSelector(selectAuthStatus);
+
   useEffect(() => {
-    // Bootstrap: init auth session, then fetch current user
     initAuth();
-    fetchCurrentUser();
   }, []);
+
+  // Fetch identity only after auth token is in the store
+  useEffect(() => {
+    if (authStatus === 'authenticated') {
+      fetchCurrentUser();
+    }
+  }, [authStatus]);
 
   // Close mobile menu when viewport grows past mobile breakpoint
   useEffect(() => {
