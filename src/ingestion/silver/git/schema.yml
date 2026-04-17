@@ -104,3 +104,57 @@ models:
         tests:
           - not_null
           - unique
+
+  - name: fct_git_pr
+    description: "PR-row facts: adds person_key, state_norm, cycle_time_h"
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: unique_key
+        tests: [not_null, unique]
+      - name: person_key
+        description: "lower(author_email) with author_name fallback when email empty"
+
+  - name: fct_git_commit
+    description: "Commit-row facts: adds person_key, week"
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: unique_key
+        tests: [not_null, unique]
+
+  - name: fct_git_file_change
+    description: "File-change-row facts: adds person_key (via commit), week, file_category"
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: unique_key
+        tests: [not_null, unique]
+      - name: file_category
+        description: "spec | config | code"
+
+  - name: fct_git_review
+    description: "Review-row facts: adds reviewer person_key"
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: unique_key
+        tests: [not_null, unique]
+
+  - name: mtr_git_person_totals
+    description: "Per-person git totals: prs, commits, loc, clean_loc, reviews_given, avg cycle time"
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: person_key
+        tests: [not_null]
+
+  - name: mtr_git_person_weekly
+    description: "Per-person per-week git trend: commits, prs_merged, code_loc, spec_lines"
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: person_key
+        tests: [not_null]
+      - name: week
+        tests: [not_null]
