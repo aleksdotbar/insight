@@ -73,12 +73,12 @@ function buildMenuFromIdentity(user: CurrentUser) {
         myDashItem,
         ...(subordinateItems.length > 0
           ? [{
-              id: TEAM_VIEW_SCREEN_ID,
+              id: `${TEAM_VIEW_SCREEN_ID}::${identity.department}`,
               label: identity.department || menuKey('team-view'),
               icon: 'lucide:users',
               children: subordinateItems,
             }]
-          : [{ id: TEAM_VIEW_SCREEN_ID, label: menuKey('team-view'), icon: 'lucide:users' }]),
+          : [{ id: `${TEAM_VIEW_SCREEN_ID}::${identity.department}`, label: menuKey('team-view'), icon: 'lucide:users' }]),
       ];
 
     case 'ic':
