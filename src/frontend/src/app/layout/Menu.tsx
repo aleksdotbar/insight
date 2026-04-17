@@ -98,10 +98,8 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
           onClick={() => {
             if (hasChildren) {
               toggleGroup(item.id);
-              if (item.id.includes('::')) handleItemClick(item.id);
-            } else {
-              handleItemClick(item.id);
             }
+            handleItemClick(item.id);
           }}
           tooltip={collapsed && depth === 0 ? t(item.label) : undefined}
           className={`${indent} ${depth > 0 ? 'text-xs' : ''} ${isActive && !isSelfActive ? 'text-sidebar-foreground/80' : ''}`}
