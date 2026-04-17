@@ -11,7 +11,7 @@ declare global { interface Window { __OIDC_CONFIG__?: Partial<OidcConfig> } }
 const runtimeConfig = window.__OIDC_CONFIG__;
 
 const authMockMap = {
-  'GET /auth/config': (): OidcConfig => ({
+  'GET /api/v1/auth/config': (): OidcConfig => ({
     issuer_url: runtimeConfig?.issuer_url ?? '',
     client_id: runtimeConfig?.client_id ?? '',
     redirect_uri: `${window.location.origin}/callback`,
@@ -24,7 +24,7 @@ export class AuthApiService extends BaseApiService {
   constructor() {
     const restProtocol = new RestProtocol({ timeout: 10000 });
 
-    super({ baseURL: '/' }, restProtocol);
+    super({ baseURL: '/api/v1' }, restProtocol);
 
     this.registerPlugin(
       restProtocol,
