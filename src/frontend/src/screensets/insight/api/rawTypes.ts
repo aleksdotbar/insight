@@ -50,6 +50,7 @@ export type RawTeamMemberRow = {
   person_id: string;
   display_name: string;
   seniority: string;
+  supervisor_email: string | null;
   tasks_closed: number;
   bugs_fixed: number;
   dev_time_h: number;
@@ -90,8 +91,8 @@ export type RawBulletAggregateRow = {
   metric_key: string;
   value: number;
   median: number | null;
-  p5: number | null;
-  p95: number | null;
+  range_min: number | null;
+  range_max: number | null;
 };
 
 // ---------------------------------------------------------------------------

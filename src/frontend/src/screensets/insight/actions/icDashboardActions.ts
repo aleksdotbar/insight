@@ -85,14 +85,15 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
   const identity   = apiRegistry.getService(IdentityResolutionService);
 
   const personFilter     = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(period)}`;
+  const personBulletFilter = personFilter;
   const prevPersonFilter = previousPeriodFilter(personId, period);
 
   void Promise.allSettled([
     api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS,         { $filter: personFilter }),
     api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS,         { $filter: prevPersonFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_DELIVERY, { $filter: personFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_COLLAB,   { $filter: personFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_AI,       { $filter: personFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_DELIVERY, { $filter: personBulletFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_COLLAB,   { $filter: personBulletFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_AI,       { $filter: personBulletFilter }),
     api.queryMetric<RawLocTrendRow>(METRIC_REGISTRY.IC_CHART_LOC,              { $filter: personFilter }),
     api.queryMetric<RawDeliveryTrendRow>(METRIC_REGISTRY.IC_CHART_DELIVERY,    { $filter: personFilter }),
     api.queryMetric<RawTimeOffRow>(METRIC_REGISTRY.IC_TIMEOFF,                 { $filter: personFilter }),
@@ -115,8 +116,8 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
         kpis: transformIcKpis(curKpisResp.items[0] ?? null, prevKpisResp.items[0] ?? null, period),
         bulletMetrics: [
           ...transformBulletMetrics(deliveryResp.items, 'task_delivery', period),
-          ...transformBulletMetrics(collabResp.items,   'collab',        period),
-          ...transformBulletMetrics(aiResp.items,       'ai_tools',      period),
+          ...transformBulletMetrics(collabResp.items,   'collaboration', period),
+          ...transformBulletMetrics(aiResp.items,       'ai_adoption',   period),
         ],
         charts: {
           locTrend:      transformLocTrend(locResp.items, period),

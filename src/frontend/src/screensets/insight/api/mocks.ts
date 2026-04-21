@@ -354,6 +354,7 @@ export const TEAM_MEMBERS_MONTH: TeamMember[] = mockTeamMemberRows().map((raw) =
   period: 'month' as const,
   name: raw.display_name,
   seniority: raw.seniority,
+  supervisor_email: null,
   tasks_closed: raw.tasks_closed,
   bugs_fixed: raw.bugs_fixed,
   dev_time_h: raw.dev_time_h,

@@ -147,6 +147,7 @@ export function mockTeamMemberRow(overrides?: Partial<RawTeamMemberRow>): RawTea
     person_id: 'p1',
     display_name: 'Alice Kim',
     seniority: 'Senior',
+    supervisor_email: null,
     tasks_closed: 12,
     bugs_fixed: 5,
     dev_time_h: 14,
@@ -200,8 +201,8 @@ export function mockBulletRow(overrides?: Partial<RawBulletAggregateRow>): RawBu
     metric_key: 'tasks_completed',
     value: 5.3,
     median: 5.8,
-    p5: null,
-    p95: null,
+    range_min: null,
+    range_max: null,
     ...overrides,
   };
 }
@@ -301,8 +302,8 @@ export function mockTeamBulletSection(section: string, seed = 0): RawBulletAggre
       metric_key: d.metric_key,
       value: Math.round(vary(d.median, i + seed, d.median * 0.3) * 10) / 10,
       median: d.median,
-      p5: d.range_min,
-      p95: d.range_max,
+      range_min: d.range_min,
+      range_max: d.range_max,
     }));
 }
 
@@ -326,8 +327,8 @@ export function mockIcBulletSection(section: string, seed = 0): RawBulletAggrega
         metric_key: key,
         value: 0,
         median: null,
-        p5: null,
-        p95: null,
+        range_min: null,
+        range_max: null,
       };
     }
 
@@ -338,13 +339,13 @@ export function mockIcBulletSection(section: string, seed = 0): RawBulletAggrega
       metric_key: def.metric_key,
       value,
       median: def.median ?? null,
-      p5: null,
-      p95: null,
+      range_min: null,
+      range_max: null,
     };
 
     // Attach passthrough display fields that transforms.ts reads
     // when no BULLET_DEFS match is found (the IC-level path)
-    const ext = row as RawBulletAggregateRow & Record<string, unknown>;
+    const ext = row as unknown as Record<string, unknown>;
     ext['section'] = def.section;
     ext['label'] = def.label;
     ext['sublabel'] = def.sublabel;

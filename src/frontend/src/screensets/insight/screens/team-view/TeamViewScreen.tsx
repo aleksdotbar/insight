@@ -3,10 +3,10 @@
  * Orchestration-only: no inline components, no inline data arrays.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAppSelector, useNavigation, useScreenTranslations, useTranslation, I18nRegistry, Language } from '@hai3/react';
 import { usePeriod } from '../../hooks/usePeriod';
-import { loadTeamView } from '../../actions/teamViewActions';
+import { loadTeamView, deriveTeamKpis } from '../../actions/teamViewActions';
 import { selectIcPerson } from '../../actions/icDashboardActions';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
 import { selectMembers, selectTeamKpis, selectBulletSections, selectTeamViewLoading, selectTeamName, selectTeamViewConfig, selectSelectedTeamId } from '../../slices/teamViewSlice';
@@ -75,11 +75,28 @@ const TeamViewScreen: React.FC = () => {
   const teamId = selectedTeamId || currentUser.teamId || 'backend';
   const loading = useAppSelector(selectTeamViewLoading);
   const allMembers = useAppSelector(selectMembers);
-  // Team Lead sees their own data via "My Dashboard" — exclude from the team table
-  const members = currentUser.role === 'team_lead'
+  const [directReportsOnly, setDirectReportsOnly] = useState(true);
+  // Team Lead sees their own data via "My Dashboard" — exclude from the team table.
+  // When "Direct reports only" toggle is on, narrow to people whose supervisor_email
+  // matches the current user (for managers) or the current user's own supervisor
+  // (siblings in same team, for ICs).
+  const baseMembers = currentUser.role === 'team_lead'
     ? allMembers.filter((m) => m.person_id !== currentUser.personId)
     : allMembers;
-  const teamKpis = useAppSelector(selectTeamKpis);
+  const members = directReportsOnly
+    ? baseMembers.filter((m) =>
+        m.supervisor_email &&
+        m.supervisor_email.toLowerCase() === currentUser.personId.toLowerCase(),
+      )
+    : baseMembers;
+  const storeTeamKpis = useAppSelector(selectTeamKpis);
+  // Recompute KPIs client-side over the currently visible members set so the
+  // toggle ("Direct reports only") also narrows the chips. Falls back to the
+  // store-derived value when members haven't been fetched yet.
+  const teamKpis = useMemo(
+    () => (members.length > 0 ? deriveTeamKpis(members, period) : storeTeamKpis),
+    [members, period, storeTeamKpis],
+  );
   const bulletSections = useAppSelector(selectBulletSections);
   const teamName = useAppSelector(selectTeamName);
   const teamViewConfig = useAppSelector(selectTeamViewConfig);
@@ -156,12 +173,30 @@ const TeamViewScreen: React.FC = () => {
               </div>
               <div>
                 <div className="text-base font-bold text-gray-900 leading-tight">{teamName}</div>
-                <div className="text-xs text-gray-400">{t('header.subtitle')}</div>
+                <div className="text-xs text-gray-400">
+                  {currentUser.name
+                    ? (directReportsOnly
+                        ? `Direct reports of ${currentUser.name}`
+                        : `${currentUser.name}'s department`)
+                    : t('header.subtitle')}
+                </div>
               </div>
             </>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <label className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700 select-none">
+            <input
+              type="checkbox"
+              checked={directReportsOnly}
+              onChange={(e) => setDirectReportsOnly(e.target.checked)}
+              className="cursor-pointer"
+            />
+            <span>Direct reports only</span>
+            <span className="text-xs text-gray-400">
+              ({members.length}/{baseMembers.length})
+            </span>
+          </label>
           <PeriodSelectorBar
             period={period}
             customRange={customRange}

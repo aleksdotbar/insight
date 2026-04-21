@@ -107,12 +107,13 @@ const IcDashboardScreen: React.FC = () => {
     loadIcDashboard(personId, period);
   }, [personId, period]);
 
-  // Filter bullet metrics by section
+  // Filter bullet metrics by section. Section names are aligned with Team View
+  // (transforms.ts / BULLET_DEFS) so the same defs drive labels+thresholds.
   const taskMetrics = bulletMetrics.filter((m) => m.section === 'task_delivery');
   const gitMetrics = bulletMetrics.filter((m) => m.section === 'git_output');
   const codeMetrics = bulletMetrics.filter((m) => m.section === 'code_quality');
-  const aiToolsMetrics = bulletMetrics.filter((m) => m.section === 'ai_tools');
-  const collabMetrics = bulletMetrics.filter((m) => m.section === 'collab');
+  const aiToolsMetrics = bulletMetrics.filter((m) => m.section === 'ai_adoption');
+  const collabMetrics = bulletMetrics.filter((m) => m.section === 'collaboration');
 
   // API returns period-filtered kpis — use directly
   const currentKpis = kpis;
