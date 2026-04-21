@@ -8,6 +8,8 @@
 import React from 'react';
 import { useAppSelector, type HeaderState } from '@hai3/react';
 import { UserInfo } from '@hai3/uikit';
+import { Icon } from '@iconify/react';
+import { fetchCurrentUser } from '@/app/actions/bootstrapActions';
 
 export interface HeaderProps {
   children?: React.ReactNode;
@@ -22,7 +24,16 @@ export const Header: React.FC<HeaderProps> = ({ children }) => {
   return (
     <header className="h-16 flex items-center px-4 border-b border-border bg-background">
       {children}
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="Refresh user and menu"
+          title="Refresh user and menu"
+          onClick={fetchCurrentUser}
+          className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+        >
+          <Icon icon="lucide:refresh-cw" className="w-4 h-4" />
+        </button>
         <UserInfo
           displayName={user?.displayName}
           email={user?.email}

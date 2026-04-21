@@ -19,6 +19,7 @@ import {
 } from '@hai3/uikit';
 import { Tooltip, Legend } from 'recharts';
 import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_PURPLE, CHART_GREEN, CHART_FONT_TICK } from '../base/chartColors';
+import ComingSoon from './ComingSoon';
 
 export interface DeliveryTrendsProps {
   data: Array<{ label: string; commits: number; prsMerged: number; tasksDone: number }>;
@@ -27,6 +28,10 @@ export interface DeliveryTrendsProps {
 type ChartRow = { label: string; Commits: number; 'PRs Merged': number; 'Tasks Done': number };
 
 const DeliveryTrends: React.FC<DeliveryTrendsProps> = ({ data }) => {
+  if (data.length === 0) {
+    return <ComingSoon variant="card" />;
+  }
+
   const chartData: ChartRow[] = data.map((r) => ({
     label: r.label,
     Commits: r.commits,

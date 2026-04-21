@@ -8,6 +8,7 @@
 import React from 'react';
 import { Card, CardContent } from '@hai3/uikit';
 import BulletChart from './BulletChart';
+import ComingSoon from './ComingSoon';
 import type { BulletMetric } from '../../types';
 
 export interface MetricCardProps {
@@ -17,6 +18,9 @@ export interface MetricCardProps {
   onDrillClick?: (drillId: string) => void;
   mode?: 'chart' | 'tile';
   personName?: string;
+  /** True when the backend query for this section failed (vs returned empty). */
+  errored?: boolean;
+  onRetry?: () => void;
 }
 
 const GRID_COLS_CLASS = {
@@ -49,7 +53,12 @@ const MetricCard: React.FC<MetricCardProps> = ({
   onDrillClick,
   mode = 'chart',
   personName,
+  errored = false,
+  onRetry,
 }) => {
+  const placeholderState = errored ? 'error' : 'empty';
+  const isEmpty = metrics.length === 0;
+
   if (mode === 'tile') {
     return (
       <Card>
@@ -57,17 +66,21 @@ const MetricCard: React.FC<MetricCardProps> = ({
           <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">
             {title}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {metrics.map((metric) => (
-              <BulletChart
-                key={metric.metric_key}
-                metric={metric}
-                onDrillClick={onDrillClick}
-                mode="tile"
-                personName={personName}
-              />
-            ))}
-          </div>
+          {isEmpty ? (
+            <ComingSoon variant="card" state={placeholderState} onRetry={onRetry} />
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {metrics.map((metric) => (
+                <BulletChart
+                  key={metric.metric_key}
+                  metric={metric}
+                  onDrillClick={onDrillClick}
+                  mode="tile"
+                  personName={personName}
+                />
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     );
@@ -95,24 +108,30 @@ const MetricCard: React.FC<MetricCardProps> = ({
         </div>
 
         {/* Legend */}
-        <ChartLegend />
+        {!isEmpty && <ChartLegend />}
 
-        {/* Columns */}
-        <div className={`grid ${GRID_COLS_CLASS[cols]} gap-3.5 mt-3`}>
-          {columnGroups.map((colMetrics, colIdx) => (
-            <div key={colIdx} className="flex flex-col gap-4">
-              {colMetrics.map((metric) => (
-                <BulletChart
-                  key={metric.metric_key}
-                  metric={metric}
-                  onDrillClick={onDrillClick}
-                  mode="chart"
-                  personName={personName}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
+        {/* Columns or empty/error placeholder */}
+        {isEmpty ? (
+          <div className="mt-3">
+            <ComingSoon variant="card" state={placeholderState} onRetry={onRetry} />
+          </div>
+        ) : (
+          <div className={`grid ${GRID_COLS_CLASS[cols]} gap-3.5 mt-3`}>
+            {columnGroups.map((colMetrics, colIdx) => (
+              <div key={colIdx} className="flex flex-col gap-4">
+                {colMetrics.map((metric) => (
+                  <BulletChart
+                    key={metric.metric_key}
+                    metric={metric}
+                    onDrillClick={onDrillClick}
+                    mode="chart"
+                    personName={personName}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -15,7 +15,6 @@ import type {
   DrillData,
   IcDashboardData,
   DataAvailability,
-  ViewMode,
 } from '../types';
 import type { IdentityPerson } from '@/app/types/identity';
 
@@ -26,7 +25,7 @@ const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/icDashboard` as const;
  */
 export interface IcDashboardState {
   selectedPersonId: string;
-  /** Loaded separately via IdentityResolutionService */
+  /** Loaded separately via IdentityApiService */
   person: IdentityPerson | null;
   kpis: IcKpi[];
   bulletMetrics: BulletMetric[];
@@ -36,9 +35,14 @@ export interface IcDashboardState {
   drillData: DrillData | null;
   /** Loaded separately via ConnectorManagerService */
   availability: DataAvailability | null;
-  viewMode: ViewMode;
   loading: boolean;
   error: string | null;
+  /**
+   * Section IDs whose last fetch actually rejected (network / 5xx / etc.),
+   * as opposed to returning an empty result. Consumed by composites to
+   * switch ComingSoon placeholders from "No data" to "Unable to load · Retry".
+   */
+  erroredSections: string[];
 }
 
 const initialState: IcDashboardState = {
@@ -51,9 +55,9 @@ const initialState: IcDashboardState = {
   drillId: null,
   drillData: null,
   availability: null,
-  viewMode: 'chart',
   loading: false,
   error: null,
+  erroredSections: [],
 };
 
 export const icDashboardSlice = createSlice({
@@ -95,8 +99,8 @@ export const icDashboardSlice = createSlice({
       state.drillId = null;
       state.drillData = null;
     },
-    setViewMode: (state, action: PayloadAction<ViewMode>) => {
-      state.viewMode = action.payload;
+    setErroredSections: (state, action: PayloadAction<string[]>) => {
+      state.erroredSections = action.payload;
     },
   },
 });
@@ -111,7 +115,7 @@ export const {
   setError,
   setDrillState,
   clearDrill,
-  setViewMode,
+  setErroredSections,
 } = icDashboardSlice.actions;
 
 // Export the slice object (not just the reducer) for registerSlice()
@@ -155,10 +159,6 @@ export const selectDrillData = (state: RootState): DrillData | null => {
   return state[SLICE_KEY]?.drillData ?? null;
 };
 
-export const selectViewMode = (state: RootState): ViewMode => {
-  return state[SLICE_KEY]?.viewMode ?? 'chart';
-};
-
 export const selectIcLoading = (state: RootState): boolean => {
   return state[SLICE_KEY]?.loading ?? false;
 };
@@ -169,4 +169,8 @@ export const selectIcAvailability = (state: RootState): DataAvailability | null 
 
 export const selectSelectedPersonId = (state: RootState): string => {
   return state[SLICE_KEY]?.selectedPersonId ?? 'p1';
+};
+
+export const selectIcErroredSections = (state: RootState): string[] => {
+  return state[SLICE_KEY]?.erroredSections ?? [];
 };

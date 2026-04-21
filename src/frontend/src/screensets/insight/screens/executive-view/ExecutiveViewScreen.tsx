@@ -11,6 +11,7 @@ import { loadExecutiveView } from '../../actions/executiveViewActions';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
 import { selectTeams, selectOrgKpis, selectExecLoading, selectExecViewConfig } from '../../slices/executiveViewSlice';
 import { selectCustomRange } from '../../slices/periodSlice';
+import { resolveDateRange } from '../../utils/periodToDateRange';
 import { OrgKpiCards } from './components/OrgKpiCards';
 import { OrgHealthRadar } from './components/OrgHealthRadar';
 import { TeamMetricsBar } from './components/TeamMetricsBar';
@@ -68,8 +69,8 @@ const ExecutiveViewScreen: React.FC = () => {
   const execConfig = useAppSelector(selectExecViewConfig);
 
   useEffect(() => {
-    loadExecutiveView(period);
-  }, [period]);
+    loadExecutiveView(resolveDateRange(period, customRange));
+  }, [period, customRange]);
 
   const handleRangeChange = (range: CustomRange | null): void => {
     if (range) setDateRange(range);

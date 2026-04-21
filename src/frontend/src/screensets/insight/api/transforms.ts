@@ -35,7 +35,8 @@ import type {
   RawDrillRow,
 } from './rawTypes';
 import { BULLET_DEFS, IC_KPI_DEFS } from './thresholdConfig';
-import type { BulletThresholdDef, IcKpiDef } from './thresholdConfig';
+import type { IcKpiDef } from './thresholdConfig';
+import { evaluateStatus } from './metricSemantics';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -49,21 +50,6 @@ function pctInRange(value: number, rangeMin: number, rangeMax: number): number {
   const span = rangeMax - rangeMin;
   if (span <= 0) return 0;
   return Math.round(clamp(((value - rangeMin) / span) * 100, 0, 100));
-}
-
-function evaluateStatus(
-  value: number,
-  def: BulletThresholdDef,
-): 'good' | 'warn' | 'bad' {
-  if (def.higher_is_better) {
-    if (value >= def.good_threshold) return 'good';
-    if (value >= def.warn_threshold) return 'warn';
-    return 'bad';
-  }
-  // lower is better
-  if (value <= def.good_threshold) return 'good';
-  if (value <= def.warn_threshold) return 'warn';
-  return 'bad';
 }
 
 function formatValue(raw: number, fmt: IcKpiDef['format']): string {
@@ -99,23 +85,25 @@ function deltaType(
 }
 
 function formatDateLabel(isoDate: string, period: PeriodValue): string {
-  const d = new Date(isoDate);
+  // Parse as local-midnight so label reflects the user's timezone, not UTC.
+  const [y, m, day] = isoDate.split('-').map(Number);
+  const d = new Date(y, (m ?? 1) - 1, day ?? 1);
   switch (period) {
     case 'week': {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-      return days[d.getUTCDay()] ?? isoDate;
+      return days[d.getDay()] ?? isoDate;
     }
     case 'month': {
       // Week number within the month: W1, W2, ...
-      const weekNum = Math.ceil(d.getUTCDate() / 7);
+      const weekNum = Math.ceil(d.getDate() / 7);
       return `W${weekNum}`;
     }
     case 'quarter': {
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
-      return months[d.getUTCMonth()] ?? isoDate;
+      return months[d.getMonth()] ?? isoDate;
     }
     case 'year': {
-      const q = Math.floor(d.getUTCMonth() / 3) + 1;
+      const q = Math.floor(d.getMonth() / 3) + 1;
       return `Q${q}`;
     }
   }
@@ -148,8 +136,8 @@ function isCountUnit(unit: string): boolean {
   );
 }
 
-function formatBulletValue(raw: number, unit: string): string {
-  if (!Number.isFinite(raw)) return String(raw);
+function formatBulletValue(raw: number | null | undefined, unit: string): string {
+  if (raw === null || raw === undefined || !Number.isFinite(raw)) return '—';
   if (isCountUnit(unit)) return String(Math.round(raw));
   return String(Math.round(raw * 100) / 100); // up to 2 decimals for %, ratios, hours
 }
@@ -203,13 +191,14 @@ export function transformIcKpis(
   previous: RawIcAggregateRow | null,
   period: PeriodValue,
 ): IcKpi[] {
+  // Data-driven: no current row means the backend has nothing for this person
+  // in the selected period — return empty so composites render ComingSoon
+  // uniformly instead of forcing zeros onto the UI.
+  if (current === null) return [];
+
   return IC_KPI_DEFS.map((def) => {
-    const curVal = current
-      ? (current[def.raw_field as keyof RawIcAggregateRow] as number)
-      : 0;
-    const prevVal = previous
-      ? (previous[def.raw_field as keyof RawIcAggregateRow] as number)
-      : null;
+    const curVal = (current[def.raw_field] ?? 0) as number;
+    const prevVal = previous ? ((previous[def.raw_field] ?? 0) as number) : null;
 
     const value = formatValue(curVal, def.format);
     let delta = '';

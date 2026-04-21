@@ -13,14 +13,15 @@ import { TeamViewEvents } from '../events/teamViewEvents';
 import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter, odataEscapeValue } from '../utils/periodToDateRange';
-import { transformTeamMembers, transformBulletMetrics } from '../api/transforms';
+import { odataDateFilter, odataEscapeValue, type DateRange } from '../utils/periodToDateRange';
+import { transformTeamMembers, transformBulletMetrics, transformDrill } from '../api/transforms';
 import type {
   PeriodValue,
   TeamMember,
   TeamViewData,
+  DrillData,
 } from '../types';
-import type { RawTeamMemberRow, RawBulletAggregateRow } from '../api/rawTypes';
+import type { RawTeamMemberRow, RawBulletAggregateRow, RawDrillRow } from '../api/rawTypes';
 import {
   TEAM_KPIS_BY_PERIOD,
   TEAM_VIEW_CONFIG,
@@ -42,6 +43,11 @@ function median(values: number[]): number | null {
 }
 
 export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
+  // Data-driven: no members means the backend has nothing for this team in
+  // the selected period — return empty so TeamHeroStrip renders ComingSoon
+  // uniformly instead of forcing zero counters onto the UI.
+  if (members.length === 0) return [];
+
   const total      = members.length;
   const focusTrigger = TEAM_VIEW_CONFIG.alert_thresholds
     .find((t) => t.metric_key === 'focus_time_pct')?.trigger ?? 60;
@@ -81,13 +87,13 @@ export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
 // Action
 // ---------------------------------------------------------------------------
 
-export const loadTeamView = (teamId: string, period: PeriodValue): void => {
+export const loadTeamView = (teamId: string, period: PeriodValue, range: DateRange): void => {
   eventBus.emit(TeamViewEvents.TeamViewLoadStarted);
 
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
 
-  const teamFilter = `org_unit_id eq '${odataEscapeValue(teamId)}' and ${odataDateFilter(period)}`;
+  const teamFilter = `org_unit_id eq '${odataEscapeValue(teamId)}' and ${odataDateFilter(range)}`;
 
   void Promise.allSettled([
     api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, {
@@ -141,4 +147,42 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
       // errors in the transform/emit logic above.
       eventBus.emit(TeamViewEvents.TeamViewLoadFailed, String(err));
     });
+};
+
+// ---------------------------------------------------------------------------
+// Drill — redux-managed (team / member / cell)
+// ---------------------------------------------------------------------------
+
+type TeamDrillFilter =
+  | { kind: 'team'; teamId: string; drillId: string }
+  | { kind: 'cell'; personId: string; drillId: string };
+
+/**
+ * Open a drill modal for the team view. The filter shape determines which
+ * OData filter is sent to the backend. Emits DrillOpened on success.
+ */
+export const openTeamDrill = (filter: TeamDrillFilter): void => {
+  const $filter =
+    filter.kind === 'team'
+      ? `org_unit_id eq '${odataEscapeValue(filter.teamId)}' and drill_id eq '${odataEscapeValue(filter.drillId)}'`
+      : `person_id eq '${odataEscapeValue(filter.personId)}' and drill_id eq '${odataEscapeValue(filter.drillId)}'`;
+
+  void apiRegistry
+    .getService(InsightApiService)
+    .queryMetric<RawDrillRow>(METRIC_REGISTRY.IC_DRILL, { $filter })
+    .then((resp) => {
+      const row = resp.items[0];
+      if (!row) return;
+      const drillData: DrillData = transformDrill(row);
+      eventBus.emit(TeamViewEvents.DrillOpened, { drillId: filter.drillId, drillData });
+    })
+    .catch(() => {
+      // Drill fetch failure: keep modal closed; data-driven UI will show
+      // ComingSoon if opened without rows. Explicit error surfacing happens
+      // in Phase 3 (identity / API error-state work).
+    });
+};
+
+export const closeTeamDrill = (): void => {
+  eventBus.emit(TeamViewEvents.DrillClosed);
 };

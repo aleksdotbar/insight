@@ -6,12 +6,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAppSelector, useNavigation, useScreenTranslations, useTranslation, I18nRegistry, Language } from '@hai3/react';
 import { usePeriod } from '../../hooks/usePeriod';
-import { loadTeamView, deriveTeamKpis } from '../../actions/teamViewActions';
+import { loadTeamView, deriveTeamKpis, openTeamDrill, closeTeamDrill } from '../../actions/teamViewActions';
 import { selectIcPerson } from '../../actions/icDashboardActions';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
-import { selectMembers, selectTeamKpis, selectBulletSections, selectTeamViewLoading, selectTeamName, selectTeamViewConfig, selectSelectedTeamId } from '../../slices/teamViewSlice';
+import { changeViewMode } from '../../actions/insightUiActions';
+import {
+  selectMembers,
+  selectTeamKpis,
+  selectBulletSections,
+  selectTeamViewLoading,
+  selectTeamName,
+  selectTeamViewConfig,
+  selectSelectedTeamId,
+  selectTeamDrillId,
+  selectTeamDrillData,
+} from '../../slices/teamViewSlice';
 import { selectCurrentUser } from '../../slices/currentUserSlice';
 import { selectCustomRange } from '../../slices/periodSlice';
+import { selectInsightViewMode } from '../../slices/insightUiSlice';
+import { resolveDateRange } from '../../utils/periodToDateRange';
 import { TeamHeroStrip } from './components/TeamHeroStrip';
 import { AttentionNeeded } from './components/AttentionNeeded';
 import { MembersTable } from './components/MembersTable';
@@ -20,11 +33,8 @@ import { PeriodSelectorBar } from '../../uikit/composite/PeriodSelectorBar';
 import { ViewModeToggle } from '../../uikit/composite/ViewModeToggle';
 import DrillModal from '../../uikit/composite/DrillModal';
 import { INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID, TEAM_VIEW_SCREEN_ID } from '../../ids';
-import { apiRegistry } from '@hai3/react';
-import { InsightApiService } from '../../api/insightApiService';
-import { METRIC_REGISTRY } from '../../api/metricRegistry';
 import { getInitials } from '../../utils/getInitials';
-import type { ViewMode, CustomRange, DrillData } from '../../types';
+import type { CustomRange } from '../../types';
 
 const translations = I18nRegistry.createLoader({
   [Language.English]: () => import('./i18n/en.json'),
@@ -83,14 +93,20 @@ const TeamViewScreen: React.FC = () => {
   const baseMembers = currentUser.role === 'team_lead'
     ? allMembers.filter((m) => m.person_id !== currentUser.personId)
     : allMembers;
-  // supervisor_email is an email string; CurrentUser.personId is *derived from* the
-  // identity email in bootstrapActions (personId = person.email), but prefer
-  // `_identity.email` when available so the comparison is unambiguously
-  // email-to-email.
-  const currentUserEmail = (currentUser._identity?.email ?? currentUser.personId ?? '').toLowerCase();
-  const members = directReportsOnly && currentUserEmail
+  // `teamId` is either an email (executive drilled into a subordinate's team)
+  // or an org_unit_name string. The direct-reports anchor is:
+  //  - the email itself, when teamId is an email;
+  //  - the team_lead's own email, when viewing their own department;
+  //  - none (executive browsing a flat org_unit), so the checkbox is hidden.
+  const teamOwnerEmail = teamId.includes('@')
+    ? teamId.toLowerCase()
+    : currentUser.role === 'team_lead'
+      ? (currentUser._identity?.email ?? currentUser.personId ?? '').toLowerCase() || null
+      : null;
+  const canFilterDirectReports = teamOwnerEmail !== null;
+  const members = directReportsOnly && teamOwnerEmail
     ? baseMembers.filter((m) =>
-        (m.supervisor_email ?? '').toLowerCase() === currentUserEmail,
+        (m.supervisor_email ?? '').toLowerCase() === teamOwnerEmail,
       )
     : baseMembers;
   const storeTeamKpis = useAppSelector(selectTeamKpis);
@@ -108,14 +124,14 @@ const TeamViewScreen: React.FC = () => {
   const bulletSections = useAppSelector(selectBulletSections);
   const teamName = useAppSelector(selectTeamName);
   const teamViewConfig = useAppSelector(selectTeamViewConfig);
-  const [viewMode, setViewMode] = useState<ViewMode>('chart');
-  const [drillData, setDrillData] = useState<DrillData | null>(null);
-  const [drillOpen, setDrillOpen] = useState(false);
+  const viewMode = useAppSelector(selectInsightViewMode);
+  const drillId = useAppSelector(selectTeamDrillId);
+  const drillData = useAppSelector(selectTeamDrillData);
   const { navigateToScreen } = useNavigation();
 
   useEffect(() => {
-    loadTeamView(teamId, period);
-  }, [teamId, period]);
+    loadTeamView(teamId, period, resolveDateRange(period, customRange));
+  }, [teamId, period, customRange]);
 
   const handleNavigateToIc = (personId: string): void => {
     selectIcPerson(personId);
@@ -126,45 +142,16 @@ const TeamViewScreen: React.FC = () => {
     if (range) setDateRange(range);
   };
 
-  const handleDrillClick = async (drillId: string): Promise<void> => {
-    try {
-      const api = apiRegistry.getService(InsightApiService);
-      const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
-        $filter: `org_unit_id eq '${teamId}' and drill_id eq '${drillId}'`,
-      });
-      const data = resp.items[0];
-      if (data) {
-        setDrillData(data);
-        setDrillOpen(true);
-      }
-    } catch (err) {
-      console.error('Failed to load drill data:', err);
-    }
+  const handleDrillClick = (drillId: string): void => {
+    openTeamDrill({ kind: 'team', teamId, drillId });
   };
 
-  const handleMembersDrill = async (): Promise<void> => {
-    await handleDrillClick('team-members');
+  const handleMembersDrill = (): void => {
+    handleDrillClick('team-members');
   };
 
-  const handleCellDrill = async (personId: string, drillId: string): Promise<void> => {
-    try {
-      const api = apiRegistry.getService(InsightApiService);
-      const resp = await api.queryMetric<DrillData>(METRIC_REGISTRY.IC_DRILL, {
-        $filter: `person_id eq '${personId}' and drill_id eq '${drillId}'`,
-      });
-      const data = resp.items[0];
-      if (data) {
-        setDrillData(data);
-        setDrillOpen(true);
-      }
-    } catch (err) {
-      console.error('Failed to load drill data:', err);
-    }
-  };
-
-  const handleCloseDrill = (): void => {
-    setDrillOpen(false);
-    setDrillData(null);
+  const handleCellDrill = (personId: string, drillId: string): void => {
+    openTeamDrill({ kind: 'cell', personId, drillId });
   };
 
   return (
@@ -183,7 +170,7 @@ const TeamViewScreen: React.FC = () => {
                 <div className="text-base font-bold text-gray-900 leading-tight">{teamName}</div>
                 <div className="text-xs text-gray-400">
                   {currentUser.name
-                    ? (directReportsOnly
+                    ? (canFilterDirectReports && directReportsOnly
                         ? `Direct reports of ${currentUser.name}`
                         : `${currentUser.name}'s department`)
                     : t('header.subtitle')}
@@ -193,25 +180,27 @@ const TeamViewScreen: React.FC = () => {
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <label className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700 select-none">
-            <input
-              type="checkbox"
-              checked={directReportsOnly}
-              onChange={(e) => { setDirectReportsOnly(e.target.checked); }}
-              className="cursor-pointer"
-            />
-            <span>Direct reports only</span>
-            <span className="text-xs text-gray-400">
-              ({members.length}/{baseMembers.length})
-            </span>
-          </label>
+          {canFilterDirectReports && (
+            <label className="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700 select-none">
+              <input
+                type="checkbox"
+                checked={directReportsOnly}
+                onChange={(e) => { setDirectReportsOnly(e.target.checked); }}
+                className="cursor-pointer"
+              />
+              <span>Direct reports only</span>
+              <span className="text-xs text-gray-400">
+                ({members.length}/{baseMembers.length})
+              </span>
+            </label>
+          )}
           <PeriodSelectorBar
             period={period}
             customRange={customRange}
             onPeriodChange={changePeriod}
             onRangeChange={handleRangeChange}
           />
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+          <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
         </div>
       </div>
 
@@ -240,7 +229,7 @@ const TeamViewScreen: React.FC = () => {
         onDrillClick={handleDrillClick}
       />
 
-      <DrillModal open={drillOpen} drill={drillData} onClose={handleCloseDrill} />
+      <DrillModal open={!!drillId} drill={drillData} onClose={closeTeamDrill} />
     </div>
   );
 };

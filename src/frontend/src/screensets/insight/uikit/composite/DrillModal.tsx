@@ -19,6 +19,7 @@ import {
   TableRow,
   TableCell,
 } from '@hai3/uikit';
+import ComingSoon from './ComingSoon';
 
 export interface DrillModalDrill {
   title: string;
@@ -58,33 +59,39 @@ const DrillModal: React.FC<DrillModalProps> = ({ drill, open, onClose }) => (
             {drill.filter}
           </div>
 
-          {/* Table */}
+          {/* Table or empty-state */}
           <ScrollArea className="flex-1">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  {drill.columns.map((col) => (
-                    <TableHead
-                      key={col}
-                      className="text-xs font-semibold text-gray-500 whitespace-nowrap"
-                    >
-                      {col}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {drill.rows.map((row, rowIdx) => (
-                  <TableRow key={rowIdx}>
+            {drill.rows.length === 0 ? (
+              <div className="p-4">
+                <ComingSoon variant="card" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
                     {drill.columns.map((col) => (
-                      <TableCell key={col} className="text-gray-700 text-xs">
-                        {row[col] ?? '—'}
-                      </TableCell>
+                      <TableHead
+                        key={col}
+                        className="text-xs font-semibold text-gray-500 whitespace-nowrap"
+                      >
+                        {col}
+                      </TableHead>
                     ))}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {drill.rows.map((row, rowIdx) => (
+                    <TableRow key={rowIdx}>
+                      {drill.columns.map((col) => (
+                        <TableCell key={col} className="text-gray-700 text-xs">
+                          {row[col] ?? '—'}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </ScrollArea>
 
           {/* Footer */}

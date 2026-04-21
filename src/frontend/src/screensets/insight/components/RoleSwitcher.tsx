@@ -15,12 +15,6 @@ const ROLE_LABEL: Record<UserRole, string> = {
   ic: 'IC',
 };
 
-const ROLE_BADGE_DARK: Record<UserRole, string> = {
-  executive: 'bg-purple-500/20 text-purple-300',
-  team_lead: 'bg-blue-500/20 text-blue-300',
-  ic: 'bg-white/10 text-gray-300',
-};
-
 export const RoleSwitcher: React.FC = () => {
   const currentUser = useAppSelector(selectCurrentUser);
   const menuState = useAppSelector((state) => state['layout/menu'] as MenuState | undefined);
@@ -32,10 +26,13 @@ export const RoleSwitcher: React.FC = () => {
     </div>
   );
 
+  const jobTitle = currentUser._identity?.job_title?.trim();
+  const subtitle = jobTitle && jobTitle.length > 0 ? jobTitle : ROLE_LABEL[currentUser.role];
+
   return (
     <div
       className={`w-full flex items-center gap-2.5 px-3 py-2.5 ${collapsed ? 'justify-center' : ''}`}
-      title={collapsed ? `${currentUser.name} · ${ROLE_LABEL[currentUser.role]}` : undefined}
+      title={collapsed ? `${currentUser.name} \u00b7 ${subtitle}` : undefined}
     >
       {avatar}
       {!collapsed && (
@@ -43,9 +40,12 @@ export const RoleSwitcher: React.FC = () => {
           <div className="text-sm font-semibold text-white/90 truncate leading-tight">
             {currentUser.name}
           </div>
-          <span className={`text-2xs font-bold px-1.5 py-px rounded ${ROLE_BADGE_DARK[currentUser.role]}`}>
-            {ROLE_LABEL[currentUser.role]}
-          </span>
+          <div
+            className="text-2xs text-white/60 truncate leading-tight mt-0.5"
+            title={subtitle}
+          >
+            {subtitle}
+          </div>
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { TeamMember, TeamKpi, BulletSection, TeamViewData, TeamViewConfig, DataAvailability } from '../types';
+import type { TeamMember, TeamKpi, BulletSection, TeamViewData, TeamViewConfig, DataAvailability, DrillData } from '../types';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/teamView` as const;
 
@@ -24,6 +24,8 @@ export interface TeamViewState {
   availability: DataAvailability | null;
   loading: boolean;
   error: string | null;
+  drillId: string | null;
+  drillData: DrillData | null;
 }
 
 const initialState: TeamViewState = {
@@ -36,6 +38,8 @@ const initialState: TeamViewState = {
   availability: null,
   loading: false,
   error: null,
+  drillId: null,
+  drillData: null,
 };
 
 export const teamViewSlice = createSlice({
@@ -62,11 +66,30 @@ export const teamViewSlice = createSlice({
     setError: (state, action: PayloadAction<string>) => {
       state.error = action.payload;
     },
+    setDrillState: (
+      state,
+      action: PayloadAction<{ drillId: string; drillData: DrillData }>,
+    ) => {
+      state.drillId = action.payload.drillId;
+      state.drillData = action.payload.drillData;
+    },
+    clearDrill: (state) => {
+      state.drillId = null;
+      state.drillData = null;
+    },
   },
 });
 
 // Export actions
-export const { setSelectedTeamId, setLoading, setTeamViewData, setAvailability, setError } = teamViewSlice.actions;
+export const {
+  setSelectedTeamId,
+  setLoading,
+  setTeamViewData,
+  setAvailability,
+  setError,
+  setDrillState,
+  clearDrill,
+} = teamViewSlice.actions;
 
 // Export the slice object (not just the reducer) for registerSlice()
 export default teamViewSlice;
@@ -111,4 +134,12 @@ export const selectSelectedTeamId = (state: RootState): string => {
 
 export const selectTeamAvailability = (state: RootState): DataAvailability | null => {
   return state[SLICE_KEY]?.availability ?? null;
+};
+
+export const selectTeamDrillId = (state: RootState): string | null => {
+  return state[SLICE_KEY]?.drillId ?? null;
+};
+
+export const selectTeamDrillData = (state: RootState): DrillData | null => {
+  return state[SLICE_KEY]?.drillData ?? null;
 };

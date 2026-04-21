@@ -3,7 +3,7 @@
  * Orchestration only — no direct state/API logic.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useAppSelector, useNavigation, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
 import { selectCustomRange } from '../../slices/periodSlice';
@@ -12,6 +12,7 @@ import { ViewModeToggle } from '../../uikit/composite/ViewModeToggle';
 import type { CustomRange } from '../../types';
 import { usePeriod } from '../../hooks/usePeriod';
 import { loadIcDashboard, openDrill, closeDrill } from '../../actions/icDashboardActions';
+import { changeViewMode } from '../../actions/insightUiActions';
 import {
   selectPerson,
   selectIcKpis,
@@ -22,10 +23,12 @@ import {
   selectDrillData,
   selectIcLoading,
   selectSelectedPersonId,
+  selectIcErroredSections,
 } from '../../slices/icDashboardSlice';
 import { selectCurrentUser } from '../../slices/currentUserSlice';
+import { selectInsightViewMode } from '../../slices/insightUiSlice';
+import { resolveDateRange } from '../../utils/periodToDateRange';
 import { MY_DASHBOARD_SCREEN_ID, INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID } from '../../ids';
-import type { ViewMode } from '../../types';
 import KpiStrip from '../../uikit/composite/KpiStrip';
 import MetricCard from '../../uikit/composite/MetricCard';
 import CollapsibleSection from '../../uikit/composite/CollapsibleSection';
@@ -88,7 +91,7 @@ const IcDashboardScreen: React.FC = () => {
     : selectedPersonId;
   const period = usePeriod();
   const customRange = useAppSelector(selectCustomRange);
-  const [viewMode, setViewMode] = useState<ViewMode>('chart');
+  const viewMode = useAppSelector(selectInsightViewMode);
 
   const handleRangeChange = (range: CustomRange | null): void => {
     if (range) setDateRange(range);
@@ -102,10 +105,13 @@ const IcDashboardScreen: React.FC = () => {
   const drillId = useAppSelector(selectDrillId);
   const drillData = useAppSelector(selectDrillData);
   const loading = useAppSelector(selectIcLoading);
+  const erroredSections = useAppSelector(selectIcErroredSections);
 
-  useEffect(() => {
-    loadIcDashboard(personId, period);
-  }, [personId, period]);
+  const reload = (): void => {
+    loadIcDashboard(personId, period, resolveDateRange(period, customRange));
+  };
+
+  useEffect(reload, [personId, period, customRange]);
 
   // Filter bullet metrics by section. Section names are aligned with Team View
   // (transforms.ts / BULLET_DEFS) so the same defs drive labels+thresholds.
@@ -149,7 +155,7 @@ const IcDashboardScreen: React.FC = () => {
             onPeriodChange={changePeriod}
             onRangeChange={handleRangeChange}
           />
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+          <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
         </div>
       </div>
 
@@ -168,6 +174,8 @@ const IcDashboardScreen: React.FC = () => {
           onDrillClick={handleDrillClick}
           mode={viewMode}
           personName={person?.name}
+          errored={erroredSections.includes('task_delivery')}
+          onRetry={reload}
         />
         <MetricCard
           title="Git Output"

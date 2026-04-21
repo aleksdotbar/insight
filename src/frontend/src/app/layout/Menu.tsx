@@ -77,10 +77,30 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
     });
   };
 
+
+  /**
+   * Static Tailwind classes per depth — Tailwind JIT cannot pick up
+   * `pl-${n}` template strings, so we enumerate. Depths beyond the table
+   * fall back to the deepest class (rare for subordinate trees).
+   */
+  const INDENT_BY_DEPTH: Record<number, string> = {
+    0: '',
+    1: 'pl-8',
+    2: 'pl-12',
+    3: 'pl-16',
+    4: 'pl-20',
+    5: 'pl-24',
+  };
+
   /** Recursive item renderer */
   const renderItem = (item: MenuItem, depth = 0): React.ReactNode => {
     const hasChildren = (item.children?.length ?? 0) > 0;
-    const isExpanded = expandedGroups[item.id] ?? true;
+    // Only the top-level group expands by default (so direct reports stay
+    // visible). Every nested group starts collapsed — expanding a manager
+    // shouldn't cascade through their entire subtree. User toggles win via
+    // expandedGroups.
+    const defaultExpanded = depth === 0;
+    const isExpanded = expandedGroups[item.id] ?? defaultExpanded;
     const [screenId, param] = item.id.split('::');
     const activeParam = param
       ? (activeTeamParam === param ? activeTeamParam : activePersonParam)
@@ -89,7 +109,7 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
       ? currentScreen === screenId && activeParam === param
       : currentScreen === item.id;
     const isActive = isSelfActive || hasActiveDescendant(item);
-    const indent = depth > 0 ? `pl-${4 + depth * 4}` : '';
+    const indent = INDENT_BY_DEPTH[depth] ?? INDENT_BY_DEPTH[5];
 
     return (
       <SidebarMenuItem key={item.id}>

@@ -20,6 +20,8 @@ export enum IcDashboardEvents {
   IcPersonLoaded              = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/personLoaded`,
   IcDashboardAvailabilityLoaded = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/availabilityLoaded`,
   IcDashboardLoadFailed       = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadFailed`,
+  /** List of section IDs whose queries actually rejected (not merely empty). */
+  IcDashboardSectionsErrored  = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/sectionsErrored`,
   DrillOpened                 = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillOpened`,
   DrillClosed                 = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillClosed`,
 }
@@ -35,6 +37,7 @@ declare module '@hai3/react' {
     [IcDashboardEvents.IcPersonLoaded]:               IdentityPerson;
     [IcDashboardEvents.IcDashboardAvailabilityLoaded]: DataAvailability;
     [IcDashboardEvents.IcDashboardLoadFailed]:        string;
+    [IcDashboardEvents.IcDashboardSectionsErrored]:   string[];
     [IcDashboardEvents.DrillOpened]:                  { drillId: string; drillData: DrillData };
     [IcDashboardEvents.DrillClosed]:                  void;
   }

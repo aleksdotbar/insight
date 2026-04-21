@@ -15,6 +15,7 @@ import {
   setError,
   setDrillState,
   clearDrill,
+  setErroredSections,
 } from '../slices/icDashboardSlice';
 
 /**
@@ -46,6 +47,10 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
 
   eventBus.on(IcDashboardEvents.IcDashboardLoadFailed, (msg) => {
     dispatch(setError(msg));
+  });
+
+  eventBus.on(IcDashboardEvents.IcDashboardSectionsErrored, (sections) => {
+    dispatch(setErroredSections(sections));
   });
 
   eventBus.on(IcDashboardEvents.DrillOpened, ({ drillId, drillData }) => {

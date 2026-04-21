@@ -15,6 +15,7 @@ import {
 import { Tooltip } from 'recharts';
 import type { OrgKpis } from '../../../types';
 import { CHART_BLUE, CHART_FONT_TICK } from '../../../uikit/base/chartColors';
+import ComingSoon from '../../../uikit/composite/ComingSoon';
 
 export interface OrgHealthRadarProps {
   orgKpis: OrgKpis;
@@ -29,25 +30,31 @@ export const OrgHealthRadar: React.FC<OrgHealthRadarProps> = ({ orgKpis }) => {
     { metric: 'PR Cycle', value: orgKpis.prCycleScore },
   ];
 
+  const hasAnyValue = data.some((d) => d.value !== null && d.value !== undefined);
+
   return (
     <div>
       <div className="text-sm font-semibold mb-4">
         Team Health Overview
       </div>
-      <ResponsiveContainer width="100%" height={220}>
-        <RadarChart data={data}>
-          <PolarGrid />
-          <PolarAngleAxis dataKey="metric" tick={{ fontSize: CHART_FONT_TICK }} />
-          <Radar
-            dataKey="value"
-            stroke={CHART_BLUE}
-            fill={CHART_BLUE}
-            fillOpacity={0.15}
-            strokeWidth={2}
-          />
-          <Tooltip content={<ChartTooltipContent />} />
-        </RadarChart>
-      </ResponsiveContainer>
+      {hasAnyValue ? (
+        <ResponsiveContainer width="100%" height={220}>
+          <RadarChart data={data}>
+            <PolarGrid />
+            <PolarAngleAxis dataKey="metric" tick={{ fontSize: CHART_FONT_TICK }} />
+            <Radar
+              dataKey="value"
+              stroke={CHART_BLUE}
+              fill={CHART_BLUE}
+              fillOpacity={0.15}
+              strokeWidth={2}
+            />
+            <Tooltip content={<ChartTooltipContent />} />
+          </RadarChart>
+        </ResponsiveContainer>
+      ) : (
+        <ComingSoon variant="card" />
+      )}
     </div>
   );
 };

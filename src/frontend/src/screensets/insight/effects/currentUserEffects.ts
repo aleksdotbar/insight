@@ -35,21 +35,37 @@ function buildMenuFromIdentity(user: CurrentUser) {
     return [myDashItem];
   }
 
-  /** Recursively build menu items from subordinate tree */
+  /**
+   * Recursively build menu items from subordinate tree.
+   *
+   * Leaves (no subordinates) link directly to IC dashboard.
+   * Managers become expandable groups whose root node links to their team
+   * view, and the first child is a personal IC-dashboard link so the
+   * individual remains reachable alongside their team.
+   */
   const toMenuItems = (subs: IdentityPerson[]): object[] =>
     subs.map((sub) => {
-      const children = toMenuItems(sub.subordinates);
-      const item: Record<string, unknown> = {
-        id: children.length > 0
-          ? `${TEAM_VIEW_SCREEN_ID}::${sub.email}`
-          : `${IC_DASHBOARD_SCREEN_ID}::${sub.email}`,
-        label: sub.display_name,
-        icon: children.length > 0 ? 'lucide:users' : 'lucide:user',
-      };
-      if (children.length > 0) {
-        item.children = children;
+      const nested = toMenuItems(sub.subordinates);
+      if (nested.length === 0) {
+        return {
+          id: `${IC_DASHBOARD_SCREEN_ID}::${sub.email}`,
+          label: sub.display_name,
+          icon: 'lucide:user',
+        };
       }
-      return item;
+      return {
+        id: `${TEAM_VIEW_SCREEN_ID}::${sub.email}`,
+        label: sub.display_name,
+        icon: 'lucide:users',
+        children: [
+          {
+            id: `${IC_DASHBOARD_SCREEN_ID}::${sub.email}`,
+            label: `${sub.display_name} \u2014 personal`,
+            icon: 'lucide:user',
+          },
+          ...nested,
+        ],
+      };
     });
 
   const subordinateItems = toMenuItems(identity.subordinates);
