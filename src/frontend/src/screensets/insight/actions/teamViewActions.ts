@@ -85,7 +85,6 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
   const connectors = apiRegistry.getService(ConnectorManagerService);
 
   const teamFilter = `org_unit_id eq '${odataEscapeValue(teamId)}' and ${odataDateFilter(period)}`;
-  const teamBulletFilter = teamFilter;
 
   void Promise.allSettled([
     api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, {
@@ -93,10 +92,10 @@ export const loadTeamView = (teamId: string, period: PeriodValue): void => {
       $orderby: 'display_name asc',
       $top:     200,
     }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_DELIVERY, { $filter: teamBulletFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_QUALITY,  { $filter: teamBulletFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_COLLAB,   { $filter: teamBulletFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_AI,       { $filter: teamBulletFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_DELIVERY, { $filter: teamFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_QUALITY,  { $filter: teamFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_COLLAB,   { $filter: teamFilter }),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_AI,       { $filter: teamFilter }),
     connectors.getDataAvailability(),
   ])
     .then(([membersResult, deliveryResult, qualityResult, collabResult, aiResult, availResult]) => {

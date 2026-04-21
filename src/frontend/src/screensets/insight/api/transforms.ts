@@ -131,7 +131,7 @@ function formatRangeStr(value: number, unit: string): string {
 
 /**
  * Units where the displayed value should be an integer (counts, members, messages).
- * Fractional-by-nature units (%, hours, ratios) are excluded.
+ * Fractional-by-nature units (%, hours, ratios, "avg" of small values) are excluded.
  */
 function isCountUnit(unit: string): boolean {
   const u = unit.toLowerCase().trim();
@@ -144,8 +144,7 @@ function isCountUnit(unit: string): boolean {
     u === 'days' ||
     u === '/mo' ||
     u === '/day' ||
-    u.startsWith('/ ') ||
-    u === 'avg'
+    u.startsWith('/ ')
   );
 }
 
