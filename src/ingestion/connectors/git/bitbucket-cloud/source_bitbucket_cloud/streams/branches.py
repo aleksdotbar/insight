@@ -105,11 +105,11 @@ class BranchesStream(HttpSubStream, BitbucketCloudStream):
             "pagelen": str(self.page_size),
             "sort": "-target.date",
         }
-        # Cursor wins; start_date fallback applies only on first run (no cursor).
-        cursor = (stream_slice or {}).get("cursor_value", "") or ""
-        q_date = cursor or self._start_date
-        if q_date:
-            params["q"] = f'target.date>"{q_date}"'
+        # No BBQL q-filter: Bitbucket docs only document `q=name~"..."` for
+        # the refs endpoint; `target.date` appears to return 0 rows in
+        # practice (see branches stream regression on prod). Incremental
+        # filtering happens client-side via sort=-target.date + early-exit
+        # in parse_response.
         return params
 
     def next_page_token(self, response):
@@ -144,6 +144,21 @@ class BranchesStream(HttpSubStream, BitbucketCloudStream):
                 logger.info(
                     f"branches: {workspace}/{slug} cursor early-exit at "
                     f"target_date={target_date} cursor={cursor_value}"
+                )
+                return
+            # start_date cutoff applies only on first run (no cursor). Branches
+            # are newest-first by target.date, so once we cross below start_date
+            # the rest of pagination is older and can be skipped.
+            if (
+                not cursor_value
+                and self._start_date
+                and target_date
+                and target_date[:10] < self._start_date
+            ):
+                self._stop_pagination = True
+                logger.info(
+                    f"branches: {workspace}/{slug} start_date cutoff at "
+                    f"target_date={target_date} start_date={self._start_date}"
                 )
                 return
             emitted += 1
