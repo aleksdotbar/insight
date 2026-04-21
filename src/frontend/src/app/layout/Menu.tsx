@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import { useAppSelector, useNavigation, useTranslation, eventBus, type MenuState, type MenuItem } from '@hai3/react';
+import { requestSelection } from '@/screensets/insight/actions/insightNavigationActions';
 import {
   Sidebar,
   SidebarContent,
@@ -19,6 +20,7 @@ import {
 import { Icon } from '@iconify/react';
 import { HAI3LogoIcon } from '@/app/icons/HAI3LogoIcon';
 import { HAI3LogoTextIcon } from '@/app/icons/HAI3LogoTextIcon';
+import { decodeMenuItemId } from '@/screensets/insight/utils/menuItemId';
 
 export interface MenuProps {
   children?: React.ReactNode;
@@ -49,13 +51,9 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
   };
 
   const handleItemClick = (itemId: string) => {
-    if (itemId.includes('::')) {
-      const [screenId, param] = itemId.split('::');
-      eventBus.emit('layout/menu/itemParam', { screenId, param });
-      navigateToScreen(currentScreenset ?? '', screenId);
-    } else {
-      navigateToScreen(currentScreenset ?? '', itemId);
-    }
+    const { screenId, param } = decodeMenuItemId(itemId);
+    requestSelection(screenId, param);
+    navigateToScreen(currentScreenset ?? '', screenId);
     onNavigate?.();
   };
 
@@ -66,7 +64,7 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
   const hasActiveDescendant = (item: MenuItem): boolean => {
     if (!item.children?.length) return false;
     return item.children.some((child) => {
-      const [screenId, param] = child.id.split('::');
+      const { screenId, param } = decodeMenuItemId(child.id);
       const isLeaf = !child.children?.length;
       if (isLeaf && param) {
         const activeParam = activeTeamParam === param ? activeTeamParam : activePersonParam;
@@ -101,7 +99,7 @@ export const Menu: React.FC<MenuProps> = ({ children, onNavigate }) => {
     // expandedGroups.
     const defaultExpanded = depth === 0;
     const isExpanded = expandedGroups[item.id] ?? defaultExpanded;
-    const [screenId, param] = item.id.split('::');
+    const { screenId, param } = decodeMenuItemId(item.id);
     const activeParam = param
       ? (activeTeamParam === param ? activeTeamParam : activePersonParam)
       : null;

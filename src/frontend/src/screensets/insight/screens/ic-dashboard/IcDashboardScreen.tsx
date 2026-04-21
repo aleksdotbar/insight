@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { useAppSelector, useNavigation, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
+import { useAppSelector, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
 import { selectCustomRange } from '../../slices/periodSlice';
 import { PeriodSelectorBar } from '../../uikit/composite/PeriodSelectorBar';
@@ -25,10 +25,9 @@ import {
   selectSelectedPersonId,
   selectIcErroredSections,
 } from '../../slices/icDashboardSlice';
-import { selectCurrentUser } from '../../slices/currentUserSlice';
 import { selectInsightViewMode } from '../../slices/insightUiSlice';
 import { resolveDateRange } from '../../utils/periodToDateRange';
-import { MY_DASHBOARD_SCREEN_ID, INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID } from '../../ids';
+import { INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID } from '../../ids';
 import KpiStrip from '../../uikit/composite/KpiStrip';
 import MetricCard from '../../uikit/composite/MetricCard';
 import CollapsibleSection from '../../uikit/composite/CollapsibleSection';
@@ -82,13 +81,10 @@ const translations = I18nRegistry.createLoader({
 
 const IcDashboardScreen: React.FC = () => {
   useScreenTranslations(INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID, translations);
-  const { currentScreen } = useNavigation();
-  const currentUser = useAppSelector(selectCurrentUser);
-  const selectedPersonId = useAppSelector(selectSelectedPersonId);
-  // "My Dashboard" always shows the current user's own data
-  const personId = currentScreen === MY_DASHBOARD_SCREEN_ID
-    ? currentUser.personId
-    : selectedPersonId;
+  // `selectSelectedPersonId` resolves to the selected IC, falling back to the
+  // viewer themself (My Dashboard semantics) via userContext. No routing
+  // branch needed — the context slice already encodes the intent.
+  const personId = useAppSelector(selectSelectedPersonId);
   const period = usePeriod();
   const customRange = useAppSelector(selectCustomRange);
   const viewMode = useAppSelector(selectInsightViewMode);

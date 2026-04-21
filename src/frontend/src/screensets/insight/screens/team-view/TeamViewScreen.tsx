@@ -80,9 +80,8 @@ const TeamViewScreen: React.FC = () => {
   const { t } = useTranslation();
   const period = usePeriod();
   const customRange = useAppSelector(selectCustomRange);
-  const selectedTeamId = useAppSelector(selectSelectedTeamId);
+  const teamId = useAppSelector(selectSelectedTeamId);
   const currentUser = useAppSelector(selectCurrentUser);
-  const teamId = selectedTeamId || currentUser.teamId || 'backend';
   const loading = useAppSelector(selectTeamViewLoading);
   const allMembers = useAppSelector(selectMembers);
   const [directReportsOnly, setDirectReportsOnly] = useState(true);
@@ -130,6 +129,7 @@ const TeamViewScreen: React.FC = () => {
   const { navigateToScreen } = useNavigation();
 
   useEffect(() => {
+    if (!teamId) return;
     loadTeamView(teamId, period, resolveDateRange(period, customRange));
   }, [teamId, period, customRange]);
 

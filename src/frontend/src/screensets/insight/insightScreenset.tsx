@@ -28,6 +28,8 @@ import currentUserSlice from './slices/currentUserSlice';
 import { initializeCurrentUserEffects } from './effects/currentUserEffects';
 import insightUiSlice from './slices/insightUiSlice';
 import { initializeInsightUiEffects } from './effects/insightUiEffects';
+import userContextSlice from './slices/userContextSlice';
+import { initializeInsightNavigationEffects } from './effects/insightNavigationEffects';
 
 // Import for side effect - register API services
 import './api/insightApiService';
@@ -107,6 +109,9 @@ registerSlice(currentUserSlice, (dispatch) => {
 });
 registerSlice(insightUiSlice, (dispatch) => {
   initializeInsightUiEffects(dispatch);
+});
+registerSlice(userContextSlice, (dispatch) => {
+  initializeInsightNavigationEffects(dispatch);
 });
 
 /**

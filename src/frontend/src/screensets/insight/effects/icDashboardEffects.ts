@@ -7,7 +7,6 @@
 import { type AppDispatch, eventBus } from '@hai3/react';
 import { IcDashboardEvents } from '../events/icDashboardEvents';
 import {
-  setSelectedPersonId,
   setLoading,
   setIcDashboardData,
   setPerson,
@@ -17,6 +16,7 @@ import {
   clearDrill,
   setErroredSections,
 } from '../slices/icDashboardSlice';
+import { setSelectedPerson } from '../slices/userContextSlice';
 
 /**
  * Initialize effects
@@ -26,7 +26,7 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
   const dispatch = appDispatch;
 
   eventBus.on(IcDashboardEvents.PersonSelected, (personId) => {
-    dispatch(setSelectedPersonId(personId));
+    dispatch(setSelectedPerson(personId));
   });
 
   eventBus.on(IcDashboardEvents.IcDashboardLoadStarted, () => {

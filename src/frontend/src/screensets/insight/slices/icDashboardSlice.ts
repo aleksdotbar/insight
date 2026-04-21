@@ -22,9 +22,12 @@ const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/icDashboard` as const;
 
 /**
  * State interface
+ *
+ * `selectedPersonId` previously lived here; it has been promoted to
+ * `userContextSlice.selection.person` as part of the single-source-of-truth
+ * refactor (Phase 4). Use `selectActivePerson` from userContextSlice instead.
  */
 export interface IcDashboardState {
-  selectedPersonId: string;
   /** Loaded separately via IdentityApiService */
   person: IdentityPerson | null;
   kpis: IcKpi[];
@@ -46,7 +49,6 @@ export interface IcDashboardState {
 }
 
 const initialState: IcDashboardState = {
-  selectedPersonId: 'p1',
   person: null,
   kpis: [],
   bulletMetrics: [],
@@ -64,9 +66,6 @@ export const icDashboardSlice = createSlice({
   name: SLICE_KEY,
   initialState,
   reducers: {
-    setSelectedPersonId: (state, action: PayloadAction<string>) => {
-      state.selectedPersonId = action.payload;
-    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
@@ -107,7 +106,6 @@ export const icDashboardSlice = createSlice({
 
 // Export actions
 export const {
-  setSelectedPersonId,
   setLoading,
   setIcDashboardData,
   setPerson,
@@ -167,9 +165,10 @@ export const selectIcAvailability = (state: RootState): DataAvailability | null 
   return state[SLICE_KEY]?.availability ?? null;
 };
 
-export const selectSelectedPersonId = (state: RootState): string => {
-  return state[SLICE_KEY]?.selectedPersonId ?? 'p1';
-};
+/** Re-export of selectActivePerson so callers can import from this slice
+ *  without knowing about the userContext refactor. Prefer importing from
+ *  userContextSlice directly in new code. */
+export { selectActivePerson as selectSelectedPersonId } from './userContextSlice';
 
 export const selectIcErroredSections = (state: RootState): string[] => {
   return state[SLICE_KEY]?.erroredSections ?? [];
