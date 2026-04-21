@@ -18,7 +18,9 @@ export function settled<T>(
   label: string,
 ): T {
   if (result.status === 'fulfilled') return result.value;
-  console.warn(`[Insight] ${label} unavailable:`, result.reason);
+  if (import.meta.env.DEV) {
+    console.warn(`[Insight] ${label} unavailable:`, result.reason);
+  }
   return fallback;
 }
 

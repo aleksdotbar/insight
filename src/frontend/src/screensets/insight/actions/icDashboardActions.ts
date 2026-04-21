@@ -180,8 +180,9 @@ export const openDrill = (personId: string, drillId: string): void => {
         eventBus.emit(IcDashboardEvents.DrillOpened, { drillId, drillData: transformDrill(drillData) });
       }
     })
-    .catch((err: unknown) => {
-      console.error('Failed to load drill data:', err);
+    .catch(() => {
+      // Drill fetch failed — keep the modal closed. UI shows ComingSoon for
+      // empty/error content; explicit user-facing toast is future work.
     });
 };
 

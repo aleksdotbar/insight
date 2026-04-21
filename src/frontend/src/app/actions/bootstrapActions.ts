@@ -48,8 +48,6 @@ function deriveRole(person: IdentityPerson): 'executive' | 'team_lead' | 'ic' {
  * Called by Layout on mount. Emits events for header + menu updates.
  */
 export function fetchCurrentUser(): void {
-  eventBus.emit('app/user/fetch');
-
   // Fire-and-forget: read token from OIDC session, resolve identity
   const storageKey = Object.keys(sessionStorage).find((k) => k.startsWith('oidc.user:'));
   if (!storageKey) return;
