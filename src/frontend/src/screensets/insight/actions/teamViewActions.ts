@@ -93,7 +93,11 @@ export const loadTeamView = (teamId: string, period: PeriodValue, range: DateRan
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
 
-  const teamFilter = `org_unit_id eq '${odataEscapeValue(teamId)}' and ${odataDateFilter(range)}`;
+  // Lowercase org_unit_id only when it's an email (executive drilled into a
+  // subordinate's person_subtree — analytics stores those as lowercase).
+  // Real org_unit_name strings ("VZ - R&D - Engineering") are kept verbatim.
+  const teamIdNormalized = teamId.includes('@') ? teamId.toLowerCase() : teamId;
+  const teamFilter = `org_unit_id eq '${odataEscapeValue(teamIdNormalized)}' and ${odataDateFilter(range)}`;
 
   void Promise.allSettled([
     api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, {
@@ -165,7 +169,7 @@ export const openTeamDrill = (filter: TeamDrillFilter): void => {
   const $filter =
     filter.kind === 'team'
       ? `org_unit_id eq '${odataEscapeValue(filter.teamId)}' and drill_id eq '${odataEscapeValue(filter.drillId)}'`
-      : `person_id eq '${odataEscapeValue(filter.personId)}' and drill_id eq '${odataEscapeValue(filter.drillId)}'`;
+      : `person_id eq '${odataEscapeValue(filter.personId.toLowerCase())}' and drill_id eq '${odataEscapeValue(filter.drillId)}'`;
 
   void apiRegistry
     .getService(InsightApiService)
