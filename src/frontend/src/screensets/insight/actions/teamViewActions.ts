@@ -31,7 +31,17 @@ import { settled, emptyOdata } from '../utils/settledResult';
 // Team KPI derivation (§4.2 — frontend-computed from member rows)
 // ---------------------------------------------------------------------------
 
-function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
+function median(values: number[]): number | null {
+  const nums = values.filter((v) => Number.isFinite(v));
+  if (nums.length === 0) return null;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1]! + sorted[mid]!) / 2
+    : sorted[mid]!;
+}
+
+export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
   const total      = members.length;
   const focusTrigger = TEAM_VIEW_CONFIG.alert_thresholds
     .find((t) => t.metric_key === 'focus_time_pct')?.trigger ?? 60;
@@ -45,6 +55,9 @@ function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
   const belowFocus  = total - focusCount;
   const noAiCount   = members.filter((m) => m.ai_tools.length === 0).length;
 
+  // Median dev_time_h across members — honest replacement for the hardcoded "13h" chip.
+  const devTimeMedian = median(members.map((m) => m.dev_time_h));
+
   const atRiskStatus:  'good' | 'warn' | 'bad' = atRisk === 0 ? 'good' : atRisk <= 2 ? 'warn' : 'bad';
   const focusStatus:   'good' | 'warn' | 'bad' = belowFocus === 0 ? 'good' : belowFocus <= 2 ? 'warn' : 'bad';
   const noAiStatus:    'good' | 'warn' | 'bad' = noAiCount === 0 ? 'good' : noAiCount <= 2 ? 'warn' : 'bad';
@@ -53,6 +66,13 @@ function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
     if (k.metric_key === 'at_risk_count') return { ...k, value: String(atRisk),  status: atRiskStatus };
     if (k.metric_key === 'focus_gte_60')  return { ...k, value: `${focusCount} / ${total}`, sublabel: `${belowFocus} member${belowFocus !== 1 ? 's' : ''} below target`, status: focusStatus };
     if (k.metric_key === 'not_using_ai')  return { ...k, value: String(noAiCount), status: noAiStatus };
+    if (k.metric_key === 'team_dev_time') {
+      const value = devTimeMedian === null ? '—' : `${devTimeMedian.toFixed(1)}h`;
+      // chipLabel: undefined — TeamHeroStrip uses `kpi.chipLabel ?? kpi.status`
+      // for the badge, so empty string would render an empty badge; undefined
+      // correctly falls back to status.
+      return { ...k, value, sublabel: `Team median \u00b7 ${total} member${total !== 1 ? 's' : ''}`, chipLabel: undefined };
+    }
     return k;
   });
 }

@@ -231,6 +231,7 @@ export interface TeamMember {
   period: PeriodValue;
   name: string;
   seniority: string;
+  supervisor_email: string | null;
   tasks_closed: number;
   bugs_fixed: number;
   dev_time_h: number;

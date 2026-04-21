@@ -115,8 +115,8 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
         kpis: transformIcKpis(curKpisResp.items[0] ?? null, prevKpisResp.items[0] ?? null, period),
         bulletMetrics: [
           ...transformBulletMetrics(deliveryResp.items, 'task_delivery', period),
-          ...transformBulletMetrics(collabResp.items,   'collab',        period),
-          ...transformBulletMetrics(aiResp.items,       'ai_tools',      period),
+          ...transformBulletMetrics(collabResp.items,   'collaboration', period),
+          ...transformBulletMetrics(aiResp.items,       'ai_adoption',   period),
         ],
         charts: {
           locTrend:      transformLocTrend(locResp.items, period),

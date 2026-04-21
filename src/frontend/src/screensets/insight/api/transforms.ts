@@ -129,6 +129,31 @@ function formatRangeStr(value: number, unit: string): string {
   return String(value);
 }
 
+/**
+ * Units where the displayed value should be an integer (counts, members, messages).
+ * Fractional-by-nature units (%, hours, ratios, "avg" of small values) are excluded.
+ */
+function isCountUnit(unit: string): boolean {
+  const u = unit.toLowerCase().trim();
+  return (
+    u === '' ||
+    u === 'tasks' ||
+    u === 'count' ||
+    u === 'lines' ||
+    u === 'replies' ||
+    u === 'days' ||
+    u === '/mo' ||
+    u === '/day' ||
+    u.startsWith('/ ')
+  );
+}
+
+function formatBulletValue(raw: number, unit: string): string {
+  if (!Number.isFinite(raw)) return String(raw);
+  if (isCountUnit(unit)) return String(Math.round(raw));
+  return String(Math.round(raw * 100) / 100); // up to 2 decimals for %, ratios, hours
+}
+
 // ---------------------------------------------------------------------------
 // 1. Executive summary
 // ---------------------------------------------------------------------------
@@ -137,6 +162,9 @@ export function transformExecRows(
   rows: RawExecSummaryRow[],
   thresholds?: ExecViewConfig['column_thresholds'],
 ): ExecTeamRow[] {
+  const toInt = (v: number | null | undefined): number =>
+    v == null || !Number.isFinite(v) ? 0 : Math.round(v);
+
   return rows.map((r) => {
     let status: 'good' | 'warn' | 'bad' = 'good';
 
@@ -152,9 +180,10 @@ export function transformExecRows(
     return {
       team_id: r.org_unit_id,
       team_name: r.org_unit_name,
-      headcount: r.headcount,
-      tasks_closed: r.tasks_closed,
-      bugs_fixed: r.bugs_fixed,
+      // Integer counters: round so UInt64 arriving as Float64 from backend displays cleanly.
+      headcount: toInt(r.headcount),
+      tasks_closed: toInt(r.tasks_closed),
+      bugs_fixed: toInt(r.bugs_fixed),
       build_success_pct: r.build_success_pct,
       focus_time_pct: r.focus_time_pct,
       ai_adoption_pct: r.ai_adoption_pct,
@@ -224,32 +253,35 @@ export function transformBulletMetrics(
       const def = defsByKey[r.metric_key];
 
       if (!def) {
-        // No matching definition — pass raw row through with defaults.
-        // This handles IC-level bullets whose metric_keys differ from team defs,
-        // and also works when the backend returns pre-formatted BulletMetric shape.
+        // No matching definition — backend surfaced a metric the FE doesn't know how
+        // to present. Pass it through with status 'warn' and range_min/range_max when
+        // available so the bar still makes sense.
         const ext = r as unknown as Record<string, unknown>;
+        const rangeMin = r.range_min ?? Number(ext['range_min'] ?? 0);
+        const rangeMax = r.range_max ?? Number(ext['range_max'] ?? 100);
+        const unitStr = String(ext['unit'] ?? '');
         return {
           period,
           section: String(ext['section'] ?? section),
           metric_key: r.metric_key,
           label: String(ext['label'] ?? r.metric_key),
           sublabel: String(ext['sublabel'] ?? ''),
-          value: String(r.value),
-          unit: String(ext['unit'] ?? ''),
-          range_min: String(ext['range_min'] ?? '0'),
-          range_max: String(ext['range_max'] ?? '100'),
-          median: String(r.median ?? ext['median'] ?? ''),
-          median_label: String(ext['median_label'] ?? ''),
+          value: formatBulletValue(r.value, unitStr),
+          unit: unitStr,
+          range_min: String(rangeMin),
+          range_max: String(rangeMax),
+          median: r.median != null ? formatBulletValue(r.median, unitStr) : String(ext['median'] ?? ''),
+          median_label: r.median != null ? `Median: ${formatBulletValue(r.median, unitStr)}` : String(ext['median_label'] ?? ''),
           bar_left_pct: Number(ext['bar_left_pct'] ?? 0),
-          bar_width_pct: Number(ext['bar_width_pct'] ?? pctInRange(r.value, 0, 100)),
+          bar_width_pct: Number(ext['bar_width_pct'] ?? pctInRange(r.value, rangeMin, rangeMax)),
           median_left_pct: Number(ext['median_left_pct'] ?? 0),
-          status: (ext['status'] as BulletMetric['status']) ?? 'good',
+          status: (ext['status'] as BulletMetric['status']) ?? 'warn',
           drill_id: String(ext['drill_id'] ?? ''),
         };
       }
 
-      const rangeMin = r.p5 ?? def.range_min;
-      const rangeMax = r.p95 ?? def.range_max;
+      const rangeMin = r.range_min ?? def.range_min;
+      const rangeMax = r.range_max ?? def.range_max;
       const median = r.median ?? def.median;
 
       return {
@@ -258,12 +290,13 @@ export function transformBulletMetrics(
         metric_key: r.metric_key,
         label: def.label,
         sublabel: def.sublabel,
-        value: String(r.value),
+        // Format counters as integers (round), ratios/percents/hours as 2-decimal.
+        value: formatBulletValue(r.value, def.unit),
         unit: def.unit,
         range_min: formatRangeStr(rangeMin, def.unit),
         range_max: formatRangeStr(rangeMax, def.unit),
-        median: String(median),
-        median_label: `Median: ${median}${def.unit === '%' ? '%' : def.unit === 'h' ? 'h' : ''}`,
+        median: formatBulletValue(median, def.unit),
+        median_label: `Median: ${formatBulletValue(median, def.unit)}${def.unit === '%' ? '%' : def.unit === 'h' ? 'h' : ''}`,
         bar_left_pct: 0,
         bar_width_pct: pctInRange(r.value, rangeMin, rangeMax),
         median_left_pct: pctInRange(median, rangeMin, rangeMax),
@@ -309,15 +342,20 @@ export function transformTeamMembers(
   rows: RawTeamMemberRow[],
   period: PeriodValue,
 ): TeamMember[] {
+  const toInt = (v: number | null | undefined): number =>
+    v == null || !Number.isFinite(v) ? 0 : Math.round(v);
+
   return rows.map((r) => ({
     person_id: r.person_id,
     period,
     name: r.display_name,
     seniority: r.seniority,
-    tasks_closed: r.tasks_closed,
-    bugs_fixed: r.bugs_fixed,
+    supervisor_email: r.supervisor_email,
+    // Integer counters rounded; dev_time_h kept as float (it's hours, fractional is correct).
+    tasks_closed: toInt(r.tasks_closed),
+    bugs_fixed: toInt(r.bugs_fixed),
     dev_time_h: r.dev_time_h,
-    prs_merged: r.prs_merged,
+    prs_merged: toInt(r.prs_merged),
     build_success_pct: r.build_success_pct,
     focus_time_pct: r.focus_time_pct,
     ai_tools: r.ai_tools,
