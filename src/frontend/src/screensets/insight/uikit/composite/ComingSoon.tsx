@@ -68,6 +68,15 @@ const ComingSoon: React.FC<ComingSoonProps> = ({
       >
         <Icon icon={s.iconName} className={`w-3 h-3 ${s.icon}`} aria-hidden />
         {displayLabel}
+        {showRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="ml-1 text-2xs font-semibold text-red-600 hover:text-red-700 focus-visible:outline-none focus-visible:underline"
+          >
+            Retry
+          </button>
+        )}
       </span>
     );
   }

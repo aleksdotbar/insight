@@ -39,14 +39,16 @@ export const TeamMetricsBar: React.FC<TeamMetricsBarProps> = ({ teams }) => {
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-semibold">Key Metrics by Team</div>
-        <div className="flex items-center gap-3">
-          {LEGEND_ITEMS.map(({ colorClass, label }) => (
-            <span key={label} className="flex items-center gap-1">
-              <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${colorClass}`} />
-              <span className="text-xs text-gray-500">{label}</span>
-            </span>
-          ))}
-        </div>
+        {barData.length > 0 && (
+          <div className="flex items-center gap-3">
+            {LEGEND_ITEMS.map(({ colorClass, label }) => (
+              <span key={label} className="flex items-center gap-1">
+                <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${colorClass}`} />
+                <span className="text-xs text-gray-500">{label}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {barData.length === 0 ? (
         <ComingSoon variant="card" />

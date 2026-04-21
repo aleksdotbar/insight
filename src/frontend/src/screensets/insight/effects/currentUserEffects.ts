@@ -71,18 +71,23 @@ function buildMenuFromIdentity(user: CurrentUser) {
   const subordinateItems = toMenuItems(identity.subordinates);
 
   switch (role) {
-    case 'executive':
+    case 'executive': {
+      // Encode the executive's department so clicking this group actually
+      // emits a typed selection (org_unit_name) — otherwise a previously
+      // selected subordinate team stays active after navigation.
+      const deptItemId = encodeMenuItemId(TEAM_VIEW_SCREEN_ID, identity.department);
       return [
         { id: EXECUTIVE_VIEW_SCREEN_ID, label: menuKey('executive-view'), icon: 'lucide:building-2' },
         ...(subordinateItems.length > 0
           ? [{
-              id: TEAM_VIEW_SCREEN_ID,
+              id: deptItemId,
               label: identity.department || menuKey('team-view'),
               icon: 'lucide:users',
               children: subordinateItems,
             }]
           : []),
       ];
+    }
 
     case 'team_lead': {
       const deptItemId = encodeMenuItemId(TEAM_VIEW_SCREEN_ID, identity.department);

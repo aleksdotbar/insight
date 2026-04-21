@@ -78,8 +78,9 @@ export function fetchCurrentUser(): void {
       _identity: person,
     });
   }).catch(() => {
-    // Identity resolution failed — emit a typed event so UI can surface the
-    // error state explicitly (done in Phase 3 — see plan). For now, swallow.
+    // Identity resolution failed — emit a typed event so header / screens
+    // can surface the error state explicitly (refresh button, etc.).
+    eventBus.emit('app/identity/unavailable');
   });
 }
 

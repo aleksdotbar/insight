@@ -143,6 +143,7 @@ const TeamViewScreen: React.FC = () => {
   };
 
   const handleDrillClick = (drillId: string): void => {
+    if (!teamId) return;
     openTeamDrill({ kind: 'team', teamId, drillId });
   };
 
@@ -151,6 +152,7 @@ const TeamViewScreen: React.FC = () => {
   };
 
   const handleCellDrill = (personId: string, drillId: string): void => {
+    if (!personId) return;
     openTeamDrill({ kind: 'cell', personId, drillId });
   };
 
@@ -169,11 +171,19 @@ const TeamViewScreen: React.FC = () => {
               <div>
                 <div className="text-base font-bold text-gray-900 leading-tight">{teamName}</div>
                 <div className="text-xs text-gray-400">
-                  {currentUser.name
-                    ? (canFilterDirectReports && directReportsOnly
-                        ? `Direct reports of ${currentUser.name}`
-                        : `${currentUser.name}'s department`)
-                    : t('header.subtitle')}
+                  {(() => {
+                    // When an executive drills into a subordinate team, teamId
+                    // is that subordinate's email — use teamName (which comes
+                    // back from the backend response) as the owner label so
+                    // we don't mislabel the table as the viewer's own reports.
+                    const isSubordinateTeam = teamId.includes('@');
+                    const ownerName = isSubordinateTeam && teamName ? teamName : currentUser.name;
+                    if (!ownerName) return t('header.subtitle');
+                    if (canFilterDirectReports && directReportsOnly) {
+                      return `Direct reports of ${ownerName}`;
+                    }
+                    return `${ownerName}'s department`;
+                  })()}
                 </div>
               </div>
             </>

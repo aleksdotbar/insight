@@ -104,6 +104,7 @@ const IcDashboardScreen: React.FC = () => {
   const erroredSections = useAppSelector(selectIcErroredSections);
 
   const reload = (): void => {
+    if (!personId) return;
     loadIcDashboard(personId, period, resolveDateRange(period, customRange));
   };
 
@@ -121,11 +122,12 @@ const IcDashboardScreen: React.FC = () => {
   const currentKpis = kpis;
 
   const handleDrillClick = (drillIdVal: string): void => {
+    if (!personId) return;
     openDrill(personId, drillIdVal);
   };
 
-  // Not-found state
-  if (!loading && !person) {
+  // Not-found state — only after we actually have a personId to fetch for.
+  if (personId && !loading && !person) {
     return (
       <div className="flex items-center justify-center p-6">
         <div className="bg-white border border-gray-200 rounded-xl px-12 py-8 text-center">

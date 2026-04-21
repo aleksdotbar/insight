@@ -114,12 +114,15 @@ export const selectSelection = (state: RootState): Selection =>
 
 /**
  * Effective person for data-fetching — selected IC if any, otherwise the
- * viewer themself (My Dashboard semantics).
+ * viewer themself (My Dashboard semantics). Returns `null` before the viewer
+ * is hydrated so callers can short-circuit empty-id requests instead of
+ * firing `person_id eq ''` filters.
  */
-export const selectActivePerson = (state: RootState): string => {
+export const selectActivePerson = (state: RootState): string | null => {
   const s = state[SLICE_KEY];
-  if (!s) return '';
-  return s.selection.person ?? s.viewer.id;
+  if (!s) return null;
+  const active = s.selection.person ?? s.viewer.id;
+  return active && active.length > 0 ? active : null;
 };
 
 /**

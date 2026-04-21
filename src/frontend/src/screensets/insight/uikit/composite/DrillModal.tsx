@@ -94,17 +94,19 @@ const DrillModal: React.FC<DrillModalProps> = ({ drill, open, onClose }) => (
             )}
           </ScrollArea>
 
-          {/* Footer */}
-          <div className="flex justify-between items-center px-4 py-2.5 border-t border-gray-200 text-xs flex-shrink-0">
-            <a
-              href="#"
-              className="text-blue-600 no-underline font-medium"
-              onClick={(e) => e.preventDefault()}
-            >
-              Open all in {drill.source} ↗
-            </a>
-            <span className="text-gray-400">{drill.rows.length} records</span>
-          </div>
+          {/* Footer — hidden under the empty state so it doesn't read "0 records" */}
+          {drill.rows.length > 0 && (
+            <div className="flex justify-between items-center px-4 py-2.5 border-t border-gray-200 text-xs flex-shrink-0">
+              <a
+                href="#"
+                className="text-blue-600 no-underline font-medium"
+                onClick={(e) => e.preventDefault()}
+              >
+                Open all in {drill.source} ↗
+              </a>
+              <span className="text-gray-400">{drill.rows.length} records</span>
+            </div>
+          )}
         </>
       )}
     </DialogContent>

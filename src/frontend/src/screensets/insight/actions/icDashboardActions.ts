@@ -53,17 +53,30 @@ export const selectIcPerson = (personId: string): void => {
 /**
  * Compute the previous-period range by shifting the given range back by one
  * full period length (in local time). Used for period-over-period deltas.
+ *
+ * Month/quarter shifts clamp to the last day of the target month so
+ * end-of-month boundaries don't roll forward (2026-03-31 minus one month →
+ * 2026-02-28, not 2026-03-03).
  */
 function previousPeriodRange(range: DateRange, period: PeriodValue): DateRange {
   const shift = (iso: string): string => {
     const [y, m, d] = iso.split('-').map(Number);
     // Construct in local time so DST / timezone edges behave predictably.
     const date = new Date(y, (m ?? 1) - 1, d ?? 1);
+    const originalDay = date.getDate();
+
+    const shiftMonths = (months: number): void => {
+      date.setDate(1);
+      date.setMonth(date.getMonth() - months);
+      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      date.setDate(Math.min(originalDay, lastDay));
+    };
+
     switch (period) {
       case 'week':    date.setDate(date.getDate() - 7);          break;
-      case 'month':   date.setMonth(date.getMonth() - 1);        break;
-      case 'quarter': date.setMonth(date.getMonth() - 3);        break;
-      case 'year':    date.setFullYear(date.getFullYear() - 1);  break;
+      case 'month':   shiftMonths(1);                            break;
+      case 'quarter': shiftMonths(3);                            break;
+      case 'year':    date.setFullYear(date.getFullYear() - 1); break;
     }
     const yy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');

@@ -167,7 +167,8 @@ export const selectIcAvailability = (state: RootState): DataAvailability | null 
 
 /** Re-export of selectActivePerson so callers can import from this slice
  *  without knowing about the userContext refactor. Prefer importing from
- *  userContextSlice directly in new code. */
+ *  userContextSlice directly in new code. Returns `null` when the viewer
+ *  is not yet hydrated. */
 export { selectActivePerson as selectSelectedPersonId } from './userContextSlice';
 
 export const selectIcErroredSections = (state: RootState): string[] => {

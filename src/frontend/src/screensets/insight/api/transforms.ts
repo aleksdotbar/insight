@@ -272,6 +272,7 @@ export function transformBulletMetrics(
       const rangeMin = r.range_min ?? def.range_min;
       const rangeMax = r.range_max ?? def.range_max;
       const median = r.median ?? def.median;
+      const valueUnavailable = r.value === null || r.value === undefined || !Number.isFinite(r.value);
 
       return {
         period,
@@ -287,9 +288,12 @@ export function transformBulletMetrics(
         median: formatBulletValue(median, def.unit),
         median_label: `Median: ${formatBulletValue(median, def.unit)}${def.unit === '%' ? '%' : def.unit === 'h' ? 'h' : ''}`,
         bar_left_pct: 0,
-        bar_width_pct: pctInRange(r.value, rangeMin, rangeMax),
+        // Skip bar/status computation for unavailable values so the bar
+        // collapses and the chip reads neutral instead of inventing a
+        // misleading "good/warn/bad" from a 0 stand-in.
+        bar_width_pct: valueUnavailable ? 0 : pctInRange(r.value, rangeMin, rangeMax),
         median_left_pct: pctInRange(median, rangeMin, rangeMax),
-        status: evaluateStatus(r.value, def),
+        status: valueUnavailable ? 'warn' : evaluateStatus(r.value, def),
         drill_id: def.drill_id,
       };
     });
