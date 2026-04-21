@@ -68,7 +68,10 @@ export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
     if (k.metric_key === 'not_using_ai')  return { ...k, value: String(noAiCount), status: noAiStatus };
     if (k.metric_key === 'team_dev_time') {
       const value = devTimeMedian === null ? '—' : `${devTimeMedian.toFixed(1)}h`;
-      return { ...k, value, sublabel: `Team median \u00b7 ${total} member${total !== 1 ? 's' : ''}`, chipLabel: '' };
+      // chipLabel: undefined — TeamHeroStrip uses `kpi.chipLabel ?? kpi.status`
+      // for the badge, so empty string would render an empty badge; undefined
+      // correctly falls back to status.
+      return { ...k, value, sublabel: `Team median \u00b7 ${total} member${total !== 1 ? 's' : ''}`, chipLabel: undefined };
     }
     return k;
   });

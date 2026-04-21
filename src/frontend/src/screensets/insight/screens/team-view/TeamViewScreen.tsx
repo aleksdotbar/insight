@@ -83,19 +83,27 @@ const TeamViewScreen: React.FC = () => {
   const baseMembers = currentUser.role === 'team_lead'
     ? allMembers.filter((m) => m.person_id !== currentUser.personId)
     : allMembers;
-  const members = directReportsOnly
+  // supervisor_email is an email string; CurrentUser.personId is *derived from* the
+  // identity email in bootstrapActions (personId = person.email), but prefer
+  // `_identity.email` when available so the comparison is unambiguously
+  // email-to-email.
+  const currentUserEmail = (currentUser._identity?.email ?? currentUser.personId ?? '').toLowerCase();
+  const members = directReportsOnly && currentUserEmail
     ? baseMembers.filter((m) =>
-        m.supervisor_email &&
-        m.supervisor_email.toLowerCase() === currentUser.personId.toLowerCase(),
+        (m.supervisor_email ?? '').toLowerCase() === currentUserEmail,
       )
     : baseMembers;
   const storeTeamKpis = useAppSelector(selectTeamKpis);
-  // Recompute KPIs client-side over the currently visible members set so the
-  // toggle ("Direct reports only") also narrows the chips. Falls back to the
-  // store-derived value when members haven't been fetched yet.
+  // Recompute KPIs client-side over the currently visible members set. When the
+  // directReportsOnly filter yields an empty set (e.g., IC with no reports), use
+  // the empty-derived KPIs so chips stay consistent with the (empty) member table.
+  // Only fall back to the store when members haven't been fetched yet (both sets
+  // empty AND still loading).
   const teamKpis = useMemo(
-    () => (members.length > 0 ? deriveTeamKpis(members, period) : storeTeamKpis),
-    [members, period, storeTeamKpis],
+    () => (allMembers.length === 0 && loading
+      ? storeTeamKpis
+      : deriveTeamKpis(members, period)),
+    [allMembers.length, loading, members, period, storeTeamKpis],
   );
   const bulletSections = useAppSelector(selectBulletSections);
   const teamName = useAppSelector(selectTeamName);
@@ -189,7 +197,7 @@ const TeamViewScreen: React.FC = () => {
             <input
               type="checkbox"
               checked={directReportsOnly}
-              onChange={(e) => setDirectReportsOnly(e.target.checked)}
+              onChange={(e) => { setDirectReportsOnly(e.target.checked); }}
               className="cursor-pointer"
             />
             <span>Direct reports only</span>
