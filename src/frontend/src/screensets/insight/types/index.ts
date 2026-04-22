@@ -200,12 +200,20 @@ export interface ExecTeamRow {
   pr_cycle_time_h: number;
   status: 'good' | 'warn' | 'bad';
 }
+/**
+ * Org-level KPIs aggregated from per-team executive summary rows.
+ *
+ * Scope is deliberately limited to metrics that are already 0..100 at the
+ * team level and can be averaged without inventing a new semantic. Earlier
+ * revisions also exposed `bugResolutionScore` (computed as `avg(tasks_closed)`
+ * clamped to 100 — wrong metric, wrong scale) and `prCycleScore` (computed
+ * as `100 - avg_hours` — arbitrary formula). Both removed; re-add them only
+ * once the backend supplies a properly normalized org-level score.
+ */
 export interface OrgKpis {
-  avgBuildSuccess:    number | null;  // null when [ci] not configured
-  avgAiAdoption:      number | null;  // null when no team data
-  avgFocus:           number | null;  // null when no team data
-  bugResolutionScore: number | null;  // null when [tasks] not configured
-  prCycleScore:       number | null;  // null when no team data
+  avgBuildSuccess: number | null;  // null when [ci] not configured
+  avgAiAdoption:   number | null;  // null when no team data
+  avgFocus:        number | null;  // null when no team data
 }
 export interface ExecViewData {
   teams: ExecTeamRow[];
@@ -257,7 +265,13 @@ export interface BulletMetric {
   bar_left_pct: number;
   bar_width_pct: number;
   median_left_pct: number;
-  status: 'good' | 'warn' | 'bad';
+  /**
+   * `unavailable` when the backend didn't supply usable distribution data
+   * (value or range null). BulletChart renders ComingSoon in place of the bar
+   * for this status — we don't invent a good/warn/bad from synthetic
+   * fallbacks.
+   */
+  status: 'good' | 'warn' | 'bad' | 'unavailable';
   drill_id: string;
 }
 export interface BulletSection {
@@ -301,7 +315,12 @@ export interface IcKpi {
   period: PeriodValue;
   metric_key: string;
   label: string;
-  value: string;
+  /**
+   * Formatted value, or `null` when the backend returned NULL (source not
+   * ingested yet). Rendered as a ComingSoon chip in KpiStrip instead of a
+   * fake zero.
+   */
+  value: string | null;
   unit: string;
   sublabel: string;
   description?: string;

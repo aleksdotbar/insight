@@ -84,24 +84,28 @@ function deltaType(
   return delta < 0 ? 'good' : 'bad';
 }
 
+// Cache Intl formatters — constructing them per-call is surprisingly
+// expensive, and the labels only change when the locale changes (never
+// during a normal session).
+const WEEKDAY_FMT = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+const MONTH_FMT   = new Intl.DateTimeFormat(undefined, { month: 'short' });
+
 function formatDateLabel(isoDate: string, period: PeriodValue): string {
   // Parse as local-midnight so label reflects the user's timezone, not UTC.
   const [y, m, day] = isoDate.split('-').map(Number);
   const d = new Date(y, (m ?? 1) - 1, day ?? 1);
   switch (period) {
-    case 'week': {
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-      return days[d.getDay()] ?? isoDate;
-    }
+    case 'week':
+      // Short weekday label in the user's locale (e.g. "Mon", "Пн", "月").
+      return WEEKDAY_FMT.format(d);
     case 'month': {
       // Week number within the month: W1, W2, ...
       const weekNum = Math.ceil(d.getDate() / 7);
       return `W${weekNum}`;
     }
-    case 'quarter': {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
-      return months[d.getMonth()] ?? isoDate;
-    }
+    case 'quarter':
+      // Short month label in the user's locale.
+      return MONTH_FMT.format(d);
     case 'year': {
       const q = Math.floor(d.getMonth() / 3) + 1;
       return `Q${q}`;
@@ -197,14 +201,19 @@ export function transformIcKpis(
   if (current === null) return [];
 
   return IC_KPI_DEFS.map((def) => {
-    const curVal = (current[def.raw_field] ?? 0) as number;
-    const prevVal = previous ? ((previous[def.raw_field] ?? 0) as number) : null;
+    // Distinguish "raw value missing" (NULL from backend → source not ingested)
+    // from "raw value is zero" (real measurement). Missing → value:null so the
+    // KpiStrip cell can render ComingSoon. Zero → formatted '0' like any number.
+    const rawCur = current[def.raw_field];
+    const rawPrev = previous?.[def.raw_field];
+    const curVal = rawCur == null ? null : (rawCur as number);
+    const prevVal = rawPrev == null ? null : (rawPrev as number);
 
-    const value = formatValue(curVal, def.format);
+    const value = curVal === null ? null : formatValue(curVal, def.format);
     let delta = '';
     let dt: 'good' | 'warn' | 'bad' | 'neutral' = 'neutral';
 
-    if (prevVal !== null) {
+    if (curVal !== null && prevVal !== null) {
       const diff = curVal - prevVal;
       delta = formatDelta(diff, def);
       dt = deltaType(diff, def.higher_is_better);
@@ -228,10 +237,19 @@ export function transformIcKpis(
 // 3. Bullet metrics
 // ---------------------------------------------------------------------------
 
+/**
+ * @param teamSize  Headcount of the team that context applies to. Used to
+ *                  rewrite unit/range_max for member-scale metrics
+ *                  (`active_ai_members` etc.) so bullets show "N / 113"
+ *                  instead of the old hardcoded "N / 12". When unknown
+ *                  (e.g. IC Dashboard context), member-scale metrics render
+ *                  as 'unavailable' — we don't invent a denominator.
+ */
 export function transformBulletMetrics(
   rows: RawBulletAggregateRow[],
   section: string,
   period: PeriodValue,
+  teamSize?: number,
 ): BulletMetric[] {
   const defsByKey = keyBy(
     BULLET_DEFS.filter((d) => d.section === section),
@@ -242,38 +260,74 @@ export function transformBulletMetrics(
       const def = defsByKey[r.metric_key];
 
       if (!def) {
-        // No matching definition — backend surfaced a metric the FE doesn't know how
-        // to present. Pass it through with status 'warn' and range_min/range_max when
-        // available so the bar still makes sense.
-        const ext = r as unknown as Record<string, unknown>;
-        const rangeMin = r.range_min ?? Number(ext['range_min'] ?? 0);
-        const rangeMax = r.range_max ?? Number(ext['range_max'] ?? 100);
-        const unitStr = String(ext['unit'] ?? '');
+        // Unknown metric_key — backend surfaced something the FE doesn't know.
+        // Render what we can and mark unavailable so the bar doesn't pretend
+        // to reflect a distribution we can't describe.
+        const unitStr = '';
         return {
           period,
-          section: String(ext['section'] ?? section),
+          section,
           metric_key: r.metric_key,
-          label: String(ext['label'] ?? r.metric_key),
-          sublabel: String(ext['sublabel'] ?? ''),
+          label: r.metric_key,
+          sublabel: '',
           value: formatBulletValue(r.value, unitStr),
           unit: unitStr,
-          range_min: String(rangeMin),
-          range_max: String(rangeMax),
-          median: r.median != null ? formatBulletValue(r.median, unitStr) : String(ext['median'] ?? ''),
-          median_label: r.median != null ? `Median: ${formatBulletValue(r.median, unitStr)}` : String(ext['median_label'] ?? ''),
-          bar_left_pct: Number(ext['bar_left_pct'] ?? 0),
-          bar_width_pct: Number(ext['bar_width_pct'] ?? pctInRange(r.value, rangeMin, rangeMax)),
-          median_left_pct: Number(ext['median_left_pct'] ?? 0),
-          status: (ext['status'] as BulletMetric['status']) ?? 'warn',
-          drill_id: String(ext['drill_id'] ?? ''),
+          range_min: '\u2014',
+          range_max: '\u2014',
+          median: '\u2014',
+          median_label: '',
+          bar_left_pct: 0,
+          bar_width_pct: 0,
+          median_left_pct: 0,
+          status: 'unavailable',
+          drill_id: '',
         };
       }
 
-      const rangeMin = r.range_min ?? def.range_min;
-      const rangeMax = r.range_max ?? def.range_max;
-      const median = r.median ?? def.median;
-      const valueUnavailable = r.value === null || r.value === undefined || !Number.isFinite(r.value);
+      // Member-scale metrics use team headcount as the denominator. Unit
+      // becomes "/ N" at the team view; IC view keeps them unavailable.
+      const effectiveUnit = def.isMemberScale
+        ? teamSize != null
+          ? `/ ${teamSize}`
+          : ''
+        : def.unit;
 
+      const valueUnavailable = r.value === null || r.value === undefined || !Number.isFinite(r.value);
+      const rangeAvailable = r.range_min != null && r.range_max != null;
+      // For member-scale metrics, override range_max with team size when
+      // known (the backend emits min/max across team members, but the chart
+      // scale should run 0..teamSize so "out of N" reads correctly).
+      const rangeMax = def.isMemberScale && teamSize != null
+        ? teamSize
+        : r.range_max;
+      const rangeMin = def.isMemberScale && teamSize != null
+        ? 0
+        : r.range_min;
+
+      // Distribution not provided by the backend → can't draw a meaningful
+      // bullet. Show value + label; render ComingSoon in the bar slot.
+      if (valueUnavailable || !rangeAvailable || rangeMin == null || rangeMax == null) {
+        return {
+          period,
+          section,
+          metric_key: r.metric_key,
+          label: def.label,
+          sublabel: def.sublabel,
+          value: formatBulletValue(r.value, effectiveUnit),
+          unit: effectiveUnit,
+          range_min: '\u2014',
+          range_max: '\u2014',
+          median: '\u2014',
+          median_label: '',
+          bar_left_pct: 0,
+          bar_width_pct: 0,
+          median_left_pct: 0,
+          status: 'unavailable',
+          drill_id: def.drill_id,
+        };
+      }
+
+      const median = r.median;
       return {
         period,
         section,
@@ -281,19 +335,18 @@ export function transformBulletMetrics(
         label: def.label,
         sublabel: def.sublabel,
         // Format counters as integers (round), ratios/percents/hours as 2-decimal.
-        value: formatBulletValue(r.value, def.unit),
-        unit: def.unit,
+        value: formatBulletValue(r.value, effectiveUnit),
+        unit: effectiveUnit,
         range_min: formatRangeStr(rangeMin, def.unit),
         range_max: formatRangeStr(rangeMax, def.unit),
-        median: formatBulletValue(median, def.unit),
-        median_label: `Median: ${formatBulletValue(median, def.unit)}${def.unit === '%' ? '%' : def.unit === 'h' ? 'h' : ''}`,
+        median: median != null ? formatBulletValue(median, def.unit) : '\u2014',
+        median_label: median != null
+          ? `Median: ${formatBulletValue(median, def.unit)}${def.unit === '%' ? '%' : def.unit === 'h' ? 'h' : ''}`
+          : '',
         bar_left_pct: 0,
-        // Skip bar/status computation for unavailable values so the bar
-        // collapses and the chip reads neutral instead of inventing a
-        // misleading "good/warn/bad" from a 0 stand-in.
-        bar_width_pct: valueUnavailable ? 0 : pctInRange(r.value, rangeMin, rangeMax),
-        median_left_pct: pctInRange(median, rangeMin, rangeMax),
-        status: valueUnavailable ? 'warn' : evaluateStatus(r.value, def),
+        bar_width_pct: pctInRange(r.value, rangeMin, rangeMax),
+        median_left_pct: median != null ? pctInRange(median, rangeMin, rangeMax) : 0,
+        status: evaluateStatus(r.value, def),
         drill_id: def.drill_id,
       };
     });

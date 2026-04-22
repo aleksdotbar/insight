@@ -44,18 +44,37 @@ const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
   </div>
 );
 
-export const TeamHeroStrip: React.FC<TeamHeroStripProps> = ({ teamKpis }) => (
-  <Card className="overflow-hidden">
-    {teamKpis.length === 0 ? (
-      <div className="p-3">
-        <ComingSoon variant="card" />
-      </div>
-    ) : (
-      <div className="grid grid-cols-2 sm:grid-cols-4">
-        {teamKpis.slice(0, 4).map((kpi, i) => (
-          <KpiCard key={kpi.metric_key} kpi={kpi} idx={i} />
-        ))}
-      </div>
-    )}
-  </Card>
-);
+// Tailwind needs full class names in the source, so enumerate the common
+// column counts we expect from deriveTeamKpis.
+const GRID_COLS: Record<number, string> = {
+  1: 'grid-cols-1 sm:grid-cols-1',
+  2: 'grid-cols-2 sm:grid-cols-2',
+  3: 'grid-cols-2 sm:grid-cols-3',
+  4: 'grid-cols-2 sm:grid-cols-4',
+  5: 'grid-cols-2 sm:grid-cols-5',
+  6: 'grid-cols-2 sm:grid-cols-6',
+};
+
+export const TeamHeroStrip: React.FC<TeamHeroStripProps> = ({ teamKpis }) => {
+  // Previously hardcoded `.slice(0, 4)` silently dropped extra KPIs from the
+  // header strip. Now we render all the cards deriveTeamKpis returned and
+  // pick a grid sized to the actual count.
+  const cols = teamKpis.length;
+  const gridClass = GRID_COLS[cols] ?? GRID_COLS[4]!;
+
+  return (
+    <Card className="overflow-hidden">
+      {cols === 0 ? (
+        <div className="p-3">
+          <ComingSoon variant="card" />
+        </div>
+      ) : (
+        <div className={`grid ${gridClass}`}>
+          {teamKpis.map((kpi, i) => (
+            <KpiCard key={kpi.metric_key} kpi={kpi} idx={i} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+};

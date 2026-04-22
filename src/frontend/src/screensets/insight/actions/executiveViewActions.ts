@@ -42,21 +42,15 @@ export const loadExecutiveView = (range: DateRange): void => {
       const withValue = <T>(vals: (T | null)[]): T[] =>
         vals.filter((v): v is T => v !== null);
 
-      const buildVals = withValue(teams.map((t) => t.build_success_pct));
-      const bugVals   = withValue(teams.map((t) => t.tasks_closed));
-      const avg       = (arr: number[]): number | null =>
+      const avg = (arr: number[]): number | null =>
         arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
 
       const data: ExecViewData = {
         teams,
         orgKpis: {
-          avgBuildSuccess:    avg(buildVals),
-          avgAiAdoption:      avg(withValue(teams.map((t) => t.ai_adoption_pct))),
-          avgFocus:           avg(withValue(teams.map((t) => t.focus_time_pct))),
-          bugResolutionScore: bugVals.length ? Math.min(100, avg(bugVals) ?? 0) : null,
-          prCycleScore:       teams.length
-            ? Math.max(0, 100 - (avg(withValue(teams.map((t) => t.pr_cycle_time_h))) ?? 0))
-            : null,
+          avgBuildSuccess: avg(withValue(teams.map((t) => t.build_success_pct))),
+          avgAiAdoption:   avg(withValue(teams.map((t) => t.ai_adoption_pct))),
+          avgFocus:        avg(withValue(teams.map((t) => t.focus_time_pct))),
         },
         config: EXEC_VIEW_CONFIG,
       };

@@ -18,8 +18,12 @@ export interface MembersTableProps {
   onCellDrill?: (personId: string, drillId: string) => void;
 }
 
-function colClass(v: number | null, t: ColumnThreshold, type: 'text' | 'bg'): string {
-  if (v === null) return type === 'text' ? 'text-gray-400' : '';
+// Threshold lookup returns null when the key isn't configured — callers
+// render the cell without color instead of silently making up good/warn
+// cutoffs. Previously this function invented `{ good: 100, warn: 50 }` for
+// unknown keys, which meant colors depended on values nobody chose.
+function colClass(v: number | null, t: ColumnThreshold | null, type: 'text' | 'bg'): string {
+  if (v === null || t === null) return type === 'text' ? 'text-gray-400' : '';
   const prefix = type === 'text' ? 'text' : 'bg';
   const good = t.higher_is_better ? v >= t.good : v <= t.good;
   const warn = t.higher_is_better ? v >= t.warn : v <= t.warn;
@@ -28,8 +32,8 @@ function colClass(v: number | null, t: ColumnThreshold, type: 'text' | 'bg'): st
   return `${prefix}-insight-red`;
 }
 
-function getThreshold(thresholds: ColumnThreshold[], key: string): ColumnThreshold {
-  return thresholds.find((t) => t.metric_key === key) ?? { metric_key: key, good: 100, warn: 50, higher_is_better: true };
+function getThreshold(thresholds: ColumnThreshold[], key: string): ColumnThreshold | null {
+  return thresholds.find((t) => t.metric_key === key) ?? null;
 }
 
 const DrillCell: React.FC<{
@@ -46,7 +50,7 @@ const DrillCell: React.FC<{
   </button>
 );
 
-const FocusBar: React.FC<{ pct: number; threshold: ColumnThreshold }> = ({ pct, threshold }) => (
+const FocusBar: React.FC<{ pct: number; threshold: ColumnThreshold | null }> = ({ pct, threshold }) => (
   <div className="flex items-center gap-1.5">
     <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
       <DynamicWidthBar pct={pct} colorClass={colClass(pct, threshold, 'bg')} />
@@ -58,8 +62,8 @@ const FocusBar: React.FC<{ pct: number; threshold: ColumnThreshold }> = ({ pct, 
 type ColHeader = { label: string; sub: string; info?: string };
 
 function buildColHeaders(columnThresholds: ColumnThreshold[]): ColHeader[] {
-  const buildT = getThreshold(columnThresholds, 'build_success_pct').good;
-  const focusT = getThreshold(columnThresholds, 'focus_time_pct').good;
+  const buildT = getThreshold(columnThresholds, 'build_success_pct');
+  const focusT = getThreshold(columnThresholds, 'focus_time_pct');
   return [
     { label: 'Name',          sub: '' },
     { label: 'Tasks',         sub: 'closed · Jira' },
@@ -67,8 +71,8 @@ function buildColHeaders(columnThresholds: ColumnThreshold[]): ColHeader[] {
     { label: 'Dev Time',      sub: 'time in dev per task · lower = better',
       info: 'Average time a task spends in "In Progress" state. Lower means faster execution.' },
     { label: 'Pull Requests', sub: 'merged to main · Bitbucket' },
-    { label: 'Build Success', sub: `CI builds passing · target ≥${buildT}%` },
-    { label: 'Focus Time',    sub: `uninterrupted work · target ≥${focusT}%` },
+    { label: 'Build Success', sub: buildT ? `CI builds passing · target \u2265${buildT.good}%` : 'CI builds passing' },
+    { label: 'Focus Time',    sub: focusT ? `uninterrupted work · target \u2265${focusT.good}%` : 'uninterrupted work' },
     { label: 'AI Tools',      sub: 'active this month' },
     { label: 'AI LOC Share',  sub: 'Cursor + Claude Code',
       info: 'Share of authored code lines accepted from AI suggestions out of total lines written.' },

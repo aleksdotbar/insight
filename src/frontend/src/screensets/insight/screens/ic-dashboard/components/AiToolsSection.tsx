@@ -8,6 +8,7 @@ import React from 'react';
 import type { BulletMetric, ViewMode } from '../../../types';
 import BulletChart from '../../../uikit/composite/BulletChart';
 import ComingSoon from '../../../uikit/composite/ComingSoon';
+import { filterBulletsByLayoutGroup } from '../../../api/thresholdConfig';
 
 export interface AiToolsSectionProps {
   metrics: BulletMetric[];
@@ -15,9 +16,6 @@ export interface AiToolsSectionProps {
   onDrillClick: (drillId: string) => void;
   personName?: string;
 }
-
-const CURSOR_KEYS = ['cursor_completions', 'cursor_agents', 'cursor_lines'];
-const CC_KEYS = ['cc_sessions', 'cc_lines', 'cc_tool_accept'];
 
 const ChartLegend: React.FC = () => (
   <div className="flex gap-4 items-center mt-2">
@@ -68,11 +66,12 @@ const AiToolsSection: React.FC<AiToolsSectionProps> = ({
     );
   }
 
-  // Chart mode — group into left/right columns
-  const cursorMetrics = metrics.filter((m) => CURSOR_KEYS.includes(m.metric_key));
-  const ccMetrics = metrics.filter((m) => CC_KEYS.includes(m.metric_key));
-  const aiLocMetrics = metrics.filter((m) => m.metric_key === 'ai_loc_share2');
-  const chatMetrics = metrics.filter((m) => ['claude_web', 'chatgpt'].includes(m.metric_key));
+  // Chart mode — group into left/right columns via BULLET_LAYOUT_GROUPS
+  // (single source of truth lives in thresholdConfig).
+  const cursorMetrics = filterBulletsByLayoutGroup(metrics, 'ai_cursor_detail');
+  const ccMetrics     = filterBulletsByLayoutGroup(metrics, 'ai_cc_detail');
+  const aiLocMetrics  = filterBulletsByLayoutGroup(metrics, 'ai_loc_share');
+  const chatMetrics   = filterBulletsByLayoutGroup(metrics, 'ai_web');
 
   return (
     <div className="p-4">
