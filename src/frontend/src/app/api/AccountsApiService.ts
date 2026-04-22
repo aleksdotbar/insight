@@ -7,7 +7,7 @@
 
 import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import type { GetCurrentUserResponse } from './types';
-import { accountsMockMap } from './mocks';
+import { mocksEnabled } from '@/app/config/mocksEnabled';
 
 /**
  * Accounts API Service
@@ -16,6 +16,9 @@ import { accountsMockMap } from './mocks';
  * - Tenant management (current tenant, switching)
  * - Authentication (login, logout, tokens)
  * - Permissions and roles
+ *
+ * Mocks are dynamically loaded only when VITE_ENABLE_MOCKS=true in dev;
+ * prod bundles never include the "Demo User" payload from ./mocks.ts.
  */
 export class AccountsApiService extends BaseApiService {
   constructor() {
@@ -25,14 +28,17 @@ export class AccountsApiService extends BaseApiService {
 
     super({ baseURL: '/api/accounts' }, restProtocol);
 
-    // Register mock plugin (framework controls when it's active based on mock mode toggle)
-    this.registerPlugin(
-      restProtocol,
-      new RestMockPlugin({
-        mockMap: accountsMockMap,
-        delay: 100,
-      })
-    );
+    if (mocksEnabled()) {
+      void import('./mocks').then(({ accountsMockMap }) => {
+        this.registerPlugin(
+          restProtocol,
+          new RestMockPlugin({
+            mockMap: accountsMockMap,
+            delay: 100,
+          }),
+        );
+      });
+    }
   }
 
   /**

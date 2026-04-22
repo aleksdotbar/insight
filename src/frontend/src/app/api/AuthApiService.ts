@@ -1,6 +1,14 @@
 /**
  * Auth API Service
- * Fetches OIDC bootstrap config from the API gateway (public endpoint, no token needed)
+ * Fetches OIDC bootstrap config from the API gateway (public endpoint, no token needed).
+ *
+ * NOTE: the RestMockPlugin here is NOT a dev-only mock — it's the primary
+ * production path. OIDC config is injected at container start as
+ * `window.__OIDC_CONFIG__` (docker entrypoint rewrites index.html) and this
+ * "mock" handler just reads it back synchronously so the rest of the app
+ * can consume it through the normal api-service contract. There is no real
+ * `/api/v1/auth/config` backend endpoint. This is deliberately NOT gated
+ * by VITE_ENABLE_MOCKS — disabling it would break auth in every deploy.
  */
 
 import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
@@ -10,7 +18,7 @@ import type { OidcConfig } from '@/app/types/auth';
 declare global { interface Window { __OIDC_CONFIG__?: Partial<OidcConfig> } }
 const runtimeConfig = window.__OIDC_CONFIG__;
 
-const authMockMap = {
+const authConfigMap = {
   'GET /api/v1/auth/config': (): OidcConfig => ({
     issuer_url: runtimeConfig?.issuer_url ?? '',
     client_id: runtimeConfig?.client_id ?? '',
@@ -26,9 +34,11 @@ export class AuthApiService extends BaseApiService {
 
     super({ baseURL: '/api/v1' }, restProtocol);
 
+    // See comment at top of file — this RestMockPlugin is the prod OIDC
+    // config handler, not fake data. Do not gate it behind mocksEnabled().
     this.registerPlugin(
       restProtocol,
-      new RestMockPlugin({ mockMap: authMockMap, delay: 50 })
+      new RestMockPlugin({ mockMap: authConfigMap, delay: 50 })
     );
   }
 

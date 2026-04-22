@@ -37,9 +37,19 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. HAI3 Studio panel (bottom-right) controls screenset, theme, language, and Mock API toggle.
+Open http://localhost:5173. HAI3 Studio panel (bottom-right) controls screenset, theme, and language.
 
-Mock API is **enabled by default** on localhost. All screens render with synthetic data — no backend needed.
+### Mock API
+
+**Mocks are OFF by default** — `npm run dev` talks to whatever your Vite proxy is pointed at (`/api/*` → `http://localhost:8080` by default, i.e. the real backend gateway port-forwarded from k8s).
+
+To opt in to synthetic data for a demo / offline session, copy `.env.example` to `.env.local` and set:
+
+```
+VITE_ENABLE_MOCKS=true
+```
+
+Restart `npm run dev`. A yellow warning strip renders at the top of the page whenever mocks are active so you cannot mistake synthetic values for real ones. Prod builds (`npm run build`) drop the flag's branch entirely — there is no way for fake analytics data to leak into a deployed bundle.
 
 ## NPM Scripts
 
@@ -100,11 +110,7 @@ All state flows through: **Component -> Action -> Event -> Effect -> Slice -> St
 
 ### API Services
 
-Each service extends `BaseApiService`, self-registers via `apiRegistry.register()`, and includes its own `RestMockPlugin` with mock data.
-
-Mock mode is controlled by HAI3 framework:
-- **localhost** — mocks enabled by default (auto-detected by `isDevEnvironment()`)
-- **Production domain** — mocks disabled, requests go to real backend
+Each service extends `BaseApiService`, self-registers via `apiRegistry.register()`, and conditionally registers a `RestMockPlugin` when `VITE_ENABLE_MOCKS=true` (see `src/app/config/mocksEnabled.ts` — the single gate consulted by every service). Mock modules are `import()`ed lazily, so prod builds tree-shake the entire mocks subtree and the bundle never includes synthetic fixtures.
 
 ### Screens
 
@@ -181,13 +187,18 @@ Image: `ghcr.io/cyberfabric/insight-front`
 docker pull ghcr.io/cyberfabric/insight-front:latest
 ```
 
-### Run without OIDC (mock mode on localhost)
+### Run without a backend (mock mode)
+
+For a self-contained demo with no backend, build with mocks enabled:
 
 ```bash
+VITE_ENABLE_MOCKS=true npm run build
 docker run -d -p 8080:80 insight-frontend:local
 ```
 
-Mock API activates automatically on localhost. All screens work with synthetic data.
+All screens render synthetic data and the yellow "MOCK DATA" strip stays
+visible at the top of every page. Without `VITE_ENABLE_MOCKS=true`, builds
+drop the mock plugins entirely and the UI tries to talk to a real backend.
 
 ### Docker Compose
 
