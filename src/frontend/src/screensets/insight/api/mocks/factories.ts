@@ -345,13 +345,25 @@ export function mockTeamBulletSection(section: string, seed = 0): RawBulletAggre
   return BULLET_DEFS
     .filter((d) => d.section === section)
     .map((d, i) => {
-      const dist = MOCK_BULLET_DIST[d.metric_key] ?? { median: 0, range_min: 0, range_max: 100 };
+      const dist = MOCK_BULLET_DIST[d.metric_key];
+      if (!dist && import.meta.env.DEV) {
+        // Dev-only warn — prevents silent drift when someone adds a new
+        // BULLET_DEFS entry without a MOCK_BULLET_DIST row. Without this,
+        // the new metric falls back to median=0, range=[0,100], producing
+        // a plausible-looking "zero adoption" mock that hides the gap.
+        console.warn(
+          `[insight/mocks] MOCK_BULLET_DIST missing entry for "${d.metric_key}" ` +
+          `(section=${section}) — falling back to zero distribution. ` +
+          `Add the key to MOCK_BULLET_DIST in factories.ts.`,
+        );
+      }
+      const d0 = dist ?? { median: 0, range_min: 0, range_max: 100 };
       return {
         metric_key: d.metric_key,
-        value: Math.round(vary(dist.median, i + seed, Math.max(1, dist.median * 0.3)) * 10) / 10,
-        median: dist.median,
-        range_min: dist.range_min,
-        range_max: dist.range_max,
+        value: Math.round(vary(d0.median, i + seed, Math.max(1, d0.median * 0.3)) * 10) / 10,
+        median: d0.median,
+        range_min: d0.range_min,
+        range_max: d0.range_max,
       };
     });
 }

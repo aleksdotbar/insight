@@ -17,6 +17,9 @@
  * — see the TODO in `metricSemantics.ts`.
  */
 
+import type { BulletMetric } from '../types';
+import type { RawIcAggregateRow } from './rawTypes';
+
 // ---------------------------------------------------------------------------
 // Bullet metric definitions
 // ---------------------------------------------------------------------------
@@ -53,8 +56,11 @@ export type BulletThresholdDef = {
  * arrays sprinkled through screen components. Group names are scoped by
  * section — they only need to be unique within one section.
  *
- * When adding a new bullet metric to BULLET_DEFS, tag it here so the
- * existing screen layouts pick it up automatically.
+ * Only sections that use sub-grouping need entries here: `estimation`
+ * (3 groups), `ai_adoption` (7 groups), `collaboration` (3 groups).
+ * `task_delivery`, `git_output`, `code_quality` don't sub-group — the
+ * screen just renders all metrics in the section — so their metric_keys
+ * are intentionally absent.
  */
 export const BULLET_LAYOUT_GROUPS: Record<string, string> = {
   // --- estimation card sub-groups ---
@@ -94,6 +100,18 @@ export const BULLET_LAYOUT_GROUPS: Record<string, string> = {
   zoom_calls:                 'meetings',
   meeting_free:               'meetings',
 };
+
+/**
+ * Filter a list of bullet metrics by their layout group (see
+ * BULLET_LAYOUT_GROUPS). Helper so screen components don't need to import
+ * the map directly and open-code the filter.
+ */
+export function filterBulletsByLayoutGroup(
+  metrics: BulletMetric[],
+  group: string,
+): BulletMetric[] {
+  return metrics.filter((m) => BULLET_LAYOUT_GROUPS[m.metric_key] === group);
+}
 
 /**
  * Team-level bullet metric definitions.
@@ -171,8 +189,6 @@ export const BULLET_DEFS: BulletThresholdDef[] = [
 // IC KPI definitions
 // ---------------------------------------------------------------------------
 
-import type { RawIcAggregateRow } from './rawTypes';
-
 /**
  * `raw_field` is constrained to numeric keys of `RawIcAggregateRow` so
  * typos (e.g. mis-spelled column names) fail at compile time instead of
@@ -199,15 +215,6 @@ export type IcKpiDef = {
  * source that isn't ingested yet (e.g. Bitbucket diffstat for Clean LOC), the
  * transform emits `value:null` and KpiStrip renders ComingSoon in the cell.
  */
-/**
- * Filter a list of bullet metrics by their layout group (see BULLET_LAYOUT_GROUPS).
- * Helper so screen components don't need to import the map directly.
- */
-import type { BulletMetric } from '../types';
-export function filterBulletsByLayoutGroup(metrics: BulletMetric[], group: string): BulletMetric[] {
-  return metrics.filter((m) => BULLET_LAYOUT_GROUPS[m.metric_key] === group);
-}
-
 export const IC_KPI_DEFS: IcKpiDef[] = [
   { metric_key: 'bugs_fixed',      raw_field: 'bugs_fixed',       label: 'Bugs Fixed',     unit: '',  sublabel: 'Jira',                 description: 'Bug-type Jira issues closed in the selected period. Reflects quality contribution and team reliability.',                                          higher_is_better: true,  format: 'integer'  },
   { metric_key: 'clean_loc',       raw_field: 'loc',              label: 'Clean LOC',         unit: '',  sublabel: 'Bitbucket',            description: 'Authored lines of code excluding AI-generated and config/spec lines. Reflects hands-on coding output.',                                          higher_is_better: true,  format: 'integer'  },

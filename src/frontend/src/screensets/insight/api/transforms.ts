@@ -303,10 +303,21 @@ export function transformBulletMetrics(
       const rangeMin = def.isMemberScale && teamSize != null
         ? 0
         : r.range_min;
+      // Member-scale metrics rendered without a known team size have no
+      // meaningful denominator — fall through to unavailable instead of
+      // showing a bare "N" with an implicit scale (IC dashboard doesn't
+      // know the viewer's team size today).
+      const memberScaleMissingSize = def.isMemberScale && teamSize == null;
 
       // Distribution not provided by the backend → can't draw a meaningful
       // bullet. Show value + label; render ComingSoon in the bar slot.
-      if (valueUnavailable || !rangeAvailable || rangeMin == null || rangeMax == null) {
+      if (
+        valueUnavailable ||
+        !rangeAvailable ||
+        rangeMin == null ||
+        rangeMax == null ||
+        memberScaleMissingSize
+      ) {
         return {
           period,
           section,
@@ -328,6 +339,11 @@ export function transformBulletMetrics(
       }
 
       const median = r.median;
+      // Use formatRangeStr for median too so units stay consistent with the
+      // min/max labels rendered under the bar — previously the median-only
+      // formatter handled `%`/`h` but missed `×`, `h/mo`, `d`, producing
+      // labels like "0× … Median: 1.1 … 3×".
+      const medianFormatted = median != null ? formatRangeStr(median, def.unit) : '\u2014';
       return {
         period,
         section,
@@ -340,9 +356,7 @@ export function transformBulletMetrics(
         range_min: formatRangeStr(rangeMin, def.unit),
         range_max: formatRangeStr(rangeMax, def.unit),
         median: median != null ? formatBulletValue(median, def.unit) : '\u2014',
-        median_label: median != null
-          ? `Median: ${formatBulletValue(median, def.unit)}${def.unit === '%' ? '%' : def.unit === 'h' ? 'h' : ''}`
-          : '',
+        median_label: median != null ? `Median: ${medianFormatted}` : '',
         bar_left_pct: 0,
         bar_width_pct: pctInRange(r.value, rangeMin, rangeMax),
         median_left_pct: median != null ? pctInRange(median, rangeMin, rangeMax) : 0,

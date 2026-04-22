@@ -53,10 +53,13 @@ export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
   const focusTrigger = TEAM_VIEW_CONFIG.alert_thresholds
     .find((t) => t.metric_key === 'focus_time_pct')?.trigger ?? 60;
 
+  // Skip null metrics — missing connector data reads as `null`, and
+  // `null < trigger` coerces to `true`, inflating atRisk with phantom members.
   const atRisk = members.filter((m) =>
-    TEAM_VIEW_CONFIG.alert_thresholds.some(
-      (t) => (m[t.metric_key as keyof TeamMember] as number) < t.trigger,
-    ),
+    TEAM_VIEW_CONFIG.alert_thresholds.some((t) => {
+      const v = m[t.metric_key as keyof TeamMember];
+      return typeof v === 'number' && Number.isFinite(v) && v < t.trigger;
+    }),
   ).length;
   const focusCount  = members.filter((m) => m.focus_time_pct >= focusTrigger).length;
   const belowFocus  = total - focusCount;
@@ -124,8 +127,13 @@ export const loadTeamView = (teamId: string, period: PeriodValue, range: DateRan
       const members = transformTeamMembers(membersResp.items, period);
       // Pass team headcount so member-scale AI bullets (active_ai_members etc.)
       // show "N / headcount" with the range scaled to team size instead of the
-      // old hardcoded "/ 12".
-      const teamSize = members.length || undefined;
+      // old hardcoded "/ 12". When the TEAM_MEMBER query was truncated (team
+      // larger than `$top: 200`), `members.length` is capped at 200 — do NOT
+      // use it as denominator; fall back to `undefined` so transformBulletMetrics
+      // renders member-scale bullets as ComingSoon instead of a fake "/ 200".
+      const teamSize = membersResp.page_info.has_next
+        ? undefined
+        : (members.length || undefined);
 
       const bulletSections = [
         { id: 'task_delivery',  title: 'Task Delivery',  metrics: transformBulletMetrics(deliveryResp.items, 'task_delivery', period) },

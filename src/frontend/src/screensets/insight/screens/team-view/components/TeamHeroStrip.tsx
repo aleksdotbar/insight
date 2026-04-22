@@ -19,12 +19,19 @@ const CHIP_CLASS: Record<'good' | 'warn' | 'bad', string> = {
   bad: 'bg-insight-red-bg text-insight-red',
 };
 
-// Border classes for each card position on mobile (2-col) and desktop (4-col)
+// Border classes per card position. Mobile stays 2-column regardless of
+// count (GRID_COLS always sets `grid-cols-2` on mobile); desktop scales
+// from 1 to 6 columns. Entries cover up to 6 cards so teams with a custom
+// deriveTeamKpis output (5 or 6 chips) still get correct borders.
 const CARD_BORDER: Record<number, string> = {
   0: '',
   1: 'border-l border-gray-200',
   2: 'border-t sm:border-t-0 sm:border-l border-gray-200',
   3: 'border-t sm:border-t-0 border-l border-gray-200',
+  // Row 3 on mobile (only relevant when 5+ cards); desktop flattens to a
+  // single row so the mobile `border-t` gets neutralized by sm:border-t-0.
+  4: 'border-t sm:border-t-0 sm:border-l border-gray-200',
+  5: 'border-t sm:border-t-0 border-l border-gray-200',
 };
 
 const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (

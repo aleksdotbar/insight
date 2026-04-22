@@ -1,5 +1,9 @@
 /**
- * OrgHealthRadar — radar chart showing 5 org-level KPI dimensions.
+ * OrgHealthRadar — radar chart showing the org-level KPI dimensions that
+ * are natively 0..100 at the team level (Build Success, AI Adoption, Focus
+ * Time). Bug Resolution / PR Cycle axes were removed — they required
+ * invented FE normalization formulas; re-add only when the backend
+ * supplies real normalized scores.
  * No state imports.
  */
 

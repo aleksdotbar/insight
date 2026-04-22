@@ -101,7 +101,7 @@ export type MetricSemanticsKey = keyof typeof METRIC_SEMANTICS;
  * Same tenant-config caveat as METRIC_SEMANTICS above.
  */
 export const TEAM_HEALTH_THRESHOLDS = {
-  /** Strictly below this fraction → status is 'warn'. Below zero means "any". */
+  /** From this fraction onward, and below `badPct` → status is 'warn'. */
   warnPct: 0.10,
   /** From this fraction onward → status is 'bad'. */
   badPct: 0.25,

@@ -10,7 +10,7 @@ import { Card, CardContent } from '@hai3/uikit';
 import CollapsibleSection from '../../../uikit/composite/CollapsibleSection';
 import BulletChart from '../../../uikit/composite/BulletChart';
 import type { BulletSection, BulletMetric, ViewMode } from '../../../types';
-import { filterBulletsByLayoutGroup, BULLET_LAYOUT_GROUPS } from '../../../api/thresholdConfig';
+import { filterBulletsByLayoutGroup } from '../../../api/thresholdConfig';
 
 export interface TeamBulletSectionsProps {
   bulletSections: BulletSection[];
@@ -88,15 +88,15 @@ const EstimationCard: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: st
   </Card>
 );
 
-// AI Adoption — collapsible, 2-column (left: member counts, right: team output + acceptance rates)
-const AI_RIGHT_GROUPS = ['ai_team_output', 'ai_acceptance'];
+// AI Adoption — collapsible, 2-column (left: member counts, right: team
+// output + acceptance rates). Both columns go through
+// filterBulletsByLayoutGroup so the grouping lives entirely in
+// thresholdConfig (the right column is just the concat of two groups).
+const AI_RIGHT_GROUPS = ['ai_team_output', 'ai_acceptance'] as const;
 
 const AiAdoptionSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: string) => void }> = ({ metrics, onDrillClick }) => {
   const leftMetrics = filterBulletsByLayoutGroup(metrics, 'ai_members');
-  const rightMetrics = metrics.filter((m) => {
-    const grp = BULLET_LAYOUT_GROUPS[m.metric_key];
-    return !!grp && AI_RIGHT_GROUPS.includes(grp);
-  });
+  const rightMetrics = AI_RIGHT_GROUPS.flatMap((g) => filterBulletsByLayoutGroup(metrics, g));
   return (
     <CollapsibleSection title="AI Adoption" defaultOpen={false}>
       <div className="px-4 py-3">
