@@ -1,10 +1,11 @@
-//! Initial schema: the `persons` identity-attribute history table.
+//! Initial schema for identity-resolution MariaDB tables:
 //!
-//! Each row is one observed field value for a person from one source at a
-//! point in time (SCD-style append-only observation history). The
-//! `uq_person_observation` UNIQUE key makes `INSERT IGNORE` safe for
-//! idempotent re-runs of the one-shot seed (see ADR-0002 in the
-//! identity-resolution specs).
+//! 1. `persons` -- identity-attribute history (SCD-style append-only).
+//! 2. `account_person_map` -- stable mapping of source-accounts to
+//!    `person_id`s. Primary source of truth for "which person does this
+//!    source-account belong to"; seed reads/writes this to make re-runs
+//!    idempotent without deriving identifiers from mutable fields
+//!    (email). See ADR-0002.
 //!
 //! Column types mirror `analytics-api` conventions: `BINARY(16)` for
 //! UUIDs (SeaORM's `.uuid()` default on MariaDB), `TIMESTAMP` for
@@ -37,7 +38,7 @@ CREATE TABLE IF NOT EXISTS persons (
     alias_value         VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL
                         COMMENT 'Field value (email address, display name, platform ID, etc.)',
     person_id           BINARY(16)   NOT NULL
-                        COMMENT 'Person UUID -- deterministic UUIDv5 keyed on (tenant, normalised email)',
+                        COMMENT 'Person UUID -- stable, looked up via account_person_map, never re-derived',
     author_person_id    BINARY(16)   NOT NULL
                         COMMENT 'Person UUID of who/what made this change',
     reason              TEXT         NOT NULL DEFAULT ''
@@ -56,18 +57,49 @@ CREATE TABLE IF NOT EXISTS persons (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ";
 
+/// `account_person_map` -- stable (tenant, source-instance, account) ->
+/// person_id mapping. Written once per account at first observation;
+/// never updated, never re-derived. Guarantees `person_id` stability
+/// across re-seeds even when mutable attributes (email, name) change
+/// at the source.
+const CREATE_ACCOUNT_PERSON_MAP: &str = r"
+CREATE TABLE IF NOT EXISTS account_person_map (
+    insight_tenant_id   BINARY(16)   NOT NULL
+                        COMMENT 'Tenant UUID (sipHash from bronze tenant_id)',
+    insight_source_type VARCHAR(100) NOT NULL
+                        COMMENT 'Source system: bamboohr, zoom, cursor, claude_admin, etc.',
+    insight_source_id   BINARY(16)   NOT NULL
+                        COMMENT 'Connector instance UUID (sipHash from bronze source_id)',
+    source_account_id   VARCHAR(255) NOT NULL
+                        COMMENT 'Source-native account identifier (email-external-system ID, employee ID, user ID, etc.)',
+    person_id           BINARY(16)   NOT NULL
+                        COMMENT 'Person UUID (random UUIDv4, minted at first observation)',
+    created_reason      VARCHAR(50)  NOT NULL
+                        COMMENT 'Why this mapping was created: initial-bootstrap | new-account | operator-merge',
+    created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        COMMENT 'When the mapping was created (UTC)',
+
+    PRIMARY KEY (insight_tenant_id, insight_source_type, insight_source_id, source_account_id),
+    INDEX idx_person_id (person_id),
+    INDEX idx_tenant_person (insight_tenant_id, person_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+";
+
 const DROP_PERSONS: &str = "DROP TABLE IF EXISTS persons";
+const DROP_ACCOUNT_PERSON_MAP: &str = "DROP TABLE IF EXISTS account_person_map";
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         db.execute_unprepared(CREATE_PERSONS).await?;
+        db.execute_unprepared(CREATE_ACCOUNT_PERSON_MAP).await?;
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
+        db.execute_unprepared(DROP_ACCOUNT_PERSON_MAP).await?;
         db.execute_unprepared(DROP_PERSONS).await?;
         Ok(())
     }

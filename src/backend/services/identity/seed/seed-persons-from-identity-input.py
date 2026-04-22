@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
 """
-One-time seed: identity_inputs (ClickHouse) -> persons (MariaDB).
+Initial-bootstrap seed: identity_inputs (ClickHouse) -> persons +
+account_person_map (MariaDB).
 
-Groups identity_inputs rows by source-account (one connector user
-instance) and assigns a deterministic person_id (UUIDv5, keyed on
-tenant + normalised email) per unique email. Writes every observation
-into MariaDB persons via INSERT IGNORE. Re-running is idempotent:
-same (tenant, email) always yields the same person_id, and the
-uq_person_observation UNIQUE KEY skips already-written rows.
-See ADR-0002 (deterministic-person-id-for-seed).
+Assigns a stable `person_id` per source-account at first observation
+and writes it to `account_person_map`. Observations of field values
+(email / display_name / platform_id / employee_id / ...) land in
+`persons` with the mapped `person_id`. On re-run, `person_id` is
+looked up in the mapping table rather than re-derived -- so mutable
+attributes (email changes, etc.) never shift `person_id`.
+
+Two modes (detected automatically):
+
+- **Initial bootstrap** -- `account_person_map` is empty.
+  Source-accounts sharing an email within a tenant are auto-merged
+  into one `person_id` (random UUIDv4). This is a one-time pass at
+  system initialisation.
+- **Steady-state** -- `account_person_map` already has entries.
+  Unknown accounts get their own fresh `person_id`; email-automerge
+  is disabled. Future operator-driven workflows (post-UI) do the
+  merge with explicit review.
+
+See ADR-0002 (identity-resolution specs).
 
 Prerequisites:
   - ClickHouse identity_inputs view exists (run dbt first)
@@ -158,17 +171,61 @@ def main():
         )
         accounts[key].append(r)
 
-    # 3. Assign deterministic person_id per unique email (within tenant).
-    #    UUIDv5 over RFC 4122 NAMESPACE_URL with a self-documenting input
-    #    string -- the same (tenant, email) pair always produces the same
-    #    UUID, so re-running the seed never mints a new person_id for an
-    #    existing person. Matches the NAMESPACE_URL + string-input pattern
-    #    used by oidc-authn-plugin. See ADR-0002.
-    email_to_person: dict[tuple[str, str], uuid.UUID] = {}
+    # 3. Connect to MariaDB and load the existing account -> person_id
+    #    mapping. Emptiness of this table decides the seed mode
+    #    (initial-bootstrap vs steady-state).
+    print("  Connecting to MariaDB...")
+    conn = get_mariadb_conn()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT insight_tenant_id, insight_source_type, insight_source_id, "
+        "source_account_id, person_id FROM account_person_map"
+    )
+    existing_map: dict[tuple[str, str, str, str], uuid.UUID] = {}
+    for tenant_bytes, source_type, source_id_bytes, src_account, person_bytes in cursor.fetchall():
+        key = (
+            str(uuid.UUID(bytes=tenant_bytes)),
+            source_type,
+            str(uuid.UUID(bytes=source_id_bytes)),
+            src_account,
+        )
+        existing_map[key] = uuid.UUID(bytes=person_bytes)
+
+    is_initial_bootstrap = len(existing_map) == 0
+    print(
+        f"  account_person_map: {len(existing_map)} existing mappings "
+        f"({'initial-bootstrap' if is_initial_bootstrap else 'steady-state'} mode)"
+    )
+
+    # 4. Assign person_id per source-account.
+    #    - Known accounts (present in map): use the mapped, stable id.
+    #    - Unknown accounts during initial bootstrap: email-based automerge
+    #      within this run -- source-accounts sharing an email in the same
+    #      tenant get one person_id (random UUIDv4).
+    #    - Unknown accounts during steady-state: each gets its own fresh
+    #      person_id (random UUIDv4) -- no automerge. See ADR-0002.
+    #
+    #    Accounts without an email in their observations are still skipped
+    #    (same as before -- email remains the sole identity anchor in the
+    #    bootstrap flow; other matching strategies belong to operator
+    #    workflows, not this seed).
+    email_to_new_person: dict[tuple[str, str], uuid.UUID] = {}
     account_person: dict[tuple, uuid.UUID] = {}
+    new_map_rows: list[tuple] = []
+
+    reused_from_map = 0
+    minted_initial = 0
+    minted_new_account = 0
 
     for key, obs_list in accounts.items():
-        tenant_id = key[0]
+        if key in existing_map:
+            account_person[key] = existing_map[key]
+            reused_from_map += 1
+            continue
+
+        tenant_id, source_type, source_id_str, source_account_id = key
+
         email = None
         for obs in obs_list:
             if obs["alias_type"] == "email":
@@ -177,17 +234,50 @@ def main():
         if not email:
             continue  # no email -- skip account (email is the sole person key)
 
-        email_key = (tenant_id, email)
-        if email_key not in email_to_person:
-            email_to_person[email_key] = uuid.uuid5(
-                uuid.NAMESPACE_URL, f"insight:person:{tenant_id}:{email}"
-            )
-        account_person[key] = email_to_person[email_key]
+        if is_initial_bootstrap:
+            email_key = (tenant_id, email)
+            person_uuid = email_to_new_person.get(email_key)
+            if person_uuid is None:
+                person_uuid = uuid.uuid4()
+                email_to_new_person[email_key] = person_uuid
+                minted_initial += 1
+            reason = "initial-bootstrap"
+        else:
+            # Steady-state: one new account -> one new person. No merge
+            # with existing persons (by email or otherwise) happens here
+            # -- that is explicitly deferred to the operator-driven flow.
+            person_uuid = uuid.uuid4()
+            minted_new_account += 1
+            reason = "new-account"
 
-    print(f"  Unique persons (by email): {len(email_to_person)}")
-    print(f"  Accounts with email: {len(account_person)}")
+        account_person[key] = person_uuid
+        new_map_rows.append((
+            uuid.UUID(tenant_id).bytes,
+            source_type,
+            uuid.UUID(source_id_str).bytes,
+            source_account_id,
+            person_uuid.bytes,
+            reason,
+        ))
 
-    # 4. Build INSERT rows for MariaDB.
+    print(f"  Accounts: reused-from-map={reused_from_map}, "
+          f"minted-initial={minted_initial}, minted-new-account={minted_new_account}")
+
+    # 5. Persist the new mapping rows. INSERT IGNORE so a concurrent seed
+    #    or a partial-previous-run does not fail this run; the PK on
+    #    (tenant, source_type, source_id, source_account_id) is what
+    #    guarantees one mapping per account.
+    if new_map_rows:
+        print(f"  Inserting {len(new_map_rows)} new mapping(s) into account_person_map...")
+        cursor.executemany(
+            """INSERT IGNORE INTO account_person_map
+               (insight_tenant_id, insight_source_type, insight_source_id,
+                source_account_id, person_id, created_reason)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            new_map_rows,
+        )
+
+    # 6. Build INSERT rows for persons observations.
     #    Skip observations whose alias_value exceeds VARCHAR(512) -- without
     #    this check MariaDB may silently truncate (depends on SQL mode) and
     #    the truncated value would corrupt uq_person_observation uniqueness.
@@ -197,7 +287,7 @@ def main():
     for key, obs_list in accounts.items():
         person_id = account_person.get(key)
         if person_id is None:
-            continue  # skipped (no email)
+            continue  # skipped (no email, not in map)
         tenant_str, source_type, source_id_str, _ = key
         # tenant_id and insight_source_id come from identity.identity_inputs,
         # where ClickHouse types both columns as UUID -- toString() on the
@@ -236,20 +326,15 @@ def main():
     if oversized:
         print(f"  Rows skipped -- alias_value > {MAX_ALIAS_VALUE_LEN} characters: {oversized}")
 
-    # 5. Write to MariaDB via INSERT IGNORE.
-    #    The uq_person_observation UNIQUE KEY guarantees identical
-    #    observations are skipped -- re-running is idempotent. No TRUNCATE
-    #    anywhere in this script. To wipe and re-seed, operator must
-    #    manually TRUNCATE outside this script.
-    print("  Connecting to MariaDB...")
-    conn = get_mariadb_conn()
-    cursor = conn.cursor()
-
+    # 7. Write observations to persons via INSERT IGNORE. The
+    #    uq_person_observation UNIQUE KEY skips identical observations --
+    #    re-running is idempotent. No TRUNCATE anywhere; to wipe and
+    #    re-seed, an operator does it manually outside this script.
     cursor.execute("SELECT COUNT(*) FROM persons")
     existing_before = cursor.fetchone()[0]
-    print(f"  Existing rows before seed: {existing_before}")
+    print(f"  Existing persons rows before seed: {existing_before}")
 
-    print(f"  Upserting {len(insert_rows)} rows (INSERT IGNORE)...")
+    print(f"  Upserting {len(insert_rows)} persons rows (INSERT IGNORE)...")
     cursor.executemany(
         """INSERT IGNORE INTO persons
            (alias_type, insight_source_type, insight_source_id, insight_tenant_id,
@@ -278,6 +363,8 @@ def main():
 
     cursor.execute("SELECT COUNT(DISTINCT person_id) FROM persons")
     print(f"    Total unique persons: {cursor.fetchone()[0]}")
+    cursor.execute("SELECT COUNT(*) FROM account_person_map")
+    print(f"    account_person_map rows: {cursor.fetchone()[0]}")
 
     conn.close()
     print("\n=== Seed complete ===")

@@ -730,7 +730,7 @@ Field-level identity attribute history for persons, stored in MariaDB. Each row 
 | `insight_source_id` | `BINARY(16) NOT NULL` | Connector instance UUID (temporary: sipHash128 from Bronze string `source_id` until `sources` table exists — see REC-IR-04) |
 | `insight_tenant_id` | `BINARY(16) NOT NULL` | Tenant UUID (temporary: sipHash128 from Bronze string `tenant_id` until `tenants` table exists — see REC-IR-04) |
 | `alias_value` | `VARCHAR(512) COLLATE utf8mb4_bin NOT NULL` | Field value — email address, display name, platform ID, etc. `utf8mb4_bin` ensures case/diacritic-sensitive uniqueness at the UNIQUE key level |
-| `person_id` | `BINARY(16) NOT NULL` | Person UUID — groups all field observations that belong to one person |
+| `person_id` | `BINARY(16) NOT NULL` | Person UUID — stable, looked up via `account_person_map`, never re-derived from field values. See ADR-0002 |
 | `author_person_id` | `BINARY(16) NOT NULL` | Person UUID of who/what made this change (for initial seed: equals `person_id` — the record is self-authored by the synthetic person) |
 | `reason` | `TEXT NOT NULL DEFAULT ''` | Optional change-reason comment (empty for initial seed) |
 | `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | When this record was inserted. MariaDB stores `TIMESTAMP` internally as UTC and converts to session timezone on read |
@@ -760,6 +760,45 @@ Field-change example for a single person (`p-1001`):
 
 Row 120 supersedes row 5 as the current `display_name` for person `p-1001` (latest by `created_at`); row 5 is retained as history.
 
+---
+
+#### Table: `account_person_map` (MariaDB)
+
+**ID**: `cpt-insightspec-ir-dbtable-account-person-map`
+
+Stable binding `(tenant, source-instance, source-account) → person_id`. Written once per account at first observation; never updated, never re-derived. Guarantees `person_id` stability across seed re-runs, environment restores, and mutable-attribute (email, display name) changes at the source. Primary source of truth for "which person does this source-account belong to".
+
+**Database**: MariaDB, database `identity` (same as `persons`). Defined in the same SeaORM migration: `src/backend/services/identity/src/migration/m20260421_000001_persons.rs`.
+
+##### Columns
+
+| Column | Type | Description |
+|---|---|---|
+| `insight_tenant_id` | `BINARY(16) NOT NULL` | Tenant UUID |
+| `insight_source_type` | `VARCHAR(100) NOT NULL` | Source system: `bamboohr`, `zoom`, etc. |
+| `insight_source_id` | `BINARY(16) NOT NULL` | Connector instance UUID |
+| `source_account_id` | `VARCHAR(255) NOT NULL` | Source-native account identifier (employee id, platform id, email-as-id, etc.) |
+| `person_id` | `BINARY(16) NOT NULL` | Person UUID — random UUIDv4, minted at first observation |
+| `created_reason` | `VARCHAR(50) NOT NULL` | `initial-bootstrap` \| `new-account` \| `operator-merge` — how this binding came into existence |
+| `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | When the mapping was created (UTC) |
+
+**Primary key**: `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id)` — one binding per source-account per tenant. Insert-only: once a row exists for a PK, it is not rewritten by the seed.
+
+**Indexes**:
+- `idx_person_id (person_id)` — list all accounts for a person
+- `idx_tenant_person (insight_tenant_id, person_id)` — tenant-scoped person accounts
+
+##### Semantics
+
+- The `persons` table is **derived history** — observations keyed on `person_id`.
+- `account_person_map` is the **authoritative source of truth** — answers "what is the `person_id` for this source-account?"
+- The seed (and, in future, operator workflows / Bootstrap Pipeline) writes to both tables: the map supplies the `person_id`, the persons table records what the source said about that person at that moment.
+- Nothing in a person's observable attributes (email, name, …) feeds into `person_id`. An email rename is a new observation in `persons`, not a new `person_id`.
+
+See ADR-0002 for the full decision record (why mapping table, two seed modes, alternatives considered).
+
+---
+
 ##### Initial seed (idempotent upsert from `identity_inputs`)
 
 **Scripts** — two-file split by separation of concerns, colocated with the identity-resolution service at `src/backend/services/identity/seed/`:
@@ -767,10 +806,10 @@ Row 120 supersedes row 5 as the current `display_name` for person `p-1001` (late
 | File | Role | Responsibilities |
 |---|---|---|
 | `seed-persons.sh` | Environment orchestrator (bash) | Resolve ClickHouse password from the `clickhouse-credentials` K8s secret (fallback to env); compute `MARIADB_URL` from local-cluster defaults (URL-encoded credentials); start `kubectl port-forward svc/insight-mariadb 3306:3306` if port 3306 is not open; `pip install pymysql` if missing; invoke the Python script. Does **not** apply DDL. |
-| `seed-persons-from-identity-input.py` | Pure data transform (Python) | HTTP-read `identity.identity_inputs` from ClickHouse (`FORMAT JSONEachRow`) with a bounded timeout; group observations by source-account; assign deterministic `person_id`; `INSERT IGNORE` every observation into `persons`; report added / skipped / total counts. |
+| `seed-persons-from-identity-input.py` | Pure data transform (Python) | HTTP-read `identity.identity_inputs` from ClickHouse (`FORMAT JSONEachRow`) with a bounded timeout; read existing `account_person_map`; assign `person_id` per account (lookup if known, random UUIDv4 otherwise); write new mappings; `INSERT IGNORE` observations into `persons`; report counts. |
 
 **Rationale for the split**:
-- Bash is the right tool for kubectl, port-forwards, and secret lookup. Python is the right tool for typed grouping, UUIDv5 hashing, dedup, and parameterised DB writes.
+- Bash is the right tool for kubectl, port-forwards, and secret lookup. Python is the right tool for typed grouping, mapping lookup, UUID minting, and parameterised DB writes.
 - The Python script is **independently runnable** — set `CLICKHOUSE_*` and `MARIADB_URL` env vars, ensure the DDL is already applied (by the identity-resolution service startup / `migrate` subcommand), and run `python3 seed-persons-from-identity-input.py`. Used by CI, by non-Kind environments, and for dry runs.
 - The Python script is **testable in isolation** — the ClickHouse HTTP call and the pymysql connection are the only external dependencies and are trivially mockable; bash is not.
 
@@ -789,13 +828,19 @@ operate on the already-created table; they never issue `CREATE`,
 
 1. Read all rows from `identity.identity_inputs` (ClickHouse) where `operation_type = 'UPSERT'` and `alias_value` is non-empty.
 2. Group observations by `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id)` — a "source account" = one user in one connector instance.
-3. For each source-account group, pick the **email** observation. **Email is the sole key for person creation in initial seed** — accounts without an email are skipped.
-4. Within a tenant, normalise emails (`lower(trim())`). Each unique `(tenant, email)` pair maps to a **deterministic** `person_id = uuid5(project_namespace, "tenant_id:email")` — same inputs always produce the same UUID. See [ADR-0002](ADR/0002-deterministic-person-id-for-seed.md).
-5. For each source-account assigned to a `person_id`, write **all** its field observations (email, display_name, platform_id, employee_id) as separate rows in `persons` with that `person_id`, `author_person_id = person_id` (self-authored), `reason = ''`, `created_at = now()`. The write uses `INSERT IGNORE`; the `uq_person_observation` UNIQUE key on `(insight_tenant_id, person_id, insight_source_type, insight_source_id, alias_type, alias_value)` skips any row that already exists.
+3. Connect to MariaDB and load the existing `account_person_map`. Its emptiness determines the mode:
+   - **Initial bootstrap** — map is empty: source-accounts sharing a normalised email (`lower(trim())`) within a tenant get **one** `person_id` (random UUIDv4, minted once per unique email in this run). `created_reason='initial-bootstrap'`.
+   - **Steady-state** — map is non-empty: every unknown account gets its **own, isolated** `person_id` (random UUIDv4). Email-automerge is disabled. `created_reason='new-account'`. Merging into existing persons is deferred to the operator workflow (out of scope for this seed).
+4. Accounts without an email observation are skipped in either mode (email remains the sole identity anchor in the bootstrap flow).
+5. Insert new bindings into `account_person_map` via `INSERT IGNORE` (PK-scoped idempotency).
+6. For each source-account with a mapped `person_id`, write **all** its field observations (email, display_name, platform_id, employee_id) as separate rows in `persons` with that `person_id`, `author_person_id = person_id` (self-authored), `reason = ''`, `created_at = now()`. The write uses `INSERT IGNORE`; the `uq_person_observation` UNIQUE key on `(insight_tenant_id, person_id, insight_source_type, insight_source_id, alias_type, alias_value)` skips any row that already exists.
+
+See [ADR-0002](ADR/0002-deterministic-person-id-for-seed.md) for the full decision record.
 
 **Safety / idempotency**:
-- Re-running the script is **safe**: deterministic `person_id` keeps prior rows' keys stable, and `INSERT IGNORE` skips duplicates. Added/skipped counts are reported at the end.
-- The script never issues `TRUNCATE`, `DELETE`, `CREATE`, or `ALTER`. To wipe and re-seed, an operator must `TRUNCATE TABLE persons` explicitly outside the script.
+- Re-running the script is **safe**: the `account_person_map` lookup keeps `person_id` stable across runs, and `INSERT IGNORE` on both tables skips duplicates.
+- Steady-state re-runs with new sources **do not auto-merge** the new sources' accounts into existing persons — each gets a fresh `person_id`. Merging is an operator-driven workflow (future work).
+- The script never issues `TRUNCATE`, `DELETE`, `UPDATE`, `CREATE`, or `ALTER`. Wipe-and-reseed is an explicit operator action outside this script.
 
 **Prerequisites and ordering** (end-to-end bootstrap):
 
