@@ -3,7 +3,7 @@
  *
  * Queries the Analytics API for IC KPIs, bullet metrics, chart trends, and
  * time-off notice using per-metric OData queries. Person profile is fetched
- * from IdentityResolutionService; data_availability from ConnectorManagerService.
+ * from IdentityApiService; data_availability from ConnectorManagerService.
  * All requests are made in parallel.
  *
  * Spec: analytics-views-api.md §4.3
@@ -13,9 +13,9 @@ import { eventBus, apiRegistry } from '@hai3/react';
 import { IcDashboardEvents } from '../events/icDashboardEvents';
 import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
-import { IdentityResolutionService } from '../api/identityResolutionService';
+import { IdentityApiService } from '@/app/api/IdentityApiService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter, odataEscapeValue, periodToDateRange } from '../utils/periodToDateRange';
+import { odataDateFilter, odataEscapeValue, type DateRange } from '../utils/periodToDateRange';
 import {
   transformIcKpis,
   transformBulletMetrics,
@@ -51,24 +51,39 @@ export const selectIcPerson = (personId: string): void => {
 };
 
 /**
- * Compute an OData date filter for the previous period (shifted back by one
- * full period length relative to the current filter range).
+ * Compute the previous-period range by shifting the given range back by one
+ * full period length (in local time). Used for period-over-period deltas.
+ *
+ * Month/quarter shifts clamp to the last day of the target month so
+ * end-of-month boundaries don't roll forward (2026-03-31 minus one month →
+ * 2026-02-28, not 2026-03-03).
  */
-function previousPeriodFilter(personId: string, period: PeriodValue): string {
-  const { from, to } = periodToDateRange(period);
+function previousPeriodRange(range: DateRange, period: PeriodValue): DateRange {
+  const shift = (iso: string): string => {
+    const [y, m, d] = iso.split('-').map(Number);
+    // Construct in local time so DST / timezone edges behave predictably.
+    const date = new Date(y, (m ?? 1) - 1, d ?? 1);
+    const originalDay = date.getDate();
 
-  const shiftBack = (isoDate: string): string => {
-    const d = new Date(isoDate);
+    const shiftMonths = (months: number): void => {
+      date.setDate(1);
+      date.setMonth(date.getMonth() - months);
+      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      date.setDate(Math.min(originalDay, lastDay));
+    };
+
     switch (period) {
-      case 'week':    d.setUTCDate(d.getUTCDate() - 7);       break;
-      case 'month':   d.setUTCMonth(d.getUTCMonth() - 1);     break;
-      case 'quarter': d.setUTCMonth(d.getUTCMonth() - 3);     break;
-      case 'year':    d.setUTCFullYear(d.getUTCFullYear() - 1); break;
+      case 'week':    date.setDate(date.getDate() - 7);          break;
+      case 'month':   shiftMonths(1);                            break;
+      case 'quarter': shiftMonths(3);                            break;
+      case 'year':    date.setFullYear(date.getFullYear() - 1); break;
     }
-    return d.toISOString().slice(0, 10);
+    const yy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
   };
-
-  return `person_id eq '${odataEscapeValue(personId)}' and metric_date ge '${shiftBack(from)}' and metric_date lt '${shiftBack(to)}'`;
+  return { from: shift(range.from), to: shift(range.to) };
 }
 
 /**
@@ -77,15 +92,20 @@ function previousPeriodFilter(personId: string, period: PeriodValue): string {
  * The KPI query is made twice (current + previous period) so the transform
  * layer can compute period-over-period deltas.
  */
-export const loadIcDashboard = (personId: string, period: PeriodValue): void => {
+export const loadIcDashboard = (
+  personId: string,
+  period: PeriodValue,
+  range: DateRange,
+): void => {
   eventBus.emit(IcDashboardEvents.IcDashboardLoadStarted);
 
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
-  const identity   = apiRegistry.getService(IdentityResolutionService);
+  const identity   = apiRegistry.getService(IdentityApiService);
 
-  const personFilter     = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(period)}`;
-  const prevPersonFilter = previousPeriodFilter(personId, period);
+  const personFilter     = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(range)}`;
+  const prevRange        = previousPeriodRange(range, period);
+  const prevPersonFilter = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(prevRange)}`;
 
   void Promise.allSettled([
     api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS,         { $filter: personFilter }),
@@ -96,7 +116,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
     api.queryMetric<RawLocTrendRow>(METRIC_REGISTRY.IC_CHART_LOC,              { $filter: personFilter }),
     api.queryMetric<RawDeliveryTrendRow>(METRIC_REGISTRY.IC_CHART_DELIVERY,    { $filter: personFilter }),
     api.queryMetric<RawTimeOffRow>(METRIC_REGISTRY.IC_TIMEOFF,                 { $filter: personFilter }),
-    identity.getPerson(personId),
+    identity.getPersonByEmail(personId),
     connectors.getDataAvailability(),
   ])
     .then(([r0, r1, r2, r3, r4, r5, r6, r7, r8, r9]) => {
@@ -108,8 +128,29 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
       const locResp          = settled(r5, emptyOdata<RawLocTrendRow>(), 'IC_CHART_LOC');
       const deliveryTrendResp = settled(r6, emptyOdata<RawDeliveryTrendRow>(), 'IC_CHART_DELIVERY');
       const timeOffResp      = settled(r7, emptyOdata<RawTimeOffRow>(), 'IC_TIMEOFF');
-      const person           = settled(r8, { person_id: personId, display_name: personId, name: personId, role: '', seniority: '' } as unknown as Awaited<ReturnType<typeof identity.getPerson>>, 'IDENTITY');
       const availability     = settled(r9, { git: 'no-connector', tasks: 'no-connector', ci: 'no-connector', comms: 'no-connector', hr: 'no-connector', ai: 'no-connector' } as unknown as Awaited<ReturnType<typeof connectors.getDataAvailability>>, 'CONNECTORS');
+
+      // Track which per-section queries actually rejected (vs returned empty).
+      // Section IDs match the string keys used by the screen when filtering
+      // bulletMetrics and charts, so the UI can render an error-state
+      // placeholder with retry for failed sections only.
+      const erroredSections: string[] = [];
+      if (r0.status !== 'fulfilled') erroredSections.push('kpis');
+      if (r2.status !== 'fulfilled') erroredSections.push('task_delivery');
+      if (r3.status !== 'fulfilled') erroredSections.push('collaboration');
+      if (r4.status !== 'fulfilled') erroredSections.push('ai_adoption');
+      if (r5.status !== 'fulfilled') erroredSections.push('loc_trend');
+      if (r6.status !== 'fulfilled') erroredSections.push('delivery_trend');
+      if (r7.status !== 'fulfilled') erroredSections.push('time_off');
+
+      // Identity is non-negotiable for this screen: without it we cannot show
+      // a name / avatar / correct role. Surface the failure explicitly rather
+      // than silently substituting the email as display name.
+      if (r8.status !== 'fulfilled') {
+        eventBus.emit(IcDashboardEvents.IcDashboardLoadFailed, 'IDENTITY_UNAVAILABLE');
+        return;
+      }
+      const person = r8.value;
 
       const data: IcDashboardData = {
         kpis: transformIcKpis(curKpisResp.items[0] ?? null, prevKpisResp.items[0] ?? null, period),
@@ -129,6 +170,7 @@ export const loadIcDashboard = (personId: string, period: PeriodValue): void => 
       eventBus.emit(IcDashboardEvents.IcDashboardLoaded, data);
       eventBus.emit(IcDashboardEvents.IcPersonLoaded, person);
       eventBus.emit(IcDashboardEvents.IcDashboardAvailabilityLoaded, availability);
+      eventBus.emit(IcDashboardEvents.IcDashboardSectionsErrored, erroredSections);
     })
     .catch((err: unknown) => {
       // Promise.allSettled never rejects, but guard against unexpected
@@ -151,8 +193,9 @@ export const openDrill = (personId: string, drillId: string): void => {
         eventBus.emit(IcDashboardEvents.DrillOpened, { drillId, drillData: transformDrill(drillData) });
       }
     })
-    .catch((err: unknown) => {
-      console.error('Failed to load drill data:', err);
+    .catch(() => {
+      // Drill fetch failed — keep the modal closed. UI shows ComingSoon for
+      // empty/error content; explicit user-facing toast is future work.
     });
 };
 

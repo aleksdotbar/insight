@@ -342,7 +342,7 @@ export interface DrillData {
   rows: DrillRow[];
 }
 export interface IcDashboardData {
-  // person loaded separately via IdentityResolutionService
+  // person loaded separately via IdentityApiService
   kpis: IcKpi[];
   bulletMetrics: BulletMetric[];
   charts: IcChartsData;

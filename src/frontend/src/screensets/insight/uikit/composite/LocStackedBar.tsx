@@ -19,6 +19,7 @@ import {
 } from '@hai3/uikit';
 import { Tooltip, Legend } from 'recharts';
 import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_AI_LOC, CHART_SPEC_LINES, CHART_FONT_TICK } from '../base/chartColors';
+import ComingSoon from './ComingSoon';
 
 export interface LocStackedBarProps {
   data: Array<{ label: string; aiLoc: number; codeLoc: number; specLines: number }>;
@@ -27,6 +28,10 @@ export interface LocStackedBarProps {
 type ChartRow = { label: string; 'AI LOC': number; 'Code LOC': number; 'Spec Lines': number };
 
 const LocStackedBar: React.FC<LocStackedBarProps> = ({ data }) => {
+  if (data.length === 0) {
+    return <ComingSoon variant="card" />;
+  }
+
   const chartData: ChartRow[] = data.map((r) => ({
     label: r.label,
     'AI LOC': r.aiLoc,

@@ -13,19 +13,19 @@ import { ExecutiveViewEvents } from '../events/executiveViewEvents';
 import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter } from '../utils/periodToDateRange';
+import { odataDateFilter, type DateRange } from '../utils/periodToDateRange';
 import { transformExecRows } from '../api/transforms';
-import type { PeriodValue, ExecViewData } from '../types';
+import type { ExecViewData } from '../types';
 import type { RawExecSummaryRow } from '../api/rawTypes';
 import { EXEC_VIEW_CONFIG } from '../api/viewConfigs';
 import { settled, emptyOdata } from '../utils/settledResult';
 
-export const loadExecutiveView = (period: PeriodValue): void => {
+export const loadExecutiveView = (range: DateRange): void => {
   eventBus.emit(ExecutiveViewEvents.ExecutiveViewLoadStarted);
 
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
-  const filter     = odataDateFilter(period);
+  const filter     = odataDateFilter(range);
 
   void Promise.allSettled([
     api.queryMetric<RawExecSummaryRow>(METRIC_REGISTRY.EXEC_SUMMARY, {

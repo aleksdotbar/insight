@@ -3,8 +3,8 @@
  * Orchestration only — no direct state/API logic.
  */
 
-import React, { useEffect, useState } from 'react';
-import { useAppSelector, useNavigation, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
+import React, { useEffect } from 'react';
+import { useAppSelector, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
 import { selectCustomRange } from '../../slices/periodSlice';
 import { PeriodSelectorBar } from '../../uikit/composite/PeriodSelectorBar';
@@ -12,6 +12,7 @@ import { ViewModeToggle } from '../../uikit/composite/ViewModeToggle';
 import type { CustomRange } from '../../types';
 import { usePeriod } from '../../hooks/usePeriod';
 import { loadIcDashboard, openDrill, closeDrill } from '../../actions/icDashboardActions';
+import { changeViewMode } from '../../actions/insightUiActions';
 import {
   selectPerson,
   selectIcKpis,
@@ -22,10 +23,11 @@ import {
   selectDrillData,
   selectIcLoading,
   selectSelectedPersonId,
+  selectIcErroredSections,
 } from '../../slices/icDashboardSlice';
-import { selectCurrentUser } from '../../slices/currentUserSlice';
-import { MY_DASHBOARD_SCREEN_ID, INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID } from '../../ids';
-import type { ViewMode } from '../../types';
+import { selectInsightViewMode } from '../../slices/insightUiSlice';
+import { resolveDateRange } from '../../utils/periodToDateRange';
+import { INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID } from '../../ids';
 import KpiStrip from '../../uikit/composite/KpiStrip';
 import MetricCard from '../../uikit/composite/MetricCard';
 import CollapsibleSection from '../../uikit/composite/CollapsibleSection';
@@ -79,16 +81,13 @@ const translations = I18nRegistry.createLoader({
 
 const IcDashboardScreen: React.FC = () => {
   useScreenTranslations(INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID, translations);
-  const { currentScreen } = useNavigation();
-  const currentUser = useAppSelector(selectCurrentUser);
-  const selectedPersonId = useAppSelector(selectSelectedPersonId);
-  // "My Dashboard" always shows the current user's own data
-  const personId = currentScreen === MY_DASHBOARD_SCREEN_ID
-    ? currentUser.personId
-    : selectedPersonId;
+  // `selectSelectedPersonId` resolves to the selected IC, falling back to the
+  // viewer themself (My Dashboard semantics) via userContext. No routing
+  // branch needed — the context slice already encodes the intent.
+  const personId = useAppSelector(selectSelectedPersonId);
   const period = usePeriod();
   const customRange = useAppSelector(selectCustomRange);
-  const [viewMode, setViewMode] = useState<ViewMode>('chart');
+  const viewMode = useAppSelector(selectInsightViewMode);
 
   const handleRangeChange = (range: CustomRange | null): void => {
     if (range) setDateRange(range);
@@ -102,10 +101,14 @@ const IcDashboardScreen: React.FC = () => {
   const drillId = useAppSelector(selectDrillId);
   const drillData = useAppSelector(selectDrillData);
   const loading = useAppSelector(selectIcLoading);
+  const erroredSections = useAppSelector(selectIcErroredSections);
 
-  useEffect(() => {
-    loadIcDashboard(personId, period);
-  }, [personId, period]);
+  const reload = (): void => {
+    if (!personId) return;
+    loadIcDashboard(personId, period, resolveDateRange(period, customRange));
+  };
+
+  useEffect(reload, [personId, period, customRange]);
 
   // Filter bullet metrics by section. Section names are aligned with Team View
   // (transforms.ts / BULLET_DEFS) so the same defs drive labels+thresholds.
@@ -119,11 +122,12 @@ const IcDashboardScreen: React.FC = () => {
   const currentKpis = kpis;
 
   const handleDrillClick = (drillIdVal: string): void => {
+    if (!personId) return;
     openDrill(personId, drillIdVal);
   };
 
-  // Not-found state
-  if (!loading && !person) {
+  // Not-found state — only after we actually have a personId to fetch for.
+  if (personId && !loading && !person) {
     return (
       <div className="flex items-center justify-center p-6">
         <div className="bg-white border border-gray-200 rounded-xl px-12 py-8 text-center">
@@ -149,7 +153,7 @@ const IcDashboardScreen: React.FC = () => {
             onPeriodChange={changePeriod}
             onRangeChange={handleRangeChange}
           />
-          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+          <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
         </div>
       </div>
 
@@ -168,6 +172,8 @@ const IcDashboardScreen: React.FC = () => {
           onDrillClick={handleDrillClick}
           mode={viewMode}
           personName={person?.name}
+          errored={erroredSections.includes('task_delivery')}
+          onRetry={reload}
         />
         <MetricCard
           title="Git Output"

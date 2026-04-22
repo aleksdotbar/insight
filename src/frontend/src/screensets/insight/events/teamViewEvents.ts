@@ -5,7 +5,7 @@
 
 import '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { TeamViewData, DataAvailability } from '../types';
+import type { TeamViewData, DataAvailability, DrillData } from '../types';
 
 const DOMAIN_ID = 'teamView';
 
@@ -17,6 +17,8 @@ export enum TeamViewEvents {
   TeamViewLoaded             = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loaded`,
   TeamViewAvailabilityLoaded = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/availabilityLoaded`,
   TeamViewLoadFailed         = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/loadFailed`,
+  DrillOpened                = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillOpened`,
+  DrillClosed                = `${INSIGHT_SCREENSET_ID}/${DOMAIN_ID}/drillClosed`,
 }
 
 /**
@@ -28,5 +30,7 @@ declare module '@hai3/react' {
     [TeamViewEvents.TeamViewLoaded]:             TeamViewData;
     [TeamViewEvents.TeamViewAvailabilityLoaded]: DataAvailability;
     [TeamViewEvents.TeamViewLoadFailed]:         string;
+    [TeamViewEvents.DrillOpened]:                { drillId: string; drillData: DrillData };
+    [TeamViewEvents.DrillClosed]:                void;
   }
 }

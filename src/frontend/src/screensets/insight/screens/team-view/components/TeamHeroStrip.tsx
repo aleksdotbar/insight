@@ -7,6 +7,7 @@ import React from 'react';
 import { Badge, Card } from '@hai3/uikit';
 import type { TeamKpi } from '../../../types';
 import MetricInfo from '../../../uikit/base/MetricInfo';
+import ComingSoon from '../../../uikit/composite/ComingSoon';
 
 export interface TeamHeroStripProps {
   teamKpis: TeamKpi[];
@@ -45,10 +46,16 @@ const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
 
 export const TeamHeroStrip: React.FC<TeamHeroStripProps> = ({ teamKpis }) => (
   <Card className="overflow-hidden">
-    <div className="grid grid-cols-2 sm:grid-cols-4">
-      {teamKpis.slice(0, 4).map((kpi, i) => (
-        <KpiCard key={kpi.metric_key} kpi={kpi} idx={i} />
-      ))}
-    </div>
+    {teamKpis.length === 0 ? (
+      <div className="p-3">
+        <ComingSoon variant="card" />
+      </div>
+    ) : (
+      <div className="grid grid-cols-2 sm:grid-cols-4">
+        {teamKpis.slice(0, 4).map((kpi, i) => (
+          <KpiCard key={kpi.metric_key} kpi={kpi} idx={i} />
+        ))}
+      </div>
+    )}
   </Card>
 );

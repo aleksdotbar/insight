@@ -7,6 +7,7 @@
 import React from 'react';
 import type { BulletMetric, ViewMode } from '../../../types';
 import BulletChart from '../../../uikit/composite/BulletChart';
+import ComingSoon from '../../../uikit/composite/ComingSoon';
 
 export interface AiToolsSectionProps {
   metrics: BulletMetric[];
@@ -43,6 +44,14 @@ const AiToolsSection: React.FC<AiToolsSectionProps> = ({
   onDrillClick,
   personName,
 }) => {
+  if (metrics.length === 0) {
+    return (
+      <div className="p-4">
+        <ComingSoon variant="card" />
+      </div>
+    );
+  }
+
   if (viewMode === 'tile') {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4">

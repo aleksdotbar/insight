@@ -20,5 +20,8 @@ declare module '@hai3/react' {
     'app/user/fetch': void;
     /** User data loaded - carries user payload for header update */
     'app/user/loaded': { user: ApiUser };
+    /** Identity resolution failed — screens should show an error state
+     *  instead of waiting forever. */
+    'app/identity/unavailable': void;
   }
 }

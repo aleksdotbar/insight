@@ -23,8 +23,22 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-/** Derive a role from identity data. MVP: has subordinates = team_lead, else ic. */
+/**
+ * Threshold at which a manager is treated as "executive" (gets the
+ * org-level view). Counted as total reports across the whole subtree,
+ * not just direct reports.
+ */
+const EXECUTIVE_THRESHOLD_REPORTS = 10;
+
+/** Total descendants in a subordinate subtree (recursive). */
+function countAllSubordinates(p: IdentityPerson): number {
+  return p.subordinates.reduce((n, s) => n + 1 + countAllSubordinates(s), 0);
+}
+
+/** Derive a role from identity data, driven by actual reporting tree size. */
 function deriveRole(person: IdentityPerson): 'executive' | 'team_lead' | 'ic' {
+  const total = countAllSubordinates(person);
+  if (total >= EXECUTIVE_THRESHOLD_REPORTS) return 'executive';
   if (person.subordinates.length > 0) return 'team_lead';
   return 'ic';
 }
@@ -34,8 +48,6 @@ function deriveRole(person: IdentityPerson): 'executive' | 'team_lead' | 'ic' {
  * Called by Layout on mount. Emits events for header + menu updates.
  */
 export function fetchCurrentUser(): void {
-  eventBus.emit('app/user/fetch');
-
   // Fire-and-forget: read token from OIDC session, resolve identity
   const storageKey = Object.keys(sessionStorage).find((k) => k.startsWith('oidc.user:'));
   if (!storageKey) return;
@@ -54,8 +66,6 @@ export function fetchCurrentUser(): void {
 
   const identity = apiRegistry.getService(IdentityApiService);
   void identity.getPersonByEmail(email).then((person) => {
-    console.log('[resolveIdentity] loaded');
-
     eventBus.emit('app/user/loaded', {
       user: { firstName: person.first_name, lastName: person.last_name, email: person.email } as ApiUser,
     });
@@ -68,7 +78,9 @@ export function fetchCurrentUser(): void {
       _identity: person,
     });
   }).catch(() => {
-    console.warn('[resolveIdentity] failed');
+    // Identity resolution failed — emit a typed event so header / screens
+    // can surface the error state explicitly (refresh button, etc.).
+    eventBus.emit('app/identity/unavailable');
   });
 }
 

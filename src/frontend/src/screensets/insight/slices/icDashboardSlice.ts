@@ -15,7 +15,6 @@ import type {
   DrillData,
   IcDashboardData,
   DataAvailability,
-  ViewMode,
 } from '../types';
 import type { IdentityPerson } from '@/app/types/identity';
 
@@ -23,10 +22,13 @@ const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/icDashboard` as const;
 
 /**
  * State interface
+ *
+ * `selectedPersonId` previously lived here; it has been promoted to
+ * `userContextSlice.selection.person` as part of the single-source-of-truth
+ * refactor (Phase 4). Use `selectActivePerson` from userContextSlice instead.
  */
 export interface IcDashboardState {
-  selectedPersonId: string;
-  /** Loaded separately via IdentityResolutionService */
+  /** Loaded separately via IdentityApiService */
   person: IdentityPerson | null;
   kpis: IcKpi[];
   bulletMetrics: BulletMetric[];
@@ -36,13 +38,17 @@ export interface IcDashboardState {
   drillData: DrillData | null;
   /** Loaded separately via ConnectorManagerService */
   availability: DataAvailability | null;
-  viewMode: ViewMode;
   loading: boolean;
   error: string | null;
+  /**
+   * Section IDs whose last fetch actually rejected (network / 5xx / etc.),
+   * as opposed to returning an empty result. Consumed by composites to
+   * switch ComingSoon placeholders from "No data" to "Unable to load · Retry".
+   */
+  erroredSections: string[];
 }
 
 const initialState: IcDashboardState = {
-  selectedPersonId: 'p1',
   person: null,
   kpis: [],
   bulletMetrics: [],
@@ -51,18 +57,15 @@ const initialState: IcDashboardState = {
   drillId: null,
   drillData: null,
   availability: null,
-  viewMode: 'chart',
   loading: false,
   error: null,
+  erroredSections: [],
 };
 
 export const icDashboardSlice = createSlice({
   name: SLICE_KEY,
   initialState,
   reducers: {
-    setSelectedPersonId: (state, action: PayloadAction<string>) => {
-      state.selectedPersonId = action.payload;
-    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
@@ -95,15 +98,14 @@ export const icDashboardSlice = createSlice({
       state.drillId = null;
       state.drillData = null;
     },
-    setViewMode: (state, action: PayloadAction<ViewMode>) => {
-      state.viewMode = action.payload;
+    setErroredSections: (state, action: PayloadAction<string[]>) => {
+      state.erroredSections = action.payload;
     },
   },
 });
 
 // Export actions
 export const {
-  setSelectedPersonId,
   setLoading,
   setIcDashboardData,
   setPerson,
@@ -111,7 +113,7 @@ export const {
   setError,
   setDrillState,
   clearDrill,
-  setViewMode,
+  setErroredSections,
 } = icDashboardSlice.actions;
 
 // Export the slice object (not just the reducer) for registerSlice()
@@ -155,10 +157,6 @@ export const selectDrillData = (state: RootState): DrillData | null => {
   return state[SLICE_KEY]?.drillData ?? null;
 };
 
-export const selectViewMode = (state: RootState): ViewMode => {
-  return state[SLICE_KEY]?.viewMode ?? 'chart';
-};
-
 export const selectIcLoading = (state: RootState): boolean => {
   return state[SLICE_KEY]?.loading ?? false;
 };
@@ -167,6 +165,12 @@ export const selectIcAvailability = (state: RootState): DataAvailability | null 
   return state[SLICE_KEY]?.availability ?? null;
 };
 
-export const selectSelectedPersonId = (state: RootState): string => {
-  return state[SLICE_KEY]?.selectedPersonId ?? 'p1';
+/** Re-export of selectActivePerson so callers can import from this slice
+ *  without knowing about the userContext refactor. Prefer importing from
+ *  userContextSlice directly in new code. Returns `null` when the viewer
+ *  is not yet hydrated. */
+export { selectActivePerson as selectSelectedPersonId } from './userContextSlice';
+
+export const selectIcErroredSections = (state: RootState): string[] => {
+  return state[SLICE_KEY]?.erroredSections ?? [];
 };

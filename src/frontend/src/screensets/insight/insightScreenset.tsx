@@ -26,11 +26,14 @@ import icDashboardSlice from './slices/icDashboardSlice';
 import { initializeIcDashboardEffects } from './effects/icDashboardEffects';
 import currentUserSlice from './slices/currentUserSlice';
 import { initializeCurrentUserEffects } from './effects/currentUserEffects';
+import insightUiSlice from './slices/insightUiSlice';
+import { initializeInsightUiEffects } from './effects/insightUiEffects';
+import userContextSlice from './slices/userContextSlice';
+import { initializeInsightNavigationEffects } from './effects/insightNavigationEffects';
 
 // Import for side effect - register API services
 import './api/insightApiService';
 import './api/connectorManagerService';
-import './api/identityResolutionService';
 
 // NOTE: Mocks are now registered globally via MockPlugin in main.tsx
 // If this screenset needs mocks, add them to the global mockMap in main.tsx
@@ -103,6 +106,12 @@ registerSlice(icDashboardSlice, (dispatch) => {
 });
 registerSlice(currentUserSlice, (dispatch) => {
   initializeCurrentUserEffects(dispatch);
+});
+registerSlice(insightUiSlice, (dispatch) => {
+  initializeInsightUiEffects(dispatch);
+});
+registerSlice(userContextSlice, (dispatch) => {
+  initializeInsightNavigationEffects(dispatch);
 });
 
 /**

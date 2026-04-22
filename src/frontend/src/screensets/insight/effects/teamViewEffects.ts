@@ -6,7 +6,14 @@
 
 import { type AppDispatch, eventBus } from '@hai3/react';
 import { TeamViewEvents } from '../events/teamViewEvents';
-import { setLoading, setTeamViewData, setAvailability, setError } from '../slices/teamViewSlice';
+import {
+  setLoading,
+  setTeamViewData,
+  setAvailability,
+  setError,
+  setDrillState,
+  clearDrill,
+} from '../slices/teamViewSlice';
 
 /**
  * Initialize effects
@@ -30,5 +37,13 @@ export const initializeTeamViewEffects = (appDispatch: AppDispatch): void => {
   eventBus.on(TeamViewEvents.TeamViewLoadFailed, (msg) => {
     dispatch(setError(msg));
     dispatch(setLoading(false));
+  });
+
+  eventBus.on(TeamViewEvents.DrillOpened, (payload) => {
+    dispatch(setDrillState(payload));
+  });
+
+  eventBus.on(TeamViewEvents.DrillClosed, () => {
+    dispatch(clearDrill());
   });
 };

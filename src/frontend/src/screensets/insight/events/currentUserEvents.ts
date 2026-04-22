@@ -15,6 +15,5 @@ export enum CurrentUserEvents {
 declare module '@hai3/react' {
   interface EventPayloadMap {
     [CurrentUserEvents.UserChanged]: CurrentUser;
-    'layout/menu/itemParam': { screenId: string; param: string };
   }
 }

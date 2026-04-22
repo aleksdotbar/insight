@@ -19,6 +19,7 @@ import {
   TableRow,
   TableCell,
 } from '@hai3/uikit';
+import ComingSoon from './ComingSoon';
 
 export interface DrillModalDrill {
   title: string;
@@ -58,46 +59,54 @@ const DrillModal: React.FC<DrillModalProps> = ({ drill, open, onClose }) => (
             {drill.filter}
           </div>
 
-          {/* Table */}
+          {/* Table or empty-state */}
           <ScrollArea className="flex-1">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  {drill.columns.map((col) => (
-                    <TableHead
-                      key={col}
-                      className="text-xs font-semibold text-gray-500 whitespace-nowrap"
-                    >
-                      {col}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {drill.rows.map((row, rowIdx) => (
-                  <TableRow key={rowIdx}>
+            {drill.rows.length === 0 ? (
+              <div className="p-4">
+                <ComingSoon variant="card" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
                     {drill.columns.map((col) => (
-                      <TableCell key={col} className="text-gray-700 text-xs">
-                        {row[col] ?? '—'}
-                      </TableCell>
+                      <TableHead
+                        key={col}
+                        className="text-xs font-semibold text-gray-500 whitespace-nowrap"
+                      >
+                        {col}
+                      </TableHead>
                     ))}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {drill.rows.map((row, rowIdx) => (
+                    <TableRow key={rowIdx}>
+                      {drill.columns.map((col) => (
+                        <TableCell key={col} className="text-gray-700 text-xs">
+                          {row[col] ?? '—'}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </ScrollArea>
 
-          {/* Footer */}
-          <div className="flex justify-between items-center px-4 py-2.5 border-t border-gray-200 text-xs flex-shrink-0">
-            <a
-              href="#"
-              className="text-blue-600 no-underline font-medium"
-              onClick={(e) => e.preventDefault()}
-            >
-              Open all in {drill.source} ↗
-            </a>
-            <span className="text-gray-400">{drill.rows.length} records</span>
-          </div>
+          {/* Footer — hidden under the empty state so it doesn't read "0 records" */}
+          {drill.rows.length > 0 && (
+            <div className="flex justify-between items-center px-4 py-2.5 border-t border-gray-200 text-xs flex-shrink-0">
+              <a
+                href="#"
+                className="text-blue-600 no-underline font-medium"
+                onClick={(e) => e.preventDefault()}
+              >
+                Open all in {drill.source} ↗
+              </a>
+              <span className="text-gray-400">{drill.rows.length} records</span>
+            </div>
+          )}
         </>
       )}
     </DialogContent>

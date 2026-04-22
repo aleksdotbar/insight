@@ -8,6 +8,7 @@
 import React from 'react';
 import { Badge, Card, CardContent } from '@hai3/uikit';
 import MetricInfo from '../base/MetricInfo';
+import ComingSoon from './ComingSoon';
 
 // Units that suppress period suffix
 const SUPPRESS_SUFFIX_UNITS = ['%', '×', 'h', 'avg replies', 'avg', '/mo'];
@@ -110,14 +111,16 @@ const KpiStripGrid: React.FC<{ kpis: KpiStripKpi[] }> = ({ kpis }) => (
 );
 
 const KpiStrip: React.FC<KpiStripProps> = ({ kpis, plain = false }) => {
+  const body = kpis.length === 0
+    ? <div className="p-3"><ComingSoon variant="card" /></div>
+    : <KpiStripGrid kpis={kpis} />;
+
   if (plain) {
-    return <KpiStripGrid kpis={kpis} />;
+    return body;
   }
   return (
     <Card className="shadow-sm">
-      <CardContent className="p-0">
-        <KpiStripGrid kpis={kpis} />
-      </CardContent>
+      <CardContent className="p-0">{body}</CardContent>
     </Card>
   );
 };

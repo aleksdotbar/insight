@@ -7,7 +7,6 @@
 import { type AppDispatch, eventBus } from '@hai3/react';
 import { IcDashboardEvents } from '../events/icDashboardEvents';
 import {
-  setSelectedPersonId,
   setLoading,
   setIcDashboardData,
   setPerson,
@@ -15,7 +14,9 @@ import {
   setError,
   setDrillState,
   clearDrill,
+  setErroredSections,
 } from '../slices/icDashboardSlice';
+import { setSelectedPerson } from '../slices/userContextSlice';
 
 /**
  * Initialize effects
@@ -25,7 +26,7 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
   const dispatch = appDispatch;
 
   eventBus.on(IcDashboardEvents.PersonSelected, (personId) => {
-    dispatch(setSelectedPersonId(personId));
+    dispatch(setSelectedPerson(personId));
   });
 
   eventBus.on(IcDashboardEvents.IcDashboardLoadStarted, () => {
@@ -46,6 +47,10 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
 
   eventBus.on(IcDashboardEvents.IcDashboardLoadFailed, (msg) => {
     dispatch(setError(msg));
+  });
+
+  eventBus.on(IcDashboardEvents.IcDashboardSectionsErrored, (sections) => {
+    dispatch(setErroredSections(sections));
   });
 
   eventBus.on(IcDashboardEvents.DrillOpened, ({ drillId, drillData }) => {
