@@ -52,7 +52,10 @@ const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
 );
 
 // Tailwind needs full class names in the source, so enumerate the common
-// column counts we expect from deriveTeamKpis.
+// column counts we expect from deriveTeamKpis. Unexpected counts (0 or >6)
+// fall back to the 4-column layout via `DEFAULT_GRID_COLS` rather than a
+// non-null assertion — keeps the types honest without `!`.
+const DEFAULT_GRID_COLS = 'grid-cols-2 sm:grid-cols-4';
 const GRID_COLS: Record<number, string> = {
   1: 'grid-cols-1 sm:grid-cols-1',
   2: 'grid-cols-2 sm:grid-cols-2',
@@ -67,7 +70,7 @@ export const TeamHeroStrip: React.FC<TeamHeroStripProps> = ({ teamKpis }) => {
   // header strip. Now we render all the cards deriveTeamKpis returned and
   // pick a grid sized to the actual count.
   const cols = teamKpis.length;
-  const gridClass = GRID_COLS[cols] ?? GRID_COLS[4]!;
+  const gridClass = GRID_COLS[cols] ?? DEFAULT_GRID_COLS;
 
   return (
     <Card className="overflow-hidden">

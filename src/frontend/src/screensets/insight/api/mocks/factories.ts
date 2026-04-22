@@ -298,7 +298,12 @@ export function mockDeliveryTrendSeries(weeks = 8): RawDeliveryTrendRow[] {
  * distribution defaults — only the backend supplies real numbers — so this
  * seed data is mock-only and lives here.
  */
-const MOCK_BULLET_DIST: Record<string, { median: number; range_min: number; range_max: number }> = {
+type MockBulletDist = { median: number; range_min: number; range_max: number };
+
+// Partial so unknown keys are typed as `undefined` — the caller's missing-entry
+// guard + fallback below is then visible to the type checker (codacy flagged
+// them as dead code under `Record<string, T>` which always resolves to `T`).
+const MOCK_BULLET_DIST: Partial<Record<string, MockBulletDist>> = {
   tasks_completed:            { median: 5.8,   range_min: 0,  range_max: 15 },
   task_dev_time:              { median: 15,    range_min: 8,  range_max: 31 },
   task_reopen_rate:           { median: 5,     range_min: 0,  range_max: 15 },
