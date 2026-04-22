@@ -30,19 +30,32 @@ Usage:
   kubectl -n insight port-forward svc/insight-mariadb 3306:3306 &
 """
 
-import os
-import sys
-import uuid
+import base64
 import json
-import urllib.request
+import os
 import urllib.parse
+import urllib.request
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
+
+# -- Schema constraints (mirror migrations/mariadb/20260421000000_persons.sql)
+# VARCHAR(512) for alias_value -- longer values are rejected rather than
+# silently truncated by INSERT IGNORE.
+MAX_ALIAS_VALUE_LEN = 512
 
 # -- ClickHouse connection ------------------------------------------------
 CH_URL = os.environ.get("CLICKHOUSE_URL", "http://localhost:30123")
 CH_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CH_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
+
+# Guard urllib against file:// and other non-HTTP schemes -- CH_URL is read
+# from env and fed to urlopen; a mistaken value should error, not open a
+# local file (Bandit B310).
+if urllib.parse.urlparse(CH_URL).scheme not in ("http", "https"):
+    raise ValueError(
+        f"CLICKHOUSE_URL must use http:// or https:// scheme; got {CH_URL!r}"
+    )
 
 
 def ch_query(sql: str) -> list[dict]:
@@ -50,10 +63,9 @@ def ch_query(sql: str) -> list[dict]:
     params = urllib.parse.urlencode({"query": sql + " FORMAT JSONEachRow"})
     url = f"{CH_URL}/?{params}"
     req = urllib.request.Request(url)
-    import base64
     creds = base64.b64encode(f"{CH_USER}:{CH_PASSWORD}".encode()).decode()
     req.add_header("Authorization", f"Basic {creds}")
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req) as resp:  # noqa: S310 -- scheme validated above
         lines = resp.read().decode().strip().split("\n")
         return [json.loads(line) for line in lines if line.strip()]
 
@@ -96,7 +108,10 @@ def get_mariadb_conn():
 def main():
     print("=== Seed: identity_inputs -> MariaDB persons ===")
 
-    # 1. Read all identity_inputs rows from ClickHouse
+    # 1. Read all identity_inputs rows from ClickHouse.
+    #    ORDER BY _synced_at DESC inside each source-account so the email
+    #    anchor picked in step 3 is deterministically the latest observation
+    #    (ADR-0002 requires stable person_id across re-runs).
     print("  Reading identity_inputs from ClickHouse...")
     rows = ch_query("""
         SELECT
@@ -111,7 +126,14 @@ def main():
         WHERE operation_type = 'UPSERT'
           AND alias_value IS NOT NULL
           AND alias_value != ''
-        ORDER BY insight_tenant_id, insight_source_type, insight_source_id, source_account_id
+        ORDER BY
+            insight_tenant_id,
+            insight_source_type,
+            insight_source_id,
+            source_account_id,
+            _synced_at DESC,
+            alias_type,
+            alias_value
     """)
     print(f"  Read {len(rows)} rows")
 
@@ -160,21 +182,29 @@ def main():
     print(f"  Unique persons (by email): {len(email_to_person)}")
     print(f"  Accounts with email: {len(account_person)}")
 
-    # 4. Build INSERT rows for MariaDB
+    # 4. Build INSERT rows for MariaDB.
+    #    Skip observations whose alias_value exceeds VARCHAR(512) -- without
+    #    this check MariaDB may silently truncate (depends on SQL mode) and
+    #    the truncated value would corrupt uq_person_observation uniqueness.
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000")
     insert_rows = []
+    oversized = 0
     for key, obs_list in accounts.items():
         person_id = account_person.get(key)
         if not person_id:
             continue  # skipped (no email)
         tenant_id, source_type, source_id, _ = key
         for obs in obs_list:
+            alias_value = obs["alias_value"]
+            if len(alias_value.encode("utf-8")) > MAX_ALIAS_VALUE_LEN:
+                oversized += 1
+                continue
             insert_rows.append((
                 obs["alias_type"],
                 source_type,
                 source_id,
                 tenant_id,
-                obs["alias_value"],
+                alias_value,
                 person_id,
                 person_id,  # author = self for initial seed
                 "",          # reason
@@ -182,6 +212,8 @@ def main():
             ))
 
     print(f"  Rows to insert (pre-dedup): {len(insert_rows)}")
+    if oversized:
+        print(f"  Rows skipped -- alias_value > {MAX_ALIAS_VALUE_LEN} bytes: {oversized}")
 
     # 5. Write to MariaDB via INSERT IGNORE.
     #    The uq_person_observation UNIQUE KEY guarantees identical

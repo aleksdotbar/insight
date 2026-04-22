@@ -67,6 +67,12 @@ is_applied() {
 record_applied() {
   local version="$1"
   mariadb_exec -e "INSERT INTO schema_migrations (version) VALUES ('$version')"
+  # Keep the in-memory applied set current -- otherwise two migrations that
+  # share a version (e.g. `foo.sql` + `foo.sh` with the same timestamp-name
+  # prefix) would both be treated as pending in a single runner invocation,
+  # and the second insert would fail on a duplicate PRIMARY KEY after the
+  # first one already executed.
+  echo "$version" >> "$APPLIED_FILE"
 }
 
 # -- Enumerate pending migrations -----------------------------------------
