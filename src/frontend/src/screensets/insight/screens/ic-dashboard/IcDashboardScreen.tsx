@@ -182,6 +182,8 @@ const IcDashboardScreen: React.FC = () => {
           onDrillClick={handleDrillClick}
           mode={viewMode}
           personName={person?.name}
+          errored={erroredSections.includes('git_output')}
+          onRetry={reload}
         />
       </div>
 

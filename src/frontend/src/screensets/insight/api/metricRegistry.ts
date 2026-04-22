@@ -29,6 +29,7 @@ export const METRIC_REGISTRY = {
   IC_CHART_DELIVERY:    '00000000-0000-0000-0001-000000000015',
   IC_DRILL:             '00000000-0000-0000-0001-000000000016',
   IC_TIMEOFF:           '00000000-0000-0000-0001-000000000017',
+  IC_BULLET_GIT:        '00000000-0000-0000-0001-000000000018',
 } as const satisfies Record<string, string>;
 
 export type MetricRegistryKey = keyof typeof METRIC_REGISTRY;

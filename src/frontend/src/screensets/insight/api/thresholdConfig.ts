@@ -55,6 +55,11 @@ export const BULLET_DEFS: BulletThresholdDef[] = [
   // 100 = estimate matched actuals, 50 = off by 2×, range 0..100, higher = better.
   { metric_key: 'estimation_accuracy', section: 'task_delivery', label: 'Estimation Accuracy',               sublabel: 'Jira \u00b7 how close estimate matches actual time',                     unit: '%',     drill_id: '',               higher_is_better: true,  range_min: 0,  range_max: 100, median: 58,  good: 80,  warn: 50  },
 
+  // --- git_output ---
+  // commits: inner sum per person over the period, sourced from
+  // bronze_bitbucket_cloud.commits via insight.git_bullet_rows.
+  { metric_key: 'commits',            section: 'git_output',    label: 'Commits Authored',                   sublabel: 'Bitbucket \u00b7 commits authored \u00b7 period total',                 unit: 'count',  drill_id: '',               higher_is_better: true,  range_min: 0,  range_max: 1000, median: 50,  good: 30,  warn: 10  },
+
   // --- code_quality ---
   // prs_per_dev: inner sum per person over the period.
   { metric_key: 'prs_per_dev',        section: 'code_quality',  label: 'Pull Requests Merged / Developer',   sublabel: 'Bitbucket \u00b7 authored and merged \u00b7 per developer · period total', unit: '',  drill_id: 'team-prs',       higher_is_better: true,  range_min: 0,  range_max: 20,  median: 6,   good: 6,   warn: 3   },

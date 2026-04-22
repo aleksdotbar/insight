@@ -103,9 +103,13 @@ export const loadIcDashboard = (
   const connectors = apiRegistry.getService(ConnectorManagerService);
   const identity   = apiRegistry.getService(IdentityApiService);
 
-  const personFilter     = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(range)}`;
+  // ClickHouse gold views store person_id in lowercase (BambooHR emails come
+  // in mixed case; the ingestion pipeline normalizes). Force lowercase in
+  // OData filters so mixed-case identity emails don't produce empty results.
+  const personIdLc       = personId.toLowerCase();
+  const personFilter     = `person_id eq '${odataEscapeValue(personIdLc)}' and ${odataDateFilter(range)}`;
   const prevRange        = previousPeriodRange(range, period);
-  const prevPersonFilter = `person_id eq '${odataEscapeValue(personId)}' and ${odataDateFilter(prevRange)}`;
+  const prevPersonFilter = `person_id eq '${odataEscapeValue(personIdLc)}' and ${odataDateFilter(prevRange)}`;
 
   void Promise.allSettled([
     api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS,         { $filter: personFilter }),
@@ -118,8 +122,9 @@ export const loadIcDashboard = (
     api.queryMetric<RawTimeOffRow>(METRIC_REGISTRY.IC_TIMEOFF,                 { $filter: personFilter }),
     identity.getPersonByEmail(personId),
     connectors.getDataAvailability(),
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_GIT,       { $filter: personFilter }),
   ])
-    .then(([r0, r1, r2, r3, r4, r5, r6, r7, r8, r9]) => {
+    .then(([r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10]) => {
       const curKpisResp      = settled(r0, emptyOdata<RawIcAggregateRow>(), 'IC_KPIS');
       const prevKpisResp     = settled(r1, emptyOdata<RawIcAggregateRow>(), 'IC_KPIS_PREV');
       const deliveryResp     = settled(r2, emptyOdata<RawBulletAggregateRow>(), 'IC_BULLET_DELIVERY');
@@ -128,6 +133,7 @@ export const loadIcDashboard = (
       const locResp          = settled(r5, emptyOdata<RawLocTrendRow>(), 'IC_CHART_LOC');
       const deliveryTrendResp = settled(r6, emptyOdata<RawDeliveryTrendRow>(), 'IC_CHART_DELIVERY');
       const timeOffResp      = settled(r7, emptyOdata<RawTimeOffRow>(), 'IC_TIMEOFF');
+      const gitResp          = settled(r10, emptyOdata<RawBulletAggregateRow>(), 'IC_BULLET_GIT');
       const availability     = settled(r9, { git: 'no-connector', tasks: 'no-connector', ci: 'no-connector', comms: 'no-connector', hr: 'no-connector', ai: 'no-connector' } as unknown as Awaited<ReturnType<typeof connectors.getDataAvailability>>, 'CONNECTORS');
 
       // Track which per-section queries actually rejected (vs returned empty).
@@ -135,13 +141,14 @@ export const loadIcDashboard = (
       // bulletMetrics and charts, so the UI can render an error-state
       // placeholder with retry for failed sections only.
       const erroredSections: string[] = [];
-      if (r0.status !== 'fulfilled') erroredSections.push('kpis');
-      if (r2.status !== 'fulfilled') erroredSections.push('task_delivery');
-      if (r3.status !== 'fulfilled') erroredSections.push('collaboration');
-      if (r4.status !== 'fulfilled') erroredSections.push('ai_adoption');
-      if (r5.status !== 'fulfilled') erroredSections.push('loc_trend');
-      if (r6.status !== 'fulfilled') erroredSections.push('delivery_trend');
-      if (r7.status !== 'fulfilled') erroredSections.push('time_off');
+      if (r0.status !== 'fulfilled')  erroredSections.push('kpis');
+      if (r2.status !== 'fulfilled')  erroredSections.push('task_delivery');
+      if (r3.status !== 'fulfilled')  erroredSections.push('collaboration');
+      if (r4.status !== 'fulfilled')  erroredSections.push('ai_adoption');
+      if (r5.status !== 'fulfilled')  erroredSections.push('loc_trend');
+      if (r6.status !== 'fulfilled')  erroredSections.push('delivery_trend');
+      if (r7.status !== 'fulfilled')  erroredSections.push('time_off');
+      if (r10.status !== 'fulfilled') erroredSections.push('git_output');
 
       // Identity is non-negotiable for this screen: without it we cannot show
       // a name / avatar / correct role. Surface the failure explicitly rather
@@ -156,6 +163,7 @@ export const loadIcDashboard = (
         kpis: transformIcKpis(curKpisResp.items[0] ?? null, prevKpisResp.items[0] ?? null, period),
         bulletMetrics: [
           ...transformBulletMetrics(deliveryResp.items, 'task_delivery', period),
+          ...transformBulletMetrics(gitResp.items,      'git_output',    period),
           ...transformBulletMetrics(collabResp.items,   'collaboration', period),
           ...transformBulletMetrics(aiResp.items,       'ai_adoption',   period),
         ],
@@ -185,7 +193,7 @@ export const loadIcDashboard = (
 export const openDrill = (personId: string, drillId: string): void => {
   void apiRegistry.getService(InsightApiService)
     .queryMetric<RawDrillRow>(METRIC_REGISTRY.IC_DRILL, {
-      $filter: `person_id eq '${odataEscapeValue(personId)}' and drill_id eq '${odataEscapeValue(drillId)}'`,
+      $filter: `person_id eq '${odataEscapeValue(personId.toLowerCase())}' and drill_id eq '${odataEscapeValue(drillId)}'`,
     })
     .then((resp) => {
       const drillData = resp.items[0];
