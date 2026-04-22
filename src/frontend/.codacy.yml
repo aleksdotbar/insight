@@ -1,0 +1,34 @@
+# Codacy configuration.
+#
+# Engines / rules suppressed here are documented false positives, not a
+# license to silence legitimate findings. If a rule is disabled, there
+# should be a sibling note explaining why.
+---
+engines:
+  # Codacy's Handlebars / text-template engine incorrectly scans React TSX
+  # files and flags destructured React component props as "Non-serializable
+  # expression must be wrapped with $(...)". None of our TSX uses Handlebars
+  # templating — disable the rule globally for tsx/jsx.
+  handlebars:
+    enabled: false
+
+exclude_paths:
+  # Generated assets (colors file regenerated on build).
+  - 'src/app/themes/tailwindColors.ts'
+  # Third-party / vendor / lock files.
+  - 'package-lock.json'
+  - '.github/**'
+  # i18n JSON — not code.
+  - '**/i18n/**'
+
+# Rule-level suppressions. Prefer fixing code over adding entries here; each
+# suppression is a carve-out with a named reason.
+#
+# Reason: `security/detect-object-injection` does not understand TypeScript
+# discriminated unions. On `Record<KnownStatus, string>[knownStatus]` where
+# `knownStatus: 'good' | 'warn' | 'bad'` is narrowed by the compiler, there
+# is no dynamic-key exposure — the type system closes the set. Suppressing
+# this rule globally avoids churn on every typed lookup.
+rules:
+  - name: 'security/detect-object-injection'
+    enabled: false

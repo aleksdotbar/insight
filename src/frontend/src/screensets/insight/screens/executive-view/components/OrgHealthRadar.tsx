@@ -1,5 +1,9 @@
 /**
- * OrgHealthRadar — radar chart showing 5 org-level KPI dimensions.
+ * OrgHealthRadar — radar chart showing the org-level KPI dimensions that
+ * are natively 0..100 at the team level (Build Success, AI Adoption, Focus
+ * Time). Bug Resolution / PR Cycle axes were removed — they required
+ * invented FE normalization formulas; re-add only when the backend
+ * supplies real normalized scores.
  * No state imports.
  */
 
@@ -22,12 +26,14 @@ export interface OrgHealthRadarProps {
 }
 
 export const OrgHealthRadar: React.FC<OrgHealthRadarProps> = ({ orgKpis }) => {
+  // Only metrics that are already 0..100 at the team level and aggregate
+  // meaningfully on the org level. Bug Resolution / PR Cycle were previously
+  // synthesized here with invented formulas — left out until the backend
+  // supplies real org-level normalized scores.
   const data = [
     { metric: 'Build Success', value: orgKpis.avgBuildSuccess },
-    { metric: 'AI Adoption', value: orgKpis.avgAiAdoption },
-    { metric: 'Focus Time', value: orgKpis.avgFocus },
-    { metric: 'Bug Resolution', value: orgKpis.bugResolutionScore },
-    { metric: 'PR Cycle', value: orgKpis.prCycleScore },
+    { metric: 'AI Adoption',   value: orgKpis.avgAiAdoption },
+    { metric: 'Focus Time',    value: orgKpis.avgFocus },
   ];
 
   const hasAnyValue = data.some((d) => d.value !== null && d.value !== undefined);

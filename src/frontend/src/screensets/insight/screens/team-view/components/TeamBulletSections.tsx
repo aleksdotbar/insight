@@ -10,6 +10,7 @@ import { Card, CardContent } from '@hai3/uikit';
 import CollapsibleSection from '../../../uikit/composite/CollapsibleSection';
 import BulletChart from '../../../uikit/composite/BulletChart';
 import type { BulletSection, BulletMetric, ViewMode } from '../../../types';
+import { filterBulletsByLayoutGroup } from '../../../api/thresholdConfig';
 
 export interface TeamBulletSectionsProps {
   bulletSections: BulletSection[];
@@ -54,11 +55,12 @@ const TwoColCard: React.FC<{ title: string; subtitle: string; metrics: BulletMet
   );
 };
 
-// Estimation card — 3 sub-groups
+// Estimation card — 3 sub-groups driven by BULLET_LAYOUT_GROUPS so adding a
+// new estimation metric automatically slots into the right column.
 const ESTIMATION_GROUPS = [
-  { label: '1 · Time estimate accuracy', keys: ['estimation_accuracy', 'overrun_ratio'] },
-  { label: '2 · Sprint scope',           keys: ['scope_completion', 'scope_creep'] },
-  { label: '3 · Deadline (date-driven)', keys: ['on_time_delivery', 'avg_slip'] },
+  { label: '1 · Time estimate accuracy', group: 'estimate_accuracy' },
+  { label: '2 · Sprint scope',           group: 'sprint_scope' },
+  { label: '3 · Deadline (date-driven)', group: 'deadline' },
 ];
 
 const EstimationCard: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: string) => void }> = ({ metrics, onDrillClick }) => (
@@ -70,8 +72,8 @@ const EstimationCard: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: st
       </div>
       <Legend />
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-        {ESTIMATION_GROUPS.map(({ label, keys }) => {
-          const groupMetrics = metrics.filter((m) => keys.includes(m.metric_key));
+        {ESTIMATION_GROUPS.map(({ label, group }) => {
+          const groupMetrics = filterBulletsByLayoutGroup(metrics, group);
           return (
             <div key={label}>
               <div className="text-xs font-semibold text-gray-400 mb-1.5">{label}</div>
@@ -86,48 +88,54 @@ const EstimationCard: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: st
   </Card>
 );
 
-// AI Adoption — collapsible, 2-column (left: member counts, right: rates)
-const AI_ADOPTION_LEFT_KEYS = ['active_ai_members', 'cursor_active', 'cc_active', 'codex_active'];
-const AI_ADOPTION_RIGHT_KEYS = ['team_ai_loc', 'cursor_acceptance', 'cc_tool_acceptance'];
+// AI Adoption — collapsible, 2-column (left: member counts, right: team
+// output + acceptance rates). Both columns go through
+// filterBulletsByLayoutGroup so the grouping lives entirely in
+// thresholdConfig (the right column is just the concat of two groups).
+const AI_RIGHT_GROUPS = ['ai_team_output', 'ai_acceptance'] as const;
 
-const AiAdoptionSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: string) => void }> = ({ metrics, onDrillClick }) => (
-  <CollapsibleSection title="AI Adoption" defaultOpen={false}>
-    <div className="px-4 py-3">
-      <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">Cursor · Claude Code · Codex</div>
-      <Legend />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-        <div className="flex flex-col gap-4">
-          {metrics.filter((m) => AI_ADOPTION_LEFT_KEYS.includes(m.metric_key)).map((m) => (
-            <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />
-          ))}
-        </div>
-        <div className="flex flex-col gap-4">
-          {metrics.filter((m) => AI_ADOPTION_RIGHT_KEYS.includes(m.metric_key)).map((m) => (
-            <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />
-          ))}
+const AiAdoptionSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: string) => void }> = ({ metrics, onDrillClick }) => {
+  const leftMetrics = filterBulletsByLayoutGroup(metrics, 'ai_members');
+  const rightMetrics = AI_RIGHT_GROUPS.flatMap((g) => filterBulletsByLayoutGroup(metrics, g));
+  return (
+    <CollapsibleSection title="AI Adoption" defaultOpen={false}>
+      <div className="px-4 py-3">
+        <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">Cursor · Claude Code · Codex</div>
+        <Legend />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div className="flex flex-col gap-4">
+            {leftMetrics.map((m) => (
+              <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />
+            ))}
+          </div>
+          <div className="flex flex-col gap-4">
+            {rightMetrics.map((m) => (
+              <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  </CollapsibleSection>
-);
+    </CollapsibleSection>
+  );
+};
 
-// Collaboration — collapsible, 3 columns with sub-headings
+// Collaboration — collapsible, 3 columns driven by BULLET_LAYOUT_GROUPS.
 const COLLAB_COLUMNS = [
-  { title: 'Slack',                  keys: ['slack_thread_participation', 'slack_message_engagement', 'slack_dm_ratio'] },
-  { title: 'M365',                   keys: ['m365_teams_messages', 'm365_emails_sent', 'm365_files_shared'] },
-  { title: 'Meetings · M365 · Zoom', keys: ['meeting_hours', 'zoom_calls', 'meeting_free'] },
+  { title: 'Slack',                  group: 'slack' },
+  { title: 'M365',                   group: 'm365' },
+  { title: 'Meetings · M365 · Zoom', group: 'meetings' },
 ];
 
 const CollaborationSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: string) => void }> = ({ metrics, onDrillClick }) => (
   <CollapsibleSection title="Collaboration" defaultOpen={false}>
     <div className="px-4 py-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-        {COLLAB_COLUMNS.map(({ title, keys }) => (
+        {COLLAB_COLUMNS.map(({ title, group }) => (
           <div key={title}>
             <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">{title}</div>
             <Legend />
             <div className="flex flex-col gap-4">
-              {metrics.filter((m) => keys.includes(m.metric_key)).map((m) => (
+              {filterBulletsByLayoutGroup(metrics, group).map((m) => (
                 <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />
               ))}
             </div>

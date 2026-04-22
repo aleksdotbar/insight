@@ -19,12 +19,19 @@ const CHIP_CLASS: Record<'good' | 'warn' | 'bad', string> = {
   bad: 'bg-insight-red-bg text-insight-red',
 };
 
-// Border classes for each card position on mobile (2-col) and desktop (4-col)
+// Border classes per card position. Mobile stays 2-column regardless of
+// count (GRID_COLS always sets `grid-cols-2` on mobile); desktop scales
+// from 1 to 6 columns. Entries cover up to 6 cards so teams with a custom
+// deriveTeamKpis output (5 or 6 chips) still get correct borders.
 const CARD_BORDER: Record<number, string> = {
   0: '',
   1: 'border-l border-gray-200',
   2: 'border-t sm:border-t-0 sm:border-l border-gray-200',
   3: 'border-t sm:border-t-0 border-l border-gray-200',
+  // Row 3 on mobile (only relevant when 5+ cards); desktop flattens to a
+  // single row so the mobile `border-t` gets neutralized by sm:border-t-0.
+  4: 'border-t sm:border-t-0 sm:border-l border-gray-200',
+  5: 'border-t sm:border-t-0 border-l border-gray-200',
 };
 
 const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
@@ -44,18 +51,40 @@ const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
   </div>
 );
 
-export const TeamHeroStrip: React.FC<TeamHeroStripProps> = ({ teamKpis }) => (
-  <Card className="overflow-hidden">
-    {teamKpis.length === 0 ? (
-      <div className="p-3">
-        <ComingSoon variant="card" />
-      </div>
-    ) : (
-      <div className="grid grid-cols-2 sm:grid-cols-4">
-        {teamKpis.slice(0, 4).map((kpi, i) => (
-          <KpiCard key={kpi.metric_key} kpi={kpi} idx={i} />
-        ))}
-      </div>
-    )}
-  </Card>
-);
+// Tailwind needs full class names in the source, so enumerate the common
+// column counts we expect from deriveTeamKpis. Unexpected counts (0 or >6)
+// fall back to the 4-column layout via `DEFAULT_GRID_COLS` rather than a
+// non-null assertion — keeps the types honest without `!`.
+const DEFAULT_GRID_COLS = 'grid-cols-2 sm:grid-cols-4';
+const GRID_COLS: Record<number, string> = {
+  1: 'grid-cols-1 sm:grid-cols-1',
+  2: 'grid-cols-2 sm:grid-cols-2',
+  3: 'grid-cols-2 sm:grid-cols-3',
+  4: 'grid-cols-2 sm:grid-cols-4',
+  5: 'grid-cols-2 sm:grid-cols-5',
+  6: 'grid-cols-2 sm:grid-cols-6',
+};
+
+export const TeamHeroStrip: React.FC<TeamHeroStripProps> = ({ teamKpis }) => {
+  // Previously hardcoded `.slice(0, 4)` silently dropped extra KPIs from the
+  // header strip. Now we render all the cards deriveTeamKpis returned and
+  // pick a grid sized to the actual count.
+  const cols = teamKpis.length;
+  const gridClass = GRID_COLS[cols] ?? DEFAULT_GRID_COLS;
+
+  return (
+    <Card className="overflow-hidden">
+      {cols === 0 ? (
+        <div className="p-3">
+          <ComingSoon variant="card" />
+        </div>
+      ) : (
+        <div className={`grid ${gridClass}`}>
+          {teamKpis.map((kpi, i) => (
+            <KpiCard key={kpi.metric_key} kpi={kpi} idx={i} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+};

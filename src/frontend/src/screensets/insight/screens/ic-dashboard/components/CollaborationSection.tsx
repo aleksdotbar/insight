@@ -8,6 +8,7 @@ import React from 'react';
 import type { BulletMetric, ViewMode } from '../../../types';
 import BulletChart from '../../../uikit/composite/BulletChart';
 import ComingSoon from '../../../uikit/composite/ComingSoon';
+import { filterBulletsByLayoutGroup } from '../../../api/thresholdConfig';
 
 export interface CollaborationSectionProps {
   metrics: BulletMetric[];
@@ -15,8 +16,6 @@ export interface CollaborationSectionProps {
   onDrillClick: (drillId: string) => void;
   personName?: string;
 }
-
-const MEETING_KEYS = ['focus_time_pct', 'meeting_hours', 'zoom_calls', 'meeting_free'];
 
 const ColumnHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">
@@ -54,10 +53,10 @@ const CollaborationSection: React.FC<CollaborationSectionProps> = ({
     );
   }
 
-  // Chart mode — 3 columns: Slack, M365, Meetings
-  const slackMetrics = metrics.filter((m) => m.metric_key.startsWith('slack_'));
-  const m365Metrics = metrics.filter((m) => m.metric_key.startsWith('m365_'));
-  const meetingMetrics = metrics.filter((m) => MEETING_KEYS.includes(m.metric_key));
+  // Chart mode — 3 columns driven by BULLET_LAYOUT_GROUPS.
+  const slackMetrics   = filterBulletsByLayoutGroup(metrics, 'slack');
+  const m365Metrics    = filterBulletsByLayoutGroup(metrics, 'm365');
+  const meetingMetrics = filterBulletsByLayoutGroup(metrics, 'meetings');
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4">
