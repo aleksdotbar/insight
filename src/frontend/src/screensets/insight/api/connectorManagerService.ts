@@ -9,22 +9,12 @@
 import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import type { MockMap } from '@hai3/react';
 import { AuthPlugin } from '@/app/plugins/AuthPlugin';
+import { mocksEnabled } from '@/app/config/mocksEnabled';
 import type { DataAvailability, ConnectorAvailability, ConnectorStatus } from '../types';
 
 type ConnectionId = keyof DataAvailability;
 
 const CONNECTION_IDS: ConnectionId[] = ['git', 'tasks', 'ci', 'comms', 'hr', 'ai'];
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-const MOCK_CONNECTOR_STATUS: MockMap = Object.fromEntries(
-  CONNECTION_IDS.map((id): [string, () => ConnectorStatus] => [
-    `GET /api/connectors/v1/connections/${id}/status`,
-    () => ({ id, name: id, status: 'available' as ConnectorAvailability }),
-  ]),
-);
 
 // ---------------------------------------------------------------------------
 // Service
@@ -34,10 +24,21 @@ export class ConnectorManagerService extends BaseApiService {
   constructor() {
     const restProtocol = new RestProtocol();
     super({ baseURL: '/api/connectors/v1' }, restProtocol);
-    this.registerPlugin(
-      restProtocol,
-      new RestMockPlugin({ mockMap: MOCK_CONNECTOR_STATUS, delay: 50 }),
-    );
+    // Mock connector statuses return "available" for every connector — never
+    // ship that to prod because it hides real no-connector states from the
+    // data-availability UI. Gated behind VITE_ENABLE_MOCKS (see mocksEnabled).
+    if (mocksEnabled()) {
+      const mockMap: MockMap = Object.fromEntries(
+        CONNECTION_IDS.map((id): [string, () => ConnectorStatus] => [
+          `GET /api/connectors/v1/connections/${id}/status`,
+          () => ({ id, name: id, status: 'available' as ConnectorAvailability }),
+        ]),
+      );
+      this.registerPlugin(
+        restProtocol,
+        new RestMockPlugin({ mockMap, delay: 50 }),
+      );
+    }
     restProtocol.plugins.add(new AuthPlugin());
   }
 
