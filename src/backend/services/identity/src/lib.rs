@@ -5,9 +5,9 @@ pub mod people;
 
 pub use crate::people::PeopleStore;
 
+use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::Json;
 use std::sync::Arc;
 
 pub fn build_router(store: PeopleStore) -> axum::Router {

@@ -33,7 +33,9 @@ enum Commands {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .json()
         .init();
 
@@ -54,7 +56,8 @@ async fn run_server(cfg: config::AppConfig) -> anyhow::Result<()> {
     let db = infra::db::connect(&cfg.database_url).await?;
     infra::db::run_migrations(&db).await?;
 
-    let mut ch_config = insight_clickhouse::Config::new(&cfg.clickhouse_url, &cfg.clickhouse_database);
+    let mut ch_config =
+        insight_clickhouse::Config::new(&cfg.clickhouse_url, &cfg.clickhouse_database);
     if let (Some(user), Some(password)) = (&cfg.clickhouse_user, &cfg.clickhouse_password) {
         ch_config = ch_config.with_auth(user, password);
     }
