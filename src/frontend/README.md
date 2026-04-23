@@ -259,6 +259,55 @@ The project supports AI-assisted workflows via HAI3 CLI:
 | `/hai3-quick-ref` | Common patterns reference |
 | `/hai3-rules` | Show guidelines for a topic |
 
+## Cypilot (artifact traceability)
+
+This repo ships with [Cypilot](https://github.com/cyberfabric/cyber-pilot) v3.7.0-beta
+for artifact traceability and validation. Usage and workflows are covered by the upstream
+project README — this section only covers what you need to set it up locally.
+
+### Prerequisites (one-time setup)
+
+- Python 3.11+
+- [pipx](https://pipx.pypa.io/) for the global CLI
+- `gh` (optional — needed by kit workflows `pr-review` / `pr-status`)
+- Clone [cyberfabric/insight](https://github.com/cyberfabric/insight) at `../insight` —
+  `cypilot/config/core.toml` declares a workspace source that resolves cross-repo artifacts
+  from the backend monorepo; without it, workspace-scoped validation skips that source.
+
+Install the CLI globally:
+
+```bash
+pipx install git+https://github.com/cyberfabric/cyber-pilot.git
+cpt --version     # cypilot-proxy 3.7.0b0 or newer
+cpt info          # should list InsightFront system + SDLC kit v1.3.0
+```
+
+### Upgrading Cypilot (later)
+
+When a new release comes out:
+
+```bash
+pipx upgrade cypilot            # upgrade the global CLI
+cpt init --force --yes          # refresh cypilot/.core and cypilot/.gen
+cpt generate-agents -y          # regenerate host integrations (.claude, .cursor, …)
+cpt validate --local-only       # smoke test
+```
+
+**Do a `git diff` before committing** — `cpt init --force`:
+
+1. **Overwrites** `cypilot/config/artifacts.toml` to an empty template. Restore with
+   `git restore cypilot/config/artifacts.toml` and re-apply any local additions.
+2. **Rewrites** `cypilot/config/core.toml` in the new expanded format and **drops** the
+   `[workspace]` section. Merge the workspace block back by hand.
+3. Leaves a backup at `cypilot.<timestamp>.backup/` (gitignored). Delete once the diff
+   is clean.
+
+### Known issues
+
+- `cpt validate --local-only` reports 46 errors of kind `id-system-unrecognized`: artifact
+  IDs use prefixes like `cpt-auth-*`, `cpt-layout-*`, `cpt-*-view-*` while only
+  `insightfront` is registered in `artifacts.toml`. Tracked separately; not blocking.
+
 ## Themes
 
 Built-in themes: **Default**, **Light**, **Dark**, **Dracula**, **Dracula Large**.
