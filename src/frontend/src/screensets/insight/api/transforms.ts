@@ -154,8 +154,10 @@ export function transformExecRows(
   rows: RawExecSummaryRow[],
   thresholds?: ExecViewConfig['column_thresholds'],
 ): ExecTeamRow[] {
-  const toInt = (v: number | null | undefined): number =>
-    v == null || !Number.isFinite(v) ? 0 : Math.round(v);
+  // Round so UInt64/Float64 from backend render cleanly. Preserve null —
+  // previously `toInt(null) === 0` silently turned "source absent" into "0".
+  const roundOrNull = (v: number | null | undefined): number | null =>
+    v == null || !Number.isFinite(v) ? null : Math.round(v);
 
   return rows.map((r) => {
     let status: 'good' | 'warn' | 'bad' = 'good';
@@ -172,10 +174,9 @@ export function transformExecRows(
     return {
       team_id: r.org_unit_id,
       team_name: r.org_unit_name,
-      // Integer counters: round so UInt64 arriving as Float64 from backend displays cleanly.
-      headcount: toInt(r.headcount),
-      tasks_closed: toInt(r.tasks_closed),
-      bugs_fixed: toInt(r.bugs_fixed),
+      headcount: r.headcount,
+      tasks_closed: roundOrNull(r.tasks_closed),
+      bugs_fixed: roundOrNull(r.bugs_fixed),
       build_success_pct: r.build_success_pct,
       focus_time_pct: r.focus_time_pct,
       ai_adoption_pct: r.ai_adoption_pct,
@@ -402,8 +403,11 @@ export function transformTeamMembers(
   rows: RawTeamMemberRow[],
   period: PeriodValue,
 ): TeamMember[] {
-  const toInt = (v: number | null | undefined): number =>
-    v == null || !Number.isFinite(v) ? 0 : Math.round(v);
+  // tasks_closed / bugs_fixed are non-nullable from the seed (sum over
+  // jira_closed_tasks with ifNull(x, 0)), so rounding is fine. prs_merged is
+  // nullable — preserve null so MembersTable renders em-dash instead of "0".
+  const roundOrNull = (v: number | null | undefined): number | null =>
+    v == null || !Number.isFinite(v) ? null : Math.round(v);
 
   return rows.map((r) => ({
     person_id: r.person_id,
@@ -411,11 +415,10 @@ export function transformTeamMembers(
     name: r.display_name,
     seniority: r.seniority,
     supervisor_email: r.supervisor_email,
-    // Integer counters rounded; dev_time_h kept as float (it's hours, fractional is correct).
-    tasks_closed: toInt(r.tasks_closed),
-    bugs_fixed: toInt(r.bugs_fixed),
+    tasks_closed: Math.round(r.tasks_closed),
+    bugs_fixed: Math.round(r.bugs_fixed),
     dev_time_h: r.dev_time_h,
-    prs_merged: toInt(r.prs_merged),
+    prs_merged: roundOrNull(r.prs_merged),
     build_success_pct: r.build_success_pct,
     focus_time_pct: r.focus_time_pct,
     ai_tools: r.ai_tools,

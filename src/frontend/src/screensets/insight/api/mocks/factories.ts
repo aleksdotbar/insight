@@ -475,13 +475,20 @@ export function mockIcScenario(personId = 'p1'): {
     ai_sessions: Math.round(vary(42, personSeed, 15)),
   });
 
-  // Previous period aggregate for delta computation (slightly lower values)
+  // Previous period aggregate for delta computation (slightly lower values).
+  // RawIcAggregateRow made loc/prs_merged/pr_cycle_time_h nullable to match
+  // the backend; the mock always seeds them non-null above, so propagate
+  // null through in the rare case a caller overrides with null.
+  const scalePrev = (v: number | null, f: number): number | null =>
+    v === null ? null : Math.round(v * f);
+  const subPrev = (v: number | null, min: number, d: number): number | null =>
+    v === null ? null : Math.max(min, v - d);
   const prevKpiAggregate = mockIcAggregateRow({
     person_id: personId,
-    loc: Math.round(kpiAggregate.loc * 0.9),
+    loc: scalePrev(kpiAggregate.loc, 0.9),
     ai_loc_share_pct: Math.round(kpiAggregate.ai_loc_share_pct * 0.85),
-    prs_merged: Math.max(1, kpiAggregate.prs_merged - 2),
-    pr_cycle_time_h: Math.round(kpiAggregate.pr_cycle_time_h * 1.1),
+    prs_merged: subPrev(kpiAggregate.prs_merged, 1, 2),
+    pr_cycle_time_h: scalePrev(kpiAggregate.pr_cycle_time_h, 1.1),
     focus_time_pct: Math.max(30, kpiAggregate.focus_time_pct - 5),
     tasks_closed: Math.max(1, kpiAggregate.tasks_closed - 3),
     bugs_fixed: Math.max(0, kpiAggregate.bugs_fixed - 2),

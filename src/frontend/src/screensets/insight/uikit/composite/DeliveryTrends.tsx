@@ -22,15 +22,21 @@ import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_PURPLE, CHART_GREEN, CHAR
 import ComingSoon from './ComingSoon';
 
 export interface DeliveryTrendsProps {
-  data: Array<{ label: string; commits: number; prsMerged: number; tasksDone: number }>;
+  // prsMerged is nullable — Bitbucket PR ingestion not wired. Pass null
+  // through so Recharts draws a gap in the line rather than pretending 0.
+  data: Array<{ label: string; commits: number; prsMerged: number | null; tasksDone: number }>;
 }
 
-type ChartRow = { label: string; Commits: number; 'PRs Merged': number; 'Tasks Done': number };
+type ChartRow = { label: string; Commits: number; 'PRs Merged': number | null; 'Tasks Done': number };
 
 const DeliveryTrends: React.FC<DeliveryTrendsProps> = ({ data }) => {
   if (data.length === 0) {
     return <ComingSoon variant="card" />;
   }
+
+  // Hide the PRs Merged line entirely when the series is all-null — the
+  // source isn't ingested at all, so showing an empty legend entry is noise.
+  const hasPrs = data.some((r) => r.prsMerged !== null);
 
   const chartData: ChartRow[] = data.map((r) => ({
     label: r.label,
@@ -48,7 +54,9 @@ const DeliveryTrends: React.FC<DeliveryTrendsProps> = ({ data }) => {
         <Tooltip content={<ChartTooltipContent />} />
         <Legend content={<ChartLegendContent />} wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
         <Line type="monotone" dataKey="Commits" stroke={CHART_BLUE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-        <Line type="monotone" dataKey="PRs Merged" stroke={CHART_PURPLE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        {hasPrs && (
+          <Line type="monotone" dataKey="PRs Merged" stroke={CHART_PURPLE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
+        )}
         <Line type="monotone" dataKey="Tasks Done" stroke={CHART_GREEN} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
       </LineChart>
     </ResponsiveContainer>

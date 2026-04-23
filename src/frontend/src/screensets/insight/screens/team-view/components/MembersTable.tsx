@@ -50,14 +50,17 @@ const DrillCell: React.FC<{
   </button>
 );
 
-const FocusBar: React.FC<{ pct: number; threshold: ColumnThreshold | null }> = ({ pct, threshold }) => (
-  <div className="flex items-center gap-1.5">
-    <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
-      <DynamicWidthBar pct={pct} colorClass={colClass(pct, threshold, 'bg')} />
+const FocusBar: React.FC<{ pct: number | null; threshold: ColumnThreshold | null }> = ({ pct, threshold }) => {
+  if (pct === null) return <span className="text-sm text-gray-400">—</span>;
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
+        <DynamicWidthBar pct={pct} colorClass={colClass(pct, threshold, 'bg')} />
+      </div>
+      <span className={`text-sm font-bold ${colClass(pct, threshold, 'text')}`}>{pct}%</span>
     </div>
-    <span className={`text-sm font-bold ${colClass(pct, threshold, 'text')}`}>{pct}%</span>
-  </div>
-);
+  );
+};
 
 type ColHeader = { label: string; sub: string; info?: string };
 
@@ -162,13 +165,15 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
                   </TableCell>
                   <TableCell className={`px-3 py-2.5 text-sm font-bold ${colClass(m.dev_time_h, tDev, 'text')}`}>
                     {onCellDrill ? (
-                      <DrillCell onClick={drill(m.person_id, 'cycle-time')} className={colClass(m.dev_time_h, tDev, 'text')}>{m.dev_time_h}h</DrillCell>
-                    ) : `${m.dev_time_h}h`}
+                      <DrillCell onClick={drill(m.person_id, 'cycle-time')} className={colClass(m.dev_time_h, tDev, 'text')}>
+                        {m.dev_time_h !== null ? `${m.dev_time_h}h` : '—'}
+                      </DrillCell>
+                    ) : (m.dev_time_h !== null ? `${m.dev_time_h}h` : '—')}
                   </TableCell>
                   <TableCell className="px-3 py-2.5 text-sm">
                     {onCellDrill ? (
-                      <DrillCell onClick={drill(m.person_id, 'pull-requests')}>{m.prs_merged}</DrillCell>
-                    ) : m.prs_merged}
+                      <DrillCell onClick={drill(m.person_id, 'pull-requests')}>{m.prs_merged ?? '—'}</DrillCell>
+                    ) : (m.prs_merged ?? '—')}
                   </TableCell>
                   <TableCell className={`px-3 py-2.5 text-sm font-bold ${colClass(m.build_success_pct, tBuild, 'text')}`}>
                     {onCellDrill ? (
@@ -194,7 +199,13 @@ export const MembersTable: React.FC<MembersTableProps> = ({ members, columnThres
                     )}
                   </TableCell>
                   <TableCell className={`px-3 py-2.5 text-sm font-bold ${colClass(m.ai_loc_share_pct, tAiLoc, 'text')}`}>
-                    {m.ai_loc_share_pct > 0 ? `${m.ai_loc_share_pct}%` : <span className="text-gray-400">0%</span>}
+                    {m.ai_loc_share_pct === null ? (
+                      <span className="text-gray-400">—</span>
+                    ) : m.ai_loc_share_pct > 0 ? (
+                      `${m.ai_loc_share_pct}%`
+                    ) : (
+                      <span className="text-gray-400">0%</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
