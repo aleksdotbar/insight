@@ -37,8 +37,13 @@ function buildDescription(metricKey: string, m: TeamMember, trigger: number): st
 
   if (metricKey === 'focus_time_pct')
     return `${base} ${m.tasks_closed} tasks completed this period.`;
-  if (metricKey === 'build_success_pct')
-    return `${base} ${m.prs_merged} PRs merged this period.`;
+  if (metricKey === 'build_success_pct') {
+    // prs_merged is nullable when Bitbucket PR ingestion isn't wired — skip
+    // the trailing sentence rather than reading "null PRs merged".
+    return m.prs_merged !== null
+      ? `${base} ${m.prs_merged} PRs merged this period.`
+      : base;
+  }
   if (metricKey === 'ai_loc_share_pct')
     return `${base} ${m.ai_tools.length === 0 ? 'No AI tools active.' : `Active tools: ${m.ai_tools.join(', ')}.`}`;
 

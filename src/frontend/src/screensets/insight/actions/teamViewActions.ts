@@ -61,12 +61,18 @@ export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
       return typeof v === 'number' && Number.isFinite(v) && v < t.trigger;
     }),
   ).length;
-  const focusCount  = members.filter((m) => m.focus_time_pct >= focusTrigger).length;
-  const belowFocus  = total - focusCount;
+  // `focus_time_pct` is nullable when the person has no upstream focus row.
+  // Skip nulls so they don't count against belowFocus (otherwise every member
+  // without a focus source looks "below target").
+  const membersWithFocus = members.filter((m): m is TeamMember & { focus_time_pct: number } => m.focus_time_pct !== null);
+  const focusCount  = membersWithFocus.filter((m) => m.focus_time_pct >= focusTrigger).length;
+  const belowFocus  = membersWithFocus.length - focusCount;
   const noAiCount   = members.filter((m) => m.ai_tools.length === 0).length;
 
-  // Median dev_time_h across members — honest replacement for the hardcoded "13h" chip.
-  const devTimeMedian = median(members.map((m) => m.dev_time_h));
+  // Median dev_time_h across members — skip nulls (missing focus source).
+  const devTimeMedian = median(
+    members.map((m) => m.dev_time_h).filter((v): v is number => v !== null),
+  );
 
   // Statuses scale with team size (TEAM_HEALTH_THRESHOLDS) — "2 problematic"
   // is a crisis in a 5-person team and a rounding error in a 100-person one.

@@ -76,13 +76,13 @@ export const TeamsTable: React.FC<TeamsTableProps> = ({ teams, columnThresholds,
                   {team.build_success_pct !== null ? `${team.build_success_pct}%` : '—'}
                 </TableCell>
                 <TableCell className={thresholdClass(team.focus_time_pct, 'focus_time_pct', columnThresholds)}>
-                  {team.focus_time_pct}%
+                  {team.focus_time_pct !== null ? `${team.focus_time_pct}%` : '—'}
                 </TableCell>
                 <TableCell className={thresholdClass(team.ai_adoption_pct, 'ai_adoption_pct', columnThresholds)}>
-                  {team.ai_adoption_pct}%
+                  {team.ai_adoption_pct !== null ? `${team.ai_adoption_pct}%` : '—'}
                 </TableCell>
-                <TableCell>{team.ai_loc_share_pct}%</TableCell>
-                <TableCell>{team.pr_cycle_time_h}h</TableCell>
+                <TableCell>{team.ai_loc_share_pct !== null ? `${team.ai_loc_share_pct}%` : '—'}</TableCell>
+                <TableCell>{team.pr_cycle_time_h !== null ? `${team.pr_cycle_time_h}h` : '—'}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className={statusBadgeClass(team.status)}>
                     {team.status}

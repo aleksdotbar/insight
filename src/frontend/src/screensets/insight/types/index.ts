@@ -191,13 +191,13 @@ export interface ExecTeamRow {
   team_id: string;
   team_name: string;
   headcount: number;
-  tasks_closed: number | null;   // null when [tasks] connector not configured
-  bugs_fixed: number | null;     // null when [tasks] connector not configured
-  build_success_pct: number | null; // null when [ci] connector not configured
-  focus_time_pct: number;
-  ai_adoption_pct: number;
-  ai_loc_share_pct: number;
-  pr_cycle_time_h: number;
+  tasks_closed: number | null;         // null when [tasks] connector not configured
+  bugs_fixed: number | null;           // null when [tasks] connector not configured
+  build_success_pct: number | null;    // null when [ci] connector not configured
+  focus_time_pct: number | null;       // null when no focus source for this org
+  ai_adoption_pct: number | null;      // null when no cursor rows for this org
+  ai_loc_share_pct: number | null;     // null when no cursor rows for this org
+  pr_cycle_time_h: number | null;      // null — Bitbucket PR ingestion not wired
   status: 'good' | 'warn' | 'bad';
 }
 /**
@@ -242,12 +242,12 @@ export interface TeamMember {
   supervisor_email: string | null;
   tasks_closed: number;
   bugs_fixed: number;
-  dev_time_h: number;
-  prs_merged: number;
-  build_success_pct: number | null; // null when [ci] connector not configured
-  focus_time_pct: number;
+  dev_time_h: number | null;           // null when focus source missing
+  prs_merged: number | null;           // null — Bitbucket PR ingestion not wired
+  build_success_pct: number | null;    // null when [ci] connector not configured
+  focus_time_pct: number | null;       // null when focus source missing
   ai_tools: string[];
-  ai_loc_share_pct: number;
+  ai_loc_share_pct: number | null;     // null when cursor row absent for this person/day
   // trend_label dropped — frontend derives trend from multi-period delta (see FE-08)
 }
 export interface BulletMetric {
@@ -336,12 +336,12 @@ export interface LocDataPoint {
   label: string;
   aiLoc: number;
   codeLoc: number;
-  specLines: number;
+  specLines: number | null;    // null — spec extractor not wired
 }
 export interface DeliveryDataPoint {
   label: string;
   commits: number;
-  prsMerged: number;
+  prsMerged: number | null;    // null — Bitbucket PR ingestion not wired
   tasksDone: number;
 }
 export interface IcChartsData {

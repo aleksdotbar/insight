@@ -22,7 +22,11 @@ import { CHART_GRAY, CHART_TRACK_BG, CHART_BLUE, CHART_AI_LOC, CHART_SPEC_LINES,
 import ComingSoon from './ComingSoon';
 
 export interface LocStackedBarProps {
-  data: Array<{ label: string; aiLoc: number; codeLoc: number; specLines: number }>;
+  // specLines is nullable — spec extractor not wired. Recharts doesn't stack
+  // `null` values, so we coerce to 0 for rendering; the axis legend /
+  // tooltip can distinguish "0 spec lines" (present, none this period) from
+  // "spec source not ingested" via column sum or an explicit note in the UI.
+  data: Array<{ label: string; aiLoc: number; codeLoc: number; specLines: number | null }>;
 }
 
 type ChartRow = { label: string; 'AI LOC': number; 'Code LOC': number; 'Spec Lines': number };
@@ -36,7 +40,7 @@ const LocStackedBar: React.FC<LocStackedBarProps> = ({ data }) => {
     label: r.label,
     'AI LOC': r.aiLoc,
     'Code LOC': r.codeLoc,
-    'Spec Lines': r.specLines,
+    'Spec Lines': r.specLines ?? 0,
   }));
 
   return (
