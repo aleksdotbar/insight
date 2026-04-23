@@ -3,15 +3,14 @@
 **Artifact**: PRD
 **Kit**: sdlc
 
-**Dependencies**:
-- `{prd_template}` — structural reference
-- `{prd_checklist}` — semantic quality criteria
-- `{prd_example}` — reference implementation
+**Dependencies** (lazy-loaded):
+- `config/kits/sdlc/artifacts/PRD/template.md` — structural reference (load WHEN validating structure)
+- `config/kits/sdlc/artifacts/PRD/checklist.md` — semantic quality criteria (load WHEN checking semantic quality)
+- `config/kits/sdlc/artifacts/PRD/examples/example.md` — reference implementation (load WHEN needing content depth reference)
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-   - [Load Dependencies](#load-dependencies)
 2. [Requirements](#requirements)
    - [Structural](#structural)
    - [Versioning](#versioning)
@@ -47,15 +46,7 @@
 
 ## Prerequisites
 
-### Load Dependencies
-
-- [ ] Load `{prd_template}` for structure
-- [ ] Load `{prd_checklist}` for semantic guidance
-- [ ] Load `{prd_example}` for reference style
-- [ ] Read project config for ID prefix
-- [ ] Load `{cypilot_path}/.core/architecture/specs/traceability.md` for ID formats
-- [ ] Load `{constraints}` for kit-level constraints
-- [ ] Load `{cypilot_path}/.core/architecture/specs/kit/constraints.md` for constraints specification
+Read project config for ID prefix.
 
 ---
 
@@ -63,7 +54,9 @@
 
 ### Structural
 
-- [ ] PRD follows `{prd_template}` structure
+**Load on demand**: `config/kits/sdlc/artifacts/PRD/template.md` — WHEN validating structure
+
+- [ ] PRD follows `config/kits/sdlc/artifacts/PRD/template.md` structure
 - [ ] Artifact frontmatter (optional): use `cpt:` format for document metadata
 - [ ] All required sections present and non-empty
 - [ ] All IDs follow `cpt-{hierarchy-prefix}-{kind}-{slug}` convention
@@ -79,6 +72,8 @@
 - [ ] Keep changelog of significant changes
 
 ### Semantic
+
+**Load on demand**: `config/kits/sdlc/artifacts/PRD/checklist.md` — WHEN checking semantic quality
 
 - [ ] Purpose MUST be ≤ 2 paragraphs
 - [ ] Purpose MUST NOT contain implementation details
@@ -119,13 +114,19 @@
 
 ### Traceability
 
+**Load on demand**: `{cypilot_path}/.core/architecture/specs/traceability.md` — WHEN checking ID formats
+
 - [ ] Capabilities traced through: PRD → DESIGN → DECOMPOSITION → FEATURE → CODE
 - [ ] When capability fully implemented (all specs IMPLEMENTED) → mark capability `[x]`
 - [ ] When all capabilities `[x]` → product version complete
 
 ### Constraints
 
-- [ ] ALWAYS open and follow `{constraints}` (kit root)
+**Load on demand**:
+- `config/kits/sdlc/constraints.toml` — WHEN validating cross-references
+- `{cypilot_path}/.core/architecture/specs/kit/constraints.md` — WHEN resolving constraint rules
+
+- [ ] ALWAYS open and follow `config/kits/sdlc/constraints.toml` (kit root)
 - [ ] Treat `constraints.toml` as primary validator for:
   - where IDs are defined
   - where IDs are referenced
@@ -161,12 +162,14 @@ PRDs must NOT contain the following — report as violation if found:
 
 ### Phase 1: Setup
 
-- [ ] Load `{prd_template}` for structure
-- [ ] Load `{prd_checklist}` for semantic guidance
-- [ ] Load `{prd_example}` for reference style
 - [ ] Read project config for ID prefix
+- [ ] Identify artifact output path from `{cypilot_path}/config/artifacts.toml`
 
 ### Phase 2: Content Creation
+
+**Load on demand**:
+- `config/kits/sdlc/artifacts/PRD/template.md` — WHEN generating artifact structure
+- `config/kits/sdlc/artifacts/PRD/examples/example.md` — WHEN needing reference for content depth
 
 - [ ] Write each section guided by template prompts and examples
 - [ ] Use example as reference for content depth:
@@ -187,8 +190,8 @@ PRDs must NOT contain the following — report as violation if found:
 
 ### Phase 4: Quality Check
 
-- [ ] Compare output quality to `{prd_example}`
-- [ ] Self-review against `{prd_checklist}` MUST HAVE items
+- [ ] Compare output quality to `config/kits/sdlc/artifacts/PRD/examples/example.md`
+- [ ] Self-review against `config/kits/sdlc/artifacts/PRD/checklist.md` MUST HAVE items
 - [ ] Ensure no MUST NOT HAVE violations
 
 ### Phase 5: Table of Contents
@@ -211,12 +214,14 @@ PRDs must NOT contain the following — report as violation if found:
 
 ### Phase 2: Semantic Validation (Checklist-based)
 
-- [ ] Read `{prd_checklist}` in full
+**Load on demand**: `config/kits/sdlc/artifacts/PRD/checklist.md` — required for this phase
+
+- [ ] Read `config/kits/sdlc/artifacts/PRD/checklist.md` in full
 - [ ] For each MUST HAVE item: check if requirement is met
   - If not met: report as violation with severity
   - If not applicable: verify explicit "N/A" with reasoning
 - [ ] For each MUST NOT HAVE item: scan document for violations
-- [ ] Compare content depth to `{prd_example}`
+- [ ] Compare content depth to `config/kits/sdlc/artifacts/PRD/examples/example.md`
   - Flag significant quality gaps
 
 ### Phase 3: Validation Report
@@ -329,7 +334,7 @@ When reviewing PRs that add or change PRD/requirements documents, additionally f
 - [ ] Completeness and clarity of requirements
 - [ ] Testability and acceptance criteria for every requirement
 - [ ] Traceability to business goals and stated problems
-- [ ] Compliance with `{prd_template}` structure
+- [ ] Compliance with `config/kits/sdlc/artifacts/PRD/template.md` structure
 - [ ] Alignment with best industry standard practices for large SaaS systems and platforms
 - [ ] Critical assessment of requirements quality — challenge vague, overlapping, or untestable items
 - [ ] Split findings by checklist category and rate each 1-10
@@ -349,9 +354,9 @@ When reviewing PRs that add or change PRD/requirements documents, additionally f
 
 ### Missing Dependencies
 
-- [ ] If `{prd_template}` cannot be loaded → STOP, cannot proceed without template
-- [ ] If `{prd_checklist}` cannot be loaded → warn user, skip semantic validation
-- [ ] If `{prd_example}` cannot be loaded → warn user, continue with reduced guidance
+- [ ] If `config/kits/sdlc/artifacts/PRD/template.md` cannot be loaded → STOP, cannot proceed without template
+- [ ] If `config/kits/sdlc/artifacts/PRD/checklist.md` cannot be loaded → warn user, skip semantic validation
+- [ ] If `config/kits/sdlc/artifacts/PRD/examples/example.md` cannot be loaded → warn user, continue with reduced guidance
 
 ### Missing Adapter
 

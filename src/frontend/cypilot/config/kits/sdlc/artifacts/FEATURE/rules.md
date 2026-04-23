@@ -3,15 +3,14 @@
 **Artifact**: FEATURE
 **Kit**: sdlc
 
-**Dependencies**:
-- `{feature_template}` — structural reference
-- `{feature_checklist}` — semantic quality criteria
-- `{feature_example}` — reference implementation
+**Dependencies** (lazy-loaded):
+- `config/kits/sdlc/artifacts/FEATURE/template.md` — structural reference (load WHEN validating structure)
+- `config/kits/sdlc/artifacts/FEATURE/checklist.md` — semantic quality criteria (load WHEN checking semantic quality)
+- `config/kits/sdlc/artifacts/FEATURE/examples/example.md` — reference implementation (load WHEN needing CDSL style reference)
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-   - [Load Dependencies](#load-dependencies)
 2. [Requirements](#requirements)
    - [Structural](#structural)
    - [Versioning](#versioning)
@@ -50,16 +49,9 @@
 
 ## Prerequisites
 
-### Load Dependencies
-
-- [ ] Load `{feature_template}` for structure
-- [ ] Load `{feature_checklist}` for semantic guidance
-- [ ] Load `{feature_example}` for reference style
-- [ ] Read DECOMPOSITION to get feature ID and context
-- [ ] Read DESIGN to understand domain types and components
-- [ ] Read `{cypilot_path}/config/artifacts.toml` to determine FEATURE artifact path
-- [ ] Load `{constraints}` for kit-level constraints
-- [ ] Load `{cypilot_path}/.core/architecture/specs/traceability.md` for ID formats
+- Read DECOMPOSITION to get feature ID and context
+- Read DESIGN to understand domain types and components
+- Read `{cypilot_path}/config/artifacts.toml` to determine FEATURE artifact path
 
 ---
 
@@ -67,7 +59,9 @@
 
 ### Structural
 
-- [ ] FEATURE follows `{feature_template}` structure
+**Load on demand**: `config/kits/sdlc/artifacts/FEATURE/template.md` — WHEN validating structure
+
+- [ ] FEATURE follows `config/kits/sdlc/artifacts/FEATURE/template.md` structure
 - [ ] Artifact frontmatter (optional): use `cpt:` format for document metadata
 - [ ] References parent feature from DECOMPOSITION manifest
 - [ ] All flows, algorithms, states, DoD items have unique IDs
@@ -87,7 +81,7 @@
 
 ### Semantic
 
-**Reference**: `{feature_checklist}` for detailed criteria
+**Load on demand**: `config/kits/sdlc/artifacts/FEATURE/checklist.md` — WHEN checking semantic quality
 
 - [ ] Actor flows define complete user journeys
 - [ ] Algorithms specify processing logic clearly
@@ -98,13 +92,17 @@
 
 ### Traceability
 
+**Load on demand**: `{cypilot_path}/.core/architecture/specs/traceability.md` — WHEN checking ID formats
+
 - [ ] All IDs with `to_code="true"` must be traced to code
 - [ ] Code must contain markers: `@cpt-{kind}:{cpt-id}:p{N}`
 - [ ] Each CDSL instruction maps to code marker
 
 ### Constraints
 
-- [ ] ALWAYS open and follow `{constraints}` (kit root)
+**Load on demand**: `config/kits/sdlc/constraints.toml` — WHEN validating cross-references
+
+- [ ] ALWAYS open and follow `config/kits/sdlc/constraints.toml` (kit root)
 - [ ] Treat `constraints.toml` as primary validator for:
   - where IDs are defined
   - where IDs are referenced
@@ -242,9 +240,6 @@ FEATURE documents must NOT contain the following — report as violation if foun
 
 ### Phase 1: Setup
 
-- [ ] Load `{feature_template}` for structure
-- [ ] Load `{feature_checklist}` for semantic guidance
-- [ ] Load `{feature_example}` for reference style
 - [ ] Read DECOMPOSITION to get feature ID and context
 - [ ] Read DESIGN to understand domain types and components
 - [ ] Read `{cypilot_path}/config/artifacts.toml` to determine FEATURE artifact path
@@ -254,6 +249,8 @@ FEATURE documents must NOT contain the following — report as violation if foun
 - Use kit's default subdirectory for FEATUREs: `features/`
 
 ### Phase 2: Content Creation
+
+**Load on demand**: `config/kits/sdlc/artifacts/FEATURE/template.md` — WHEN generating artifact structure
 
 **CDSL instruction generation:**
 - [ ] Each instruction has phase marker: `\`pN\``
@@ -273,8 +270,10 @@ FEATURE documents must NOT contain the following — report as violation if foun
 
 ### Phase 4: Quality Check
 
-- [ ] Compare CDSL style to `{feature_example}`
-- [ ] Self-review against `{feature_checklist}` MUST HAVE items
+**Load on demand**: `config/kits/sdlc/artifacts/FEATURE/examples/example.md` — WHEN comparing CDSL style
+
+- [ ] Compare CDSL style to `config/kits/sdlc/artifacts/FEATURE/examples/example.md`
+- [ ] Self-review against `config/kits/sdlc/artifacts/FEATURE/checklist.md` MUST HAVE items
 - [ ] Ensure no MUST NOT HAVE violations
 - [ ] Verify parent feature reference exists
 
@@ -299,7 +298,9 @@ FEATURE documents must NOT contain the following — report as violation if foun
 
 ### Phase 2: Semantic Validation (Checklist-based)
 
-Apply `{feature_checklist}` systematically:
+**Load on demand**: `config/kits/sdlc/artifacts/FEATURE/checklist.md` — required for this phase
+
+Apply `config/kits/sdlc/artifacts/FEATURE/checklist.md` systematically:
 1. For each MUST HAVE item: check if requirement is met
 2. For each MUST NOT HAVE item: scan document for violations
 3. Use example for quality baseline
