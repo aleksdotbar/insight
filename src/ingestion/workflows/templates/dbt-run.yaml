@@ -22,6 +22,7 @@ spec:
       activeDeadlineSeconds: 1800
       script:
         image: "{{inputs.parameters.toolbox_image}}"
+        imagePullPolicy: Always
         command: [bash]
         env:
           - name: CLICKHOUSE_PASSWORD
