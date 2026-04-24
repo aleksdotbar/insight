@@ -284,8 +284,15 @@ class RestSalesforceStream(SalesforceStream):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Property chunking needs a natural key (self.pk, i.e. SF Id) to
-        # reassemble split records before envelope runs.
-        assert self.pk or not self.too_many_properties
+        # reassemble split records before envelope runs. Raise rather than
+        # assert so the failure survives `python -O` and gives operators a
+        # clear message instead of a bare AssertionError.
+        if self.too_many_properties and not self.pk:
+            raise RuntimeError(
+                f"Stream '{self.name}' has too many properties for REST "
+                "property chunking but no primary key; records cannot be "
+                "reassembled. Either enable Bulk API or supply a pk."
+            )
 
     def path(self, next_page_token: Mapping[str, Any] = None, **kwargs: Any) -> str:
         if next_page_token:
@@ -980,6 +987,7 @@ class BulkSalesforceStream(SalesforceStream):
                         tenant_id=self._tenant_id,
                         source_id=self._source_id,
                         custom_field_names=self._custom_field_names,
+                        collision_seen=self._envelope_collisions_seen,
                     )
                 else:
                     yield record
@@ -1072,7 +1080,20 @@ class BulkSalesforceSubStream(BatchedSubStream, BulkSalesforceStream):
             ),
             has_bulk_parent=True,
         )
-        yield from self._bulk_job_stream.stream_slices(sync_mode=sync_mode, cursor_field=cursor_field, stream_state=stream_state)
+        try:
+            yield from self._bulk_job_stream.stream_slices(sync_mode=sync_mode, cursor_field=cursor_field, stream_state=stream_state)
+        except BulkNotSupportedException:
+            # Mirror the REST fallback of the non-sub Bulk path so substreams
+            # (e.g. ContentDocumentLink) don't fail the sync when Bulk is
+            # unavailable.
+            self.logger.warning(
+                "attempt to switch to STANDARD(non-BULK) sync. Because the SalesForce BULK job has returned a failed status"
+            )
+            yield from super(BulkSalesforceSubStream, self).stream_slices(
+                sync_mode=sync_mode,
+                cursor_field=cursor_field,
+                stream_state=stream_state,
+            )
 
 
 @BulkSalesforceStream.transformer.registerCustomTransform

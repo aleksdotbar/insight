@@ -162,24 +162,26 @@ class SalesforceErrorHandler(ErrorHandler):
                     ),
                 )
 
+            if response.status_code == codes.too_many_requests or (
+                response.status_code == codes.forbidden
+                and error_code == "REQUEST_LIMIT_EXCEEDED"
+            ):
+                # SF rate limit is rolling-24h; retrying immediately rarely helps
+                # and we want clean sync-failed signals for ops. Check this before
+                # the bulk-creation branch so a 403 REQUEST_LIMIT_EXCEEDED on the
+                # Bulk create endpoint isn't reinterpreted as BulkNotSupported.
+                return ErrorResolution(
+                    ResponseAction.FAIL,
+                    FailureType.transient_error,
+                    f"Salesforce request limit reached (HTTP {response.status_code}): {response.text}",
+                )
+
             if self._is_bulk_job_creation(response) and response.status_code in (
                 codes.FORBIDDEN,
                 codes.BAD_REQUEST,
             ):
                 return self._handle_bulk_job_creation_endpoint_specific_errors(
                     response, error_code, error_message
-                )
-
-            if response.status_code == codes.too_many_requests or (
-                response.status_code == codes.forbidden
-                and error_code == "REQUEST_LIMIT_EXCEEDED"
-            ):
-                # SF rate limit is rolling-24h; retrying immediately rarely helps
-                # and we want clean sync-failed signals for ops.
-                return ErrorResolution(
-                    ResponseAction.FAIL,
-                    FailureType.transient_error,
-                    f"Salesforce request limit reached (HTTP {response.status_code}): {response.text}",
                 )
 
             if (

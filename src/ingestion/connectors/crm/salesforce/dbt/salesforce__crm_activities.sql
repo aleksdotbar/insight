@@ -26,7 +26,7 @@ WITH tasks AS (
         CASE WHEN startsWith(coalesce(WhatId, ''), '001') THEN WhatId
              ELSE NULL END                          AS account_id,
         parseDateTimeBestEffort(
-            coalesce(ActivityDate, toString(CreatedDate))
+            coalesce(toString(ActivityDate), toString(CreatedDate))
         )                                           AS timestamp,
         CASE WHEN CallType IS NOT NULL AND CallDurationInSeconds IS NOT NULL
              THEN toInt64(CallDurationInSeconds)
@@ -43,7 +43,7 @@ WITH tasks AS (
         parseDateTimeBestEffort(CreatedDate)        AS created_at,
         data_source,
         toUnixTimestamp64Milli(
-            parseDateTimeBestEffort(SystemModstamp)
+            parseDateTime64BestEffort(SystemModstamp)
         )                                           AS _version
     FROM {{ source('bronze_salesforce', 'Task') }}
 ),
@@ -64,7 +64,7 @@ events AS (
         CASE WHEN startsWith(coalesce(WhatId, ''), '001') THEN WhatId
              ELSE NULL END                          AS account_id,
         parseDateTimeBestEffort(
-            coalesce(StartDateTime, toString(ActivityDate), toString(CreatedDate))
+            coalesce(toString(StartDateTime), toString(ActivityDate), toString(CreatedDate))
         )                                           AS timestamp,
         toInt64OrNull(toString(DurationInMinutes)) * 60  AS duration_seconds,
         CAST(NULL AS Nullable(String))              AS outcome,
@@ -79,7 +79,7 @@ events AS (
         parseDateTimeBestEffort(CreatedDate)        AS created_at,
         data_source,
         toUnixTimestamp64Milli(
-            parseDateTimeBestEffort(SystemModstamp)
+            parseDateTime64BestEffort(SystemModstamp)
         )                                           AS _version
     FROM {{ source('bronze_salesforce', 'Event') }}
 ),

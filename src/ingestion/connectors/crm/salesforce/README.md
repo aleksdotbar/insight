@@ -39,7 +39,7 @@ stringData:
 | `salesforce_instance_url` | Yes | Salesforce instance URL (OAuth token endpoint is derived from this) |
 | `salesforce_client_id` | Yes | OAuth Consumer Key |
 | `salesforce_client_secret` | Yes | OAuth Consumer Secret (sensitive) |
-| `salesforce_start_date` | No | Incremental sync start (ISO 8601). Default `2020-01-01T00:00:00Z` |
+| `salesforce_start_date` | No | Incremental sync start (ISO 8601). Defaults to two years before current date (computed in `source.py`). |
 | `salesforce_streams` | No | JSON array of sobject names to sync. Overrides curated default |
 | `salesforce_stream_slice_step` | No | Concurrent cursor window. Default `P30D` |
 | `salesforce_lookback_window` | No | Re-read window for SystemModstamp consistency. Default `PT10M` |

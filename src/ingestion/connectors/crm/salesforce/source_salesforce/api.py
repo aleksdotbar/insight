@@ -309,7 +309,9 @@ class Salesforce:
         stream_schemas: dict = {}
         for i in range(0, len(stream_names), self.parallel_tasks_size):
             chunk = stream_names[i : i + self.parallel_tasks_size]
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(len(chunk), self.parallel_tasks_size)
+            ) as executor:
                 for name, schema, err in executor.map(
                     lambda args: load_schema(*args),
                     [(n, stream_objects[n]) for n in chunk],

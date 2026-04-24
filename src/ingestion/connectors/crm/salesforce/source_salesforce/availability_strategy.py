@@ -50,7 +50,9 @@ class SalesforceAvailabilityStrategy(HttpAvailabilityStrategy):
         message = error_data.get("message") or ""
 
         if error_code == "REQUEST_LIMIT_EXCEEDED":
-            return True, None
+            return False, (
+                f"REQUEST_LIMIT_EXCEEDED: Salesforce org quota exceeded — skipping stream '{stream.name}': {message!r}"
+            )
         return False, (
             f"Cannot receive data for stream '{stream.name}' (code={error_code!r}): {message!r}"
         )

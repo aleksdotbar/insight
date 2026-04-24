@@ -30,7 +30,7 @@ SELECT * FROM (
         collected_at,
         data_source,
         toUnixTimestamp64Milli(
-            parseDateTimeBestEffort(SystemModstamp)
+            parseDateTime64BestEffort(SystemModstamp)
         )                                               AS _version
     FROM {{ source('bronze_salesforce', 'User') }}
 )

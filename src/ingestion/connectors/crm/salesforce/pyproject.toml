@@ -19,3 +19,6 @@ source-salesforce-insight = "source_salesforce.source:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["source_salesforce*"]
+
+[tool.setuptools.package-data]
+"source_salesforce" = ["spec.json"]

@@ -26,7 +26,7 @@ class BulkNotSupportedException(SalesforceException):
 class TmpFileIOError(SalesforceException):
     """Failure writing or reading a temporary file during Bulk ingest."""
 
-    def __init__(self, msg: str, err: str = None):
+    def __init__(self, msg: str, err: str | None = None):
         full = f"{msg}. Error: {err}" if err else msg
         super().__init__(full)
         logger.error(full)
