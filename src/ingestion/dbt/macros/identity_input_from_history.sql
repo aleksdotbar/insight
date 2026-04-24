@@ -9,6 +9,11 @@
   Produces UPSERT rows for identity-relevant field changes, and DELETE rows
   for all identity fields when a deactivation condition is met.
 
+  In addition, every activity in history yields a `value_type='id'`
+  observation carrying `value = entity_id` (= source_account_id); this
+  is the ADR-0002 canonical binding row, emitted by the macro so every
+  connector contributes it uniformly without repeating boilerplate.
+
   Designed for incremental models: when is_incremental() is true, only
   processes fields_history rows newer than the last _synced_at in the target.
 
@@ -17,8 +22,11 @@
     source_type:            insight_source_type value (e.g., 'bamboohr', 'zoom')
     identity_fields:        list of dicts with keys:
                               - field: source field name in fields_history (e.g., 'workEmail')
-                              - alias_type: bootstrap alias type (e.g., 'email')
-                              - alias_field_name: fully-qualified field path
+                              - value_type: persons value_type (e.g., 'email',
+                                'employee_id', 'display_name'). The implicit
+                                `value_type='id'` row is emitted in addition to
+                                whatever is listed here — do not repeat it.
+                              - value_field_name: fully-qualified field path
                                 (e.g., 'bronze_bamboohr.employees.workEmail')
     deactivation_condition: SQL expression evaluated against fields_history row
                             that returns true when the entity is deactivated.
@@ -28,7 +36,7 @@
 
   Output columns (match identity_inputs schema):
     insight_tenant_id, insight_source_id, insight_source_type, source_account_id,
-    alias_type, alias_value, alias_field_name, operation_type, _synced_at
+    value_type, value, value_field_name, operation_type, _synced_at
 #}
 
 WITH history AS (
@@ -48,9 +56,9 @@ upserts AS (
         toUUID(UUIDNumToString(sipHash128(coalesce(source_id, '')))) AS insight_source_id,
         '{{ source_type }}' AS insight_source_type,
         entity_id AS source_account_id,
-        '{{ f.alias_type }}' AS alias_type,
-        new_value AS alias_value,
-        '{{ f.alias_field_name }}' AS alias_field_name,
+        '{{ f.value_type }}' AS value_type,
+        new_value AS value,
+        '{{ f.value_field_name }}' AS value_field_name,
         'UPSERT' AS operation_type,
         updated_at AS _synced_at
     FROM history
@@ -79,18 +87,55 @@ deletes AS (
         toUUID(UUIDNumToString(sipHash128(coalesce(d.source_id, '')))) AS insight_source_id,
         '{{ source_type }}' AS insight_source_type,
         d.entity_id AS source_account_id,
-        '{{ f.alias_type }}' AS alias_type,
-        '' AS alias_value,
-        '{{ f.alias_field_name }}' AS alias_field_name,
+        '{{ f.value_type }}' AS value_type,
+        '' AS value,
+        '{{ f.value_field_name }}' AS value_field_name,
         'DELETE' AS operation_type,
         d.updated_at AS _synced_at
     FROM deactivation_events d
     {{ 'UNION ALL' if not loop.last }}
     {% endfor %}
+),
+
+-- UPSERT: canonical binding row (value_type='id', value=source_account_id) per
+-- ADR-0002 — emitted by the macro on every activity so every connector
+-- contributes it uniformly.
+id_upserts AS (
+    SELECT
+        toUUID(UUIDNumToString(sipHash128(coalesce(tenant_id, '')))) AS insight_tenant_id,
+        toUUID(UUIDNumToString(sipHash128(coalesce(source_id, '')))) AS insight_source_id,
+        '{{ source_type }}' AS insight_source_type,
+        entity_id AS source_account_id,
+        'id' AS value_type,
+        entity_id AS value,
+        '{{ source_type }}.entity_id' AS value_field_name,
+        'UPSERT' AS operation_type,
+        updated_at AS _synced_at
+    FROM history
+    WHERE entity_id IS NOT NULL AND entity_id != ''
+),
+
+-- DELETE: mirror id-binding row at deactivation.
+id_deletes AS (
+    SELECT
+        toUUID(UUIDNumToString(sipHash128(coalesce(d.tenant_id, '')))) AS insight_tenant_id,
+        toUUID(UUIDNumToString(sipHash128(coalesce(d.source_id, '')))) AS insight_source_id,
+        '{{ source_type }}' AS insight_source_type,
+        d.entity_id AS source_account_id,
+        'id' AS value_type,
+        '' AS value,
+        '{{ source_type }}.entity_id' AS value_field_name,
+        'DELETE' AS operation_type,
+        d.updated_at AS _synced_at
+    FROM deactivation_events d
 )
 
 SELECT * FROM upserts
 UNION ALL
 SELECT * FROM deletes
+UNION ALL
+SELECT * FROM id_upserts
+UNION ALL
+SELECT * FROM id_deletes
 
 {% endmacro %}

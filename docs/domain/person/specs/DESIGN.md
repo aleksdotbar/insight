@@ -39,7 +39,7 @@ The Person domain owns the canonical person record — the single source of trut
 
 The core challenge this domain solves is **golden record assembly**: when multiple source systems (BambooHR, Active Directory, GitLab, Jira) each contribute partial, sometimes contradictory information about the same person, the GoldenRecordBuilder component resolves these contributions into a single best-value record. Source priority rules determine which system's value wins for each attribute; conflicts that cannot be resolved by priority are flagged for operator review.
 
-The Person-domain analytical layer is ClickHouse-native, matching the project-wide decision for analytical storage. The Person-domain `persons` entity described below is a merged view over two underlying stores: (a) the MariaDB-backed `persons` identity-attribute history table owned by the Identity-Resolution domain (see identity-resolution DESIGN §3.7), which records every observed field value per source per person, and (b) the golden-record projection derived from it — either as a ClickHouse materialised view or as a separately-maintained table in the analytical layer. SCD Type 2/Type 3 history on top of the golden projection is managed by dbt macros producing `*_snapshot` and `*_fields_history` tables — this is out of scope for this design but referenced for completeness. Person-attribute observations reach this domain through two paths: directly from the MariaDB `persons` table for operator-driven edits, and from the shared `identity_inputs` ClickHouse table (also owned by Identity Resolution) for connector-sourced observations where `alias_type` corresponds to person attributes (e.g., `display_name`, `role`, `location`).
+The Person-domain analytical layer is ClickHouse-native, matching the project-wide decision for analytical storage. The Person-domain `persons` entity described below is a merged view over two underlying stores: (a) the MariaDB-backed `persons` identity-attribute history table owned by the Identity-Resolution domain (see identity-resolution DESIGN §3.7), which records every observed field value per source per person, and (b) the golden-record projection derived from it — either as a ClickHouse materialised view or as a separately-maintained table in the analytical layer. SCD Type 2/Type 3 history on top of the golden projection is managed by dbt macros producing `*_snapshot` and `*_fields_history` tables — this is out of scope for this design but referenced for completeness. Person-attribute observations reach this domain through two paths: directly from the MariaDB `persons` table for operator-driven edits, and from the shared `identity_inputs` ClickHouse table (also owned by Identity Resolution) for connector-sourced observations where `value_type` corresponds to person attributes (e.g., `display_name`, `role`, `location`).
 
 ### 1.2 Architecture Drivers
 
@@ -163,7 +163,7 @@ All tables and columns follow PR #55 glossary conventions: plural table names, `
 
 - [ ] `p2` - **ID**: `cpt-person-constraint-shared-identity-inputs`
 
-Both the `identity_inputs` ClickHouse table and the MariaDB `persons` identity-attribute history table are owned by the Identity-Resolution domain. The Person domain reads from them (filtering by person-attribute `alias_type` values like `display_name`, `role`, `location`) but does not write to them or modify their schemas. Connector-sourced observations flow through `identity_inputs`; operator-driven edits flow through MariaDB `persons`.
+Both the `identity_inputs` ClickHouse table and the MariaDB `persons` identity-attribute history table are owned by the Identity-Resolution domain. The Person domain reads from them (filtering by person-attribute `value_type` values like `display_name`, `role`, `location`) but does not write to them or modify their schemas. Connector-sourced observations flow through `identity_inputs`; operator-driven edits flow through MariaDB `persons`.
 
 
 #### dbt-Managed History
@@ -332,7 +332,7 @@ REST API layer for person record CRUD, golden record queries, conflict managemen
 
 **Dependency Rules**:
 - Person domain reads from `identity_inputs` but does not write to it
-- Person domain writes person-attribute unmapped observations to the shared `unmapped` table (IR domain) — differentiated by `alias_type`
+- Person domain writes person-attribute unmapped observations to the shared `unmapped` table (IR domain) — differentiated by `value_type`
 - Person domain does not depend on IR domain internals (aliases, match_rules)
 - IR domain and org-chart domain depend on `persons.id` as a stable FK target
 
@@ -373,7 +373,7 @@ sequenceDiagram
     participant P as persons (CH)
     participant PC as person_conflicts (CH)
 
-    PS ->> BI: Read person-attribute observations (alias_type in [display_name, role, location, ...])
+    PS ->> BI: Read person-attribute observations (value_type in [display_name, role, location, ...])
     BI -->> PS: attribute change records
 
     loop For each person with changes
@@ -548,7 +548,7 @@ Person-attribute-level conflicts — when two sources provide different values f
 
 **ORDER BY**: `(insight_tenant_id, person_id, status, attribute_name, id)`
 
-> **Shared unmapped table** ([ADR-0001](./ADR/0001-shared-unmapped-table.md)): Person-attribute observations that cannot be resolved are stored in the IR domain's shared `unmapped` table (not a separate `person_unmapped`). Both domains use the same structure and data origin (`identity_inputs`). Differentiation is by `alias_type`: identity types (`email`, `username`, `employee_id`, `platform_id`) vs person-attribute types (`display_name`, `role`, `location`, etc.).
+> **Shared unmapped table** ([ADR-0001](./ADR/0001-shared-unmapped-table.md)): Person-attribute observations that cannot be resolved are stored in the IR domain's shared `unmapped` table (not a separate `person_unmapped`). Both domains use the same structure and data origin (`identity_inputs`). Differentiation is by `value_type`: identity types (`email`, `username`, `employee_id`, `platform_id`) vs person-attribute types (`display_name`, `role`, `location`, etc.).
 
 **Engine**: `ReplacingMergeTree(updated_at)`
 

@@ -1,32 +1,51 @@
 #!/usr/bin/env python3
 """
-Initial-bootstrap seed: identity_inputs (ClickHouse) -> persons +
+Seed: identity.identity_inputs (ClickHouse) -> persons +
 account_person_map (MariaDB).
 
-Assigns a stable `person_id` per source-account at first observation
-and writes it to `account_person_map`. Observations of field values
-(email / display_name / platform_id / employee_id / ...) land in
-`persons` with the mapped `person_id`. On re-run, `person_id` is
-looked up in the mapping table rather than re-derived -- so mutable
-attributes (email changes, etc.) never shift `person_id`.
+Writes observations from `identity_inputs` into `persons`, minting
+stable `person_id`s as needed, then rebuilds `account_person_map`
+(an SCD2 materialized view of the source-account -> person_id
+binding) from scratch.
 
-Two modes (detected automatically):
+Observation schema (persons) is split into three value columns
+with hardcoded routing by `value_type`:
 
-- **Initial bootstrap** -- `account_person_map` is empty.
-  Source-accounts sharing an email within a tenant are auto-merged
-  into one `person_id` (random UUIDv7). This is a one-time pass at
-  system initialisation.
-- **Steady-state** -- `account_person_map` already has entries.
-  Unknown accounts get their own fresh `person_id`; email-automerge
-  is disabled. Future operator-driven workflows (post-UI) do the
-  merge with explicit review.
+- value_type IN ('id', 'email', 'username')  -> persons.value_id
+- value_type == 'display_name'               -> persons.value_full_text
+- anything else                              -> persons.value
 
-See ADR-0002 (identity-resolution specs).
+Exactly one of the three is populated per row; the generated
+`value_effective` column makes the UNIQUE key NULL-safe.
+
+`account_person_map` is never the source of truth. It is rebuilt
+deterministically from persons rows where value_type='id' at the end
+of every seed run (and will be rebuilt by future operator flows too).
+
+Seed decision per account (single code path — no separate "initial
+bootstrap" vs "steady-state" modes; the logic is the same either way
+and degenerates to bootstrap when persons is empty):
+
+1. Known account -- persons already has a value_type='id' observation
+   for (tenant, source_type, source_id, source_account_id). Reuse that
+   person_id. Dedupe new observations via INSERT IGNORE on the UNIQUE
+   key.
+
+2. Unknown account, email ABSENT from persons (any person_id) in this
+   tenant. Mint a random UUIDv7 `person_id` and write observations.
+   Within the same run, accounts sharing the same new email share one
+   person_id (email-automerge is naturally scoped to the run). See
+   ADR-0002.
+
+3. Unknown account, email PRESENT in persons. SKIP the entire account.
+   Linking this new source-account to an existing person is the job of
+   the future identity-resolution flow (out of scope for this seed).
 
 Prerequisites:
-  - ClickHouse identity_inputs view exists (run dbt first)
-  - MariaDB persons table exists (the identity-resolution service
-    applies it at startup via its own SeaORM Migrator; see ADR-0006)
+  - ClickHouse identity.identity_inputs view exists (run dbt first)
+  - MariaDB persons / account_person_map tables exist (applied by
+    the identity-resolution service's SeaORM Migrator at startup;
+    see ADR-0006)
   - Environment: CLICKHOUSE_URL, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD
   - Environment: MARIADB_URL (mysql://user:pass@host:port/identity)
 
@@ -38,9 +57,6 @@ Usage:
   export MARIADB_URL=mysql://insight:insight-pass@localhost:3306/identity
 
   python3 src/backend/services/identity/seed/seed-persons-from-identity-input.py
-
-  # Or via kubectl port-forward for MariaDB:
-  kubectl -n insight port-forward svc/insight-mariadb 3306:3306 &
 """
 
 import base64
@@ -73,6 +89,7 @@ def uuid7() -> uuid.UUID:
     b[9:16] = rand[3:10]
     return uuid.UUID(bytes=bytes(b))
 
+
 # MariaDB driver -- pymysql preferred, mysql.connector fallback. For
 # BINARY(16) columns we pass `uuid.UUID.bytes` (16 raw bytes) rather than
 # the UUID object itself: both drivers would otherwise fall back to
@@ -83,18 +100,33 @@ try:
 except ImportError:
     import mysql.connector as _mysql_driver  # type: ignore[import-not-found,no-redef]
 
+
 # -- Schema constraints (mirror src/backend/services/identity/src/migration/
 # m20260421_000001_persons.rs -- the authoritative DDL is now in the Rust
 # service's SeaORM Migrator; see ADR-0006).
-# Longer values are rejected rather than silently truncated by INSERT IGNORE:
-# truncation would let two distinct source-accounts collapse onto one mapping
-# row and poison the account->person binding.
-MAX_ALIAS_VALUE_LEN = 512         # VARCHAR(512) for alias_value
-MAX_SOURCE_ACCOUNT_ID_LEN = 255   # VARCHAR(255) for account_person_map.source_account_id
+# Longer values are rejected rather than silently truncated by INSERT
+# IGNORE. Truncation would let two distinct source-accounts or observations
+# collapse onto one key and poison the data.
+MAX_VALUE_ID_LEN         = 320   # VARCHAR(320) -- RFC 5321/5322 email upper bound
+MAX_VALUE_FULL_TEXT_LEN  = 512   # VARCHAR(512) -- display_name catch-all
+MAX_SOURCE_ACCOUNT_ID_LEN = 320  # VARCHAR(320) -- same domain as value_id
+
+# value_type values that hardcode-route into value_id vs value_full_text;
+# everything else (employee_id, platform_id, functional_team, and any
+# future custom value_type) goes into the TEXT value column.
+# Canonical value_types: id, email, username, display_name. The set is
+# extensible — value_type is a free-form string, not an enum.
+VALUE_TYPES_FOR_VALUE_ID        = {"id", "email", "username"}
+VALUE_TYPES_FOR_VALUE_FULL_TEXT = {"display_name"}
+
+# Author sentinel for automatically-minted bindings. Real operator UUIDs
+# will replace this in the future merge/split flows.
+SYSTEM_AUTHOR_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+
 
 # -- ClickHouse connection ------------------------------------------------
-CH_URL = os.environ.get("CLICKHOUSE_URL", "http://localhost:30123")
-CH_USER = os.environ.get("CLICKHOUSE_USER", "default")
+CH_URL      = os.environ.get("CLICKHOUSE_URL", "http://localhost:30123")
+CH_USER     = os.environ.get("CLICKHOUSE_USER", "default")
 CH_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
 # Hard cap on the ClickHouse HTTP query. A stalled endpoint otherwise
 # hangs the whole one-shot seed indefinitely.
@@ -144,14 +176,35 @@ def get_mariadb_conn():
     )
 
 
+# -- Value routing --------------------------------------------------------
+def route_value(value_type: str, value: str) -> tuple[str | None, str | None, str | None]:
+    """Return (value_id, value_full_text, value) with exactly one non-None
+    per the hardcoded value_type routing rules.
+
+    Values exceeding their column's max length are rejected by returning
+    all-None, and the caller counts + logs the rejection.
+    """
+    if value_type in VALUE_TYPES_FOR_VALUE_ID:
+        if len(value) > MAX_VALUE_ID_LEN:
+            return (None, None, None)
+        return (value, None, None)
+    if value_type in VALUE_TYPES_FOR_VALUE_FULL_TEXT:
+        if len(value) > MAX_VALUE_FULL_TEXT_LEN:
+            return (None, None, None)
+        return (None, value, None)
+    # catch-all: TEXT column, no length limit enforced by the seed
+    return (None, None, value)
+
+
 # -- Main -----------------------------------------------------------------
 def main():
-    print("=== Seed: identity_inputs -> MariaDB persons ===")
+    print("=== Seed: identity_inputs -> MariaDB persons + account_person_map ===")
 
     # 1. Read all identity_inputs rows from ClickHouse.
-    #    ORDER BY _synced_at DESC inside each source-account so the email
-    #    anchor picked in step 3 is deterministically the latest observation
-    #    (ADR-0002 requires stable person_id across re-runs).
+    #    ORDER BY _synced_at DESC within a source-account so that the
+    #    email picked in step 3 is deterministically the latest
+    #    observation -- essential for the "skip account if its current
+    #    email already exists in persons" decision.
     print("  Reading identity_inputs from ClickHouse...")
     rows = ch_query("""
         SELECT
@@ -159,21 +212,21 @@ def main():
             toString(insight_source_id)     AS insight_source_id,
             insight_source_type,
             source_account_id,
-            alias_type,
-            alias_value,
+            value_type,
+            value,
             _synced_at
         FROM identity.identity_inputs
         WHERE operation_type = 'UPSERT'
-          AND alias_value IS NOT NULL
-          AND alias_value != ''
+          AND value IS NOT NULL
+          AND value != ''
         ORDER BY
             insight_tenant_id,
             insight_source_type,
             insight_source_id,
             source_account_id,
             _synced_at DESC,
-            alias_type,
-            alias_value
+            value_type,
+            value
     """)
     print(f"  Read {len(rows)} rows")
 
@@ -181,8 +234,9 @@ def main():
         print("  No data -- nothing to seed.")
         return
 
-    # 2. Group by source triple + source_account_id, find emails
-    #    Key: (tenant, source_type, source_id, source_account_id) -> list of observations
+    # 2. Group observations by source-account key.
+    #    Key: (tenant, source_type, source_id, source_account_id) ->
+    #    list of observations.
     accounts: dict[tuple, list[dict]] = defaultdict(list)
     for r in rows:
         key = (
@@ -193,18 +247,32 @@ def main():
         )
         accounts[key].append(r)
 
-    # 3. Connect to MariaDB and load the existing account -> person_id
-    #    mapping. Emptiness of this table decides the seed mode
-    #    (initial-bootstrap vs steady-state).
     print("  Connecting to MariaDB...")
     conn = get_mariadb_conn()
     cursor = conn.cursor()
 
+    # 3. Load existing source_account -> person_id bindings from persons
+    #    (value_type='id' is the authoritative binding observation per
+    #    ADR-0002). Derive "latest person_id per account" in SQL -- this
+    #    becomes our known-account lookup set.
     cursor.execute(
-        "SELECT insight_tenant_id, insight_source_type, insight_source_id, "
-        "source_account_id, person_id FROM account_person_map"
+        """
+        SELECT insight_tenant_id, insight_source_type, insight_source_id,
+               value_id AS source_account_id, person_id
+        FROM persons p
+        WHERE value_type = 'id'
+          AND value_id IS NOT NULL
+          AND created_at = (
+              SELECT MAX(p2.created_at) FROM persons p2
+              WHERE p2.insight_tenant_id   = p.insight_tenant_id
+                AND p2.insight_source_type = p.insight_source_type
+                AND p2.insight_source_id   = p.insight_source_id
+                AND p2.value_id            = p.value_id
+                AND p2.value_type          = 'id'
+          )
+        """
     )
-    existing_map: dict[tuple[str, str, str, str], uuid.UUID] = {}
+    known_accounts: dict[tuple[str, str, str, str], uuid.UUID] = {}
     for tenant_bytes, source_type, source_id_bytes, src_account, person_bytes in cursor.fetchall():
         key = (
             str(uuid.UUID(bytes=tenant_bytes)),
@@ -212,116 +280,120 @@ def main():
             str(uuid.UUID(bytes=source_id_bytes)),
             src_account,
         )
-        existing_map[key] = uuid.UUID(bytes=person_bytes)
+        known_accounts[key] = uuid.UUID(bytes=person_bytes)
 
-    is_initial_bootstrap = len(existing_map) == 0
+    # 4. Load existing (tenant, normalized_email) set from persons.
+    #    An email present here blocks creating a new person for any
+    #    unknown account carrying that email -- that is work for the
+    #    identity-resolution flow (future PR). We normalize in SQL via
+    #    LOWER(TRIM()) so the set can be compared directly with
+    #    lower(trim(email)) from identity_inputs.
+    cursor.execute(
+        """
+        SELECT insight_tenant_id, LOWER(TRIM(value_id)) AS email
+        FROM persons
+        WHERE value_type = 'email'
+          AND value_id IS NOT NULL
+          AND value_id != ''
+        """
+    )
+    existing_emails: set[tuple[str, str]] = set()
+    for tenant_bytes, email_norm in cursor.fetchall():
+        tenant_str = str(uuid.UUID(bytes=tenant_bytes))
+        existing_emails.add((tenant_str, email_norm))
+
     print(
-        f"  account_person_map: {len(existing_map)} existing mappings "
-        f"({'initial-bootstrap' if is_initial_bootstrap else 'steady-state'} mode)"
+        f"  persons state: {len(known_accounts)} known bindings, "
+        f"{len(existing_emails)} existing emails"
     )
 
-    # 4. Assign person_id per source-account.
-    #    - Known accounts (present in map): use the mapped, stable id.
-    #    - Unknown accounts during initial bootstrap: email-based automerge
-    #      within this run -- source-accounts sharing an email in the same
-    #      tenant get one person_id (random UUIDv7).
-    #    - Unknown accounts during steady-state: each gets its own fresh
-    #      person_id (random UUIDv7) -- no automerge. See ADR-0002.
+    # 5. Assign person_id per source-account. Single code path:
+    #    - Known accounts reuse the mapped person_id (stable).
+    #    - Unknown accounts whose email is absent from persons get a
+    #      new UUIDv7; within this run, two new accounts sharing a new
+    #      email share one person_id (email-automerge within the run).
+    #    - Unknown accounts whose email is already present in persons
+    #      are skipped entirely -- cross-source linking is operator-
+    #      driven work for the future identity-resolution flow.
     #
-    #    Accounts without an email in their observations are still skipped
-    #    (same as before -- email remains the sole identity anchor in the
-    #    bootstrap flow; other matching strategies belong to operator
-    #    workflows, not this seed).
+    #    Accounts without an email observation are skipped -- email is
+    #    the sole identity anchor for this seed.
     email_to_new_person: dict[tuple[str, str], uuid.UUID] = {}
     account_person: dict[tuple, uuid.UUID] = {}
-    new_map_rows: list[tuple] = []
 
-    reused_from_map = 0
-    minted_initial = 0
-    minted_new_account = 0
-    oversized_account_id = 0
+    reused_from_persons       = 0
+    minted                    = 0
+    skipped_no_email          = 0
+    skipped_email_exists      = 0
+    skipped_oversized_account = 0
 
     for key, obs_list in accounts.items():
-        if key in existing_map:
-            account_person[key] = existing_map[key]
-            reused_from_map += 1
+        if key in known_accounts:
+            account_person[key] = known_accounts[key]
+            reused_from_persons += 1
             continue
 
         tenant_id, source_type, source_id_str, source_account_id = key
 
-        # Reject oversized source_account_id rather than letting MariaDB
-        # silently truncate it into account_person_map's VARCHAR(255) and
-        # collapse distinct accounts onto one mapping PK. Char length (not
-        # byte length) because utf8mb4 caps at 255 *characters*.
         if len(source_account_id) > MAX_SOURCE_ACCOUNT_ID_LEN:
-            oversized_account_id += 1
+            skipped_oversized_account += 1
             continue
 
-        email = None
+        # Pick the latest email observation for this account. Rows are
+        # ordered by _synced_at DESC (see step 1), so the first email
+        # in obs_list is the most recent.
+        email_raw: str | None = None
         for obs in obs_list:
-            if obs["alias_type"] == "email":
-                email = obs["alias_value"].strip().lower()
+            if obs["value_type"] == "email":
+                email_raw = obs["value"]
                 break
-        if not email:
-            continue  # no email -- skip account (email is the sole person key)
+        if not email_raw:
+            skipped_no_email += 1
+            continue
 
-        if is_initial_bootstrap:
-            email_key = (tenant_id, email)
-            person_uuid = email_to_new_person.get(email_key)
-            if person_uuid is None:
-                person_uuid = uuid7()
-                email_to_new_person[email_key] = person_uuid
-                minted_initial += 1
-            reason = "initial-bootstrap"
-        else:
-            # Steady-state: one new account -> one new person. No merge
-            # with existing persons (by email or otherwise) happens here
-            # -- that is explicitly deferred to the operator-driven flow.
+        email_normalized = email_raw.strip().lower()
+        email_key = (tenant_id, email_normalized)
+
+        if email_key in existing_emails:
+            # IRes-territory: this email is already bound to a person
+            # in persons. Deciding whether to link this new account to
+            # that person (same user? different user same email?) is
+            # operator-driven work deferred to the future flow.
+            skipped_email_exists += 1
+            continue
+
+        # Email is new in persons. Mint (or reuse from this run's
+        # email-automerge set for intra-run duplicates).
+        person_uuid = email_to_new_person.get(email_key)
+        if person_uuid is None:
             person_uuid = uuid7()
-            minted_new_account += 1
-            reason = "new-account"
+            email_to_new_person[email_key] = person_uuid
+            minted += 1
 
         account_person[key] = person_uuid
-        new_map_rows.append((
-            uuid.UUID(tenant_id).bytes,
-            source_type,
-            uuid.UUID(source_id_str).bytes,
-            source_account_id,
-            person_uuid.bytes,
-            reason,
-        ))
 
-    print(f"  Accounts: reused-from-map={reused_from_map}, "
-          f"minted-initial={minted_initial}, minted-new-account={minted_new_account}")
-    if oversized_account_id:
-        print(f"  Accounts skipped -- source_account_id > "
-              f"{MAX_SOURCE_ACCOUNT_ID_LEN} characters: {oversized_account_id}")
-
-    # 5. Persist the new mapping rows. INSERT IGNORE so a concurrent seed
-    #    or a partial-previous-run does not fail this run; the PK on
-    #    (tenant, source_type, source_id, source_account_id) is what
-    #    guarantees one mapping per account.
-    if new_map_rows:
-        print(f"  Inserting {len(new_map_rows)} new mapping(s) into account_person_map...")
-        cursor.executemany(
-            """INSERT IGNORE INTO account_person_map
-               (insight_tenant_id, insight_source_type, insight_source_id,
-                source_account_id, person_id, created_reason)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            new_map_rows,
-        )
+    print(
+        f"  Accounts: reused={reused_from_persons}, minted={minted}, "
+        f"skipped-no-email={skipped_no_email}, "
+        f"skipped-email-exists={skipped_email_exists}"
+    )
+    if skipped_oversized_account:
+        print(f"  Accounts skipped -- source_account_id > {MAX_SOURCE_ACCOUNT_ID_LEN} characters: {skipped_oversized_account}")
 
     # 6. Build INSERT rows for persons observations.
-    #    Skip observations whose alias_value exceeds VARCHAR(512) -- without
-    #    this check MariaDB may silently truncate (depends on SQL mode) and
-    #    the truncated value would corrupt uq_person_observation uniqueness.
+    #    Hardcoded routing per value_type populates exactly one of
+    #    (value_id, value_full_text, value); the other two are NULL.
+    #    For value_type='id' we also normalize the value from the
+    #    identity_inputs source_account_id carried on the observation.
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000")
     insert_rows = []
-    oversized = 0
+    oversized_value_id        = 0
+    oversized_value_full_text = 0
+
     for key, obs_list in accounts.items():
         person_id = account_person.get(key)
         if person_id is None:
-            continue  # skipped (no email, not in map)
+            continue  # skipped earlier
         tenant_str, source_type, source_id_str, _ = key
         # tenant_id and insight_source_id come from identity.identity_inputs,
         # where ClickHouse types both columns as UUID -- toString() on the
@@ -334,71 +406,116 @@ def main():
         tenant_bin = uuid.UUID(tenant_str).bytes
         source_bin = uuid.UUID(source_id_str).bytes
         person_bin = person_id.bytes
+        author_bin = SYSTEM_AUTHOR_UUID.bytes  # seed-minted -> system sentinel
+
         for obs in obs_list:
-            alias_value = obs["alias_value"]
-            # VARCHAR(512) utf8mb4 caps at 512 *characters* (up to ~2048
-            # bytes), so we compare character length, not byte length;
-            # otherwise non-ASCII values (IDN emails, accented display
-            # names) would be dropped even though MariaDB would accept
-            # them.
-            if len(alias_value) > MAX_ALIAS_VALUE_LEN:
-                oversized += 1
+            v_id, v_ft, v_any = route_value(obs["value_type"], obs["value"])
+            if v_id is None and v_ft is None and v_any is None:
+                # Oversized -- route_value already discarded it; count
+                # by which column would have received it.
+                if obs["value_type"] in VALUE_TYPES_FOR_VALUE_ID:
+                    oversized_value_id += 1
+                elif obs["value_type"] in VALUE_TYPES_FOR_VALUE_FULL_TEXT:
+                    oversized_value_full_text += 1
                 continue
             insert_rows.append((
-                obs["alias_type"],
+                obs["value_type"],
                 source_type,
                 source_bin,
                 tenant_bin,
-                alias_value,
+                v_id,
+                v_ft,
+                v_any,
                 person_bin,
-                person_bin,  # author = self for initial seed
-                "",          # reason
+                author_bin,
+                "",     # reason
                 now,
             ))
 
     print(f"  Rows to insert (pre-dedup): {len(insert_rows)}")
-    if oversized:
-        print(f"  Rows skipped -- alias_value > {MAX_ALIAS_VALUE_LEN} characters: {oversized}")
+    if oversized_value_id:
+        print(f"  Observations skipped -- value_id > {MAX_VALUE_ID_LEN} characters: {oversized_value_id}")
+    if oversized_value_full_text:
+        print(f"  Observations skipped -- value_full_text > {MAX_VALUE_FULL_TEXT_LEN} characters: {oversized_value_full_text}")
 
     # 7. Write observations to persons via INSERT IGNORE. The
-    #    uq_person_observation UNIQUE KEY skips identical observations --
-    #    re-running is idempotent. No TRUNCATE anywhere; to wipe and
-    #    re-seed, an operator does it manually outside this script.
+    #    uq_person_observation UNIQUE KEY (on value_effective) skips
+    #    identical observations -- re-running is idempotent. No TRUNCATE
+    #    anywhere; to wipe and re-seed, an operator does it manually
+    #    outside this script.
     cursor.execute("SELECT COUNT(*) FROM persons")
     existing_before = cursor.fetchone()[0]
     print(f"  Existing persons rows before seed: {existing_before}")
 
-    print(f"  Upserting {len(insert_rows)} persons rows (INSERT IGNORE)...")
-    cursor.executemany(
-        """INSERT IGNORE INTO persons
-           (alias_type, insight_source_type, insight_source_id, insight_tenant_id,
-            alias_value, person_id, author_person_id, reason, created_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        insert_rows,
-    )
+    if insert_rows:
+        print(f"  Upserting {len(insert_rows)} persons rows (INSERT IGNORE)...")
+        cursor.executemany(
+            """INSERT IGNORE INTO persons
+               (value_type, insight_source_type, insight_source_id, insight_tenant_id,
+                value_id, value_full_text, value,
+                person_id, author_person_id, reason, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            insert_rows,
+        )
     conn.commit()
 
     cursor.execute("SELECT COUNT(*) FROM persons")
     existing_after = cursor.fetchone()[0]
     added = existing_after - existing_before
-    skipped = len(insert_rows) - added
-    print(f"  Added: {added}, skipped as duplicates: {skipped}, total: {existing_after}")
+    skipped_dups = len(insert_rows) - added
+    print(f"  Added: {added}, skipped as duplicates: {skipped_dups}, total: {existing_after}")
+
+    # 8. Rebuild account_person_map from persons (SCD2).
+    #    The map is never the source of truth -- persons is. Every
+    #    value_type='id' observation becomes a binding row with
+    #    valid_from = its created_at; valid_to = LEAD(created_at) over
+    #    the same account (NULL for the latest binding). Truncate +
+    #    re-INSERT in one transaction eliminates drift by construction.
+    print("  Rebuilding account_person_map from persons (value_type='id')...")
+    cursor.execute("TRUNCATE TABLE account_person_map")
+    cursor.execute(
+        """
+        INSERT INTO account_person_map
+            (insight_tenant_id, insight_source_type, insight_source_id, source_account_id,
+             person_id, author_person_id, reason, valid_from, valid_to)
+        SELECT
+            insight_tenant_id,
+            insight_source_type,
+            insight_source_id,
+            value_id                                      AS source_account_id,
+            person_id,
+            author_person_id,
+            reason,
+            created_at                                    AS valid_from,
+            LEAD(created_at) OVER (
+                PARTITION BY insight_tenant_id, insight_source_type,
+                             insight_source_id, value_id
+                ORDER BY created_at
+            )                                             AS valid_to
+        FROM persons
+        WHERE value_type = 'id' AND value_id IS NOT NULL
+        """
+    )
+    conn.commit()
 
     # Summary
     cursor.execute("""
-        SELECT alias_type, COUNT(*) AS cnt
+        SELECT value_type, COUNT(*) AS cnt
         FROM persons
-        GROUP BY alias_type
-        ORDER BY alias_type
+        GROUP BY value_type
+        ORDER BY value_type
     """)
-    print("\n  Summary:")
+    print("\n  persons by value_type:")
     for row in cursor.fetchall():
         print(f"    {row[0]}: {row[1]}")
 
     cursor.execute("SELECT COUNT(DISTINCT person_id) FROM persons")
-    print(f"    Total unique persons: {cursor.fetchone()[0]}")
+    print(f"    unique persons: {cursor.fetchone()[0]}")
     cursor.execute("SELECT COUNT(*) FROM account_person_map")
-    print(f"    account_person_map rows: {cursor.fetchone()[0]}")
+    total_map = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM account_person_map WHERE valid_to IS NULL")
+    current_map = cursor.fetchone()[0]
+    print(f"    account_person_map rows: {total_map} ({current_map} current, {total_map - current_map} historical)")
 
     conn.close()
     print("\n=== Seed complete ===")

@@ -29,9 +29,9 @@
   - [4.8 Operational Considerations](#48-operational-considerations)
 - [5. Implementation Recommendations](#5-implementation-recommendations)
   - [REC-IR-01: ClickHouse atomicity for merge/split (Phase 3+)](#rec-ir-01-clickhouse-atomicity-for-mergesplit-phase-3)
-  - [REC-IR-02: identity_inputs incremental watermark (Phase 2)](#rec-ir-02-identity_inputs-incremental-watermark-phase-2)
+  - [REC-IR-02: Incremental watermark for identity inputs (Phase 2)](#rec-ir-02-incremental-watermark-for-identity-inputs-phase-2)
   - [REC-IR-03: Shared unmapped table for all domains — RESOLVED](#rec-ir-03-shared-unmapped-table-for-all-domains--resolved)
-  - [REC-IR-04: Temporary `insight_tenant_id` / `insight_source_id` derivation via sipHash128 (Phase 1)](#rec-ir-04-temporary-insight_tenant_id--insight_source_id-derivation-via-siphash128-phase-1)
+  - [REC-IR-04: Temporary tenant and source ID derivation via sipHash128 (Phase 1)](#rec-ir-04-temporary-tenant-and-source-id-derivation-via-siphash128-phase-1)
 - [6. Traceability](#6-traceability)
 
 <!-- /toc -->
@@ -75,9 +75,9 @@ This domain is deliberately narrow: it owns alias-to-person mapping and the `per
 
 | NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
 |---|---|---|---|---|
-| `cpt-insightspec-ir-nfr-alias-lookup-latency` | Alias lookup < 50 ms p99 | `aliases` table + ResolutionService | Direct ClickHouse lookup on ordered key `(insight_tenant_id, alias_type, alias_value)` | Benchmark with 10K/s lookup rate |
+| `cpt-insightspec-ir-nfr-alias-lookup-latency` | Alias lookup < 50 ms p99 | `aliases` table + ResolutionService | Direct ClickHouse lookup on ordered key `(insight_tenant_id, value_type, value)` | Benchmark with 10K/s lookup rate |
 | `cpt-insightspec-ir-nfr-bootstrap-throughput` | Bootstrap processes 100K inputs/run | BootstrapJob | Batch processing with configurable chunk size; ClickHouse bulk inserts | Load test with 100K identity_inputs rows |
-| `cpt-insightspec-ir-nfr-idempotency` | Bootstrap re-runs produce no duplicates | BootstrapJob | Natural key dedup on `(insight_tenant_id, alias_type, alias_value, insight_source_id)` in `aliases` | Run bootstrap 3x on same data; verify row counts |
+| `cpt-insightspec-ir-nfr-idempotency` | Bootstrap re-runs produce no duplicates | BootstrapJob | Natural key dedup on `(insight_tenant_id, value_type, value, insight_source_id)` in `aliases` | Run bootstrap 3x on same data; verify row counts |
 | `cpt-insightspec-ir-nfr-no-fuzzy-autolink` | Zero false-positive merges from fuzzy rules | MatchingEngine | Fuzzy rules disabled by default; never trigger auto-link | Audit test: enable fuzzy; assert no auto-link |
 | `cpt-insightspec-ir-nfr-tenant-isolation` | No cross-tenant data leaks | All tables | `insight_tenant_id` as first column in all ORDER BY keys | Cross-tenant resolution query returns empty |
 | `cpt-insightspec-ir-nfr-gdpr-erasure` | Hard purge within SLA | ResolutionService.purge() | Move to `alias_gdpr_deleted`; remove from `aliases`; propagate `is_deleted` | Purge test; verify alias no longer resolvable |
@@ -143,7 +143,7 @@ This domain is deliberately narrow: it owns alias-to-person mapping and the `per
 
 - [ ] `p2` - **ID**: `cpt-insightspec-ir-principle-alias-centric`
 
-Identity resolution is fundamentally an alias mapping problem. Every identity signal from every source system is an alias — an `(alias_type, alias_value)` pair that maps to a person. The architecture treats all signals uniformly: an email, a username, an employee ID, and a platform-specific handle are all aliases with different types. This uniform treatment simplifies the resolution pipeline and makes adding new alias types a configuration change, not an architecture change.
+Identity resolution is fundamentally an alias mapping problem. Every identity signal from every source system is an alias — an `(value_type, value)` pair that maps to a person. The architecture treats all signals uniformly: an email, a username, an employee ID, and a platform-specific handle are all aliases with different types. This uniform treatment simplifies the resolution pipeline and makes adding new alias types a configuration change, not an architecture change.
 
 
 #### Storage Split — ClickHouse Analytical + MariaDB Identity History
@@ -205,7 +205,7 @@ All tables and columns follow the PR #55 glossary naming conventions:
 - Booleans: `is_` prefix, `UInt8`
 - Strings: `String` or `LowCardinality(String)` for low-cardinality
 - No `Nullable` unless semantically needed; use empty string or zero sentinel
-- Signal naming: `alias_type` / `alias_value` (not signal_type/signal_value)
+- Signal naming: `value_type` / `value` (not signal_type/signal_value)
 
 
 #### Domain Boundary Constraints
@@ -252,8 +252,8 @@ All temporal ranges use `[effective_from, effective_to)` half-open intervals. `e
 
 | Entity | Description | Key |
 |---|---|---|
-| `identity_inputs` | Alias observations from connectors — one row per changed alias value per source | `(insight_tenant_id, insight_source_id, alias_type, alias_value)` |
-| `aliases` | Resolved alias-to-person mapping — many-to-one from source identifiers to `person_id` | `(insight_tenant_id, alias_type, alias_value, insight_source_id)` |
+| `identity_inputs` | Alias observations from connectors — one row per changed alias value per source | `(insight_tenant_id, insight_source_id, value_type, value)` |
+| `aliases` | Resolved alias-to-person mapping — many-to-one from source identifiers to `person_id` | `(insight_tenant_id, value_type, value, insight_source_id)` |
 | `match_rules` | Configurable matching rules for the MatchingEngine | `id` |
 | `unmapped` | Unresolvable alias queue — pending for operator resolution | `id` |
 | `conflicts` | Alias-level attribute disagreements between sources | `id` |
@@ -303,7 +303,7 @@ Processes alias observations from `identity_inputs` into resolved `aliases` rows
 
 - Reads `identity_inputs` rows where `_synced_at > last_run` for the tenant.
 - For each input: normalizes the alias value (email/username → `lower(trim())`; others → `trim()`).
-- Looks up existing aliases matching `(insight_tenant_id, alias_type, normalized_value)`.
+- Looks up existing aliases matching `(insight_tenant_id, value_type, normalized_value)`.
 - If no match found: evaluates MatchingEngine rules; if confidence ≥ threshold → creates alias linked to matched person; otherwise → inserts into `unmapped`.
 - If match found: updates `last_observed_at`, `source_account_id` if changed.
 - Auto-resolves `unmapped` entries that match newly created aliases.
@@ -332,7 +332,7 @@ Entry point for all alias resolution requests (hot path and cold path), merge/sp
 
 ##### Responsibility scope
 
-- `resolve(alias_type, alias_value, insight_source_id, insight_tenant_id)` → `person_id` or null.
+- `resolve(value_type, value, insight_source_id, insight_tenant_id)` → `person_id` or null.
 - Hot path: direct `aliases` table lookup (covers ~90% after bootstrap).
 - Cold path: evaluates enabled `match_rules` via MatchingEngine; applies confidence thresholds.
 - `batch_resolve([...])` — bulk resolution for pipeline enrichment.
@@ -393,7 +393,7 @@ Detects alias-level conflicts — when the same alias value appears linked to di
 
 ##### Responsibility scope
 
-- `detect_alias_conflicts(alias_type, alias_value, insight_tenant_id)` — checks if the same `(alias_type, alias_value)` is claimed by multiple persons; writes to `conflicts` table.
+- `detect_alias_conflicts(value_type, value, insight_tenant_id)` — checks if the same `(value_type, value)` is claimed by multiple persons; writes to `conflicts` table.
 - Called by BootstrapJob when a new alias observation matches an alias already owned by a different person.
 - Called by ResolutionService after merge to verify no contradictory alias mappings were created.
 
@@ -439,8 +439,8 @@ Detects alias-level conflicts — when the same alias value appears linked to di
 ```json
 // Request
 {
-  "alias_type": "email",
-  "alias_value": "john.smith@corp.com",
+  "value_type": "email",
+  "value": "john.smith@corp.com",
   "insight_source_id": "550e8400-e29b-41d4-a716-446655440000",
   "insight_source_type": "gitlab",
   "insight_tenant_id": "660e8400-e29b-41d4-a716-446655440001"
@@ -457,7 +457,7 @@ Detects alias-level conflicts — when the same alias value appears linked to di
 
 | HTTP | Error | Condition |
 |---|---|---|
-| 400 | `invalid_alias_type` | Unknown alias type |
+| 400 | `invalid_value_type` | Unknown alias type |
 | 404 | `audit_not_found` | Split attempted on missing audit record |
 | 409 | `merge_conflict` | Circular merge detected |
 | 409 | `already_rolled_back` | Split attempted on already-rolled-back audit record |
@@ -524,15 +524,15 @@ sequenceDiagram
     BI -->> BJ: new alias observations
 
     loop For each observation
-        BJ ->> BJ: normalize(alias_value)
-        BJ ->> AL: lookup(tenant, alias_type, normalized_value)
+        BJ ->> BJ: normalize(value)
+        BJ ->> AL: lookup(tenant, value_type, normalized_value)
         alt Alias exists for same person
             BJ ->> AL: UPDATE last_observed_at
         else Alias exists for different person
             BJ ->> CD: detect_alias_conflicts(...)
             CD ->> CF: INSERT conflict record
         else No alias exists
-            BJ ->> ME: evaluate(alias_type, alias_value, tenant)
+            BJ ->> ME: evaluate(value_type, value, tenant)
             ME -->> BJ: {person_id, confidence}
             alt confidence >= 1.0
                 BJ ->> AL: INSERT alias (auto-link)
@@ -561,13 +561,13 @@ sequenceDiagram
     participant ME as MatchingEngine
     participant UM as unmapped (CH)
 
-    Caller ->> API: POST /resolve {alias_type, alias_value, insight_source_id, insight_tenant_id}
-    API ->> AL: SELECT person_id WHERE alias_type=? AND alias_value=? AND insight_tenant_id=? AND is_deleted=0
+    Caller ->> API: POST /resolve {value_type, value, insight_source_id, insight_tenant_id}
+    API ->> AL: SELECT person_id WHERE value_type=? AND value=? AND insight_tenant_id=? AND is_deleted=0
     alt Found (hot path ~90%)
         AL -->> API: person_id
         API -->> Caller: {person_id, confidence: 1.0, status: "resolved"}
     else Not found (cold path)
-        API ->> ME: evaluate(alias_type, alias_value, tenant)
+        API ->> ME: evaluate(value_type, value, tenant)
         ME -->> API: {person_id, confidence}
         alt confidence >= 1.0
             API ->> AL: INSERT alias (auto-link)
@@ -625,7 +625,7 @@ Alias observations from connectors. Each row represents one changed alias value 
 
 The macro reads from the connector's `fields_history` model (field-level change log from snapshots) and produces:
 - **UPSERT** rows when an identity-relevant field changes
-- **DELETE** rows (with empty `alias_value`) when the deactivation condition is met
+- **DELETE** rows (with empty `value`) when the deactivation condition is met
 
 Per-connector staging tables (e.g., `staging.bamboohr__identity_input`) are unified into a single `identity.identity_inputs` view via `union_by_tag('identity:input')`.
 
@@ -638,9 +638,9 @@ The models are incremental (`append` strategy): each run processes only `fields_
 | `insight_source_id` | `UUID` | Source system ID from connector config |
 | `insight_source_type` | `LowCardinality(String)` | Source type (e.g., `bamboohr`, `gitlab`, `zoom`) |
 | `source_account_id` | `String` | Raw account ID from the external system |
-| `alias_type` | `LowCardinality(String)` | `email`, `username`, `employee_id`, `display_name`, `platform_id` |
-| `alias_value` | `String` | The alias value as received from source |
-| `alias_field_name` | `String` | Fully-qualified source field: `bronze_{descriptor.name}.{table}.{field}[.json_path]` |
+| `value_type` | `LowCardinality(String)` | `id`, `email`, `username`, `employee_id`, `display_name`, `platform_id` |
+| `value` | `String` | The alias value as received from source |
+| `value_field_name` | `String` | Fully-qualified source field: `bronze_{descriptor.name}.{table}.{field}[.json_path]` |
 | `operation_type` | `LowCardinality(String)` | `UPSERT` or `DELETE` |
 | `effective_from` | `DateTime64(3, 'UTC')` | When this alias became effective (optional; `'1970-01-01'` if unknown) |
 | `effective_to` | `DateTime64(3, 'UTC')` | When this alias ceased (optional; `'1970-01-01'` if still active) |
@@ -649,7 +649,7 @@ The models are incremental (`append` strategy): each run processes only `fields_
 
 **PK**: `id`
 
-**ORDER BY**: `(insight_tenant_id, insight_source_id, alias_type, alias_value, _synced_at)`
+**ORDER BY**: `(insight_tenant_id, insight_source_id, value_type, value, _synced_at)`
 
 **Engine**: `MergeTree`
 
@@ -657,7 +657,7 @@ The models are incremental (`append` strategy): each run processes only `fields_
 
 **Example**:
 
-| insight_tenant_id | insight_source_id | insight_source_type | source_account_id | alias_type | alias_value | alias_field_name | operation_type |
+| insight_tenant_id | insight_source_id | insight_source_type | source_account_id | value_type | value | value_field_name | operation_type |
 |---|---|---|---|---|---|---|---|
 | `t-001` | `src-bamboo` | `bamboohr` | `E123` | `email` | `anna.ivanova@acme.com` | `bronze_bamboohr.employees.workEmail` | `UPSERT` |
 | `t-001` | `src-bamboo` | `bamboohr` | `E123` | `employee_id` | `E123` | `bronze_bamboohr.employees.id` | `UPSERT` |
@@ -670,16 +670,16 @@ The models are incremental (`append` strategy): each run processes only `fields_
 
 **ID**: `cpt-insightspec-ir-dbtable-aliases`
 
-Resolved alias-to-person mapping. Each row links one `(alias_type, alias_value)` from one source to one person.
+Resolved alias-to-person mapping. Each row links one `(value_type, value)` from one source to one person.
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | `UUID DEFAULT generateUUIDv7()` | PK |
 | `insight_tenant_id` | `UUID` | Tenant isolation |
 | `person_id` | `UUID` | Logical FK → `persons.person_id` |
-| `alias_type` | `LowCardinality(String)` | `email`, `username`, `employee_id`, `display_name`, `platform_id` |
-| `alias_value` | `String` | Normalized alias value |
-| `alias_field_name` | `String` | Fully-qualified source field path (from identity_inputs) |
+| `value_type` | `LowCardinality(String)` | `id`, `email`, `username`, `employee_id`, `display_name`, `platform_id` |
+| `value` | `String` | Normalized alias value |
+| `value_field_name` | `String` | Fully-qualified source field path (from identity_inputs) |
 | `insight_source_id` | `UUID` | Source system that provided this alias |
 | `insight_source_type` | `LowCardinality(String)` | Source type |
 | `source_account_id` | `String` | Raw account ID in the source system |
@@ -695,17 +695,17 @@ Resolved alias-to-person mapping. Each row links one `(alias_type, alias_value)`
 
 **PK**: `id`
 
-**ORDER BY**: `(insight_tenant_id, alias_type, alias_value, insight_source_id, id)`
+**ORDER BY**: `(insight_tenant_id, value_type, value, insight_source_id, id)`
 
 **Engine**: `ReplacingMergeTree(updated_at)`
 
 **Constraints**:
-- Logical uniqueness: one active alias per `(insight_tenant_id, alias_type, alias_value, insight_source_id)` at any time — enforced at application level since ClickHouse lacks unique constraints
+- Logical uniqueness: one active alias per `(insight_tenant_id, value_type, value, insight_source_id)` at any time — enforced at application level since ClickHouse lacks unique constraints
 - `is_deleted = 1` rows are excluded from resolution lookups
 
 **Example**:
 
-| insight_tenant_id | person_id | alias_type | alias_value | insight_source_type | confidence | is_active |
+| insight_tenant_id | person_id | value_type | value | insight_source_type | confidence | is_active |
 |---|---|---|---|---|---|---|
 | `t-001` | `p-1001` | `email` | `anna.ivanova@acme.com` | `bamboohr` | 1.0 | 1 |
 | `t-001` | `p-1001` | `employee_id` | `E123` | `bamboohr` | 1.0 | 1 |
@@ -717,7 +717,7 @@ Resolved alias-to-person mapping. Each row links one `(alias_type, alias_value)`
 
 **ID**: `cpt-insightspec-ir-dbtable-persons-mariadb`
 
-Field-level identity attribute history for persons, stored in MariaDB. Each row represents one observed field value for a person at a specific point in time — an SCD-style append-only observation table. Unlike `aliases` (resolved alias→person mapping in ClickHouse), `persons` captures the **history of field changes** that contribute to a person's identity: `email`, `display_name`, `platform_id`, `employee_id`, etc. This is the canonical CRUD-accessible person attribute store used by backend services.
+Identity-attribute observation history for persons, stored in MariaDB. Each row represents one observed value of one named attribute for one source-account at one moment in time — an SCD-style append-only log. Every connector emits a `value_type='id'` observation (value = `source_account_id`) in addition to its attribute observations, which makes `persons` the **authoritative source of truth** for the account→person binding (see ADR-0002). Attribute value types include `id` (binding anchor), `email`, `display_name`, `employee_id`, `platform_id`, and is extensible to any custom field (e.g., `functional_team`).
 
 **Database**: MariaDB, database `identity` — dedicated to identity-resolution-domain tables, reached via the service's `database_url` configuration. The service does not assume co-location with any other MariaDB database; any other service owning MariaDB tables configures its own connection independently. Each backend service owns and applies its own schema — see [ADR-0006](../../ingestion/specs/ADR/0006-service-owned-migrations.md).
 
@@ -727,41 +727,57 @@ Field-level identity attribute history for persons, stored in MariaDB. Each row 
 
 | Column | Type | Description |
 |---|---|---|
-| `id` | `BIGINT UNSIGNED AUTO_INCREMENT` | PK |
-| `alias_type` | `VARCHAR(50) NOT NULL` | Field kind — one of `email`, `display_name`, `platform_id`, `employee_id` (extensible) |
+| `id` | `BIGINT UNSIGNED AUTO_INCREMENT` | PK (row identifier for operator references) |
+| `value_type` | `VARCHAR(50) NOT NULL` | Attribute kind — one of `id`, `email`, `display_name`, `employee_id`, `platform_id` (extensible) |
 | `insight_source_type` | `VARCHAR(100) NOT NULL` | Source system: `bamboohr`, `zoom`, `cursor`, `claude_admin`, `gitlab`, etc. |
 | `insight_source_id` | `BINARY(16) NOT NULL` | Connector instance UUID (temporary: sipHash128 from Bronze string `source_id` until `sources` table exists — see REC-IR-04) |
 | `insight_tenant_id` | `BINARY(16) NOT NULL` | Tenant UUID (temporary: sipHash128 from Bronze string `tenant_id` until `tenants` table exists — see REC-IR-04) |
-| `alias_value` | `VARCHAR(512) COLLATE utf8mb4_bin NOT NULL` | Field value — email address, display name, platform ID, etc. `utf8mb4_bin` ensures case/diacritic-sensitive uniqueness at the UNIQUE key level |
-| `person_id` | `BINARY(16) NOT NULL` | Person UUID — stable, looked up via `account_person_map`, never re-derived from field values. See ADR-0002 |
-| `author_person_id` | `BINARY(16) NOT NULL` | Person UUID of who/what made this change (for initial seed: equals `person_id` — the record is self-authored by the synthetic person) |
+| `value_id` | `VARCHAR(320) COLLATE utf8mb4_bin NULL` | Value for `value_type IN ('id', 'email')`. Strict byte comparison; hot-path lookup target. Size 320 covers RFC 5321/5322 email maximum (64 local + `@` + 255 domain) |
+| `value_full_text` | `VARCHAR(512) COLLATE utf8mb4_unicode_ci NULL` | Value for `value_type='display_name'`. Case- and accent-insensitive collation for operator search; leaves room for future FULLTEXT index |
+| `value` | `TEXT NULL` | Catch-all value for any other `value_type` (e.g., `employee_id`, `functional_team`, custom attributes). Not indexed |
+| `value_effective` | `VARCHAR(512) GENERATED ALWAYS AS (COALESCE(value_id, value_full_text, LEFT(value, 512))) STORED` | Generated column coalescing the three value columns. Required for NULL-safe UNIQUE key on observations |
+| `person_id` | `BINARY(16) NOT NULL` | Person UUID (random UUIDv7). Stable; never re-derived from attribute values. See ADR-0002 |
+| `author_person_id` | `BINARY(16) NOT NULL` | Person UUID of who/what made this change. Sentinel `00000000-0000-0000-0000-000000000000` = auto-minted by seed; real operator UUIDs for future merge/split flows |
 | `reason` | `TEXT NOT NULL DEFAULT ''` | Optional change-reason comment (empty for initial seed) |
 | `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | When this record was inserted. MariaDB stores `TIMESTAMP` internally as UTC and converts to session timezone on read |
 
+**Hardcoded routing by `value_type`** (applied in seed + dbt macro):
+
+| `value_type` values | target column |
+|---|---|
+| `id`, `email` | `value_id` |
+| `display_name` | `value_full_text` |
+| anything else | `value` |
+
+Exactly one of `(value_id, value_full_text, value)` is populated per normal row; the other two are NULL. All-three-NULL is reserved for future "attribute unset at source" events (not emitted by the initial seed).
+
 **UUID representation**: all UUID columns are stored as `BINARY(16)` (SeaORM `.uuid()` default on MariaDB, matches `analytics-api` convention). Python clients must pass **`uuid.UUID.bytes`** (the 16-byte raw form) — passing the `uuid.UUID` object directly makes the driver fall back to `str(UUID)` (36 chars) which `BINARY(16)` silently truncates to ASCII, corrupting the column. For human-readable reads in SQL use `CAST(col AS UUID)` (MariaDB 10.7+) or build the textual form from `HEX(col)`. Note: MySQL 8's `BIN_TO_UUID()` is **not** available in MariaDB.
 
-**Primary key**: `id` (auto-increment integer — MariaDB convention for append-only observation history; stable row identifier for operator references).
+**Primary key**: `id` (auto-increment integer — MariaDB convention for append-only observation history).
 
 **Indexes**:
-- `idx_person_id (person_id)` — lookup all fields for a person
+- `idx_value_id (insight_tenant_id, value_type, value_id)` — hot-path reverse lookup: find person(s) by id / email. Full column indexed (320 × 4 bytes utf8mb4 = 1280 bytes, well under InnoDB's 3072-byte key budget)
+- `idx_value_full_text (insight_tenant_id, value_type, value_full_text)` — secondary lookup by display name. Full column indexed (512 × 4 bytes = 2048 bytes, still within budget). Collation `utf8mb4_unicode_ci` enables case/accent-insensitive search
+- `idx_person_id (person_id)` — list all attributes for a person
 - `idx_tenant_person (insight_tenant_id, person_id)` — tenant-scoped person lookup
-- `idx_alias_lookup (insight_tenant_id, alias_type, alias_value)` — reverse lookup: find person(s) by email / display name / platform id. With ASCII tenant/alias_type and `VARCHAR(512)` `alias_value`, the full column fits under InnoDB's index byte budget without a prefix length
-- `uq_person_observation (insight_tenant_id, person_id, insight_source_type, insight_source_id, alias_type, alias_value)` UNIQUE — enforces the natural observation key; combined with `INSERT IGNORE` in the seed, guarantees idempotent re-runs
 - `idx_source (insight_source_type, insight_source_id)` — filter by source system + instance
+- `uq_person_observation (insight_tenant_id, person_id, insight_source_type, insight_source_id, value_type, value_effective)` UNIQUE — enforces the natural observation key. The generated `value_effective` column is required because MariaDB treats `NULL` as distinct in UNIQUE keys; using `COALESCE` via the generated column gives us a non-NULL discriminator regardless of which of the three value columns is populated. Combined with `INSERT IGNORE` in the seed, guarantees idempotent re-runs
 
 ##### Semantics — append-only observation history (SCD-style)
 
-`persons` is **append-only**. A change to a person's attribute does **not** update an existing row; it inserts a new row with a later `created_at`. The "current" value of any field is the row with the latest `created_at` for that `(insight_tenant_id, person_id, alias_type)` triple (or, for multi-valued fields, the latest non-empty row per source).
+`persons` is **append-only**. A change to a person's attribute does **not** update an existing row; it inserts a new row with a later `created_at`. The "current" value of any field is the row with the latest `created_at` for that `(insight_tenant_id, person_id, value_type)` triple (or, for multi-valued fields, the latest non-empty row per source).
 
-Field-change example for a single person (`p-1001`):
+Field-change example for a single person (`p-1001`) — the populated value column depends on `value_type` per the hardcoded routing:
 
-| id | alias_type | alias_value | insight_source_type | created_at |
-|---|---|---|---|---|
-| 1 | `email` | `anna.ivanova@acme.com` | `bamboohr` | 2026-04-01 |
-| 5 | `display_name` | `Anna Ivanova` | `bamboohr` | 2026-04-01 |
-| 120 | `display_name` | `Anna Ivanova-Petrova` | `bamboohr` | 2026-07-15 |
+| id | value_type | value_id | value_full_text | value | insight_source_type | created_at |
+|---|---|---|---|---|---|---|
+| 1 | `id` | `bamboo-emp-1001` | NULL | NULL | `bamboohr` | 2026-04-01 |
+| 2 | `email` | `anna.ivanova@acme.com` | NULL | NULL | `bamboohr` | 2026-04-01 |
+| 5 | `display_name` | NULL | `Anna Ivanova` | NULL | `bamboohr` | 2026-04-01 |
+| 8 | `employee_id` | NULL | NULL | `CKSGP0042` | `bamboohr` | 2026-04-01 |
+| 120 | `display_name` | NULL | `Anna Ivanova-Petrova` | NULL | `bamboohr` | 2026-07-15 |
 
-Row 120 supersedes row 5 as the current `display_name` for person `p-1001` (latest by `created_at`); row 5 is retained as history.
+Row 120 supersedes row 5 as the current `display_name` for person `p-1001` (latest by `created_at`); row 5 is retained as history. Row 1 (the `value_type='id'` binding) is emitted automatically by the connector's dbt macro on every activity — on first sync it anchors the account→person binding; on subsequent syncs it is deduped by the UNIQUE key.
 
 ---
 
@@ -769,7 +785,7 @@ Row 120 supersedes row 5 as the current `display_name` for person `p-1001` (late
 
 **ID**: `cpt-insightspec-ir-dbtable-account-person-map`
 
-Stable binding `(tenant, source-instance, source-account) → person_id`. Written once per account at first observation; never updated, never re-derived. Guarantees `person_id` stability across seed re-runs, environment restores, and mutable-attribute (email, display name) changes at the source. Primary source of truth for "which person does this source-account belong to".
+**SCD2 materialized cache** of the source-account → `person_id` binding, derived deterministically from `persons` rows where `value_type='id'`. Never the source of truth; rebuilt from scratch at the end of every seed run (and by future operator flows). Exists purely for fast lookup and temporal "as of date T" queries — equivalent to a window-function scan over `persons.value_type='id'`, but O(1)–O(rows-in-tenant) instead of O(observations-in-tenant).
 
 **Database**: MariaDB, database `identity` (same as `persons`). Defined in the same SeaORM migration: `src/backend/services/identity/src/migration/m20260421_000001_persons.rs`.
 
@@ -780,25 +796,46 @@ Stable binding `(tenant, source-instance, source-account) → person_id`. Writte
 | `insight_tenant_id` | `BINARY(16) NOT NULL` | Tenant UUID |
 | `insight_source_type` | `VARCHAR(100) NOT NULL` | Source system: `bamboohr`, `zoom`, etc. |
 | `insight_source_id` | `BINARY(16) NOT NULL` | Connector instance UUID |
-| `source_account_id` | `VARCHAR(255) NOT NULL` | Source-native account identifier (employee id, platform id, email-as-id, etc.) |
-| `person_id` | `BINARY(16) NOT NULL` | Person UUID — random UUIDv7, minted at first observation |
-| `created_reason` | `VARCHAR(50) NOT NULL` | `initial-bootstrap` \| `new-account` \| `operator-merge` — how this binding came into existence |
-| `created_at` | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | When the mapping was created (UTC) |
+| `source_account_id` | `VARCHAR(320) NOT NULL` | Source-native account identifier (same type as `persons.value_id`, same domain) |
+| `person_id` | `BINARY(16) NOT NULL` | Person UUID (random UUIDv7); derived from `persons.person_id` of the opening observation |
+| `author_person_id` | `BINARY(16) NOT NULL` | Forwarded from the `persons` observation. Sentinel `00000000-0000-0000-0000-000000000000` = auto-minted by seed |
+| `reason` | `VARCHAR(50) NOT NULL` | `initial-bootstrap` \| `new-account` \| `operator-merge` \| ... — forwarded from the `persons` observation |
+| `valid_from` | `TIMESTAMP NOT NULL` | When this binding became current (= `created_at` of the opening `persons` observation) |
+| `valid_to` | `TIMESTAMP NULL` | When this binding ended (= next observation's `created_at`). `NULL` = currently active binding |
 
-**Primary key**: `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id)` — one binding per source-account per tenant. Insert-only: once a row exists for a PK, it is not rewritten by the seed.
+**Primary key**: `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id, valid_from)` — one row per historical binding period. An account with N historical bindings has N rows; the latest has `valid_to = NULL`.
 
 **Indexes**:
-- `idx_person_id (person_id)` — list all accounts for a person
+- `idx_current (insight_tenant_id, insight_source_type, insight_source_id, source_account_id, valid_to)` — fast "current binding" lookup via `WHERE valid_to IS NULL`
+- `idx_person_id (person_id)` — list all accounts currently bound to a person
 - `idx_tenant_person (insight_tenant_id, person_id)` — tenant-scoped person accounts
+- `idx_valid_from (insight_tenant_id, valid_from)` — "bindings changed in date range" queries for dashboards
 
 ##### Semantics
 
-- The `persons` table is **derived history** — observations keyed on `person_id`.
-- `account_person_map` is the **authoritative source of truth** — answers "what is the `person_id` for this source-account?"
-- The seed (and, in future, operator workflows / Bootstrap Pipeline) writes to both tables: the map supplies the `person_id`, the persons table records what the source said about that person at that moment.
-- Nothing in a person's observable attributes (email, name, …) feeds into `person_id`. An email rename is a new observation in `persons`, not a new `person_id`.
+- `persons` is the **source of truth**; `account_person_map` is **derived**. Drift is impossible by construction because rebuild re-derives every row from `persons`.
+- **"Current binding"**: `WHERE valid_to IS NULL`.
+- **"Binding as of date T"**: `WHERE valid_from <= T AND (valid_to > T OR valid_to IS NULL)` — one row per source-account, O(log N) range lookup.
+- **"Full history of an account"**: all rows with the account's PK tuple, ordered by `valid_from`.
+- **Rebuild** (at the end of every seed run + every future operator flow):
+  ```sql
+  TRUNCATE TABLE account_person_map;
+  INSERT INTO account_person_map (tenant, source_type, source_id, source_account_id,
+                                   person_id, author_person_id, reason, valid_from, valid_to)
+  SELECT
+      insight_tenant_id, insight_source_type, insight_source_id,
+      value_id AS source_account_id,
+      person_id, author_person_id, reason,
+      created_at AS valid_from,
+      LEAD(created_at) OVER (
+          PARTITION BY insight_tenant_id, insight_source_type, insight_source_id, value_id
+          ORDER BY created_at
+      ) AS valid_to
+  FROM persons WHERE value_type = 'id' AND value_id IS NOT NULL;
+  ```
+  Atomic (single transaction); the cache is briefly empty during the rebuild but no external reader observes partial state.
 
-See ADR-0002 for the full decision record (why mapping table, two seed modes, alternatives considered).
+See ADR-0002 for the full decision record (why a derived cache instead of a second authoritative table, alternatives considered).
 
 ---
 
@@ -809,7 +846,7 @@ See ADR-0002 for the full decision record (why mapping table, two seed modes, al
 | File | Role | Responsibilities |
 |---|---|---|
 | `seed-persons.sh` | Environment orchestrator (bash) | Resolve ClickHouse password from the `clickhouse-credentials` K8s secret (fallback to env); compute `MARIADB_URL` from local-cluster defaults (URL-encoded credentials); start `kubectl port-forward svc/insight-mariadb 3306:3306` if port 3306 is not open; `pip install pymysql` if missing; invoke the Python script. Does **not** apply DDL. |
-| `seed-persons-from-identity-input.py` | Pure data transform (Python) | HTTP-read `identity.identity_inputs` from ClickHouse (`FORMAT JSONEachRow`) with a bounded timeout; read existing `account_person_map`; assign `person_id` per account (lookup if known, random UUIDv7 otherwise); write new mappings; `INSERT IGNORE` observations into `persons`; report counts. |
+| `seed-persons-from-identity-input.py` | Pure data transform (Python) | HTTP-read `identity.identity_inputs` from ClickHouse (`FORMAT JSONEachRow`) with a bounded timeout; load known bindings (`value_type='id'` rows) + existing emails (`value_type='email'` rows) from `persons`; assign `person_id` per account via three-mode logic (known / initial-bootstrap / steady-state-new); `INSERT IGNORE` observations into `persons`; rebuild `account_person_map` from `persons` as SCD2. Reports counts for each mode and skip reason. |
 
 **Rationale for the split**:
 - Bash is the right tool for kubectl, port-forwards, and secret lookup. Python is the right tool for typed grouping, mapping lookup, UUID minting, and parameterised DB writes.
@@ -829,14 +866,27 @@ operate on the already-created table; they never issue `CREATE`,
 
 **Process** (data flow executed by the Python script):
 
-1. Read all rows from `identity.identity_inputs` (ClickHouse) where `operation_type = 'UPSERT'` and `alias_value` is non-empty.
+1. Read all rows from `identity.identity_inputs` (ClickHouse) where `operation_type = 'UPSERT'` and `value` is non-empty. Order by `_synced_at DESC` within each source-account so that the latest email observation is picked deterministically in step 5.
 2. Group observations by `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id)` — a "source account" = one user in one connector instance.
-3. Connect to MariaDB and load the existing `account_person_map`. Its emptiness determines the mode:
-   - **Initial bootstrap** — map is empty: source-accounts sharing a normalised email (`lower(trim())`) within a tenant get **one** `person_id` (random UUIDv7, minted once per unique email in this run). `created_reason='initial-bootstrap'`.
-   - **Steady-state** — map is non-empty: every unknown account gets its **own, isolated** `person_id` (random UUIDv7). Email-automerge is disabled. `created_reason='new-account'`. Merging into existing persons is deferred to the operator workflow (out of scope for this seed).
-4. Accounts without an email observation are skipped in either mode (email remains the sole identity anchor in the bootstrap flow).
-5. Insert new bindings into `account_person_map` via `INSERT IGNORE` (PK-scoped idempotency).
-6. For each source-account with a mapped `person_id`, write **all** its field observations (email, display_name, platform_id, employee_id) as separate rows in `persons` with that `person_id`, `author_person_id = person_id` (self-authored), `reason = ''`, `created_at = now()`. The write uses `INSERT IGNORE`; the `uq_person_observation` UNIQUE key on `(insight_tenant_id, person_id, insight_source_type, insight_source_id, alias_type, alias_value)` skips any row that already exists.
+3. Connect to MariaDB. Load known bindings: for each source-account key, find the latest `value_type='id'` observation in `persons` and capture its `person_id`. This becomes the **known-account** set.
+4. Load existing emails: run `SELECT insight_tenant_id, LOWER(TRIM(value_id)) FROM persons WHERE value_type='email' AND value_id IS NOT NULL AND value_id != ''` and collect into a `(tenant, normalized_email)` set. Mode is determined by the set:
+   - **Initial bootstrap** — set is empty (no emails observed for any tenant yet).
+   - **Steady-state** — set has at least one email; at least one prior seed/operator action populated `persons`.
+5. For each source-account in `identity_inputs`:
+   - **Known account** (present in step 3 set): reuse the mapped `person_id`. Observations go to `persons` via `INSERT IGNORE` (dedupe on UNIQUE key); no new binding.
+   - **Unknown account, no email observed**: skip. Email remains the sole identity anchor for bootstrap.
+   - **Unknown account, initial-bootstrap mode**: accounts sharing the same normalised email within a tenant get **one** `person_id` (random UUIDv7, minted once per unique email in this run). `reason='initial-bootstrap'`.
+   - **Unknown account, steady-state mode, email absent in step 4 set**: mint a new `person_id` (random UUIDv7). `reason='new-account'`. Within the same run, two new accounts sharing this new email still share one `person_id` (email-automerge within the run).
+   - **Unknown account, steady-state mode, email already present in step 4 set**: **skip the entire account**. Linking this new source-account to an existing person is the job of the Identity-Resolution flow (future PR). `reason='skip-email-exists'` in the skip counter log.
+6. Write observations to `persons` via `INSERT IGNORE`. Routing rules (hardcoded in the seed, mirrored by the dbt macro):
+   - `value_type IN ('id', 'email')` → `value_id = value`, others NULL
+   - `value_type = 'display_name'` → `value_full_text = value`, others NULL
+   - otherwise → `value = value`, others NULL
+
+   `author_person_id` is the all-zero sentinel `00000000-0000-0000-0000-000000000000` for auto-minted bindings; the `uq_person_observation` UNIQUE key (on `value_effective`) dedupes re-runs.
+7. **Rebuild `account_person_map`** from `persons.value_type='id'` observations via `TRUNCATE` + `INSERT ... SELECT ... LEAD()` (see the account_person_map Semantics block for the SQL). Atomic single transaction. Drift relative to `persons` is impossible by construction.
+
+**Re-run semantics**: idempotent on `persons` (UNIQUE key dedupe), bit-identical on `account_person_map` (deterministic rebuild from same `persons` state). Adding a new source between runs creates new accounts; steady-state mode decides each one (skip-existing-email or new-person).
 
 See [ADR-0002](ADR/0002-deterministic-person-id-for-seed.md) for the full decision record.
 
@@ -890,7 +940,7 @@ Configurable matching rules evaluated by the MatchingEngine.
 
 **ID**: `cpt-insightspec-ir-dbtable-unmapped`
 
-Observations that could not be resolved above the confidence threshold. Shared by identity-resolution domain (alias-level) and person domain (person-attribute-level) — differentiated by `alias_type` values. Pending operator review.
+Observations that could not be resolved above the confidence threshold. Shared by identity-resolution domain (alias-level) and person domain (person-attribute-level) — differentiated by `value_type` values. Pending operator review.
 
 | Column | Type | Description |
 |---|---|---|
@@ -899,8 +949,8 @@ Observations that could not be resolved above the confidence threshold. Shared b
 | `insight_source_id` | `UUID` | Source system ID |
 | `insight_source_type` | `LowCardinality(String)` | Source type |
 | `source_account_id` | `String` | Raw account ID from the source system |
-| `alias_type` | `LowCardinality(String)` | Alias type (identity: `email`, `username`, `employee_id`, `platform_id`; person-attribute: `display_name`, `role`, `location`, etc.) |
-| `alias_value` | `String` | Alias value |
+| `value_type` | `LowCardinality(String)` | Value type (identity: `id`, `email`, `username`, `employee_id`, `platform_id`; person-attribute: `display_name`, `role`, `location`, etc.) |
+| `value` | `String` | Alias value |
 | `status` | `LowCardinality(String)` | `pending`, `in_review`, `resolved`, `ignored`, `auto_created` |
 | `suggested_person_id` | `UUID` | Best-match person (zero UUID if none) |
 | `suggestion_confidence` | `Float32` | Confidence of the suggestion (0.0 if none) |
@@ -916,7 +966,7 @@ Observations that could not be resolved above the confidence threshold. Shared b
 
 **PK**: `id`
 
-**ORDER BY**: `(insight_tenant_id, status, alias_type, alias_value, id)`
+**ORDER BY**: `(insight_tenant_id, status, value_type, value, id)`
 
 **Engine**: `ReplacingMergeTree(updated_at)`
 
@@ -934,8 +984,8 @@ Alias-level conflicts — when the same alias value is claimed by multiple perso
 | `insight_tenant_id` | `UUID` | Tenant isolation |
 | `person_id_a` | `UUID` | First person claiming the alias |
 | `person_id_b` | `UUID` | Second person claiming the alias |
-| `alias_type` | `LowCardinality(String)` | Conflicting alias type |
-| `alias_value` | `String` | Conflicting alias value |
+| `value_type` | `LowCardinality(String)` | Conflicting alias type |
+| `value` | `String` | Conflicting alias value |
 | `insight_source_id_a` | `UUID` | Source instance providing person A's claim |
 | `insight_source_type_a` | `LowCardinality(String)` | Source type for person A's claim |
 | `insight_source_id_b` | `UUID` | Source instance providing person B's claim |
@@ -948,7 +998,7 @@ Alias-level conflicts — when the same alias value is claimed by multiple perso
 
 **PK**: `id`
 
-**ORDER BY**: `(insight_tenant_id, status, alias_type, alias_value, id)`
+**ORDER BY**: `(insight_tenant_id, status, value_type, value, id)`
 
 **Engine**: `ReplacingMergeTree(updated_at)`
 
@@ -998,9 +1048,9 @@ Archive table for GDPR-purged aliases. Structure mirrors `aliases` with addition
 | `id` | `UUID` | Original alias ID |
 | `insight_tenant_id` | `UUID` | Tenant isolation |
 | `person_id` | `UUID` | Person whose aliases were purged |
-| `alias_type` | `LowCardinality(String)` | Original alias type |
-| `alias_value` | `String` | Original alias value |
-| `alias_field_name` | `String` | Original source field path |
+| `value_type` | `LowCardinality(String)` | Original alias type |
+| `value` | `String` | Original alias value |
+| `value_field_name` | `String` | Original source field path |
 | `insight_source_id` | `UUID` | Original source system ID |
 | `insight_source_type` | `LowCardinality(String)` | Original source type |
 | `purged_at` | `DateTime64(3, 'UTC')` | When the purge was executed |
@@ -1026,7 +1076,7 @@ Archive table for GDPR-purged aliases. Structure mirrors `aliases` with addition
 This is an **alternative implementation** of identity grouping — runs entirely in ClickHouse on `(token, rid)` pairs. The primary architecture uses BootstrapJob + MatchingEngine for incremental resolution; the min-propagation algorithm may be used for bulk initial grouping or as a verification tool to detect grouping inconsistencies.
 
 **Input**: table of `(token, rid)` pairs where:
-- `token` — a value identifying a person (username, email, work_email, etc.), mapped from `alias_value` in `identity_inputs`
+- `token` — a value identifying a person (username, email, work_email, etc.), mapped from `value` in `identity_inputs`
 - `rid` = `cityHash64(insight_source_type, source_account_id)` — deterministic hash per source account
 
 **Algorithm**:
@@ -1048,9 +1098,9 @@ Matching is always on **full token values** — no substring matching.
 
 **Blacklist**: generic tokens (`admin`, `test`, `bot`, `root`) and usernames ≤ 3 characters are excluded.
 
-**Data sources** (token fields derived from `identity_inputs.alias_type` / `alias_value`):
+**Data sources** (token fields derived from `identity_inputs.value_type` / `value`):
 
-| Source (`insight_source_type`) | Token fields (`alias_type`) | Notes |
+| Source (`insight_source_type`) | Token fields (`value_type`) | Notes |
 |---|---|---|
 | `git` | `username`, `email` | Lowercased |
 | `zulip` | `display_name`, `email` | |
@@ -1068,15 +1118,23 @@ Min-propagation and the BootstrapJob are **complementary**: min-propagation is a
 
 The MatchingEngine (`cpt-insightspec-ir-component-matching-engine`) evaluates rules in three phases, stored in the `match_rules` table. Rules are ordered by `sort_order` within each phase.
 
-**Alias type vocabulary** (stored in `aliases.alias_type` and `identity_inputs.alias_type`):
+**Value type vocabulary** (stored in `aliases.value_type` and `identity_inputs.value_type`). The `value_type` field is a free-form string, not an enum — the canonical list below is extensible, and connectors may emit any custom value-type on top.
 
-| `alias_type` | Description | Normalization |
+**Canonical** (recognised throughout this domain and routed to indexed columns in `persons`):
+
+| `value_type` | Description | Normalization |
 |---|---|---|
+| `id` | Canonical binding observation — value equals `source_account_id`. Emitted by every connector per ADR-0002. | `trim()` |
 | `email` | Email address | `lower(trim())`, remove plus-tags, domain alias expansion |
 | `username` | Platform username / login | `lower(trim())` |
-| `employee_id` | HR system employee identifier | `trim()` |
 | `display_name` | Human-readable full name | `trim()` |
-| `platform_id` | Platform-specific numeric/opaque ID | `trim()` |
+
+**Known custom** (examples; connectors may define their own and the list is open-ended — all such values land in `persons.value` TEXT catch-all):
+
+| `value_type` | Description | Normalization |
+|---|---|---|
+| `employee_id` | HR-system business identifier (e.g., BambooHR `CKSGP0002`) distinct from the connector's internal account id | `trim()` |
+| `platform_id` | Platform-specific opaque identifier where distinct from `source_account_id`. If equal to `source_account_id`, use `id` instead. | `trim()` |
 
 **Phase B1 — Deterministic (MVP, auto-link threshold = 1.0)**:
 
@@ -1169,8 +1227,8 @@ A ClickHouse Dictionary can be created from the `aliases` table for sub-millisec
   <structure>
     <key>
       <attribute><name>insight_tenant_id</name><type>UUID</type></attribute>
-      <attribute><name>alias_type</name><type>String</type></attribute>
-      <attribute><name>alias_value</name><type>String</type></attribute>
+      <attribute><name>value_type</name><type>String</type></attribute>
+      <attribute><name>value</name><type>String</type></attribute>
     </key>
     <attribute><name>person_id</name><type>UUID</type><null_value>00000000-0000-0000-0000-000000000000</null_value></attribute>
   </structure>
@@ -1195,8 +1253,8 @@ SELECT c.*, a.person_id
 FROM silver.class_commits c
 LEFT JOIN aliases a
   ON a.insight_tenant_id = c.insight_tenant_id
-  AND a.alias_type = 'email'
-  AND a.alias_value = c.author_email
+  AND a.value_type = 'email'
+  AND a.value = c.author_email
   AND a.is_active = 1
   AND a.is_deleted = 0
 ```
@@ -1213,7 +1271,7 @@ The Dictionary approach trades a 30-60s cache lag for faster lookup in high-thro
 
 **Step 1 — dbt `identity_input_from_history` generates rows from `fields_history`**:
 
-| `insight_source_type` | `source_account_id` | `alias_type` | `alias_value` | `alias_field_name` |
+| `insight_source_type` | `source_account_id` | `value_type` | `value` | `value_field_name` |
 |---|---|---|---|---|
 | `bamboohr` | `E123` | `employee_id` | `E123` | `bronze_bamboohr.employees.id` |
 | `bamboohr` | `E123` | `email` | `anna.ivanova@acme.com` | `bronze_bamboohr.employees.workEmail` |
@@ -1261,7 +1319,7 @@ This walkthrough demonstrates the min-propagation algorithm (§4.1) as a verific
 
 **Token extraction from `identity_inputs`**:
 
-| `insight_source_type` | `source_account_id` | `alias_type` | `alias_value` (token) |
+| `insight_source_type` | `source_account_id` | `value_type` | `value` (token) |
 |---|---|---|---|
 | `bamboohr` | `b1` | `display_name` | `alexei vavilov` |
 | `bamboohr` | `b1` | `email` | `alexei.vavilov@alemira.com` |
@@ -1324,7 +1382,7 @@ This walkthrough demonstrates the min-propagation algorithm (§4.1) as a verific
 
 **Capacity planning**:
 - `identity_inputs`: grows linearly with connector syncs. Each sync produces O(changed_accounts * aliases_per_account) rows. TTL-based expiry recommended after processing.
-- `aliases`: grows with total unique (alias_type, alias_value, source) combinations. Expected < 1M rows for 10K persons across 10 sources.
+- `aliases`: grows with total unique (value_type, value, source) combinations. Expected < 1M rows for 10K persons across 10 sources.
 - `merge_audits`: grows with operator activity. Low volume, no TTL needed.
 
 **Cross-domain references**:
@@ -1344,7 +1402,7 @@ Merge/split operations require moving aliases between persons atomically with a 
 - Lightweight coordination service (e.g., Redis lock) to serialize merge/split per person_id
 - If atomicity proves insufficient, consider introducing MariaDB for `merge_audits` only, with ClickHouse for read-path
 
-### REC-IR-02: identity_inputs incremental watermark (Phase 2)
+### REC-IR-02: Incremental watermark for identity inputs (Phase 2)
 
 BootstrapJob tracks "last run" position to process only new `identity_inputs` rows. Recommended mechanism: dbt incremental model with `_synced_at` as the cursor column, using ClickHouse `ReplacingMergeTree` to ensure idempotent re-processing. Store the high-watermark in a dedicated ClickHouse table (`bootstrap_watermarks`) keyed by `(insight_tenant_id, job_name)`, updated atomically at end of each successful run.
 
@@ -1352,9 +1410,9 @@ BootstrapJob tracks "last run" position to process only new `identity_inputs` ro
 
 **Decision**: Use a single shared `unmapped` table (owned by IR domain) for both alias-level and person-attribute-level unmapped observations. See [ADR-0001: Shared unmapped table](../../person/specs/ADR/0001-shared-unmapped-table.md) (`cpt-ir-adr-shared-unmapped`) for full rationale.
 
-Reason: identical structure (both carry `insight_tenant_id`, `insight_source_id`, `insight_source_type`, `source_account_id`, `alias_type`, `alias_value`) and common data origin (`identity_inputs`). Differentiation by `alias_type` values is sufficient — identity alias types (`email`, `username`, `employee_id`, `platform_id`) vs person-attribute types (`display_name`, `role`, `location`, etc.). No separate `person_unmapped` table needed.
+Reason: identical structure (both carry `insight_tenant_id`, `insight_source_id`, `insight_source_type`, `source_account_id`, `value_type`, `value`) and common data origin (`identity_inputs`). Differentiation by `value_type` values is sufficient — identity value types (`id`, `email`, `username`, `employee_id`, `platform_id`) vs person-attribute types (`display_name`, `role`, `location`, etc.). No separate `person_unmapped` table needed.
 
-### REC-IR-04: Temporary `insight_tenant_id` / `insight_source_id` derivation via sipHash128 (Phase 1)
+### REC-IR-04: Temporary tenant and source ID derivation via sipHash128 (Phase 1)
 
 Phase 1 seed and connector models derive `insight_tenant_id` (UUID) and `insight_source_id` (UUID) from Bronze string `tenant_id` / `source_id` using `toUUID(UUIDNumToString(sipHash128(coalesce(<col>, ''))))`. This is a **temporary** deterministic hash that produces a stable UUID from the raw identifier.
 

@@ -75,13 +75,13 @@ Insight connects to 10+ external platforms (GitLab, GitHub, Jira, YouTrack, Bamb
 
 | Term | Definition |
 |---|---|
-| Alias | An `(alias_type, alias_value)` pair identifying a person in a specific source system (e.g., `email:anna@acme.com`) |
+| Alias | An `(value_type, value)` pair identifying a person in a specific source system (e.g., `email:anna@acme.com`) |
 | Alias type | Category of identity signal: `email`, `username`, `employee_id`, `display_name`, `platform_id` |
 | Bootstrap input | A row in `identity_inputs` representing one changed alias observation from one connector |
 | Confidence score | Numeric value (0.0–1.0) representing the MatchingEngine's certainty that an alias belongs to a person |
 | Auto-link | Automatic creation of an alias mapping when confidence >= 1.0 |
 | Unmapped alias | An alias that could not be resolved above the confidence threshold; queued for operator review |
-| Alias conflict | When the same `(alias_type, alias_value)` is claimed by two different persons |
+| Alias conflict | When the same `(value_type, value)` is claimed by two different persons |
 | Merge | Combining two person alias sets under a single `person_id` |
 | Split | Reversing a merge by restoring alias mappings from an audit snapshot |
 | Hot path | Direct alias lookup in `aliases` table (~90% of resolutions) |
@@ -190,7 +190,7 @@ The system **MUST** create initial alias records in the `aliases` table from HR 
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-resolve-alias`
 
-The system **MUST** resolve an `(alias_type, alias_value, insight_tenant_id)` tuple to a `person_id` by looking up active, non-deleted rows in the `aliases` table. If found, it **MUST** return the `person_id` and confidence. If not found, it **MUST** return a null `person_id` with status `unmapped`.
+The system **MUST** resolve an `(value_type, value, insight_tenant_id)` tuple to a `person_id` by looking up active, non-deleted rows in the `aliases` table. If found, it **MUST** return the `person_id` and confidence. If not found, it **MUST** return a null `person_id` with status `unmapped`.
 
 **Rationale**: This is the core capability — every downstream analytics query depends on resolving aliases to persons.
 
@@ -220,9 +220,9 @@ The system **MUST** isolate alias data by `insight_tenant_id`. A resolution requ
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-persons-history`
 
-The system **MUST** maintain a `persons` table in MariaDB that stores the history of identity field changes per person in an append-only SCD-style log. Each row represents one observed field value (`alias_type`, `alias_value`) from one source (`insight_source_type`, `insight_source_id`) assigned to a person (`person_id`) at a specific time (`created_at`). Updating a field **MUST** insert a new row rather than mutate an existing one; the current value is the row with the latest `created_at` for the `(insight_tenant_id, person_id, alias_type)` triple.
+The system **MUST** maintain a `persons` table in MariaDB that stores the history of identity field changes per person in an append-only SCD-style log. Each row represents one observed field value (`value_type`, `value`) from one source (`insight_source_type`, `insight_source_id`) assigned to a person (`person_id`) at a specific time (`created_at`). Updating a field **MUST** insert a new row rather than mutate an existing one; the current value is the row with the latest `created_at` for the `(insight_tenant_id, person_id, value_type)` triple.
 
-**Required columns**: `id`, `alias_type`, `insight_source_type`, `insight_source_id`, `insight_tenant_id`, `alias_value`, `person_id`, `author_person_id`, `reason`, `created_at`.
+**Required columns**: `id`, `value_type`, `insight_source_type`, `insight_source_id`, `insight_tenant_id`, `value`, `person_id`, `author_person_id`, `reason`, `created_at`.
 
 **Rationale**: Downstream backend services (Analytics API, Identity Resolution service) need a CRUD-accessible, temporal view of person attributes from heterogeneous sources — ClickHouse is optimised for analytical reads, not operator-driven edits. MariaDB with row-level history supports conflict-resolution UX, audit trails, and operator-driven corrections.
 
@@ -251,7 +251,7 @@ Schema of `persons`, UNIQUE-key structure, deterministic key derivation, and scr
 
 - [x] `p1` - **ID**: `cpt-ir-fr-accept-bootstrap-inputs`
 
-The system **MUST** accept alias observation records into the `identity_inputs` table. Each record **MUST** include: `insight_tenant_id`, `insight_source_id`, `insight_source_type`, `source_account_id`, `alias_type`, `alias_value`, `alias_field_name`, `operation_type` (UPSERT or DELETE).
+The system **MUST** accept alias observation records into the `identity_inputs` table. Each record **MUST** include: `insight_tenant_id`, `insight_source_id`, `insight_source_type`, `source_account_id`, `value_type`, `value`, `value_field_name`, `operation_type` (UPSERT or DELETE).
 
 **Rationale**: Connectors need a uniform write target for identity signals. The `identity_inputs` table decouples connector sync from alias resolution timing.
 
@@ -281,7 +281,7 @@ The BootstrapJob **MUST** normalize alias values before matching: `email` and `u
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-create-alias-exact`
 
-When the BootstrapJob finds no existing alias for a normalized `(alias_type, alias_value, insight_tenant_id)` and the MatchingEngine returns confidence >= 1.0, the system **MUST** auto-create an alias record in the `aliases` table linking to the matched `person_id`.
+When the BootstrapJob finds no existing alias for a normalized `(value_type, value, insight_tenant_id)` and the MatchingEngine returns confidence >= 1.0, the system **MUST** auto-create an alias record in the `aliases` table linking to the matched `person_id`.
 
 **Rationale**: High-confidence matches (exact email, exact employee ID) should be linked automatically without operator intervention to achieve the >= 80% auto-resolution goal.
 
@@ -301,7 +301,7 @@ When the MatchingEngine returns confidence < 1.0 for an alias, the system **MUST
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-track-observations`
 
-When an alias already exists in the `aliases` table for the same `(alias_type, alias_value, insight_source_id, insight_tenant_id)`, the BootstrapJob **MUST** update `last_observed_at` to the current timestamp. It **SHOULD** update `source_account_id` if changed.
+When an alias already exists in the `aliases` table for the same `(value_type, value, insight_source_id, insight_tenant_id)`, the BootstrapJob **MUST** update `last_observed_at` to the current timestamp. It **SHOULD** update `source_account_id` if changed.
 
 **Rationale**: Tracking when aliases were last confirmed helps identify stale mappings and provides audit context.
 
@@ -311,7 +311,7 @@ When an alias already exists in the `aliases` table for the same `(alias_type, a
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-bootstrap-idempotent`
 
-Re-running the BootstrapJob on the same `identity_inputs` data **MUST NOT** create duplicate alias records. The system **MUST** deduplicate on the natural key `(insight_tenant_id, alias_type, alias_value, insight_source_id)`.
+Re-running the BootstrapJob on the same `identity_inputs` data **MUST NOT** create duplicate alias records. The system **MUST** deduplicate on the natural key `(insight_tenant_id, value_type, value, insight_source_id)`.
 
 **Rationale**: Connector retries and Argo Workflow restarts must be safe. Duplicate aliases would corrupt resolution results and inflate metrics.
 
@@ -363,7 +363,7 @@ The system **MUST** allow operators to: (a) list unmapped aliases filtered by st
 
 - [ ] `p2` - **ID**: `cpt-ir-fr-alias-conflict-detection`
 
-When the BootstrapJob encounters a new alias observation that matches an alias already owned by a different person, the system **MUST** create a conflict record in the `conflicts` table with both `person_id_a`, `person_id_b`, the conflicting `alias_type`/`alias_value`, and source IDs.
+When the BootstrapJob encounters a new alias observation that matches an alias already owned by a different person, the system **MUST** create a conflict record in the `conflicts` table with both `person_id_a`, `person_id_b`, the conflicting `value_type`/`value`, and source IDs.
 
 **Rationale**: The same email or username claimed by two different persons indicates a data quality issue that requires operator attention.
 
@@ -383,7 +383,7 @@ The system **MUST** allow operators to: (a) add an alias to a person manually, (
 
 - [ ] `p2` - **ID**: `cpt-ir-fr-auto-resolve-unmapped`
 
-When the BootstrapJob creates a new alias, the system **SHOULD** check the `unmapped` table for pending entries matching the same `(alias_type, alias_value, insight_tenant_id)` and auto-resolve them to the newly linked person.
+When the BootstrapJob creates a new alias, the system **SHOULD** check the `unmapped` table for pending entries matching the same `(value_type, value, insight_tenant_id)` and auto-resolve them to the newly linked person.
 
 **Rationale**: As more connectors sync, previously unmapped aliases may become resolvable. Auto-resolution reduces operator queue size.
 
@@ -549,7 +549,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 **Stability**: stable
 
-**Description**: Optional read-only interface for analytical queries. Keyed by `(insight_tenant_id, alias_type, alias_value)`, returns `person_id`. Reload TTL 30-60s. Used by dbt models and dashboards for Silver step 2 enrichment.
+**Description**: Optional read-only interface for analytical queries. Keyed by `(insight_tenant_id, value_type, value)`, returns `person_id`. Reload TTL 30-60s. Used by dbt models and dashboards for Silver step 2 enrichment.
 
 **Breaking Change Policy**: Dictionary key structure changes require downstream dbt model updates.
 
@@ -563,7 +563,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 **Protocol/Format**: ClickHouse INSERT (native protocol or HTTP interface)
 
-**Description**: Connectors **MUST** write alias observations to the `identity_inputs` table with all required fields (`insight_tenant_id`, `insight_source_id`, `insight_source_type`, `source_account_id`, `alias_type`, `alias_value`, `alias_field_name`, `operation_type`). The `alias_field_name` **MUST** be fully-qualified: `bronze_{descriptor.name}.{table}.{field}[.json_path]`.
+**Description**: Connectors **MUST** write alias observations to the `identity_inputs` table with all required fields (`insight_tenant_id`, `insight_source_id`, `insight_source_type`, `source_account_id`, `value_type`, `value`, `value_field_name`, `operation_type`). The `value_field_name` **MUST** be fully-qualified: `bronze_{descriptor.name}.{table}.{field}[.json_path]`.
 
 **Compatibility**: Additive columns are backward-compatible. Removing or renaming required columns is a breaking change.
 
@@ -596,8 +596,8 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 **Main Flow**:
 1. BootstrapJob reads `identity_inputs` rows where `_synced_at > last_watermark`
-2. For each row, normalize `alias_value` (lowercase/trim for email/username)
-3. Look up existing alias in `aliases` for `(tenant, alias_type, normalized_value)`
+2. For each row, normalize `value` (lowercase/trim for email/username)
+3. Look up existing alias in `aliases` for `(tenant, value_type, normalized_value)`
 4. If alias exists for same person: update `last_observed_at`
 5. If alias does not exist: invoke MatchingEngine with the alias
 6. If confidence >= 1.0: create alias in `aliases` table, auto-resolve matching unmapped entries
@@ -626,7 +626,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 - Alias exists in `aliases` table with `is_active = 1` and `is_deleted = 0`
 
 **Main Flow**:
-1. Caller sends `POST /resolve` with `alias_type`, `alias_value`, `insight_source_id`, `insight_tenant_id`
+1. Caller sends `POST /resolve` with `value_type`, `value`, `insight_source_id`, `insight_tenant_id`
 2. System queries `aliases` table for active, non-deleted match
 3. System returns `{person_id, confidence: 1.0, status: "resolved"}`
 
@@ -751,7 +751,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 ## 11. Assumptions
 
 - Person records are created by the person domain (dbt seed in Phase 1, API in later phases) before identity resolution links aliases to them. Identity resolution does not create persons.
-- Connectors conform to the `identity_inputs` write contract and provide accurate `alias_field_name` values.
+- Connectors conform to the `identity_inputs` write contract and provide accurate `value_field_name` values.
 - ClickHouse 24.x+ is available in all deployment environments with `generateUUIDv7()` support.
 - The five alias types (`email`, `username`, `employee_id`, `display_name`, `platform_id`) cover all current connector identity signals. New types can be added as configuration without schema changes.
 - HR source data (BambooHR, Workday) provides the most reliable identity anchors for initial seeding.

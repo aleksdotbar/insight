@@ -415,7 +415,7 @@ The system **MUST** return a single person record (GET /persons/:id) in < 50 ms 
 
 **Protocol/Format**: ClickHouse SELECT
 
-**Description**: The Person domain reads person-attribute observations from `identity_inputs` by filtering on `alias_type` values that correspond to person attributes (`display_name`, `role`, `location`, `email`, `username`). The table schema is owned by the IR domain.
+**Description**: The Person domain reads person-attribute observations from `identity_inputs` by filtering on `value_type` values that correspond to person attributes (`display_name`, `role`, `location`, `email`, `username`). The table schema is owned by the IR domain.
 
 **Compatibility**: The Person domain depends on `identity_inputs` schema stability. Column additions are backward-compatible; column removals or renames require coordination with IR domain.
 
@@ -434,7 +434,7 @@ The system **MUST** return a single person record (GET /persons/:id) in < 50 ms 
 - HR connector has synced and written person-attribute observations to `identity_inputs`
 
 **Main Flow**:
-1. GoldenRecordBuilder reads new person-attribute observations from `identity_inputs` (filtered by person-attribute `alias_type` values)
+1. GoldenRecordBuilder reads new person-attribute observations from `identity_inputs` (filtered by person-attribute `value_type` values)
 2. For each person with changes: compare incoming attributes against current `persons` row
 3. Apply source priority per attribute; select highest-priority non-empty value
 4. Write golden record fields to `persons` with corresponding `*_source` values

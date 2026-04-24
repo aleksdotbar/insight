@@ -1,7 +1,7 @@
 -- Phase 1 (Initial Seed): Cursor members → identity.identity_inputs
 -- One-time seed. Writes raw alias observations from Cursor Bronze data.
 -- Raw values preserved — normalization applied at read time by downstream consumers.
--- Idempotent: skips rows that already exist (by source + alias_type + alias_value + account).
+-- Idempotent: skips rows that already exist (by source + value_type + value + account).
 -- Source: docs/domain/identity-resolution/specs/DECOMPOSITION.md §2.1
 --
 -- Run: dbt run --select seed_identity_input_from_cursor
@@ -19,7 +19,9 @@
     tags=['identity:seed', 'identity', 'identity:input']
 ) }}
 
--- Each cursor member emits up to 3 observation rows: email, platform_id, display_name.
+-- Each cursor member emits up to 3 observation rows: email, id, display_name.
+-- `id` carries source_account_id as the ADR-0002 canonical binding observation
+-- (replaces the former `platform_id`, which was always equal to source_account_id).
 -- Column set matches identity_input_from_history macro output.
 -- TEMPORARY: insight_tenant_id derived via sipHash128 until tenants table exists.
 
@@ -39,9 +41,9 @@ observations AS (
         toUUID('00000000-0000-0000-0000-000000000000')              AS insight_source_id,
         'cursor'                                                    AS insight_source_type,
         source_account_id,
-        'email'                                                     AS alias_type,
-        email                                                       AS alias_value,
-        'bronze_cursor.cursor_members.email'                        AS alias_field_name,
+        'email'                                                     AS value_type,
+        email                                                       AS value,
+        'bronze_cursor.cursor_members.email'                        AS value_field_name,
         'UPSERT'                                                    AS operation_type,
         now64(3)                                                    AS _synced_at
     FROM source
@@ -49,13 +51,13 @@ observations AS (
 
     UNION ALL
 
-    -- platform_id (cursor user ID)
+    -- id (binding observation per ADR-0002; value = source_account_id)
     SELECT
         toUUID(UUIDNumToString(sipHash128(coalesce(tenant_id, '')))),
         toUUID('00000000-0000-0000-0000-000000000000'),
         'cursor',
         source_account_id,
-        'platform_id',
+        'id',
         source_account_id,
         'bronze_cursor.cursor_members.id',
         'UPSERT',
@@ -83,8 +85,8 @@ observations AS (
 SELECT o.* FROM observations o
 {% if is_incremental() %}
 LEFT ANTI JOIN {{ this }} existing
-    ON  o.alias_type          = existing.alias_type
-    AND o.alias_value         = existing.alias_value
+    ON  o.value_type          = existing.value_type
+    AND o.value               = existing.value
     AND o.source_account_id   = existing.source_account_id
     AND existing.insight_source_type = 'cursor'
     AND existing.insight_tenant_id = o.insight_tenant_id
