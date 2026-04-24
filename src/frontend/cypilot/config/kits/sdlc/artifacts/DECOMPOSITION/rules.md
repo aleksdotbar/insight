@@ -3,15 +3,14 @@
 **Artifact**: DECOMPOSITION
 **Kit**: sdlc
 
-**Dependencies**:
-- `{decomposition_template}` — structural reference
-- `{decomposition_checklist}` — semantic quality criteria
-- `{decomposition_example}` — reference implementation
+**Dependencies** (lazy-loaded):
+- `config/kits/sdlc/artifacts/DECOMPOSITION/template.md` — structural reference (load WHEN validating structure)
+- `config/kits/sdlc/artifacts/DECOMPOSITION/checklist.md` — decomposition quality criteria (load WHEN checking quality)
+- `config/kits/sdlc/artifacts/DECOMPOSITION/examples/example.md` — reference implementation (load WHEN needing reference)
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-   - [Load Dependencies](#load-dependencies)
 2. [Requirements](#requirements)
    - [Structural](#structural)
    - [Decomposition Quality](#decomposition-quality)
@@ -45,16 +44,9 @@
 
 ## Prerequisites
 
-### Load Dependencies
-
-- [ ] Load `{decomposition_template}` for structure
-- [ ] Load `{decomposition_checklist}` for decomposition quality guidance
-- [ ] Load `{decomposition_example}` for reference style
-- [ ] Read DESIGN to identify elements to decompose
-- [ ] Read PRD to identify requirements to cover
-- [ ] Read `{cypilot_path}/config/artifacts.toml` to determine artifact paths
-- [ ] Load `{constraints}` for kit-level constraints
-- [ ] Load `{cypilot_path}/.core/architecture/specs/traceability.md` for ID formats
+- Read DESIGN to identify elements to decompose
+- Read PRD to identify requirements to cover
+- Read `{cypilot_path}/config/artifacts.toml` to determine artifact paths
 
 ---
 
@@ -62,7 +54,9 @@
 
 ### Structural
 
-- [ ] DECOMPOSITION follows `{decomposition_template}` structure
+**Load on demand**: `config/kits/sdlc/artifacts/DECOMPOSITION/template.md` — WHEN validating structure
+
+- [ ] DECOMPOSITION follows `config/kits/sdlc/artifacts/DECOMPOSITION/template.md` structure
 - [ ] All required sections present and non-empty
 - [ ] Each feature has unique ID: `cpt-{hierarchy-prefix}-feature-{slug}`
 - [ ] Each feature has priority marker (`p1`-`p9`)
@@ -72,7 +66,7 @@
 
 ### Decomposition Quality
 
-**Reference**: `{decomposition_checklist}` for detailed criteria based on IEEE 1016 and ISO 21511
+**Load on demand**: `config/kits/sdlc/artifacts/DECOMPOSITION/checklist.md` — WHEN checking decomposition quality
 
 **Coverage (100% Rule)**:
 - [ ] ALL components from DESIGN are assigned to at least one feature
@@ -118,7 +112,11 @@
 
 ### Constraints
 
-- [ ] ALWAYS open and follow `{constraints}` (kit root)
+**Load on demand**:
+- `config/kits/sdlc/constraints.toml` — WHEN validating cross-references
+- `{cypilot_path}/.core/architecture/specs/traceability.md` — WHEN checking ID formats
+
+- [ ] ALWAYS open and follow `config/kits/sdlc/constraints.toml` (kit root)
 - [ ] Treat `constraints.toml` as primary validator for:
   - where IDs are defined
   - where IDs are referenced
@@ -139,13 +137,13 @@
 
 ### Phase 1: Setup
 
-- [ ] Load `{decomposition_template}` for structure
-- [ ] Load `{decomposition_checklist}` for decomposition quality guidance
-- [ ] Load `{decomposition_example}` for reference style
 - [ ] Read DESIGN to identify elements to decompose
 - [ ] Read PRD to identify requirements to cover
+- [ ] Read `{cypilot_path}/config/artifacts.toml` to determine artifact paths
 
 ### Phase 2: Content Creation
+
+**Load on demand**: `config/kits/sdlc/artifacts/DECOMPOSITION/template.md` — WHEN generating artifact structure
 
 **Decomposition Strategy**:
 1. Identify all components, sequences, data entities from DESIGN
@@ -164,8 +162,10 @@
 
 ### Phase 4: Quality Check
 
-- [ ] Compare output to `{decomposition_example}`
-- [ ] Self-review against `{decomposition_checklist}` COV, EXC, ATTR, TRC, DEP sections
+**Load on demand**: `config/kits/sdlc/artifacts/DECOMPOSITION/examples/example.md` — WHEN comparing output
+
+- [ ] Compare output to `config/kits/sdlc/artifacts/DECOMPOSITION/examples/example.md`
+- [ ] Self-review against `config/kits/sdlc/artifacts/DECOMPOSITION/checklist.md` COV, EXC, ATTR, TRC, DEP sections
 - [ ] Verify 100% design element coverage
 - [ ] Verify no scope overlaps between features
 - [ ] Verify dependency graph is valid DAG
@@ -213,7 +213,9 @@
 
 ### Phase 2: Decomposition Quality Validation (Checklist-based)
 
-Apply `{decomposition_checklist}` systematically:
+**Load on demand**: `config/kits/sdlc/artifacts/DECOMPOSITION/checklist.md` — required for this phase
+
+Apply `config/kits/sdlc/artifacts/DECOMPOSITION/checklist.md` systematically:
 1. **COV (Coverage)**: Verify 100% design element coverage
 2. **EXC (Exclusivity)**: Verify no scope overlaps
 3. **ATTR (Attributes)**: Verify each feature has all required attributes

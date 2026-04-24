@@ -279,6 +279,14 @@ Workflow / instruction Markdown file with TOC requirements:
 {cpt_cmd} --json validate-toc {PATH}
 ```
 
+Language content check (run after writing any `.md` artifact when `[validation] allowed_content_languages` is configured in `.cypilot-workspace.toml`):
+
+```bash
+{cpt_cmd} --json check-language {PATH}
+```
+
+If `check-language` returns violations (`LANG001`): fix flagged lines — rewrite non-English content in the allowed language(s) — then re-run until `PASS`. Language violations are errors, not warnings; STRICT mode requires `PASS` before Phase 6.
+
 Rules:
 - execute the deterministic validator BEFORE any semantic review
 - choose the target-applicable deterministic validator command(s) for the current output and rules (for example `{cpt_cmd} --json validate`, `{cpt_cmd} --json validate --artifact {PATH}`, `{cpt_cmd} --json validate-toc {PATH}`, or another deterministic validator explicitly required by the current target)
@@ -448,6 +456,7 @@ A legitimate RELAXED `Deterministic gate: SKIPPED` exit for file-writing output 
 - [ ] File written after confirmation (if file output)
 - [ ] Artifacts registry updated (if file output + rules)
 - [ ] Validation executed
+- [ ] Language content check executed (`cpt check-language`) when `allowed_content_languages` is configured
 - [ ] Exact deterministic validator command(s), per-command validator results, and overall deterministic gate recorded
 - [ ] `Validator availability proof` recorded when deterministic gate is `SKIPPED`
 - [ ] `Semantic review basis` recorded

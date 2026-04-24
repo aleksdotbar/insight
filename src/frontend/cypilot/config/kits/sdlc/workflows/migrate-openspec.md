@@ -321,10 +321,10 @@ Estimated Cypilot artifacts:
 ### Dependencies
 
 ALWAYS load before generating:
-- Template: `{prd_template}`
-- Rules: `{prd_rules}`
-- Checklist: `{prd_checklist}`
-- Example: `{prd_example}`
+- Template: `config/kits/sdlc/artifacts/PRD/template.md`
+- Rules: `config/kits/sdlc/artifacts/PRD/rules.md`
+- Checklist: `config/kits/sdlc/artifacts/PRD/checklist.md`
+- Example: `config/kits/sdlc/artifacts/PRD/examples/example.md`
 
 ### Step 2.1: Extract Purpose & Background
 
@@ -439,10 +439,10 @@ Before presenting to user, verify:
 ### Dependencies
 
 ALWAYS load before generating:
-- Template: `{design_template}`
-- Rules: `{design_rules}`
-- Checklist: `{design_checklist}`
-- Example: `{design_example}`
+- Template: `config/kits/sdlc/artifacts/DESIGN/template.md`
+- Rules: `config/kits/sdlc/artifacts/DESIGN/rules.md`
+- Checklist: `config/kits/sdlc/artifacts/DESIGN/checklist.md`
+- Example: `config/kits/sdlc/artifacts/DESIGN/examples/example.md`
 - PRD (generated in Phase 2) — for cross-references
 
 ### Step 3.1: Extract Architecture Vision & Drivers
@@ -529,10 +529,10 @@ For each logical component:
 ### Dependencies
 
 ALWAYS load before generating:
-- Template: `{adr_template}`
-- Rules: `{adr_rules}`
-- Checklist: `{adr_checklist}`
-- Example: `{adr_example}`
+- Template: `config/kits/sdlc/artifacts/ADR/template.md`
+- Rules: `config/kits/sdlc/artifacts/ADR/rules.md`
+- Checklist: `config/kits/sdlc/artifacts/ADR/checklist.md`
+- Example: `config/kits/sdlc/artifacts/ADR/examples/example.md`
 - DESIGN (generated in Phase 3) — ADR IDs must appear in DESIGN drivers
 
 ### Step 4.1: Extract Decisions
@@ -600,10 +600,10 @@ For each ADR:
 ### Dependencies
 
 ALWAYS load before generating:
-- Template: `{decomposition_template}`
-- Rules: `{decomposition_rules}`
-- Checklist: `{decomposition_checklist}`
-- Example: `{decomposition_example}`
+- Template: `config/kits/sdlc/artifacts/DECOMPOSITION/template.md`
+- Rules: `config/kits/sdlc/artifacts/DECOMPOSITION/rules.md`
+- Checklist: `config/kits/sdlc/artifacts/DECOMPOSITION/checklist.md`
+- Example: `config/kits/sdlc/artifacts/DECOMPOSITION/examples/example.md`
 - PRD + DESIGN (from Phases 2-3) — for cross-references
 
 ### Step 5.1: Define Feature Boundaries
@@ -697,10 +697,10 @@ Checkbox cascade: all feature checkboxes checked → overall status checked.
 ### Dependencies
 
 ALWAYS load before generating:
-- Template: `{feature_template}`
-- Rules: `{feature_rules}`
-- Checklist: `{feature_checklist}`
-- Example: `{feature_example}`
+- Template: `config/kits/sdlc/artifacts/FEATURE/template.md`
+- Rules: `config/kits/sdlc/artifacts/FEATURE/rules.md`
+- Checklist: `config/kits/sdlc/artifacts/FEATURE/checklist.md`
+- Example: `config/kits/sdlc/artifacts/FEATURE/examples/example.md`
 - DECOMPOSITION (from Phase 5) — for feature IDs and scope
 - Relevant OpenSpec specs — for Given/When/Then scenarios
 

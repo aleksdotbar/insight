@@ -10,3 +10,6 @@ dist
 .idea/
 .eslintcache
 coverage/
+__pycache__/
+*.pyc
+cypilot.*.backup/

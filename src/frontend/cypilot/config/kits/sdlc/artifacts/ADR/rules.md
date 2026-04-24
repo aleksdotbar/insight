@@ -3,15 +3,14 @@
 **Artifact**: ADR
 **Kit**: sdlc
 
-**Dependencies**:
-- `{adr_template}` — structural reference
-- `{adr_checklist}` — semantic quality criteria
-- `{adr_example}` — reference implementation
+**Dependencies** (lazy-loaded):
+- `config/kits/sdlc/artifacts/ADR/template.md` — structural reference (load WHEN validating structure)
+- `config/kits/sdlc/artifacts/ADR/checklist.md` — semantic quality criteria (load WHEN checking semantic quality)
+- `config/kits/sdlc/artifacts/ADR/examples/example.md` — reference implementation (load WHEN needing content reference)
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-   - [Load Dependencies](#load-dependencies)
 2. [Requirements](#requirements)
    - [Structural](#structural)
    - [Versioning](#versioning)
@@ -48,15 +47,7 @@
 
 ## Prerequisites
 
-### Load Dependencies
-
-- [ ] Load `{adr_template}` for structure
-- [ ] Load `{adr_checklist}` for semantic guidance
-- [ ] Load `{adr_example}` for reference style
-- [ ] Read `{cypilot_path}/config/artifacts.toml` to determine ADR directory
-- [ ] Load `{cypilot_path}/.core/architecture/specs/traceability.md` for ID formats
-- [ ] Load `{constraints}` for kit-level constraints
-- [ ] Load `{cypilot_path}/.core/architecture/specs/kit/constraints.md` for constraints specification
+Read `{cypilot_path}/config/artifacts.toml` to determine ADR directory.
 
 ---
 
@@ -64,7 +55,9 @@
 
 ### Structural
 
-- [ ] ADR follows `{adr_template}` structure
+**Load on demand**: `config/kits/sdlc/artifacts/ADR/template.md` — WHEN validating structure
+
+- [ ] ADR follows `config/kits/sdlc/artifacts/ADR/template.md` structure
 - [ ] Artifact frontmatter is required
 - [ ] ADR has unique ID: `cpt-{hierarchy-prefix}-adr-{slug}` (e.g., `cpt-myapp-adr-use-postgresql`)
 - [ ] ID has priority marker (`p1`-`p9`)
@@ -81,7 +74,7 @@
 
 ### Semantic
 
-**Reference**: `{adr_checklist}` for detailed criteria
+**Load on demand**: `config/kits/sdlc/artifacts/ADR/checklist.md` — WHEN checking semantic quality
 
 - [ ] Problem/context clearly stated
 - [ ] At least 2-3 options considered
@@ -144,7 +137,12 @@ Keep REJECTED ADRs for historical record — do not delete.
 
 ### Constraints
 
-- [ ] ALWAYS open and follow `{constraints}` (kit root)
+**Load on demand**:
+- `config/kits/sdlc/constraints.toml` — WHEN validating cross-references
+- `{cypilot_path}/.core/architecture/specs/traceability.md` — WHEN checking ID formats
+- `{cypilot_path}/.core/architecture/specs/kit/constraints.md` — WHEN resolving constraint rules
+
+- [ ] ALWAYS open and follow `config/kits/sdlc/constraints.toml` (kit root)
 - [ ] Treat `constraints.toml` as primary validator for:
   - where IDs are defined
   - where IDs are referenced
@@ -207,9 +205,6 @@ ADRs must NOT contain the following — report as violation if found:
 
 ### Phase 1: Setup
 
-- [ ] Load `{adr_template}` for structure
-- [ ] Load `{adr_checklist}` for semantic guidance
-- [ ] Load `{adr_example}` for reference style
 - [ ] Read `{cypilot_path}/config/artifacts.toml` to determine ADR directory
 - [ ] Determine next ADR number (ADR-NNNN)
 
@@ -229,6 +224,10 @@ ADRs must NOT contain the following — report as violation if found:
 
 ### Phase 2: Content Creation
 
+**Load on demand**:
+- `config/kits/sdlc/artifacts/ADR/template.md` — WHEN generating artifact structure
+- `config/kits/sdlc/artifacts/ADR/examples/example.md` — WHEN needing reference for content
+
 **Use example as reference:**
 
 | Section | Example Reference | Checklist Guidance |
@@ -247,8 +246,8 @@ ADRs must NOT contain the following — report as violation if found:
 
 ### Phase 4: Quality Check
 
-- [ ] Compare to `{adr_example}`
-- [ ] Self-review against `{adr_checklist}`
+- [ ] Compare to `config/kits/sdlc/artifacts/ADR/examples/example.md`
+- [ ] Self-review against `config/kits/sdlc/artifacts/ADR/checklist.md`
 - [ ] Verify rationale is complete
 
 **ADR Immutability Rule**:
@@ -273,7 +272,9 @@ Run `cypilot validate` for:
 
 ### Phase 2: Semantic Validation (Checklist-based)
 
-Apply `{adr_checklist}`:
+**Load on demand**: `config/kits/sdlc/artifacts/ADR/checklist.md` — required for this phase
+
+Apply `config/kits/sdlc/artifacts/ADR/checklist.md`:
 1. Verify context explains why decision needed
 2. Verify options have pros/cons
 3. Verify decision has clear rationale
@@ -411,7 +412,7 @@ Select review depth based on ADR complexity and impact:
 When reviewing PRs that add or change Architecture Decision Records, additionally focus on:
 
 - [ ] Ensure the problem is module/system scoped, not generic and repeatable
-- [ ] Compliance with `{adr_template}` structure
+- [ ] Compliance with `config/kits/sdlc/artifacts/ADR/template.md` structure
 - [ ] Ensure the problem is not already solved by other existing ADRs in the project ADR directory (see `{cypilot_path}/config/artifacts.toml` for path)
 - [ ] Alternatives are genuinely different approaches (not straw men)
 - [ ] Decision rationale is concrete and traceable to project constraints
