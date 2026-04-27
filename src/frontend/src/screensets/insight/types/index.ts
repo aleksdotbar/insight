@@ -47,7 +47,7 @@ export const METRIC_KEYS = {
   zoom_calls:    { key: 'zoom_calls',    label: 'Zoom Calls',         unit: 'calls',sourceTag: 'Zoom',              v1Status: 'pending' },
   meeting_free:  { key: 'meeting_free',  label: 'Meeting-Free Days',  unit: 'days', sourceTag: 'Zoom / M365',       v1Status: 'pending' },
   // --- AI ---
-  ai_loc_share_pct:  { key: 'ai_loc_share_pct',    label: 'AI LOC Share',        unit: '%',  sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
+  ai_loc_share_pct:  { key: 'ai_loc_share_pct',    label: 'AI Code Acceptance',        unit: '%',  sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
   ai_adoption_pct:   { key: 'ai_adoption_pct',     label: 'AI Adoption',         unit: '%',  sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
   ai_sessions:       { key: 'ai_sessions',          label: 'AI Sessions',         unit: '',   sourceTag: 'Cursor + Claude Code',  v1Status: 'available' },
   // --- AI tools / Cursor ---
@@ -58,7 +58,7 @@ export const METRIC_KEYS = {
   cc_sessions:    { key: 'cc_sessions',    label: 'Claude Code Sessions',    unit: '',   sourceTag: 'Anthropic Enterprise API',    v1Status: 'pending' },
   cc_tool_accept: { key: 'cc_tool_accept', label: 'Tool Acceptance Rate',    unit: '%',  sourceTag: 'Anthropic Enterprise API',    v1Status: 'pending' },
   cc_lines:       { key: 'cc_lines',       label: 'Lines Added (Claude Code)', unit: '', sourceTag: 'Anthropic Enterprise API',    v1Status: 'pending' },
-  ai_loc_share2:  { key: 'ai_loc_share2',  label: 'AI LOC Share',            unit: '%',  sourceTag: 'Cursor + Claude Code',        v1Status: 'pending' },
+  ai_loc_share2:  { key: 'ai_loc_share2',  label: 'AI Code Acceptance',            unit: '%',  sourceTag: 'Cursor + Claude Code',        v1Status: 'pending' },
   // --- AI tools / web ---
   claude_web: { key: 'claude_web', label: 'Claude Web Usage', unit: '',  sourceTag: 'Claude Web',  v1Status: 'pending' },
   chatgpt:    { key: 'chatgpt',    label: 'ChatGPT Usage',    unit: '',  sourceTag: 'ChatGPT',     v1Status: 'pending' },

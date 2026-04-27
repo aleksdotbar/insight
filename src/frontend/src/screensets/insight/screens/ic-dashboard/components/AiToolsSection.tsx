@@ -101,7 +101,7 @@ const AiToolsSection: React.FC<AiToolsSectionProps> = ({
         {/* Right column */}
         <div className="flex flex-col gap-5">
           <div>
-            <SectionHeading>AI LOC SHARE · Cursor + Claude Code</SectionHeading>
+            <SectionHeading>AI CODE ACCEPTANCE · Cursor + Claude Code</SectionHeading>
             <div className="flex flex-col gap-4">
               {aiLocMetrics.map((metric) => (
                 <BulletChart key={metric.metric_key} metric={metric} onDrillClick={onDrillClick} mode="chart" personName={personName} />

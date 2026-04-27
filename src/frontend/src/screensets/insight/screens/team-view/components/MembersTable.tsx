@@ -77,8 +77,8 @@ function buildColHeaders(columnThresholds: ColumnThreshold[]): ColHeader[] {
     { label: 'Build Success', sub: buildT ? `CI builds passing · target \u2265${buildT.good}%` : 'CI builds passing' },
     { label: 'Focus Time',    sub: focusT ? `uninterrupted work · target \u2265${focusT.good}%` : 'uninterrupted work' },
     { label: 'AI Tools',      sub: 'active this month' },
-    { label: 'AI LOC Share',  sub: 'Cursor + Claude Code',
-      info: 'Share of authored code lines accepted from AI suggestions out of total lines written.' },
+    { label: 'AI Code Acceptance',  sub: 'Cursor + Claude Code',
+      info: 'Share of authored code lines accepted from AI suggestions out of total lines written in active Cursor sessions.' },
   ];
 }
 
