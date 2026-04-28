@@ -159,7 +159,7 @@ Doing this in the BFF would mix browser session concerns with cluster routing co
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-router-session-validate`
 
-For every request matched by the route table, the system **MUST** read the session cookie, look up `session:{id}` in Redis, and reject the request with 401 if the cookie is missing, malformed, expired, or not present in Redis. The cookie value **MUST NOT** be logged or echoed.
+For every request matched by the route table, the system **MUST** read the session cookie and look up the BFF-owned key `bff:session:{id}` in Redis. The request **MUST** be rejected with 401 if the cookie is missing, malformed, expired, or not present in Redis. The cookie value **MUST NOT** be logged or echoed back in any response, header, or log line.
 
 The system **MUST NOT** modify session state. All writes (refresh, revoke) belong to the BFF.
 
