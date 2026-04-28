@@ -321,11 +321,11 @@ The system **MUST** front the read endpoint with a cache layer whose default TTL
 
 The system **MUST** expose for tenant admins:
 
-- `GET /v1/admin/metric-thresholds` — list, with filters by `metric_id`, `scope`, `tenant_id`, `role_slug`, `team_id`. Results include each row's current version token.
-- `GET /v1/admin/metric-thresholds/:id` — single row, including the current version token.
+- `GET /v1/admin/metric-thresholds` — list, with filters by `metric_id`, `scope`, `tenant_id`, `role_slug`, `team_id`.
+- `GET /v1/admin/metric-thresholds/:id` — single row.
 - `POST /v1/admin/metric-thresholds` — create.
-- `PUT /v1/admin/metric-thresholds/:id` — update. **MUST** require and validate the version token; reject with `409 Conflict` on token mismatch (see NFR `cpt-metric-cat-nfr-concurrent-writes`).
-- `DELETE /v1/admin/metric-thresholds/:id` — delete. **MUST** require and validate the version token; reject with `409 Conflict` on token mismatch.
+- `PUT /v1/admin/metric-thresholds/:id` — update.
+- `DELETE /v1/admin/metric-thresholds/:id` — delete.
 
 Writes **MUST** enforce (a) authorization checking that the caller is a tenant admin for the target tenant, (b) referential integrity with `metric_catalog`, (c) sanity bounds appropriate to the threshold kind (e.g., `warn` not crossing `good` in the wrong direction relative to `higher_is_better`), (d) scope-shape validity (right combination of `role_slug` / `team_id` for the declared `scope`).
 
@@ -437,16 +437,6 @@ When an admin write on one analytics-api replica invalidates the cache for a ten
 **Threshold**: 99th-percentile cross-replica invalidation latency ≤ 2 seconds after the admin write commits.
 
 **Rationale**: With multi-replica analytics-api, in-process caching would silently fail the write-visibility promise in `cpt-metric-cat-nfr-write-visibility` — a user hitting a different replica from the one that served their admin write would see stale data for up to a full TTL. For a compliance-facing product where admin writes are auditable actions, that staleness is a support-call generator and a regulatory red flag. Committing to a cross-replica mechanism in v1 forces DESIGN to pick a concrete path (Redis vs pub-sub) rather than kicking the problem to production.
-
-#### Reliability — Safe Concurrent Admin Writes
-
-- [ ] `p2` - **ID**: `cpt-metric-cat-nfr-concurrent-writes`
-
-Concurrent admin writes to the same threshold row **MUST** be detected and prevented from silently overwriting each other. The system **MUST** use optimistic concurrency control: each read of a threshold row returns a version token; each write submits the token it last read. If the row has changed since (token mismatch), the server **MUST** reject the write with `409 Conflict` and surface the current state so the admin can re-apply intentionally.
-
-**Rationale**: Threshold changes are admin-significant (compliance audit, billing impact). Silent last-write-wins produces «I changed it, came back later, my number is gone» — unacceptable for this audience. Optimistic locking gives explicit conflict resolution at low implementation cost (a single version column or `updated_at` timestamp), and server-determined commit order remains the canonical truth — no client-clock dependencies.
-
-**Threshold**: zero observed silent overwrites in a concurrent-write soak test at 50 QPS for 60s; conflicting writes must surface as `409 Conflict` to the loser.
 
 ### 6.2 NFR Exclusions
 
