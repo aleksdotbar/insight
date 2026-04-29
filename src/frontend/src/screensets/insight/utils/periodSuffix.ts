@@ -8,7 +8,7 @@
 
 import { toLower } from 'lodash';
 
-const SUPPRESS_SUFFIX_UNITS = ['%', '\u00d7', 'h', 'avg replies', 'avg', '/mo'];
+const SUPPRESS_SUFFIX_UNITS = ['%', '\u00d7', 'h', 'avg replies', 'avg', '/mo', '/day'];
 
 // `Map` avoids both prototype lookups and dynamic-indexing: `.get(arbitrary)`
 // returns `string | undefined` without reading inherited properties like

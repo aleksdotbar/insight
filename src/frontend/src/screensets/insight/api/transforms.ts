@@ -251,11 +251,15 @@ export function transformBulletMetrics(
   section: string,
   period: PeriodValue,
   teamSize?: number,
+  viewKind: 'ic' | 'team' = 'ic',
 ): BulletMetric[] {
   const defsByKey = keyBy(
     BULLET_DEFS.filter((d) => d.section === section),
     'metric_key',
   );
+
+  const pickSublabel = (d: { sublabel: string; teamSublabel?: string }) =>
+    viewKind === 'team' && d.teamSublabel ? d.teamSublabel : d.sublabel;
 
   return rows.map((r) => {
       const def = defsByKey[r.metric_key];
@@ -324,7 +328,7 @@ export function transformBulletMetrics(
           section,
           metric_key: r.metric_key,
           label: def.label,
-          sublabel: def.sublabel,
+          sublabel: pickSublabel(def),
           value: formatBulletValue(r.value, effectiveUnit),
           unit: effectiveUnit,
           range_min: '\u2014',
@@ -350,7 +354,7 @@ export function transformBulletMetrics(
         section,
         metric_key: r.metric_key,
         label: def.label,
-        sublabel: def.sublabel,
+        sublabel: pickSublabel(def),
         // Format counters as integers (round), ratios/percents/hours as 2-decimal.
         value: formatBulletValue(r.value, effectiveUnit),
         unit: effectiveUnit,

@@ -10,6 +10,15 @@ import React, { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 import { Popover, PopoverContent, PopoverTrigger, Calendar, ToggleGroup, ToggleGroupItem, Button } from '@hai3/uikit';
 import type { PeriodValue, CustomRange } from '../../types';
+import { toISODate, resolveDateRange } from '../../utils/periodToDateRange';
+
+/** Format an ISO date string (YYYY-MM-DD) to "DD MMM" using local naming. */
+function formatShortDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  // Parse as local-midnight so the displayed day matches the picker calendar.
+  const date = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
 
 const TABS: { value: PeriodValue; label: string; short: string }[] = [
   { value: 'week',    label: 'Week',    short: 'W' },
@@ -35,21 +44,22 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
   const [tempRange, setTempRange] = useState<DateRange | undefined>();
 
   const handleRangeSelect = (selected: DateRange | undefined) => {
+    // Only update the temporary preview; commit happens on Apply.
     setTempRange(selected);
-    if (selected?.from && selected?.to && selected.to.getTime() > selected.from.getTime()) {
-      onRangeChange({
-        from: selected.from.toISOString().slice(0, 10),
-        to: selected.to.toISOString().slice(0, 10),
-      });
-      setCalOpen(false);
-    }
   };
 
   const calLabel = customRange
     ? `${customRange.from.slice(5)} – ${customRange.to.slice(5)}`
     : null;
 
+  // Active resolved range (preset or custom) — shown next to the bar so the
+  // user always sees which window they're querying. For presets it answers
+  // "what does Week / Month / Quarter / Year currently mean".
+  const activeRange = resolveDateRange(period, customRange);
+  const activeRangeLabel = `${formatShortDate(activeRange.from)} – ${formatShortDate(activeRange.to)}`;
+
   return (
+    <div className="flex items-center gap-3">
     <div className="flex items-center gap-0 bg-slate-100 rounded-lg p-[3px]">
       {/* Period tabs — segmented control */}
       <ToggleGroup
@@ -111,7 +121,7 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
             onSelect={handleRangeSelect}
             numberOfMonths={typeof window !== 'undefined' && window.innerWidth < 640 ? 1 : 2}
           />
-          <div className="px-4 py-2 border-t border-gray-100 flex gap-3">
+          <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-3">
             {customRange && (
               <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-gray-500"
                 onClick={() => { setTempRange(undefined); onRangeChange(null); onPeriodChange('month'); setCalOpen(false); }}>
@@ -121,9 +131,27 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
             <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-gray-500" onClick={() => setCalOpen(false)}>
               Cancel
             </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="h-auto px-3 py-1 text-xs ml-auto"
+              disabled={!tempRange?.from}
+              onClick={() => {
+                if (!tempRange?.from) return;
+                const toDate = tempRange.to ?? tempRange.from;
+                onRangeChange({ from: toISODate(tempRange.from), to: toISODate(toDate) });
+                setCalOpen(false);
+              }}
+            >
+              Apply
+            </Button>
           </div>
         </PopoverContent>
       </Popover>
+    </div>
+      <span className="text-xs text-gray-500 whitespace-nowrap" aria-label="Active date range">
+        {activeRangeLabel}
+      </span>
     </div>
   );
 

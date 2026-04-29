@@ -41,7 +41,7 @@ const ChartLegend: React.FC = () => (
     {/* Gradient swatch */}
     <div className="flex items-center gap-1">
       <div className="w-4 h-1.5 rounded bg-gradient-to-r from-green-600 via-amber-600 to-red-600" />
-      <span className="text-2xs text-gray-400">Your result · color = vs target</span>
+      <span className="text-2xs text-gray-400">Result · color = vs target</span>
     </div>
   </div>
 );
