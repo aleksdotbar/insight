@@ -275,10 +275,13 @@ SELECT
     toDate(s.final_close_at)                                     AS close_date,
     sum(i.duration_seconds)                                      AS dev_seconds,
     -- Lead time: created (synthetic_initial event_at min, surfaced as
-    -- task_issue_current_state.created_at) → final_close_at.
+    -- task_issue_current_state.created_at) → final_close_at. Clamped at 0
+    -- so out-of-order changelog data (created_at > final_close_at) doesn't
+    -- emit negative durations into mean_time_to_resolution downstream.
     if(any(s.created_at) IS NULL,
        CAST(NULL AS Nullable(Float64)),
-       toFloat64(dateDiff('second', any(s.created_at), any(s.final_close_at))))
+       toFloat64(greatest(toInt64(0),
+                          dateDiff('second', any(s.created_at), any(s.final_close_at)))))
                                                                  AS lead_seconds,
     -- Pickup time: from creation to the first dev-active interval start
     -- (i.interval_start is already filtered to dev statuses by the JOIN).
@@ -312,16 +315,37 @@ GROUP BY s.assignee_email, s.insight_source_id, s.issue_id, close_date;
 -- the issue's current assignee. The bullet view encodes them with opposite
 -- signs into the same metric_key so a single OData filter on metric_date
 -- naturally scopes both numerator and denominator to the chosen period.
+--
+-- Both streams count *every* status transition (not just the final close):
+-- a close→reopen→close cycle contributes 2 closes and 1 reopen. Counting
+-- only `final_close_at` would have produced 1 close / 1 reopen and made
+-- the rate read 100% for what is structurally a 50% rebound.
 CREATE VIEW insight.task_close_events_daily AS
+WITH transitions AS (
+    SELECT
+        h.insight_source_id,
+        h.issue_id,
+        h.event_at,
+        h.value_displays[1] AS status_name,
+        lagInFrame(h.value_displays[1]) OVER (
+            PARTITION BY h.insight_source_id, h.issue_id
+            ORDER BY h.event_at
+        ) AS prev_status
+    FROM silver.class_task_field_history AS h FINAL
+    WHERE h.field_id = 'status' AND h.delta_action = 'set'
+)
 SELECT
     s.assignee_email                                             AS assignee_email,
-    toDate(s.final_close_at)                                     AS event_date,
+    toDate(t.event_at)                                           AS event_date,
     count()                                                      AS close_count
-FROM insight.task_issue_current_state AS s
-WHERE s.final_close_at IS NOT NULL
+FROM transitions AS t
+INNER JOIN insight.task_issue_current_state AS s
+    ON  s.insight_source_id = t.insight_source_id
+    AND s.issue_id          = t.issue_id
+WHERE (t.prev_status IS NULL OR t.prev_status NOT IN ('Closed','Resolved','Verified'))
+  AND t.status_name IN ('Closed','Resolved','Verified')
   AND s.assignee_email IS NOT NULL
   AND s.assignee_email != ''
-  AND s.status_name IN ('Closed','Resolved','Verified')
 GROUP BY assignee_email, event_date;
 
 CREATE VIEW insight.task_reopen_events_daily AS
@@ -645,43 +669,17 @@ WHERE (s.status_name IS NULL OR s.status_name NOT IN ('Closed','Resolved','Verif
 GROUP BY s.assignee_email, p.org_unit_id;
 
 -- =====================================================================
--- task_delivery_person_period — sum for count metrics, avg otherwise.
--- estimation_accuracy folds symmetrically around 100; worklog_logging_
--- accuracy uses the same fold so values >100% don't pull period mean
--- above the achievable max.
+-- The pre-rewrite versions of `task_delivery_person_period` and
+-- `task_delivery_company_stats` (defined in 20260422000000_gold-views.sql
+-- and 20260423120000_bullet-views-honest-nulls.sql) had no consumer in
+-- the analytics-api or frontend — the bullet endpoints query
+-- `task_delivery_bullet_rows` directly through the per-metric reducers
+-- in MariaDB `metrics.query_ref`. Recreating them here would require
+-- duplicating the (now richer) reducer logic across two places. The
+-- DROPs above remove them; if a future consumer needs an aggregated
+-- per-period summary, build one against `task_delivery_bullet_rows`
+-- using the same reducer structure as the analytics-api migration.
 -- =====================================================================
-CREATE VIEW insight.task_delivery_person_period AS
-SELECT
-    metric_key,
-    person_id,
-    any(org_unit_id)                                             AS org_unit_id,
-    max(metric_date)                                             AS metric_date,
-    multiIf(
-        metric_key IN ('tasks_completed','stale_in_progress'),
-        sum(metric_value),
-        metric_key IN ('estimation_accuracy','worklog_logging_accuracy'),
-            if(countIf((metric_value > 0) AND (metric_value <= 200)) > 0,
-               greatest(toFloat64(0),
-                        toFloat64(100) -
-                        avgIf(abs(toFloat64(100) - metric_value),
-                              (metric_value > 0) AND (metric_value <= 200))),
-               NULL),
-        avg(metric_value))                                       AS v
-FROM insight.task_delivery_bullet_rows
-GROUP BY metric_key, person_id;
-
--- =====================================================================
--- task_delivery_company_stats — same shape as collab/code_quality.
--- =====================================================================
-CREATE VIEW insight.task_delivery_company_stats AS
-SELECT
-    metric_key,
-    avg(v)                    AS company_value,
-    quantileExact(0.5)(v)     AS company_median,
-    min(v)                    AS company_p5,
-    max(v)                    AS company_p95
-FROM insight.task_delivery_person_period
-GROUP BY metric_key;
 
 -- =====================================================================
 -- Force initial refresh of refreshable MVs — they'd otherwise wait for
