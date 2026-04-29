@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, type ThemeApplyFn } from '@hai3/react';
+import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, toggleMockMode, type ThemeApplyFn } from '@hai3/react';
 import { Toaster, applyTheme } from '@hai3/uikit';
 import MockBanner from '@/app/components/MockBanner';
 // Side-effect imports — services self-register with apiRegistry
@@ -38,6 +38,11 @@ const app = createHAI3App({
 // Register app-level slices and effects
 registerSlice(authSlice, initAuthEffects);
 registerBootstrapEffects(app.store.dispatch);
+
+// HAI3's mockMode defaults to ON; tie it to VITE_ENABLE_MOCKS so dev
+// builds match the documented behaviour (mocks OFF unless opted in).
+// Prod builds drop this branch entirely.
+toggleMockMode(import.meta.env.VITE_ENABLE_MOCKS === 'true');
 
 // Register all themes (default theme first, becomes the default selection)
 app.themeRegistry.register(DEFAULT_THEME_ID, defaultTheme);
