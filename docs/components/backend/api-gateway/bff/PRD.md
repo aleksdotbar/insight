@@ -76,7 +76,7 @@ Moving the token to an `HttpOnly`, `Secure`, `SameSite=Strict` cookie alone is n
 |------|------------|
 | OIDC token | Tokens issued by the customer's identity provider. The BFF stores only `id_token` (used as `id_token_hint` on RP-initiated logout); access and refresh tokens are received at login but not stored or used in v1. The browser never sees any of them. |
 | Session cookie | Opaque, random session ID set on the browser by the BFF. Short, hard TTL. No claims, no meaning outside Redis. |
-| Session record | Server-side object in Redis keyed by session ID. Holds user, tenant, IdP tokens, expiry. |
+| Session record | Server-side object in Redis keyed by session ID. Holds user, tenant, IdP linkage (`iss`, `sub`, `sid`), `id_token` for logout hint, expiries, and CSRF token. |
 | Session refresh | Explicit `POST /auth/refresh` call from the SPA that extends the session TTL. The session does **not** extend automatically on regular API calls. |
 | User session index | Redis sorted set keyed by user ID. Members are session IDs, score is `expires_at`. Lets the BFF list active sessions and find expired ones in O(log N). |
 | Gateway JWT | Short-lived EdDSA-signed JWT minted by the [Router](../router/PRD.md) for each upstream call. Verified by internal services via JWKS. |
@@ -138,7 +138,6 @@ Moving the token to an `HttpOnly`, `Secure`, `SameSite=Strict` cookie alone is n
 - Session record storage in Redis (BFF-prefixed keys) with a sorted-set per-user index keyed by `expires_at`.
 - Session listing and revocation API (single, all-but-current, all).
 - Logout: local, RP-initiated to OIDC provider, and OIDC back-channel logout receiver.
-- Refresh of upstream IdP tokens (gateway ↔ IdP, internal -- not visible to the SPA).
 - CSRF defense for state-changing requests.
 - Periodic cleanup of expired session entries from the user index.
 
@@ -149,7 +148,7 @@ Moving the token to an `HttpOnly`, `Secure`, `SameSite=Strict` cookie alone is n
 - Reverse-proxying `/api/*` requests -- owned by the Router.
 - Authorization decisions inside downstream services (each service still enforces RBAC and visibility).
 - User registration, password management, MFA -- handled by the customer OIDC provider.
-- License / role / scope claims in the gateway JWT -- not needed for v1; only `sub` and `tid` are carried.
+- License / role / scope claims in the gateway JWT -- not needed for v1; the contract carries the required JWT claims (`iss`, `aud`, `sub`, `iat`, `exp`, `jti`) plus `tid` and `sid`. See §5.5 / §7.2.
 - Mobile or third-party API clients (v1 serves only the bundled SPA).
 
 ## 5. Functional Requirements
@@ -303,7 +302,7 @@ Each operation **MUST** delete the session record(s) and remove them from `bff:u
 
 The system **MUST** provide `POST /auth/logout` that revokes the current session, clears the cookie (`Max-Age=0`), and redirects (or returns a redirect URL) to the OIDC `end_session_endpoint` for RP-initiated logout.
 
-The system **MUST** accept OIDC back-channel logout tokens at a dedicated endpoint, validate the `logout_token` per spec, locate sessions by `(iss, sid)` or `(iss, sub)`, and revoke them.
+The system **MUST** accept OIDC back-channel logout tokens at a dedicated endpoint, validate the `logout_token` per spec, locate sessions by `(iss, sid)` (direct lookup via `bff:sid_index:*`) or `(iss, sub)` (resolve `sub` to internal `user_id` via Identity Service, then walk `bff:user_sessions:{user_id}`), and revoke them.
 
 The system **MUST** protect the back-channel endpoint against replay: every accepted `logout_token` **MUST** be recorded by `(iss, jti)` with a TTL of at least `iat + max_clock_skew`, and any subsequent delivery of the same `(iss, jti)` **MUST** short-circuit to a successful response without performing another revoke.
 
@@ -457,7 +456,7 @@ JWKS publication and `/api/*` reverse proxy live on the [Router](../router/PRD.m
 
 **Direction**: required from customer.
 
-**Protocol**: OIDC Authorization Code + PKCE; refresh tokens; RP-initiated logout (`end_session_endpoint`); back-channel logout per OIDC spec.
+**Protocol**: OIDC Authorization Code + PKCE; RP-initiated logout (`end_session_endpoint`); back-channel logout per OIDC spec. The BFF does not use IdP refresh tokens in v1.
 
 **Compatibility**: Standard OIDC. Customer IdP must support all four.
 
@@ -554,7 +553,7 @@ JWKS publication and `/api/*` reverse proxy live on the [Router](../router/PRD.m
 | Dependency | Description | Criticality |
 |------------|-------------|-------------|
 | Redis | Session records and user-sessions sorted set | `p1` |
-| Customer OIDC provider | Authentication, refresh, logout | `p1` |
+| Customer OIDC provider | Authentication (auth-code + PKCE), RP-initiated logout, back-channel logout | `p1` |
 | Identity Service | Map IdP `sub` to internal `user_id` and tenant | `p1` |
 | Audit Service | Sink for auth events | `p1` |
 | Ingress / TLS terminator | HTTPS termination, HSTS, request routing | `p1` |
@@ -562,7 +561,7 @@ JWKS publication and `/api/*` reverse proxy live on the [Router](../router/PRD.m
 
 ## 11. Assumptions
 
-- The customer OIDC provider supports authorization code + PKCE, refresh tokens, RP-initiated logout, and back-channel logout.
+- The customer OIDC provider supports authorization code + PKCE, RP-initiated logout, and back-channel logout. (Refresh-token support is not required in v1; the BFF does not call the IdP refresh endpoint.)
 - The SPA and BFF are served from the same registrable domain (first-party cookies).
 - The SPA can poll `/auth/refresh` on a fixed cadence and handle 401 by redirecting to `/auth/login`.
 - Redis is deployed in HA mode; session loss requires re-login for affected users -- acceptable.

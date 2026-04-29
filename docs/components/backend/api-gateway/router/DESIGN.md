@@ -532,7 +532,7 @@ sequenceDiagram
 
 **Overlap window math.** A downstream service caches JWKS up to `Cache-Control: max-age=3600` (1 h). After `previous` is removed from the Router's JWKS, a downstream service that has not yet refetched JWKS still has the old `kid` in its in-process cache and continues to verify old-key tokens. But a downstream service that *did* refetch -- because it saw an unknown `kid` from the new key -- now has only the new key, and any cached gateway JWT still signed with `previous` (TTL ≤ 60 s) is rejected. Worst-case window the operator runbook **MUST** wait before removing `previous` is therefore:
 
-```
+```text
 overlap_min = gateway.jwt_ttl_seconds (≤ 300) + downstream JWKS max-age (3600)
             ≈ 65 minutes
 ```
@@ -561,7 +561,7 @@ sequenceDiagram
 
 ### 3.7 Database schemas & tables
 
-This module's "database" is Redis, shared with the BFF. The Router reads keys defined and owned by the BFF (see [BFF DESIGN §3.7](../bff/DESIGN.md#37-database-schemas--tables)) and writes one key family of its own. The full layout is in §3.8 below.
+This module's "database" is Redis, shared with the BFF. The Router reads keys defined and owned by the BFF (see [BFF DESIGN §3.7](../bff/DESIGN.md#37-database-schemas--tables)) and writes one key family of its own. The full layout is in §3.9 below.
 
 ### 3.8 Route Configuration Schema
 
@@ -627,7 +627,7 @@ Validation rules (enforced on load and on every reload):
 
 ### 3.9 Redis Keys (read-only and JWT cache)
 
-The Router reads keys defined and owned by the BFF; see [BFF DESIGN §3.7](../bff/DESIGN.md#37-redis-data-model). It writes only to one key family of its own (`router:jwt_cache:*`).
+The Router reads keys defined and owned by the BFF; see [BFF DESIGN §3.7](../bff/DESIGN.md#37-database-schemas--tables). It writes only to one key family of its own (`router:jwt_cache:*`).
 
 | Key | Type | Owner | Router access |
 |---|---|---|---|
@@ -646,7 +646,7 @@ The Router reads keys defined and owned by the BFF; see [BFF DESIGN §3.7](../bf
 | OIDC handshake | BFF | Router never talks to the IdP |
 | Session create / extend / revoke | BFF | Router calls only `SessionManager::lookup` |
 | Cookie issue / clear | BFF | Router never sets cookies |
-| CSRF token issue | BFF | Router enforces nothing CSRF-related on `/api/*` (state-changing browser calls hit `/api/*` and rely on `SameSite=Strict`; per-route CSRF check by `Origin` is also applied here) |
+| CSRF token issue | BFF | Router enforces nothing CSRF-related on `/api/*`; CSRF is a BFF concern on `/auth/*`. State-changing `/api/*` calls rely on `SameSite=Strict`. |
 | Refresh of IdP access token | BFF | Router does not see IdP tokens |
 | Gateway JWT mint + sign | Router | Was in BFF DESIGN; ownership moves here |
 | JWKS publication | Router | Was in BFF DESIGN; ownership moves here |

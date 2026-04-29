@@ -318,7 +318,7 @@ Does not protect `/api/*` -- those rely on `SameSite=Strict` and the ingress. Do
 Centralises audit event publication so every auth-relevant action lands on the Redpanda topic with the same envelope and correlation fields.
 
 ##### Responsibility scope
-Publish auth events (login OK / fail, refresh OK / fail, logout, IdP-refresh-fail, revoke single / all / admin, back-channel logout) to the audit topic consumed by Audit Service.
+Publish auth events (login OK / fail, refresh OK / fail, logout, revoke single / all / admin, back-channel logout) to the audit topic consumed by Audit Service.
 
 ##### Responsibility boundaries
 Does not run audit policy or retention -- Audit Service does. Does not log to disk -- the standard logger does.
@@ -508,6 +508,7 @@ sequenceDiagram
     participant I as OIDC Provider
     participant B as BFF
     participant R as Redis
+    participant ID as Identity Service
 
     I->>B: POST /auth/oidc/back-channel-logout (logout_token)
     B->>B: validate logout_token (sig, iss, aud, iat, events, jti)
@@ -518,14 +519,16 @@ sequenceDiagram
     else OK (first time)
         opt logout_token has sid
             B->>R: SMEMBERS bff:sid_index:{iss}:{idp_sid}
-            R-->>B: [sid1, sid2, ...]
+            R-->>B: [sid1, sid2, ...] (target list)
         end
         opt logout_token has only sub (no sid)
-            B->>R: ZRANGEBYSCORE bff:user_sessions:{user_id} <now> +inf
-            R-->>B: [all-active-sids-for-this-user]
+            B->>ID: resolve(iss, sub) → user_id
+            ID-->>B: user_id
+            B->>R: ZRANGE bff:user_sessions:{user_id} 0 -1
+            R-->>B: [all sids for this user] (target list)
             Note over B,R: Spec-compliant fallback, but blast radius is<br/>EVERY session for that user across all browsers.
         end
-        loop for each matching local sid
+        loop for each sid in target list
             B->>R: HMGET bff:session:{sid} user_id idp_iss idp_sid<br/>MULTI<br/>DEL bff:session:{sid}<br/>ZREM bff:user_sessions:{user_id} {sid}<br/>SREM bff:sid_index:{idp_iss}:{idp_sid} {sid}<br/>DEL router:jwt_cache:{sid}<br/>EXEC
         end
         B-->>I: 200
@@ -533,6 +536,8 @@ sequenceDiagram
 ```
 
 **`jti` replay protection.** Every accepted `logout_token` is recorded as `bff:logout_jti:{iss}:{jti}` with a Redis `SET ... NX` (set-if-not-exists). On collision the request is treated as a replay and short-circuits to `200` without performing any revoke -- the IdP gets the same idempotent answer it would for a successful first delivery, but no session work happens. TTL on the key is `(iat + max_clock_skew + grace) - now` (defaults: `max_clock_skew = 60s`, `grace = 60s`). After the TTL the JTI may legitimately be reused by the IdP (extremely rare in practice but cheap to allow).
+
+**`(iss, sub)` resolution path.** The BFF does not maintain a `(iss, sub) → user_id` reverse index in Redis. Instead, the back-channel handler calls Identity Service (the same component that does `sub → user_id` mapping at login) to resolve `(iss, sub)` to the internal `user_id`. From there, `bff:user_sessions:{user_id}` lists every active session for that user. One extra synchronous call to Identity Service per back-channel logout is acceptable -- back-channel logout is a low-rate event compared to `/auth/refresh`.
 
 **`(iss, sub)` fallback blast radius.** When the IdP issues a `logout_token` carrying `sub` only (no `sid`), spec-compliant behaviour is to revoke every active session for that user across every browser. We do that, but operators **MUST** be aware: a misconfigured IdP that omits `sid` will turn every back-channel logout into a "log out everywhere" event, with no way for the BFF to tell the difference. Documented in [Risks](./PRD.md#12-risks).
 
@@ -777,7 +782,7 @@ Both layers run before any expensive work (Redis HASH write, IdP redirect, token
 Metrics (Prometheus):
 
 - `bff_auth_login_total{result}` -- ok / fail / state_mismatch
-- `bff_auth_refresh_total{result}` -- ok / expired / past_cap / idp_fail
+- `bff_auth_refresh_total{result}` -- ok / expired / past_cap
 - `bff_session_active` -- gauge from periodic Redis sample
 - `bff_session_lookup_duration_seconds` -- histogram
 - `bff_back_channel_logout_total{result}`
