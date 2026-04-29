@@ -37,13 +37,14 @@ pub struct Migration;
 const TEAM_BULLET_DELIVERY_ID: &str = "00000000000000000001000000000003";
 const IC_BULLET_DELIVERY_ID: &str = "00000000000000000001000000000011";
 
-const SUM_LIST:    &str = "'tasks_completed', 'stale_in_progress'";
-const FOLD_LIST:   &str = "'estimation_accuracy', 'worklog_logging_accuracy'";
-const MEDIAN_LIST: &str = "'mean_time_to_resolution', 'task_dev_time', 'pickup_time', 'flow_efficiency'";
+const SUM_LIST: &str = "'tasks_completed', 'stale_in_progress'";
+const FOLD_LIST: &str = "'estimation_accuracy', 'worklog_logging_accuracy'";
+const MEDIAN_LIST: &str =
+    "'mean_time_to_resolution', 'task_dev_time', 'pickup_time', 'flow_efficiency'";
 /// Time-bound metrics whose distribution has a long right tail. Use P95
 /// for the chart range_max instead of `max()` so a single year-old issue
 /// closed in-window doesn't blow the gauge scale to 600d.
-const P95_LIST:    &str = "'mean_time_to_resolution', 'task_dev_time', 'pickup_time'";
+const P95_LIST: &str = "'mean_time_to_resolution', 'task_dev_time', 'pickup_time'";
 
 /// `multiIf` body for the inner per-(metric_key, person_id) aggregate.
 ///
