@@ -180,7 +180,7 @@ For every forwarded request, the system **MUST** attach a gateway JWT signed wit
 
 The system **MUST** cache the minted JWT in Redis (`router:jwt_cache:{session_id}`) with TTL = `min(60s, jwt_remaining)`. Cache hits **MUST** skip the signing step.
 
-The cache **MUST** be invalidated by the BFF deleting `router:jwt_cache:{sid}` on shared Redis as part of the session-revoke Lua script. The Router itself runs no subscriber and uses no event stream for this purpose. v1 has no other invalidation source -- the JWT carries only `sub`, `tid`, and `sid`, none of which change during an active session.
+The cache **MUST** be invalidated by the BFF deleting `router:jwt_cache:{sid}` on shared Redis as part of the session-revoke MULTI/EXEC pipeline. The Router itself runs no subscriber and uses no event stream for this purpose. v1 has no other invalidation source -- the JWT carries only `sub`, `tid`, and `sid`, none of which change during an active session.
 
 **Rationale**: A signed JWT per request is the zero-trust contract. Caching keeps mint cost low under load. Direct Redis DEL by the BFF makes revoke-driven invalidation a single Redis round-trip with no eventual-consistency window.
 

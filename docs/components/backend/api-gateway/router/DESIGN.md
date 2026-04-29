@@ -290,7 +290,7 @@ Does not refresh IdP access tokens. Does not validate JWTs (downstream services 
 
 ##### Related components (by ID)
 - `cpt-insightspec-component-router-keystore` -- supplies the signing key.
-- `cpt-insightspec-component-bff-auth-controller` -- invalidates this cache by `DEL router:jwt_cache:{sid}` on session revoke (shared Redis, same Lua script as BFF revoke).
+- `cpt-insightspec-component-bff-auth-controller` -- invalidates this cache by `DEL router:jwt_cache:{sid}` on session revoke (shared Redis, same MULTI/EXEC pipeline as the rest of the BFF revoke).
 
 #### Request Rewriter
 
@@ -398,7 +398,7 @@ The Router exposes the **Reverse Proxy** and **JWKS** interfaces declared in [PR
 | Dependency | Interface | Purpose |
 |---|---|---|
 | BFF Session Manager (sibling) | Rust crate | Read-only session validation; no RPC |
-| BFF Auth Controller | Shared Redis | Invalidates `router:jwt_cache:{sid}` directly during the BFF revoke Lua script. No RPC, no Redpanda. |
+| BFF Auth Controller | Shared Redis | Invalidates `router:jwt_cache:{sid}` directly inside the BFF revoke MULTI/EXEC pipeline. No RPC, no Redpanda. |
 | Audit Service | Redpanda producer | Emit config-reload, key-rotation, suspicious-event audit records |
 
 ### 3.5 External Dependencies
@@ -554,7 +554,7 @@ sequenceDiagram
     participant R as Router
 
     U->>B: DELETE /auth/sessions/{sid}
-    B->>RD: EVAL revoke_session.lua<br/>DEL bff:session:{sid}<br/>ZREM bff:user_sessions:{uid} sid<br/>DEL router:jwt_cache:{sid}
+    B->>RD: HMGET bff:session:{sid} user_id idp_iss idp_sid<br/>MULTI<br/>DEL bff:session:{sid}<br/>ZREM bff:user_sessions:{uid} sid<br/>SREM bff:sid_index:{iss}:{idp_sid} sid<br/>DEL router:jwt_cache:{sid}<br/>EXEC
     RD-->>B: OK
     Note over R,RD: Next /api/* request for {sid}<br/>finds router:jwt_cache:{sid} missing,<br/>but bff:session:{sid} also missing,<br/>so Cookie Auth returns 401 first.
 ```
@@ -793,7 +793,7 @@ When the effective deadline is reached, the Router closes the socket with a norm
 **Consequences**:
 - Worst-case post-revoke window for an open socket = `websocket_max_lifetime_seconds`. Default (1 h) is acceptable for analytics dashboard streams; tighten via Helm if a deployment needs faster turnaround.
 - Clients on long-lived sockets see a connection close roughly every hour and **MUST** reconnect cleanly. This is documented in the SPA WebSocket client guidelines.
-- A revocation-triggered disconnect is **not** part of v1. If a future deployment needs near-zero post-revoke staleness on sockets, the design path is: BFF publishes `(sid)` on a Redis pub/sub channel during the revoke Lua script (still shared Redis, still no Redpanda), and the Router subscribes per-pod and closes any socket bound to that `sid`. That mechanism is deferred until a real driver appears.
+- A revocation-triggered disconnect is **not** part of v1. If a future deployment needs near-zero post-revoke staleness on sockets, the design path is: BFF publishes `(sid)` on a Redis pub/sub channel inside the revoke MULTI/EXEC pipeline (still shared Redis, still no Redpanda), and the Router subscribes per-pod and closes any socket bound to that `sid`. That mechanism is deferred until a real driver appears.
 
 ### DD-ROUTER-08: Header Strip List = Hardcoded + Config
 

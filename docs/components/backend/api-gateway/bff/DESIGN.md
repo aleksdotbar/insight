@@ -266,7 +266,8 @@ Create, read, refresh, list-by-user, revoke (single, all-but-current, all). Keep
 
 - **Create** — single `MULTI`/`EXEC` pipeline (`HSET` + `EXPIREAT` + `ZADD` + `SADD`). No conditional logic, no read-then-write, so no Lua. See §3.6 Login.
 - **Refresh** — single `HMGET` + `MULTI`/`EXEC` pipeline (`HSET expires_at` + `EXPIREAT` + `ZADD`). Parallel refreshes converge on the same `new_exp` ±1 s — no CAS, no lock. See §3.6 Session Refresh.
-- **Revoke single / revoke user** — atomicity mechanism documented per-op in §3.6. (Specifics under review.)
+- **Revoke (single)** — `HMGET` to read `user_id`, `idp_iss`, `idp_sid`, then a `MULTI`/`EXEC` pipeline of four deletes (`DEL bff:session` + `ZREM bff:user_sessions` + `SREM bff:sid_index` + `DEL router:jwt_cache`). Idempotent: revoking an already-revoked session is silently a no-op. See §3.6 Logout / Back-Channel.
+- **Revoke (user)** — atomicity mechanism documented per-op in §3.6. (Specifics under review.)
 
 ##### Responsibility boundaries
 Does not call the OIDC provider. Does not authenticate requests by itself -- callers (Auth Controller, Router) do. Does not own the cookie format.
@@ -414,7 +415,7 @@ sequenceDiagram
     ID-->>B: user_id, tenant_id
     B->>B: generate fresh session_id (CSPRNG, ≥128 bits)
     opt incoming cookie was a live session
-        B->>R: EVAL revoke_session.lua (incoming sid)
+        B->>R: HMGET bff:session:{incoming_sid} user_id idp_iss idp_sid<br/>MULTI<br/>DEL bff:session:{incoming_sid}<br/>ZREM bff:user_sessions:{user_id} {incoming_sid}<br/>SREM bff:sid_index:{idp_iss}:{idp_sid} {incoming_sid}<br/>DEL router:jwt_cache:{incoming_sid}<br/>EXEC
         Note over B,R: Incoming SID is NEVER reused or extended.<br/>Revoked here to invalidate any planted/stale cookie.
     end
     B->>R: MULTI<br/>HSET bff:session:{sid} <fields><br/>EXPIREAT bff:session:{sid} expires_at<br/>ZADD bff:user_sessions:{uid} expires_at sid<br/>SADD bff:sid_index:{iss}:{idp_sid} sid<br/>EXEC
@@ -466,7 +467,7 @@ sequenceDiagram
     participant I as OIDC Provider
 
     U->>B: POST /auth/logout
-    B->>R: EVAL revoke_session.lua<br/>DEL bff:session:{sid}<br/>ZREM bff:user_sessions:{uid} sid<br/>SREM bff:sid_index:{iss}:{idp_sid} sid<br/>DEL router:jwt_cache:{sid}
+    B->>R: HMGET bff:session:{sid} user_id idp_iss idp_sid<br/>MULTI<br/>DEL bff:session:{sid}<br/>ZREM bff:user_sessions:{uid} sid<br/>SREM bff:sid_index:{iss}:{idp_sid} sid<br/>DEL router:jwt_cache:{sid}<br/>EXEC
     R-->>B: OK
     B-->>U: 200 + Set-Cookie __Host-sid Max-Age=0 + {rp_logout_url}
     U->>I: GET end_session_endpoint?id_token_hint=...
@@ -522,7 +523,9 @@ sequenceDiagram
             R-->>B: [all-active-sids-for-this-user]
             Note over B,R: Spec-compliant fallback, but blast radius is<br/>EVERY session for that user across all browsers.
         end
-        B->>R: EVAL revoke_session.lua for each
+        loop for each matching local sid
+            B->>R: HMGET bff:session:{sid} user_id idp_iss idp_sid<br/>MULTI<br/>DEL bff:session:{sid}<br/>ZREM bff:user_sessions:{user_id} {sid}<br/>SREM bff:sid_index:{idp_iss}:{idp_sid} {sid}<br/>DEL router:jwt_cache:{sid}<br/>EXEC
+        end
         B-->>I: 200
     end
 ```
