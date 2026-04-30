@@ -7,6 +7,10 @@
  * Tree-shaken out of prod bundles: mocksEnabled() is a pure
  * `import.meta.env.*` check, so the banner + its DOM never ship when
  * mocks are disabled.
+ *
+ * Screenshot mode: set VITE_HIDE_MOCK_BANNER=true in `.env.local` to
+ * suppress the banner while mocks are still active. Useful for clean
+ * captures; the underlying mock plugins keep running unchanged.
  */
 
 import React from 'react';
@@ -14,6 +18,7 @@ import { mocksEnabled } from '@/app/config/mocksEnabled';
 
 const MockBanner: React.FC = () => {
   if (!mocksEnabled()) return null;
+  if (import.meta.env.VITE_HIDE_MOCK_BANNER === 'true') return null;
 
   return (
     <div

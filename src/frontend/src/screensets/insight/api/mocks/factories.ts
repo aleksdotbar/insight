@@ -450,13 +450,19 @@ export function mockIcBulletSection(section: string, seed = 0): RawBulletAggrega
     // Attach passthrough display fields that transforms.ts reads
     // when no BULLET_DEFS match is found (the IC-level path).
     // range_min/range_max in IC_BULLET_DEFS are human-friendly strings like
-    // '0%' / '15%'; transforms.ts later runs them through formatRangeStr
-    // which APPENDS the unit again, producing '15%%'. Strip everything but
-    // digits/sign/decimal so the row holds the numeric value transforms
-    // actually expects.
+    // '0%' / '15%' / '1k' / '18k' / '500h'. transforms.ts later runs them
+    // through formatRangeStr which appends the unit again, so we have to
+    // strip the unit characters here. But magnitude suffixes (`k`, `m`)
+    // carry actual scale and **must** be honored — turning '18k' into 18
+    // gives bullets a 1000× wrong range and a broken bar geometry.
     const numeric = (s: string): number => {
-      const n = Number(s.replace(/[^\d.-]/g, ''));
-      return Number.isFinite(n) ? n : 0;
+      const stripped = s.trim().toLowerCase().replace(/[%×hd\s]/g, '');
+      const match = /^(-?\d+(?:\.\d+)?)([km])?$/.exec(stripped);
+      if (!match) return 0;
+      const base = Number(match[1]);
+      if (!Number.isFinite(base)) return 0;
+      const mult = match[2] === 'k' ? 1_000 : match[2] === 'm' ? 1_000_000 : 1;
+      return base * mult;
     };
     row.range_min = numeric(def.range_min);
     row.range_max = numeric(def.range_max);
