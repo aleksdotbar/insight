@@ -78,11 +78,22 @@ const IC_BULLET_DEFS: IcBulletDef[] = [
   { metric_key: 'estimation_accuracy', section: 'task_delivery', label: 'Estimation Accuracy', sublabel: 'Jira \u00b7 tasks within \u00b120% of original estimate', unit: '\u00d7', range_min: '0\u00d7', range_max: '3\u00d7', median: 0, median_label: 'Target 0.9\u20131.3\u00d7', bar_width_pct: 22, median_left_pct: 33, status: 'good', drill_id: '', defaultValue: 1.1 },
   { metric_key: 'task_reopen_rate', section: 'task_delivery', label: 'Task Reopen Rate', sublabel: 'Jira \u00b7 closed then reopened within 14 days \u00b7 lower = better', unit: '%', range_min: '0%', range_max: '15%', median: 5, median_label: 'Median: 5%', bar_width_pct: 27, median_left_pct: 33, status: 'good', drill_id: 'task-reopen', defaultValue: 4 },
   { metric_key: 'due_date_compliance', section: 'task_delivery', label: 'Due Date Compliance', sublabel: 'Jira \u00b7 tasks closed by due date', unit: '%', range_min: '40%', range_max: '100%', median: 72, median_label: 'Median: 72%', bar_width_pct: 87, median_left_pct: 53, status: 'good', drill_id: '', defaultValue: 92 },
+  { metric_key: 'worklog_logging_accuracy', section: 'task_delivery', label: 'Worklog Logging Accuracy', sublabel: 'Jira \u00b7 worklog logged \u00f7 time in In Progress \u00b7 100 = on target', unit: '%', range_min: '10%', range_max: '120%', median: 65, median_label: 'Median: 65%', bar_width_pct: 60, median_left_pct: 50, status: 'good', drill_id: '', defaultValue: 78 },
+  { metric_key: 'bugs_to_task_ratio', section: 'task_delivery', label: 'Bugs / Tasks Closed', sublabel: 'Jira \u00b7 bug-type issues \u00f7 total closed \u00b7 lower = better', unit: '%', range_min: '0%', range_max: '60%', median: 22, median_label: 'Median: 22%', bar_width_pct: 30, median_left_pct: 35, status: 'good', drill_id: '', defaultValue: 18 },
+  { metric_key: 'mean_time_to_resolution', section: 'task_delivery', label: 'Mean Time to Resolution', sublabel: 'Jira \u00b7 close \u2212 create \u00b7 lower = better', unit: 'd', range_min: '1d', range_max: '60d', median: 12, median_label: 'Median: 12d', bar_width_pct: 25, median_left_pct: 20, status: 'good', drill_id: '', defaultValue: 9 },
+  { metric_key: 'stale_in_progress', section: 'task_delivery', label: 'Stale In-Progress', sublabel: 'Jira \u00b7 In-Progress issues untouched > 14 days', unit: 'tasks', drill_id: '', range_min: '0', range_max: '25', median: 3, median_label: 'Median: 3', bar_width_pct: 12, median_left_pct: 12, status: 'good', defaultValue: 2 },
   // git_output
   { metric_key: 'commits', section: 'git_output', label: 'Commits Created', sublabel: 'Bitbucket \u00b7 commits authored', unit: 'count', range_min: '8', range_max: '55', median: 22, median_label: 'Median: 22', bar_width_pct: 55, median_left_pct: 30, status: 'good', drill_id: 'commits', defaultValue: 34 },
   { metric_key: 'prs_created', section: 'git_output', label: 'Pull Requests Created', sublabel: 'Bitbucket \u00b7 PRs authored', unit: 'count', range_min: '2', range_max: '14', median: 6, median_label: 'Median: 6', bar_width_pct: 75, median_left_pct: 33, status: 'good', drill_id: 'pull-requests', defaultValue: 11 },
   { metric_key: 'prs_merged', section: 'git_output', label: 'Pull Requests Merged', sublabel: 'Bitbucket \u00b7 authored and merged', unit: 'count', range_min: '0', range_max: '20', median: 6, median_label: 'Median: 6', bar_width_pct: 45, median_left_pct: 38, status: 'good', drill_id: '', defaultValue: 9 },
   { metric_key: 'clean_loc', section: 'git_output', label: 'Clean LOC', sublabel: 'Bitbucket \u00b7 lines added \u00b7 excl. spec/config', unit: 'count', range_min: '1k', range_max: '18k', median: 7000, median_label: 'Median: 7k', bar_width_pct: 65, median_left_pct: 35, status: 'good', drill_id: '', defaultValue: 12000 },
+  // Derived git metrics \u2014 built from commits, prs_created, prs_merged, loc above.
+  // Visual variety on the dashboard: different units, statuses, bar fills.
+  { metric_key: 'pr_review_time', section: 'git_output', label: 'PR Review Time', sublabel: 'Bitbucket \u00b7 PR opened \u2192 first approval \u00b7 lower = better', unit: 'h', range_min: '4h', range_max: '72h', median: 22, median_label: 'Target <24h', bar_width_pct: 41, median_left_pct: 26, status: 'warn', drill_id: 'pull-requests', defaultValue: 28 },
+  { metric_key: 'merge_rate', section: 'git_output', label: 'PR Merge Rate', sublabel: 'Bitbucket \u00b7 merged \u00f7 created \u00b7 higher = better', unit: '%', range_min: '30%', range_max: '100%', median: 78, median_label: 'Median: 78%', bar_width_pct: 84, median_left_pct: 69, status: 'good', drill_id: '', defaultValue: 88 },
+  { metric_key: 'lines_per_commit', section: 'git_output', label: 'Lines / Commit', sublabel: 'Bitbucket \u00b7 commit size \u00b7 lower = better, smaller = reviewable', unit: 'count', range_min: '20', range_max: '300', median: 85, median_label: 'Target <100', bar_width_pct: 23, median_left_pct: 23, status: 'good', drill_id: '', defaultValue: 62 },
+  { metric_key: 'commits_per_active_day', section: 'git_output', label: 'Commits / Active Day', sublabel: 'Bitbucket \u00b7 cadence on days with any commit', unit: 'count', range_min: '0.5', range_max: '8', median: 3.2, median_label: 'Median: 3.2', bar_width_pct: 56, median_left_pct: 36, status: 'good', drill_id: '', defaultValue: 4.5 },
+  { metric_key: 'unique_files_touched', section: 'git_output', label: 'Unique Files Touched', sublabel: 'Bitbucket \u00b7 distinct files modified this period', unit: 'count', range_min: '5', range_max: '120', median: 35, median_label: 'Median: 35', bar_width_pct: 72, median_left_pct: 25, status: 'good', drill_id: '', defaultValue: 86 },
   // code_quality
   { metric_key: 'reviews_given', section: 'code_quality', label: 'Reviews Given', sublabel: 'Bitbucket \u00b7 PRs reviewed', unit: 'count', range_min: '0', range_max: '20', median: 8, median_label: 'Median: 8', bar_width_pct: 70, median_left_pct: 40, status: 'good', drill_id: 'reviews', defaultValue: 14 },
   { metric_key: 'rework_ratio', section: 'code_quality', label: 'Rework Ratio', sublabel: 'Bitbucket \u00b7 lines changed in follow-up commits \u00b7 lower = better', unit: '%', range_min: '0%', range_max: '50%', median: 0, median_label: 'Target <20%', bar_width_pct: 12, median_left_pct: 20, status: 'good', drill_id: '', defaultValue: 12 },
@@ -126,8 +137,8 @@ const IC_BULLET_DEFS: IcBulletDef[] = [
 
 // IC sections -> metric keys mapping
 const IC_SECTIONS: Record<string, string[]> = {
-  task_delivery: ['tasks_completed', 'task_dev_time', 'estimation_accuracy', 'task_reopen_rate', 'due_date_compliance'],
-  git_output: ['commits', 'prs_created', 'prs_merged', 'clean_loc'],
+  task_delivery: ['tasks_completed', 'task_dev_time', 'estimation_accuracy', 'task_reopen_rate', 'due_date_compliance', 'worklog_logging_accuracy', 'bugs_to_task_ratio', 'mean_time_to_resolution', 'stale_in_progress'],
+  git_output: ['commits', 'prs_created', 'prs_merged', 'clean_loc', 'pr_review_time', 'merge_rate', 'lines_per_commit', 'commits_per_active_day', 'unique_files_touched'],
   code_quality: ['reviews_given', 'rework_ratio', 'build_success', 'pr_cycle_time', 'pickup_time', 'bugs_fixed', 'bug_reopen_rate'],
   ai_tools: ['cursor_completions', 'cursor_agents', 'cursor_lines', 'cc_sessions', 'cc_tool_accept', 'cc_lines', 'ai_loc_share2', 'claude_web', 'chatgpt'],
   collab: ['slack_messages_sent', 'slack_channel_posts', 'slack_active_days', 'slack_msgs_per_active_day', 'slack_dm_ratio', 'm365_active_days', 'm365_emails_sent', 'm365_emails_received', 'm365_emails_read', 'm365_teams_chats', 'm365_files_engaged', 'm365_files_shared_internal', 'm365_files_shared_external', 'meeting_free', 'meeting_hours', 'meetings_count', 'teams_meeting_hours', 'zoom_meeting_hours', 'teams_meetings', 'zoom_meetings'],
@@ -170,6 +181,7 @@ export function mockTeamMemberRow(overrides?: Partial<RawTeamMemberRow>): RawTea
     ...overrides,
   };
 }
+
 
 export function mockIcAggregateRow(overrides?: Partial<RawIcAggregateRow>): RawIcAggregateRow {
   return {
@@ -320,6 +332,10 @@ const MOCK_BULLET_DIST: Partial<Record<string, MockBulletDist>> = {
   task_reopen_rate:           { median: 5,     range_min: 0,  range_max: 15 },
   due_date_compliance:        { median: 72,    range_min: 40, range_max: 100 },
   estimation_accuracy:        { median: 58,    range_min: 0,  range_max: 100 },
+  worklog_logging_accuracy:   { median: 65,    range_min: 10, range_max: 120 },
+  bugs_to_task_ratio:         { median: 22,    range_min: 0,  range_max: 60 },
+  mean_time_to_resolution:    { median: 12,    range_min: 1,  range_max: 60 },
+  stale_in_progress:          { median: 3,     range_min: 0,  range_max: 25 },
   commits:                    { median: 50,    range_min: 0,  range_max: 1000 },
   prs_per_dev:                { median: 6,     range_min: 0,  range_max: 20 },
   build_success:              { median: 89,    range_min: 78, range_max: 97 },
@@ -432,14 +448,23 @@ export function mockIcBulletSection(section: string, seed = 0): RawBulletAggrega
     };
 
     // Attach passthrough display fields that transforms.ts reads
-    // when no BULLET_DEFS match is found (the IC-level path)
+    // when no BULLET_DEFS match is found (the IC-level path).
+    // range_min/range_max in IC_BULLET_DEFS are human-friendly strings like
+    // '0%' / '15%'; transforms.ts later runs them through formatRangeStr
+    // which APPENDS the unit again, producing '15%%'. Strip everything but
+    // digits/sign/decimal so the row holds the numeric value transforms
+    // actually expects.
+    const numeric = (s: string): number => {
+      const n = Number(s.replace(/[^\d.-]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+    row.range_min = numeric(def.range_min);
+    row.range_max = numeric(def.range_max);
     const ext = row as unknown as Record<string, unknown>;
     ext['section'] = def.section;
     ext['label'] = def.label;
     ext['sublabel'] = def.sublabel;
     ext['unit'] = def.unit;
-    ext['range_min'] = def.range_min;
-    ext['range_max'] = def.range_max;
     ext['median_label'] = def.median_label;
     ext['bar_left_pct'] = 0;
     ext['bar_width_pct'] = def.bar_width_pct;

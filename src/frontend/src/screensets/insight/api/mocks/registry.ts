@@ -38,25 +38,30 @@ export type MockPerson = {
   ai_tools: string[];
 };
 
+// person_id is the canonical email used as the identity key throughout
+// the FE — this is what the IR-tree subordinates carry, what the OData
+// $filter `person_id eq '<email>'` looks for in TEAM_MEMBER queries, and
+// what `mockIcScenario(personId)` hashes for IC bullet seeding. Keep it
+// aligned with the IdentityApiService mock's subordinates.
 export const PEOPLE: MockPerson[] = [
   // Backend
-  { person_id: 'p1',  name: 'Alice Kim',   team_id: 'backend',  role: 'Senior Software Engineer', seniority: 'Senior',    is_lead: false, ai_tools: ['Cursor', 'Claude Code'] },
-  { person_id: 'p2',  name: 'Bob Park',    team_id: 'backend',  role: 'Tech Lead',                seniority: 'Staff',     is_lead: true,  ai_tools: ['Cursor'] },
+  { person_id: 'alice.kim@example.com',     name: 'Alice Kim',   team_id: 'backend',  role: 'Senior Software Engineer', seniority: 'Senior',    is_lead: false, ai_tools: ['Cursor', 'Claude Code'] },
+  { person_id: 'bob.park@example.com',      name: 'Bob Park',    team_id: 'backend',  role: 'Tech Lead',                seniority: 'Staff',     is_lead: true,  ai_tools: ['Cursor'] },
   // Frontend
-  { person_id: 'p3',  name: 'Carol Chen',  team_id: 'frontend', role: 'Tech Lead',                seniority: 'Staff',     is_lead: true,  ai_tools: ['Codex'] },
-  { person_id: 'p4',  name: 'David Liu',   team_id: 'frontend', role: 'Junior Software Engineer', seniority: 'Junior',    is_lead: false, ai_tools: ['Cursor'] },
+  { person_id: 'carol.chen@example.com',    name: 'Carol Chen',  team_id: 'frontend', role: 'Tech Lead',                seniority: 'Staff',     is_lead: true,  ai_tools: ['Codex'] },
+  { person_id: 'david.liu@example.com',     name: 'David Liu',   team_id: 'frontend', role: 'Junior Software Engineer', seniority: 'Junior',    is_lead: false, ai_tools: ['Cursor'] },
   // Platform
-  { person_id: 'p5',  name: 'Eve Novak',   team_id: 'platform', role: 'Staff Software Engineer',  seniority: 'Staff',     is_lead: false, ai_tools: ['Cursor', 'Claude Code'] },
-  { person_id: 'p6',  name: 'Frank Moss',  team_id: 'platform', role: 'Tech Lead',                seniority: 'Principal', is_lead: true,  ai_tools: ['Claude Code'] },
+  { person_id: 'eve.novak@example.com',     name: 'Eve Novak',   team_id: 'platform', role: 'Staff Software Engineer',  seniority: 'Staff',     is_lead: false, ai_tools: ['Cursor', 'Claude Code'] },
+  { person_id: 'frank.moss@example.com',    name: 'Frank Moss',  team_id: 'platform', role: 'Tech Lead',                seniority: 'Principal', is_lead: true,  ai_tools: ['Claude Code'] },
   // Data
-  { person_id: 'p7',  name: 'Grace Wu',    team_id: 'data',     role: 'Software Engineer',        seniority: 'Mid',       is_lead: false, ai_tools: ['Cursor'] },
-  { person_id: 'p8',  name: 'Hank Reed',   team_id: 'data',     role: 'Tech Lead',                seniority: 'Senior',    is_lead: true,  ai_tools: ['Cursor', 'Codex'] },
+  { person_id: 'grace.wu@example.com',      name: 'Grace Wu',    team_id: 'data',     role: 'Software Engineer',        seniority: 'Mid',       is_lead: false, ai_tools: ['Cursor'] },
+  { person_id: 'hank.reed@example.com',     name: 'Hank Reed',   team_id: 'data',     role: 'Tech Lead',                seniority: 'Senior',    is_lead: true,  ai_tools: ['Cursor', 'Codex'] },
   // QA
-  { person_id: 'p9',  name: 'Iris Tan',    team_id: 'qa',       role: 'Junior Software Engineer', seniority: 'Junior',    is_lead: false, ai_tools: [] },
-  { person_id: 'p10', name: 'Jake Fox',    team_id: 'qa',       role: 'Tech Lead',                seniority: 'Mid',       is_lead: true,  ai_tools: ['Cursor'] },
+  { person_id: 'iris.tan@example.com',      name: 'Iris Tan',    team_id: 'qa',       role: 'Junior Software Engineer', seniority: 'Junior',    is_lead: false, ai_tools: [] },
+  { person_id: 'jake.fox@example.com',      name: 'Jake Fox',    team_id: 'qa',       role: 'Tech Lead',                seniority: 'Mid',       is_lead: true,  ai_tools: ['Cursor'] },
   // Mobile
-  { person_id: 'p11', name: 'Kira Sato',   team_id: 'mobile',   role: 'Tech Lead',                seniority: 'Senior',    is_lead: true,  ai_tools: ['Claude Code', 'Codex'] },
-  { person_id: 'p12', name: 'Leo Dunn',    team_id: 'mobile',   role: 'Junior Software Engineer', seniority: 'Junior',    is_lead: false, ai_tools: ['Cursor'] },
+  { person_id: 'kira.sato@example.com',     name: 'Kira Sato',   team_id: 'mobile',   role: 'Tech Lead',                seniority: 'Senior',    is_lead: true,  ai_tools: ['Claude Code', 'Codex'] },
+  { person_id: 'leo.dunn@example.com',      name: 'Leo Dunn',    team_id: 'mobile',   role: 'Junior Software Engineer', seniority: 'Junior',    is_lead: false, ai_tools: ['Cursor'] },
 ];
 
 // ---------------------------------------------------------------------------

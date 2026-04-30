@@ -146,6 +146,41 @@ function formatBulletValue(raw: number | null | undefined, unit: string): string
   return String(Math.round(raw * 100) / 100); // up to 2 decimals for %, ratios, hours
 }
 
+/**
+ * Auto-convert hour-scale bullets to days when the chart would otherwise
+ * display 3-digit hour values that read as "long opaque numbers". Industry
+ * dashboards (Jellyfish, LinearB, Atlassian) flip to days at the same
+ * threshold. The whole bullet (value/median/min/max) shares a unit, so we
+ * decide once per row using the upper edge of the range.
+ *
+ * Returns null when no scaling needed; otherwise scaled numbers + new unit.
+ */
+function scaleHoursToDays(
+  unit: string,
+  value: number | null | undefined,
+  median: number | null | undefined,
+  rangeMin: number | null | undefined,
+  rangeMax: number | null | undefined,
+): null | {
+  unit: string;
+  value: number | null | undefined;
+  median: number | null | undefined;
+  rangeMin: number | null | undefined;
+  rangeMax: number | null | undefined;
+} {
+  if (unit !== 'h') return null;
+  if (rangeMax == null || !Number.isFinite(rangeMax) || rangeMax < 48) return null;
+  const toDays = (n: number | null | undefined): number | null | undefined =>
+    n == null || !Number.isFinite(n) ? n : Math.round((n / 24) * 100) / 100;
+  return {
+    unit: 'd',
+    value:    toDays(value),
+    median:   toDays(median),
+    rangeMin: toDays(rangeMin),
+    rangeMax: toDays(rangeMax),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 1. Executive summary
 // ---------------------------------------------------------------------------
@@ -268,24 +303,50 @@ export function transformBulletMetrics(
         // Unknown metric_key — backend surfaced something the FE doesn't know.
         // Render what we can and mark unavailable so the bar doesn't pretend
         // to reflect a distribution we can't describe.
-        const unitStr = '';
+        const passthrough = r as unknown as Record<string, unknown>;
+        const passStr = (k: string): string | null =>
+          typeof passthrough[k] === 'string' ? (passthrough[k] as string) : null;
+        const passNum = (k: string): number | null => {
+          const v = passthrough[k];
+          if (typeof v === 'number' && Number.isFinite(v)) return v;
+          if (typeof v === 'string') {
+            const n = Number(v.replace(/[^\d.-]/g, ''));
+            return Number.isFinite(n) ? n : null;
+          }
+          return null;
+        };
+        const passLabel    = passStr('label');
+        const passSublabel = passStr('sublabel');
+        const passUnit     = passStr('unit');
+        const passDrillId  = passStr('drill_id');
+        const passStatus   = passStr('status');
+        const rMin = typeof r.range_min === 'number' ? r.range_min : passNum('range_min');
+        const rMax = typeof r.range_max === 'number' ? r.range_max : passNum('range_max');
+        const rMed = typeof r.median    === 'number' ? r.median    : passNum('median');
+        const passBarL = passNum('bar_left_pct')   ?? 0;
+        const passBarW = passNum('bar_width_pct')  ?? 0;
+        const passMedL = passNum('median_left_pct') ?? 0;
+        const unitStr = passUnit ?? '';
+        const haveDist = rMin != null && rMax != null;
         return {
           period,
           section,
           metric_key: r.metric_key,
-          label: r.metric_key,
-          sublabel: '',
+          label: passLabel ?? r.metric_key,
+          sublabel: passSublabel ?? '',
           value: formatBulletValue(r.value, unitStr),
           unit: unitStr,
-          range_min: '\u2014',
-          range_max: '\u2014',
-          median: '\u2014',
-          median_label: '',
-          bar_left_pct: 0,
-          bar_width_pct: 0,
-          median_left_pct: 0,
-          status: 'unavailable',
-          drill_id: '',
+          range_min: haveDist ? formatRangeStr(rMin, unitStr) : '\u2014',
+          range_max: haveDist ? formatRangeStr(rMax, unitStr) : '\u2014',
+          median:    rMed != null ? formatBulletValue(rMed, unitStr) : '\u2014',
+          median_label: passStr('median_label') ?? '',
+          bar_left_pct: passBarL,
+          bar_width_pct: passBarW,
+          median_left_pct: passMedL,
+          status: (passStatus === 'good' || passStatus === 'warn' || passStatus === 'bad')
+            ? passStatus
+            : (haveDist ? 'good' : 'unavailable'),
+          drill_id: passDrillId ?? '',
         };
       }
 
@@ -343,12 +404,20 @@ export function transformBulletMetrics(
         };
       }
 
-      const median = r.median;
+      // Auto-scale hour-bullets to days when the upper range crosses a
+      // few days (industry default: 48h). Keeps display readable without
+      // changing the underlying metric semantics or thresholds.
+      const scaled = scaleHoursToDays(effectiveUnit, r.value, r.median, rangeMin, rangeMax);
+      const dispUnit  = scaled?.unit  ?? effectiveUnit;
+      const dispVal   = scaled?.value ?? r.value;
+      const dispMin   = scaled?.rangeMin ?? rangeMin;
+      const dispMax   = scaled?.rangeMax ?? rangeMax;
+      const median    = scaled?.median   ?? r.median;
       // Use formatRangeStr for median too so units stay consistent with the
       // min/max labels rendered under the bar — previously the median-only
       // formatter handled `%`/`h` but missed `×`, `h/mo`, `d`, producing
       // labels like "0× … Median: 1.1 … 3×".
-      const medianFormatted = median != null ? formatRangeStr(median, def.unit) : '\u2014';
+      const medianFormatted = median != null ? formatRangeStr(median, dispUnit) : '\u2014';
       return {
         period,
         section,
@@ -356,15 +425,15 @@ export function transformBulletMetrics(
         label: def.label,
         sublabel: pickSublabel(def),
         // Format counters as integers (round), ratios/percents/hours as 2-decimal.
-        value: formatBulletValue(r.value, effectiveUnit),
-        unit: effectiveUnit,
-        range_min: formatRangeStr(rangeMin, def.unit),
-        range_max: formatRangeStr(rangeMax, def.unit),
-        median: median != null ? formatBulletValue(median, def.unit) : '\u2014',
+        value: formatBulletValue(dispVal, dispUnit),
+        unit: dispUnit,
+        range_min: formatRangeStr(dispMin, dispUnit),
+        range_max: formatRangeStr(dispMax, dispUnit),
+        median: median != null ? formatBulletValue(median, dispUnit) : '\u2014',
         median_label: median != null ? `Median: ${medianFormatted}` : '',
         bar_left_pct: 0,
-        bar_width_pct: pctInRange(r.value, rangeMin, rangeMax),
-        median_left_pct: median != null ? pctInRange(median, rangeMin, rangeMax) : 0,
+        bar_width_pct: pctInRange(dispVal, dispMin, dispMax),
+        median_left_pct: median != null ? pctInRange(median, dispMin, dispMax) : 0,
         status: evaluateStatus(r.value, def),
         drill_id: def.drill_id,
       };

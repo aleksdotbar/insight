@@ -120,7 +120,7 @@ function odata(body: unknown): ODataParams {
   return (body ?? {}) as ODataParams;
 }
 function person(filter: string): string {
-  return /person_id eq '([^']+)'/.exec(filter)?.[1] ?? 'p1';
+  return /person_id eq '([^']+)'/.exec(filter)?.[1] ?? 'alice.kim@example.com';
 }
 function team(filter: string): string {
   return /org_unit_id eq '([^']+)'/.exec(filter)?.[1] ?? 'backend';
@@ -186,14 +186,20 @@ function cachedIcScenario(personId: string): IcScenarioCache {
   return cached;
 }
 
-/** Returns true when the OData filter describes a previous-period range (end date is in the past). */
+/** Returns true when the OData filter describes a previous-period range.
+ *  Current period's `le` typically ends yesterday (the period excludes
+ *  today, partial day), so naive `to < today` flags BOTH current and prev.
+ *  Use a 7-day cushion: prev range is one whole period in the past, so
+ *  its `to` is at least a week before today even for the shortest (week)
+ *  period selector. */
 function isPrevPeriodFilter(filter: string): boolean {
-  const m = /metric_date lt '(\d{4}-\d{2}-\d{2})'/.exec(filter);
+  const m = /metric_date l[te] '(\d{4}-\d{2}-\d{2})'/.exec(filter);
   if (!m) return false;
   const endDate = new Date(m[1]);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return endDate <= today;
+  const cushion = 7 * 24 * 60 * 60 * 1000;
+  return endDate.getTime() < today.getTime() - cushion;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,8 +208,13 @@ function isPrevPeriodFilter(filter: string): boolean {
 
 function generateDrill(did: string, personId: string): DrillData {
   const seed = filterSeed(`${did}:${personId}`);
-  const pid = parseInt(personId.replace('p', ''), 10) || 1;
-  const login = `user.${personId}`;
+  // Compact numeric stand-in derived from the seed; used for synthetic
+  // ticket IDs and similar where a small integer reads better than the
+  // full email. (Was `parseInt(personId.replace('p',''))` when person_id
+  // was 'p1'..'p12'.)
+  const pid = (seed % 12) + 1;
+  // Local part of the email is already the login-style handle.
+  const login = personId.includes('@') ? personId.split('@')[0] : personId;
 
   const date = (total: number, i: number): string =>
     `2026-03-${String(Math.max(1, 31 - Math.round((i * 28) / Math.max(total, 1)))).padStart(2, '0')}`;
@@ -451,12 +462,13 @@ export const insightMockMap = {
       return wrap([row]);
     },
 
-  // IC bullet metrics (delivery, collab, AI tools) -- return RawBulletAggregateRow[]
-  ...((['IC_BULLET_DELIVERY', 'IC_BULLET_COLLAB', 'IC_BULLET_AI'] as const).reduce<
+  // IC bullet metrics (delivery, git, collab, AI tools) -- return RawBulletAggregateRow[]
+  ...((['IC_BULLET_DELIVERY', 'IC_BULLET_COLLAB', 'IC_BULLET_AI', 'IC_BULLET_GIT'] as const).reduce<
     Record<string, (body: unknown) => ODataResponse<RawBulletAggregateRow>>
   >((acc, key) => {
     const sectionMap: Record<typeof key, readonly string[]> = {
-      IC_BULLET_DELIVERY: ['task_delivery', 'git_output', 'code_quality'],
+      IC_BULLET_DELIVERY: ['task_delivery'],
+      IC_BULLET_GIT:      ['git_output'],
       IC_BULLET_COLLAB:   ['collab'],
       IC_BULLET_AI:       ['ai_tools'],
     };

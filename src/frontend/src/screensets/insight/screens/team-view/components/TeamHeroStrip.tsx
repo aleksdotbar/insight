@@ -46,7 +46,9 @@ const KpiCard: React.FC<{ kpi: TeamKpi; idx: number }> = ({ kpi, idx }) => (
     </div>
     {kpi.sublabel && <div className="text-2xs text-gray-400">{kpi.sublabel}</div>}
     <Badge className={`mt-1 text-xs font-bold ${CHIP_CLASS[kpi.status]}`}>
-      {kpi.chipLabel ?? kpi.status}
+      {kpi.chipLabel
+        ? kpi.chipLabel
+        : kpi.status.charAt(0).toUpperCase() + kpi.status.slice(1)}
     </Badge>
   </div>
 );
