@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, type ThemeApplyFn } from '@hai3/react';
+import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, toggleMockMode, type ThemeApplyFn } from '@hai3/react';
 import { Toaster, applyTheme } from '@hai3/uikit';
 import MockBanner from '@/app/components/MockBanner';
 // Side-effect imports — services self-register with apiRegistry
@@ -39,6 +39,9 @@ const app = createHAI3App({
 registerSlice(authSlice, initAuthEffects);
 registerBootstrapEffects(app.store.dispatch);
 
+// HAI3 mockMode defaults to ON; opt in via VITE_ENABLE_MOCKS.
+toggleMockMode(import.meta.env.VITE_ENABLE_MOCKS === 'true');
+
 // Register all themes (default theme first, becomes the default selection)
 app.themeRegistry.register(DEFAULT_THEME_ID, defaultTheme);
 app.themeRegistry.register(LIGHT_THEME_ID, lightTheme);
@@ -57,9 +60,8 @@ app.themeRegistry.apply(DEFAULT_THEME_ID);
  * - authEffects listen → dispatch to authSlice → components react
  *
  * Mock API: OFF by default. Set `VITE_ENABLE_MOCKS=true` in `.env.local` to
- * opt in (dev builds only — prod bundles drop the flag's branch entirely).
- * A yellow warning strip renders at the top of the page while mocks are
- * active, so synthetic data can never masquerade as real.
+ * opt in. A yellow warning strip renders at the top of the page while mocks
+ * are active, so synthetic data can never masquerade as real.
  */
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
