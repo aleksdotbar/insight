@@ -22,6 +22,13 @@ export default defineConfig(({ mode }) => {
       : undefined,
     build: {
       chunkSizeWarningLimit: 500,
+      // Never ship source maps to production — they would expose original sources.
+      sourcemap: false,
+    },
+    esbuild: {
+      // Strip `debugger` statements from production bundles. `console.*` calls are
+      // already gated behind `import.meta.env.DEV` and tree-shaken by Vite.
+      drop: ['debugger'],
     },
   };
 });

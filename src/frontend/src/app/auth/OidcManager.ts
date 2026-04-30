@@ -109,7 +109,6 @@ export const OidcManager = {
     await OidcManager.init();
     if (!userManager) return;
 
-    sessionStorage.setItem('__debug_signIn_called', Date.now().toString());
     await userManager.signinRedirect({
       state: { returnUrl: window.location.pathname + window.location.search } satisfies OidcSigninState,
     });
@@ -132,6 +131,21 @@ export const OidcManager = {
   /** RP-initiated logout at OIDC provider */
   async signOut(): Promise<void> {
     if (!userManager) return;
-    await userManager.signoutRedirect();
+    // Capture id_token before clearing storage — some IdPs require id_token_hint
+    // in the end_session request and signoutRedirect would otherwise read it
+    // from the now-empty user store.
+    const user = await userManager.getUser();
+    // Defense in depth: drop any auth-related storage. signoutRedirect
+    // re-populates its own state after this clear. We clear all of
+    // sessionStorage (oidc-client-ts uses it for the user store and we don't
+    // store unrelated long-lived state there) but only auth-prefixed keys in
+    // localStorage so we don't nuke unrelated app state (theme, prefs, etc.).
+    try {
+      sessionStorage.clear();
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('oidc.') || k.startsWith('auth.'))
+        .forEach((k) => { localStorage.removeItem(k); });
+    } catch { /* storage unavailable */ }
+    await userManager.signoutRedirect({ id_token_hint: user?.id_token });
   },
 };

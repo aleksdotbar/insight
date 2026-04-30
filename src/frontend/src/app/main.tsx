@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, toggleMockMode, type ThemeApplyFn } from '@hai3/react';
 import { Toaster, applyTheme } from '@hai3/uikit';
 import MockBanner from '@/app/components/MockBanner';
+import { ErrorBoundary } from '@/app/components/ErrorBoundary';
 // Side-effect imports — services self-register with apiRegistry
 import '@/app/api/AccountsApiService';
 import '@/app/api/AuthApiService';
@@ -65,10 +66,12 @@ app.themeRegistry.apply(DEFAULT_THEME_ID);
  */
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <HAI3Provider app={app}>
-      <MockBanner />
-      <App />
-      <Toaster />
-    </HAI3Provider>
+    <ErrorBoundary>
+      <HAI3Provider app={app}>
+        <MockBanner />
+        <App />
+        <Toaster />
+      </HAI3Provider>
+    </ErrorBoundary>
   </StrictMode>
 );

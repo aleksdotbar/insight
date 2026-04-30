@@ -1,0 +1,39 @@
+map $sent_http_content_type $csp_header {
+    default "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${CSP_REMOTE}; frame-src 'self' ${CSP_REMOTE}; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'";
+}
+
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml;
+    gzip_min_length 256;
+
+    # Security headers — applied at server level and re-included in any
+    # location block that declares its own add_header (nginx replaces rather
+    # than merges across levels). CSP: 'unsafe-inline' for style-src is
+    # required for React inline styles + recharts; tighten via nonce in a
+    # later iteration. connect-src/frame-src use the actual OIDC issuer origin
+    # (substituted by docker-entrypoint.sh) when available, falling back to
+    # `https:` if OIDC_ISSUER is not set at runtime.
+    include /etc/nginx/snippets/security-headers.conf;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        # Re-include security headers — see comment above for why.
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    location /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok";
+    }
+}
