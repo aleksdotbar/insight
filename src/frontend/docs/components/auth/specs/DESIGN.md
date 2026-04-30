@@ -295,7 +295,7 @@ Existing REST plugin that injects Bearer tokens into API requests and handles 40
 
 #### Login Flow
 
-**ID**: `cpt-auth-seq-login`
+- [ ] `p1` - **ID**: `cpt-auth-seq-login`
 
 **Use cases**: `cpt-auth-usecase-first-login`
 
@@ -347,7 +347,7 @@ sequenceDiagram
 
 #### Silent Renew Flow
 
-**ID**: `cpt-auth-seq-silent-renew`
+- [ ] `p1` - **ID**: `cpt-auth-seq-silent-renew`
 
 **Use cases**: `cpt-auth-usecase-silent-renew`
 
@@ -380,7 +380,7 @@ sequenceDiagram
 
 #### Logout Flow
 
-**ID**: `cpt-auth-seq-logout`
+- [ ] `p2` - **ID**: `cpt-auth-seq-logout`
 
 **Use cases**: `cpt-auth-usecase-logout`
 

@@ -1,10 +1,10 @@
 # Cypilot artifacts registry
 
 [[systems]]
-name = "InsightFront"
-slug = "insightfront"
+name = "Auth"
+slug = "auth"
 kit = "sdlc"
-codebase = ["src/app", "src/screensets/insight"]
+codebase = ["src/app/auth", "src/app/plugins"]
 
 [[systems.artifacts]]
 kind = "PRD"
@@ -21,6 +21,12 @@ kind = "DECOMPOSITION"
 path = "docs/components/auth/specs/DECOMPOSITION.md"
 name = "Auth Decomposition"
 
+[[systems]]
+name = "Layout"
+slug = "layout"
+kit = "sdlc"
+codebase = ["src/app/layout"]
+
 [[systems.artifacts]]
 kind = "PRD"
 path = "docs/components/layout/specs/PRD.md"
@@ -30,6 +36,12 @@ name = "Layout PRD"
 kind = "DESIGN"
 path = "docs/components/layout/specs/DESIGN.md"
 name = "Layout Design"
+
+[[systems]]
+name = "UIKit"
+slug = "uikit"
+kit = "sdlc"
+codebase = ["src/screensets/insight/uikit", "src/screensets/insight/screens/uikit"]
 
 [[systems.artifacts]]
 kind = "PRD"
@@ -41,6 +53,12 @@ kind = "DESIGN"
 path = "docs/components/uikit/specs/DESIGN.md"
 name = "UIKit Design"
 
+[[systems]]
+name = "Executive View"
+slug = "executive-view"
+kit = "sdlc"
+codebase = ["src/screensets/insight/screens/executive-view"]
+
 [[systems.artifacts]]
 kind = "PRD"
 path = "docs/domain/executive-view/specs/PRD.md"
@@ -51,6 +69,12 @@ kind = "DESIGN"
 path = "docs/domain/executive-view/specs/DESIGN.md"
 name = "Executive View Design"
 
+[[systems]]
+name = "Team View"
+slug = "team-view"
+kit = "sdlc"
+codebase = ["src/screensets/insight/screens/team-view"]
+
 [[systems.artifacts]]
 kind = "PRD"
 path = "docs/domain/team-view/specs/PRD.md"
@@ -60,6 +84,12 @@ name = "Team View PRD"
 kind = "DESIGN"
 path = "docs/domain/team-view/specs/DESIGN.md"
 name = "Team View Design"
+
+[[systems]]
+name = "IC Dashboard"
+slug = "ic-dashboard"
+kit = "sdlc"
+codebase = ["src/screensets/insight/screens/ic-dashboard"]
 
 [[systems.artifacts]]
 kind = "PRD"

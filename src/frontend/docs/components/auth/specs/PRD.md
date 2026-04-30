@@ -39,7 +39,6 @@
 
 <!-- /toc -->
 
-- [ ] `p1` - **ID**: `cpt-auth-prd-auth`
 ## 1. Overview
 
 ### 1.1 Purpose
