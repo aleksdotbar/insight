@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=25.1.0",
-    "npm": ">=11.6.0"
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
   },
-  "packageManager": "npm@11.6.2",
+  "packageManager": "npm@11.13.0",
   "workspaces": [
     "eslint-plugin-local"
   ],
