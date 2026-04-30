@@ -38,7 +38,7 @@ import DrillModal from '../../uikit/composite/DrillModal';
 import TeamMetricsModal from './components/TeamMetricsModal';
 import { INSIGHT_SCREENSET_ID, IC_DASHBOARD_SCREEN_ID, TEAM_VIEW_SCREEN_ID } from '../../ids';
 import { getInitials } from '../../utils/getInitials';
-import type { CustomRange } from '../../types';
+import type { BulletSection, CustomRange } from '../../types';
 
 const translations = I18nRegistry.createLoader({
   [Language.English]: () => import('./i18n/en.json'),
@@ -161,6 +161,68 @@ const TeamViewScreen: React.FC = () => {
     [allMembers.length, membersLoading, summaryLoading, members, period, storeTeamKpis],
   );
   const bulletSections = useAppSelector(selectBulletSections);
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Direct-reports scoping for member-scale AI metrics.
+  //
+  // The 4 ai_adoption bullets (active_ai_members, cursor_active, cc_active,
+  // codex_active) are member-scale: their value is "N out of teamSize". When
+  // "Direct reports only" is on we want them to read against the visible
+  // member set, not the whole team — otherwise the table shows 5 directs but
+  // the bullet still reads `74/112` for the whole org.
+  //
+  // The other sections (task_delivery, code_quality, estimation,
+  // collaboration) come from server-side per-team aggregates that the
+  // backend can't yet narrow by `person_id IN (list)`. For those we surface
+  // a disclaimer rather than fake the recompute.
+  // ────────────────────────────────────────────────────────────────────────
+  const scopingActive =
+    canFilterDirectReports &&
+    directReportsOnly &&
+    members.length !== allMembers.length;
+
+  const scopedBulletSections: BulletSection[] = useMemo(() => {
+    if (!scopingActive) return bulletSections;
+    const teamSize = members.length;
+    const recompute: Record<string, number> = {
+      active_ai_members: members.filter((m) => m.ai_tools.length > 0).length,
+      cursor_active:     members.filter((m) => m.ai_tools.includes('Cursor')).length,
+      cc_active:         members.filter((m) => m.ai_tools.includes('Claude Code')).length,
+      codex_active:      members.filter((m) => m.ai_tools.includes('Codex')).length,
+    };
+    return bulletSections.map((sec) => {
+      if (sec.id !== 'ai_adoption') return sec;
+      return {
+        ...sec,
+        metrics: sec.metrics.map((m) => {
+          if (!(m.metric_key in recompute)) return m;
+          const value = recompute[m.metric_key];
+          const valuePct = teamSize > 0
+            ? Math.min(100, (value / teamSize) * 100)
+            : 0;
+          return {
+            ...m,
+            value: String(value),
+            unit: `/ ${teamSize}`,
+            range_min: '0',
+            range_max: String(teamSize),
+            // Median is meaningless against a filtered N — drop it instead
+            // of carrying the whole-team median across.
+            median: '—',
+            median_label: '',
+            median_left_pct: 0,
+            bar_left_pct: 0,
+            bar_width_pct: valuePct,
+          };
+        }),
+      };
+    });
+  }, [scopingActive, members, bulletSections]);
+
+  const scopedBulletNote = scopingActive
+    ? `AI Adoption is scoped to direct reports (${members.length} of ${allMembers.length} members). Other sections still reflect the whole team.`
+    : null;
+
   const teamName = useAppSelector(selectTeamName);
   const teamViewConfig = useAppSelector(selectTeamViewConfig);
   const viewMode = useAppSelector(selectInsightViewMode);
@@ -282,8 +344,14 @@ const TeamViewScreen: React.FC = () => {
         range={resolveDateRange(period, customRange)}
       />
 
+      {scopedBulletNote && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {scopedBulletNote}
+        </div>
+      )}
+
       <TeamBulletSections
-        bulletSections={bulletSections}
+        bulletSections={scopedBulletSections}
         viewMode={viewMode}
         sectionStatus={sectionStatus}
         sectionErrors={sectionErrors}
