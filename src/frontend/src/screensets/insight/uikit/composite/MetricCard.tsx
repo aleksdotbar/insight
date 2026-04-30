@@ -20,6 +20,8 @@ export interface MetricCardProps {
   personName?: string;
   /** True when the backend query for this section failed (vs returned empty). */
   errored?: boolean;
+  /** True while the backend query is still in flight — shows a loading placeholder. */
+  loading?: boolean;
   onRetry?: () => void;
 }
 
@@ -54,9 +56,13 @@ const MetricCard: React.FC<MetricCardProps> = ({
   mode = 'chart',
   personName,
   errored = false,
+  loading = false,
   onRetry,
 }) => {
-  const placeholderState = errored ? 'error' : 'empty';
+  // Loading takes precedence: while in flight we don't know yet whether the
+  // section will end up empty or with data, so we render the loading skeleton
+  // instead of "no data".
+  const placeholderState = loading ? 'loading' : errored ? 'error' : 'empty';
   const isEmpty = metrics.length === 0;
 
   if (mode === 'tile') {

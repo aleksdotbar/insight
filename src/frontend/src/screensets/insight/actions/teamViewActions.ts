@@ -5,11 +5,15 @@
  * then assembles TeamViewData from the responses.
  * Also fetches data_availability via ConnectorManagerService.
  *
+ * Each section runs its own pipeline and emits its own
+ * TeamViewSectionLoading / TeamViewSectionLoaded / TeamViewSectionFailed
+ * events. A slow section never blocks the rendering of the others.
+ *
  * Spec: analytics-views-api.md §4.2
  */
 
 import { eventBus, apiRegistry } from '@hai3/react';
-import { TeamViewEvents } from '../events/teamViewEvents';
+import { TeamViewEvents, type TeamViewSectionData } from '../events/teamViewEvents';
 import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
@@ -18,7 +22,6 @@ import { transformTeamMembers, transformBulletMetrics, transformDrill } from '..
 import type {
   PeriodValue,
   TeamMember,
-  TeamViewData,
   DrillData,
   ODataResponse,
 } from '../types';
@@ -28,7 +31,6 @@ import {
   TEAM_VIEW_CONFIG,
 } from '../api/viewConfigs';
 import { teamHealthStatus } from '../api/metricSemantics';
-import { settled, emptyOdata } from '../utils/settledResult';
 
 // ---------------------------------------------------------------------------
 // Team KPI derivation (§4.2 — frontend-computed from member rows)
@@ -90,7 +92,7 @@ export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
       // chipLabel: undefined — TeamHeroStrip uses `kpi.chipLabel ?? kpi.status`
       // for the badge, so empty string would render an empty badge; undefined
       // correctly falls back to status.
-      return { ...k, value, sublabel: `Team median \u00b7 ${total} member${total !== 1 ? 's' : ''}`, chipLabel: undefined };
+      return { ...k, value, sublabel: `Team median · ${total} member${total !== 1 ? 's' : ''}`, chipLabel: undefined };
     }
     return k;
   });
@@ -128,6 +130,25 @@ const buildSyntheticMember = (entry: TeamRosterEntry, period: PeriodValue): Team
   ai_loc_share_pct: null,
 });
 
+// Per-section runner: emits Loading, then Loaded on success / Failed on
+// rejection. Sections are independent — one slow query never blocks others.
+function runSection(
+  sectionId: string,
+  pipeline: () => Promise<TeamViewSectionData>,
+): void {
+  eventBus.emit(TeamViewEvents.TeamViewSectionLoading, { sectionId });
+  void pipeline()
+    .then((data) => {
+      eventBus.emit(TeamViewEvents.TeamViewSectionLoaded, { sectionId, data });
+    })
+    .catch((err: unknown) => {
+      eventBus.emit(TeamViewEvents.TeamViewSectionFailed, {
+        sectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+}
+
 export const loadTeamView = (
   teamId: string,
   period: PeriodValue,
@@ -147,6 +168,27 @@ export const loadTeamView = (
   const bulletScope = teamId.includes('@') ? teamId.toLowerCase() : teamId;
   const bulletFilter = `org_unit_id eq '${odataEscapeValue(bulletScope)}' and ${dateFilter}`;
 
+  // ---- Section: team_summary (synchronous — name + static config) ---------
+  // Rendered immediately so the screen header is never empty waiting for
+  // members. teamKpis come from the members section once it lands.
+  const teamName = pivotDisplayName ?? (teamId.charAt(0).toUpperCase() + teamId.slice(1));
+  runSection('team_summary', () => Promise.resolve({
+    kind: 'team_summary',
+    teamName,
+    teamKpis: [],
+    config: TEAM_VIEW_CONFIG,
+  }));
+
+  // ---- Availability (best-effort) -----------------------------------------
+  void connectors.getDataAvailability()
+    .then((availability) => {
+      eventBus.emit(TeamViewEvents.TeamViewAvailabilityLoaded, availability);
+    })
+    .catch(() => {
+      // swallow — availability is informational
+    });
+
+  // ---- Section: members (per-person or bulk) ------------------------------
   // Roster mode: fetch metrics per person from the IR-derived list. Missing
   // analytics rows render as synthetic empties so headcount stays accurate.
   // Fallback (roster=null): legacy org_unit_id query — only path remaining is
@@ -166,30 +208,23 @@ export const loadTeamView = (
         }),
       ];
 
-  void Promise.allSettled([
-    Promise.allSettled(memberQueries),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_DELIVERY, { $filter: bulletFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_QUALITY,  { $filter: bulletFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_COLLAB,   { $filter: bulletFilter }),
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.TEAM_BULLET_AI,       { $filter: bulletFilter }),
-    connectors.getDataAvailability(),
-  ])
-    .then(([memberResultsSettled, deliveryResult, qualityResult, collabResult, aiResult, availResult]) => {
-      const memberResults = memberResultsSettled.status === 'fulfilled'
-        ? memberResultsSettled.value
-        : [];
-      const deliveryResp = settled(deliveryResult,  emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_DELIVERY');
-      const qualityResp  = settled(qualityResult,   emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_QUALITY');
-      const collabResp   = settled(collabResult,    emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_COLLAB');
-      const aiResp       = settled(aiResult,        emptyOdata<RawBulletAggregateRow>(),   'TEAM_BULLET_AI');
+  runSection('members', () =>
+    // allSettled inside the section: one missing person row shouldn't fail
+    // the whole roster — synthetic entries cover the gaps. The section only
+    // fails (and shows Retry) when *every* per-person query rejects, which
+    // is unlikely outside a total backend outage.
+    Promise.allSettled(memberQueries).then((settledResults) => {
+      const fulfilled = settledResults.filter(
+        (r): r is PromiseFulfilledResult<ODataResponse<RawTeamMemberRow>> => r.status === 'fulfilled',
+      );
+      if (settledResults.length > 0 && fulfilled.length === 0) {
+        // Total failure — surface as section error so the table renders Retry.
+        throw new Error('TEAM_MEMBER queries all rejected');
+      }
 
-      // Collect all returned analytics rows by lowercase person_id.
       const rowByEmail = new Map<string, RawTeamMemberRow>();
-      let hasNext = false;
-      for (const r of memberResults) {
-        const resp = settled(r, emptyOdata<RawTeamMemberRow>(), 'TEAM_MEMBER');
-        if (resp.page_info.has_next) hasNext = true;
-        for (const row of resp.items) {
+      for (const resp of fulfilled) {
+        for (const row of resp.value.items) {
           rowByEmail.set(row.person_id.toLowerCase(), row);
         }
       }
@@ -208,44 +243,31 @@ export const loadTeamView = (
         members.sort((a, b) => a.name.localeCompare(b.name));
       }
 
-      // Headcount drives member-scale AI bullets. In roster mode the count is
-      // authoritative (IR truth); in fallback mode `has_next` means the org
-      // exceeded $top: 200 and we cannot trust the visible count.
-      const teamSize = roster
-        ? (members.length || undefined)
-        : (hasNext ? undefined : (members.length || undefined));
+      return { kind: 'members', members };
+    }),
+  );
 
-      const bulletSections = [
-        { id: 'task_delivery',  title: 'Task Delivery',  metrics: transformBulletMetrics(deliveryResp.items, 'task_delivery', period, undefined, 'team') },
-        { id: 'code_quality',   title: 'Code & Quality', metrics: transformBulletMetrics(qualityResp.items,  'code_quality',  period, undefined, 'team') },
-        { id: 'collaboration',  title: 'Collaboration',  metrics: transformBulletMetrics(collabResp.items,   'collaboration', period, undefined, 'team') },
-        { id: 'ai_adoption',    title: 'AI Adoption',    metrics: transformBulletMetrics(aiResp.items,       'ai_adoption',   period, teamSize, 'team') },
-      ].filter((s) => s.metrics.length > 0);
+  // ---- Bullet sections (independent) --------------------------------------
+  const bulletSection = (sectionId: string, registryKey: keyof typeof METRIC_REGISTRY): void => {
+    runSection(sectionId, () =>
+      api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY[registryKey], { $filter: bulletFilter })
+        // teamSize is unknown at this point (members section may not have
+        // landed yet); the bullet transform handles undefined teamSize by
+        // marking member-scale rows as `unavailable` rather than inventing a
+        // denominator. AI bullets reconcile their denominator when the
+        // members section lands (see slice.setTeamSize re-derivation).
+        .then((resp) => ({
+          kind: 'bullet',
+          sectionId,
+          metrics: transformBulletMetrics(resp.items, sectionId, period, undefined, 'team'),
+        })),
+    );
+  };
 
-      const teamName = pivotDisplayName ?? (teamId.charAt(0).toUpperCase() + teamId.slice(1));
-
-      const data: TeamViewData = {
-        teamName,
-        teamKpis:      deriveTeamKpis(members, period),
-        members,
-        bulletSections,
-        config:        TEAM_VIEW_CONFIG,
-      };
-
-      eventBus.emit(TeamViewEvents.TeamViewLoaded, data);
-
-      const availability = settled(
-        availResult,
-        { git: 'no-connector', tasks: 'no-connector', ci: 'no-connector', comms: 'no-connector', hr: 'no-connector', ai: 'no-connector' } as const,
-        'CONNECTORS',
-      );
-      eventBus.emit(TeamViewEvents.TeamViewAvailabilityLoaded, availability);
-    })
-    .catch((err: unknown) => {
-      // Promise.allSettled never rejects, but guard against unexpected
-      // errors in the transform/emit logic above.
-      eventBus.emit(TeamViewEvents.TeamViewLoadFailed, String(err));
-    });
+  bulletSection('task_delivery', 'TEAM_BULLET_DELIVERY');
+  bulletSection('code_quality',  'TEAM_BULLET_QUALITY');
+  bulletSection('collaboration', 'TEAM_BULLET_COLLAB');
+  bulletSection('ai_adoption',   'TEAM_BULLET_AI');
 };
 
 // ---------------------------------------------------------------------------

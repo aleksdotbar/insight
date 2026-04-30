@@ -16,7 +16,13 @@ import React from 'react';
 import { Icon } from '@iconify/react';
 
 export type ComingSoonVariant = 'card' | 'chip' | 'row';
-export type ComingSoonState = 'empty' | 'error';
+/**
+ * `loading` is used while the section's query is in flight. Renders a
+ * neutral pulsing skeleton instead of a "no data" message — matches the
+ * progressive loading pattern where each section shows its own state
+ * independent of the others.
+ */
+export type ComingSoonState = 'empty' | 'error' | 'loading';
 
 export interface ComingSoonProps {
   variant?: ComingSoonVariant;
@@ -28,8 +34,9 @@ export interface ComingSoonProps {
 }
 
 const DEFAULT_LABELS: Record<ComingSoonState, string> = {
-  empty: 'No data for this period',
-  error: 'Unable to load',
+  empty:   'No data for this period',
+  error:   'Unable to load',
+  loading: 'Loading…',
 };
 
 const STATE_STYLES: Record<ComingSoonState, { border: string; bg: string; text: string; icon: string; iconName: string }> = {
@@ -46,6 +53,13 @@ const STATE_STYLES: Record<ComingSoonState, { border: string; bg: string; text: 
     text:   'text-red-500',
     icon:   'text-red-400',
     iconName: 'lucide:alert-triangle',
+  },
+  loading: {
+    border: 'border-gray-200',
+    bg:     'bg-slate-50/60 animate-pulse',
+    text:   'text-gray-400',
+    icon:   'text-gray-400',
+    iconName: 'lucide:loader-2',
   },
 };
 

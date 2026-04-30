@@ -15,8 +15,31 @@ import { filterBulletsByLayoutGroup } from '../../../api/thresholdConfig';
 export interface TeamBulletSectionsProps {
   bulletSections: BulletSection[];
   viewMode: ViewMode;
+  /** Per-section status from the slice — drives skeleton/error placeholders. */
+  sectionStatus?: Record<string, 'loading' | 'loaded' | 'errored' | undefined>;
+  /** Per-section error messages, only shown when status === 'errored'. */
+  sectionErrors?: Record<string, string | undefined>;
   onDrillClick?: (drillId: string) => void;
 }
+
+const SectionPlaceholder: React.FC<{ title: string; kind: 'loading' | 'errored'; error?: string }> = ({ title, kind, error }) => (
+  <Card className="bg-white">
+    <CardContent className="px-3.5 py-3">
+      <div className="text-sm font-semibold text-gray-900 mb-2">{title}</div>
+      {kind === 'loading' ? (
+        <div className="flex flex-col gap-2 animate-pulse">
+          <div className="h-3 bg-gray-100 rounded w-3/4" />
+          <div className="h-3 bg-gray-100 rounded w-2/3" />
+          <div className="h-3 bg-gray-100 rounded w-4/5" />
+        </div>
+      ) : (
+        <div className="text-2xs text-red-600">
+          {error ?? 'Failed to load'}
+        </div>
+      )}
+    </CardContent>
+  </Card>
+);
 
 // Shared bullet legend used in all team sections — matches the IC dashboard
 // legend so the same swatches mean the same thing across screens. Gray bar =
@@ -168,8 +191,32 @@ const CollaborationSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (
   );
 };
 
-export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({ bulletSections, onDrillClick }) => {
+export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({
+  bulletSections,
+  sectionStatus = {},
+  sectionErrors = {},
+  onDrillClick,
+}) => {
   const byId = Object.fromEntries(bulletSections.map((s) => [s.id, s]));
+
+  // Decide what to show for each section card. A section renders its data
+  // when status is 'loaded' AND the bullet payload arrived, a skeleton when
+  // 'loading' (or status not yet emitted), an error placeholder otherwise.
+  // When status is undefined (server hasn't been asked yet), we render
+  // nothing — same as before — so the screen layout stays compact when a
+  // section isn't applicable.
+  const renderState = (sid: string): 'data' | 'loading' | 'errored' | 'skip' => {
+    const st = sectionStatus[sid];
+    if (st === 'loaded' && byId[sid]) return 'data';
+    if (st === 'loading') return 'loading';
+    if (st === 'errored') return 'errored';
+    return 'skip';
+  };
+
+  const taskDeliveryState = renderState('task_delivery');
+  const codeQualityState  = renderState('code_quality');
+  const aiAdoptionState   = renderState('ai_adoption');
+  const collabState       = renderState('collaboration');
 
   const taskDelivery = byId['task_delivery'];
   const codeQuality  = byId['code_quality'];
@@ -180,9 +227,9 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({ bulletSe
   return (
     <div className="flex flex-col gap-3.5">
       {/* Task Delivery + Code & Quality — side by side */}
-      {(taskDelivery || codeQuality) && (
+      {(taskDeliveryState !== 'skip' || codeQualityState !== 'skip') && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-          {taskDelivery && (
+          {taskDeliveryState === 'data' && taskDelivery && (
             <TwoColCard
               title="Task Delivery"
               subtitle="Team median vs company median"
@@ -190,7 +237,13 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({ bulletSe
               onDrillClick={onDrillClick}
             />
           )}
-          {codeQuality && (
+          {taskDeliveryState === 'loading' && (
+            <SectionPlaceholder title="Task Delivery" kind="loading" />
+          )}
+          {taskDeliveryState === 'errored' && (
+            <SectionPlaceholder title="Task Delivery" kind="errored" error={sectionErrors['task_delivery']} />
+          )}
+          {codeQualityState === 'data' && codeQuality && (
             <TwoColCard
               title="Code & Quality"
               subtitle="Team median vs company median"
@@ -198,17 +251,35 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({ bulletSe
               onDrillClick={onDrillClick}
             />
           )}
+          {codeQualityState === 'loading' && (
+            <SectionPlaceholder title="Code & Quality" kind="loading" />
+          )}
+          {codeQualityState === 'errored' && (
+            <SectionPlaceholder title="Code & Quality" kind="errored" error={sectionErrors['code_quality']} />
+          )}
         </div>
       )}
 
-      {/* Estimation */}
+      {/* Estimation — backend doesn't emit status for it; legacy conditional */}
       {estimation && <EstimationCard metrics={estimation.metrics} onDrillClick={onDrillClick} />}
 
-      {/* AI Adoption — collapsible */}
-      {aiAdoption && <AiAdoptionSection metrics={aiAdoption.metrics} onDrillClick={onDrillClick} />}
+      {/* AI Adoption */}
+      {aiAdoptionState === 'data' && aiAdoption && (
+        <AiAdoptionSection metrics={aiAdoption.metrics} onDrillClick={onDrillClick} />
+      )}
+      {aiAdoptionState === 'loading' && <SectionPlaceholder title="AI Adoption" kind="loading" />}
+      {aiAdoptionState === 'errored' && (
+        <SectionPlaceholder title="AI Adoption" kind="errored" error={sectionErrors['ai_adoption']} />
+      )}
 
-      {/* Collaboration — collapsible */}
-      {collab && <CollaborationSection metrics={collab.metrics} onDrillClick={onDrillClick} />}
+      {/* Collaboration */}
+      {collabState === 'data' && collab && (
+        <CollaborationSection metrics={collab.metrics} onDrillClick={onDrillClick} />
+      )}
+      {collabState === 'loading' && <SectionPlaceholder title="Collaboration" kind="loading" />}
+      {collabState === 'errored' && (
+        <SectionPlaceholder title="Collaboration" kind="errored" error={sectionErrors['collaboration']} />
+      )}
     </div>
   );
 };

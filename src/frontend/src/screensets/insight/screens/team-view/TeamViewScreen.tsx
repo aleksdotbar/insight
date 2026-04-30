@@ -14,12 +14,14 @@ import {
   selectMembers,
   selectTeamKpis,
   selectBulletSections,
-  selectTeamViewLoading,
   selectTeamName,
   selectTeamViewConfig,
   selectSelectedTeamId,
   selectTeamDrillId,
   selectTeamDrillData,
+  selectTeamSectionStatus,
+  selectTeamSectionError,
+  type SectionStatus,
 } from '../../slices/teamViewSlice';
 import { selectCurrentUser } from '../../slices/currentUserSlice';
 import { selectCustomRange } from '../../slices/periodSlice';
@@ -84,7 +86,32 @@ const TeamViewScreen: React.FC = () => {
   const customRange = useAppSelector(selectCustomRange);
   const teamId = useAppSelector(selectSelectedTeamId);
   const currentUser = useAppSelector(selectCurrentUser);
-  const loading = useAppSelector(selectTeamViewLoading);
+  const membersStatus     = useAppSelector(selectTeamSectionStatus('members'));
+  const teamSummaryStatus = useAppSelector(selectTeamSectionStatus('team_summary'));
+  const taskDeliveryStatus  = useAppSelector(selectTeamSectionStatus('task_delivery'));
+  const codeQualityStatus   = useAppSelector(selectTeamSectionStatus('code_quality'));
+  const collaborationStatus = useAppSelector(selectTeamSectionStatus('collaboration'));
+  const aiAdoptionStatus    = useAppSelector(selectTeamSectionStatus('ai_adoption'));
+  const taskDeliveryError   = useAppSelector(selectTeamSectionError('task_delivery'));
+  const codeQualityError    = useAppSelector(selectTeamSectionError('code_quality'));
+  const collaborationError  = useAppSelector(selectTeamSectionError('collaboration'));
+  const aiAdoptionError     = useAppSelector(selectTeamSectionError('ai_adoption'));
+  const sectionStatus: Record<string, SectionStatus | undefined> = {
+    task_delivery:  taskDeliveryStatus,
+    code_quality:   codeQualityStatus,
+    collaboration:  collaborationStatus,
+    ai_adoption:    aiAdoptionStatus,
+  };
+  const sectionErrors: Record<string, string | undefined> = {
+    task_delivery:  taskDeliveryError,
+    code_quality:   codeQualityError,
+    collaboration:  collaborationError,
+    ai_adoption:    aiAdoptionError,
+  };
+  // `members` and `team_summary` block KPI/MembersTable rendering only;
+  // bullet sections render independently via sectionStatus prop.
+  const membersLoading = membersStatus === 'loading' || membersStatus === undefined;
+  const summaryLoading = teamSummaryStatus === 'loading' || teamSummaryStatus === undefined;
   const allMembers = useAppSelector(selectMembers);
   const [directReportsOnly, setDirectReportsOnly] = useState(true);
   const [metricsModalOpen, setMetricsModalOpen] = useState(false);
@@ -128,10 +155,10 @@ const TeamViewScreen: React.FC = () => {
   // Only fall back to the store when members haven't been fetched yet (both sets
   // empty AND still loading).
   const teamKpis = useMemo(
-    () => (allMembers.length === 0 && loading
+    () => (allMembers.length === 0 && (membersLoading || summaryLoading)
       ? storeTeamKpis
       : deriveTeamKpis(members, period)),
-    [allMembers.length, loading, members, period, storeTeamKpis],
+    [allMembers.length, membersLoading, summaryLoading, members, period, storeTeamKpis],
   );
   const bulletSections = useAppSelector(selectBulletSections);
   const teamName = useAppSelector(selectTeamName);
@@ -242,7 +269,7 @@ const TeamViewScreen: React.FC = () => {
       <MembersTable
         members={members}
         columnThresholds={teamViewConfig?.column_thresholds ?? []}
-        loading={loading}
+        loading={membersLoading}
         onRowClick={handleNavigateToIc}
         onCellDrill={handleCellDrill}
         onViewAllStats={members.length > 0 ? () => { setMetricsModalOpen(true); } : undefined}
@@ -258,6 +285,8 @@ const TeamViewScreen: React.FC = () => {
       <TeamBulletSections
         bulletSections={bulletSections}
         viewMode={viewMode}
+        sectionStatus={sectionStatus}
+        sectionErrors={sectionErrors}
         onDrillClick={handleDrillClick}
       />
 

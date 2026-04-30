@@ -7,28 +7,37 @@
 import { type AppDispatch, eventBus } from '@hai3/react';
 import { TeamViewEvents } from '../events/teamViewEvents';
 import {
-  setLoading,
-  setTeamViewData,
+  resetForLoad,
   setAvailability,
   setError,
+  setSectionLoading,
+  setSectionLoaded,
+  setSectionFailed,
   setDrillState,
   clearDrill,
 } from '../slices/teamViewSlice';
 
-/**
- * Initialize effects
- * Called once during slice registration
- */
 export const initializeTeamViewEffects = (appDispatch: AppDispatch): void => {
   const dispatch = appDispatch;
 
   eventBus.on(TeamViewEvents.TeamViewLoadStarted, () => {
-    dispatch(setLoading(true));
+    dispatch(resetForLoad());
   });
 
-  eventBus.on(TeamViewEvents.TeamViewLoaded, (data) => {
-    dispatch(setTeamViewData(data));
+  eventBus.on(TeamViewEvents.TeamViewSectionLoading, (payload) => {
+    dispatch(setSectionLoading(payload));
   });
+
+  eventBus.on(TeamViewEvents.TeamViewSectionLoaded, (payload) => {
+    dispatch(setSectionLoaded(payload));
+  });
+
+  eventBus.on(TeamViewEvents.TeamViewSectionFailed, (payload) => {
+    dispatch(setSectionFailed(payload));
+  });
+
+  // Backwards-compat: legacy bulk `TeamViewLoaded` is no longer emitted by
+  // the action layer; keep listener absent so emit-from-tests is a no-op.
 
   eventBus.on(TeamViewEvents.TeamViewAvailabilityLoaded, (availability) => {
     dispatch(setAvailability(availability));
@@ -36,7 +45,6 @@ export const initializeTeamViewEffects = (appDispatch: AppDispatch): void => {
 
   eventBus.on(TeamViewEvents.TeamViewLoadFailed, (msg) => {
     dispatch(setError(msg));
-    dispatch(setLoading(false));
   });
 
   eventBus.on(TeamViewEvents.DrillOpened, (payload) => {

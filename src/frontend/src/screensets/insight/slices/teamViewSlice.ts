@@ -1,25 +1,31 @@
 /**
  * Team View Slice
- * Redux state management for team view screen
- * Following Flux: Effects dispatch these reducers after listening to events
+ *
+ * Per-section progressive loading: each section query (team_summary, members,
+ * task_delivery, code_quality, collaboration, ai_adoption) emits its own
+ * Loading / Loaded / Failed events. The slice tracks status and an error
+ * message per section and merges incoming payloads into the existing data
+ * slot. One slow section never blocks the others.
  */
 
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { RootState } from '@hai3/react';
 import { INSIGHT_SCREENSET_ID } from '../ids';
-import type { TeamMember, TeamKpi, BulletSection, TeamViewData, TeamViewConfig, DataAvailability, DrillData } from '../types';
+import type {
+  TeamMember,
+  TeamKpi,
+  BulletSection,
+  TeamViewConfig,
+  DataAvailability,
+  DrillData,
+} from '../types';
 import { selectActiveTeam } from './userContextSlice';
+import type { TeamViewSectionData } from '../events/teamViewEvents';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/teamView` as const;
 
-/**
- * State interface
- *
- * `selectedTeamId` previously lived here; it has been promoted to
- * `userContextSlice.selection.team` (as a discriminated TeamRef) as part of
- * the single-source-of-truth refactor (Phase 4). Use `selectActiveTeam` /
- * `selectActiveTeamId` from userContextSlice instead.
- */
+export type SectionStatus = 'loading' | 'loaded' | 'errored';
+
 export interface TeamViewState {
   teamName: string;
   members: TeamMember[];
@@ -27,10 +33,15 @@ export interface TeamViewState {
   bulletSections: BulletSection[];
   config: TeamViewConfig | null;
   availability: DataAvailability | null;
-  loading: boolean;
+  /**
+   * Whole-screen error — only set when something prevents the screen from
+   * rendering at all. Per-section failures live in `sectionErrors`.
+   */
   error: string | null;
   drillId: string | null;
   drillData: DrillData | null;
+  sectionStatus: Record<string, SectionStatus>;
+  sectionErrors: Record<string, string>;
 }
 
 const initialState: TeamViewState = {
@@ -40,32 +51,83 @@ const initialState: TeamViewState = {
   bulletSections: [],
   config: null,
   availability: null,
-  loading: false,
   error: null,
   drillId: null,
   drillData: null,
+  sectionStatus: {},
+  sectionErrors: {},
 };
+
+/**
+ * Apply a section payload into the corresponding slot of state. Pulled out
+ * so the bullet path can rebuild `bulletSections` (slice replaces only the
+ * incoming section, leaving others untouched).
+ */
+function applySectionData(state: TeamViewState, data: TeamViewSectionData): void {
+  switch (data.kind) {
+    case 'team_summary':
+      state.teamName = data.teamName;
+      state.teamKpis = data.teamKpis;
+      state.config   = data.config;
+      break;
+    case 'members':
+      state.members = data.members;
+      break;
+    case 'bullet': {
+      const sid = data.sectionId;
+      const others = state.bulletSections.filter((s) => s.id !== sid);
+      state.bulletSections = [
+        ...others,
+        { id: sid, title: sid, metrics: data.metrics },
+      ];
+      break;
+    }
+  }
+}
 
 export const teamViewSlice = createSlice({
   name: SLICE_KEY,
   initialState,
   reducers: {
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
-    },
-    setTeamViewData: (state, action: PayloadAction<TeamViewData>) => {
-      state.teamName = action.payload.teamName;
-      state.members = action.payload.members;
-      state.teamKpis = action.payload.teamKpis;
-      state.bulletSections = action.payload.bulletSections;
-      state.config = action.payload.config;
-      state.loading = false;
+    /**
+     * Reset section status, error, and aggregate data slots when a new load
+     * cycle starts. Availability is left intact — re-emitted on every load.
+     */
+    resetForLoad: (state) => {
+      state.teamName = '';
+      state.members = [];
+      state.teamKpis = [];
+      state.bulletSections = [];
+      state.config = null;
+      state.error = null;
+      state.sectionStatus = {};
+      state.sectionErrors = {};
     },
     setAvailability: (state, action: PayloadAction<DataAvailability>) => {
       state.availability = action.payload;
     },
     setError: (state, action: PayloadAction<string>) => {
       state.error = action.payload;
+    },
+    setSectionLoading: (state, action: PayloadAction<{ sectionId: string }>) => {
+      state.sectionStatus[action.payload.sectionId] = 'loading';
+      delete state.sectionErrors[action.payload.sectionId];
+    },
+    setSectionLoaded: (
+      state,
+      action: PayloadAction<{ sectionId: string; data: TeamViewSectionData }>,
+    ) => {
+      const { sectionId, data } = action.payload;
+      state.sectionStatus[sectionId] = 'loaded';
+      delete state.sectionErrors[sectionId];
+      applySectionData(state, data);
+    },
+    setSectionFailed: (
+      state,
+      action: PayloadAction<{ sectionId: string; error: string }>,
+    ) => {
+      state.sectionStatus[action.payload.sectionId] = 'errored';
+      state.sectionErrors[action.payload.sectionId] = action.payload.error;
     },
     setDrillState: (
       state,
@@ -83,10 +145,12 @@ export const teamViewSlice = createSlice({
 
 // Export actions
 export const {
-  setLoading,
-  setTeamViewData,
+  resetForLoad,
   setAvailability,
   setError,
+  setSectionLoading,
+  setSectionLoaded,
+  setSectionFailed,
   setDrillState,
   clearDrill,
 } = teamViewSlice.actions;
@@ -101,9 +165,10 @@ declare module '@hai3/react' {
   }
 }
 
-/**
- * Type-safe selectors
- */
+// ---------------------------------------------------------------------------
+// Selectors
+// ---------------------------------------------------------------------------
+
 export const selectMembers = (state: RootState): TeamMember[] => {
   return state[SLICE_KEY]?.members ?? [];
 };
@@ -116,8 +181,10 @@ export const selectBulletSections = (state: RootState): BulletSection[] => {
   return state[SLICE_KEY]?.bulletSections ?? [];
 };
 
+/** Aggregate "loading" — any section still in flight. */
 export const selectTeamViewLoading = (state: RootState): boolean => {
-  return state[SLICE_KEY]?.loading ?? false;
+  const statuses = state[SLICE_KEY]?.sectionStatus ?? {};
+  return Object.values(statuses).some((s) => s === 'loading');
 };
 
 export const selectTeamName = (state: RootState): string => {
@@ -151,4 +218,25 @@ export const selectTeamDrillId = (state: RootState): string | null => {
 
 export const selectTeamDrillData = (state: RootState): DrillData | null => {
   return state[SLICE_KEY]?.drillData ?? null;
+};
+
+export const selectTeamViewError = (state: RootState): string | null => {
+  return state[SLICE_KEY]?.error ?? null;
+};
+
+export const selectTeamSectionStatus = (sectionId: string) =>
+  (state: RootState): SectionStatus | undefined =>
+    state[SLICE_KEY]?.sectionStatus[sectionId];
+
+export const selectTeamSectionError = (sectionId: string) =>
+  (state: RootState): string | undefined =>
+    state[SLICE_KEY]?.sectionErrors[sectionId];
+
+/**
+ * Backwards-compat selector returning the flat list of currently-errored
+ * section IDs (matches the pre-refactor API shape).
+ */
+export const selectTeamErroredSections = (state: RootState): string[] => {
+  const status = state[SLICE_KEY]?.sectionStatus ?? {};
+  return Object.keys(status).filter((k) => status[k] === 'errored');
 };

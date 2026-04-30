@@ -23,7 +23,8 @@ import {
   selectDrillData,
   selectIcLoading,
   selectSelectedPersonId,
-  selectIcErroredSections,
+  selectSectionStatus,
+  selectIcError,
 } from '../../slices/icDashboardSlice';
 import { selectInsightViewMode } from '../../slices/insightUiSlice';
 import { resolveDateRange } from '../../utils/periodToDateRange';
@@ -34,6 +35,7 @@ import CollapsibleSection from '../../uikit/composite/CollapsibleSection';
 import LocStackedBar from '../../uikit/composite/LocStackedBar';
 import DeliveryTrends from '../../uikit/composite/DeliveryTrends';
 import DrillModal from '../../uikit/composite/DrillModal';
+import ComingSoon from '../../uikit/composite/ComingSoon';
 import PersonHeader from './components/PersonHeader';
 import TimeOffBanner from './components/TimeOffBanner';
 import AiToolsSection from './components/AiToolsSection';
@@ -101,7 +103,16 @@ const IcDashboardScreen: React.FC = () => {
   const drillId = useAppSelector(selectDrillId);
   const drillData = useAppSelector(selectDrillData);
   const loading = useAppSelector(selectIcLoading);
-  const erroredSections = useAppSelector(selectIcErroredSections);
+  const dashboardError = useAppSelector(selectIcError);
+
+  // Per-section status (loading | loaded | errored | undefined-before-start)
+  const kpisStatus           = useAppSelector(selectSectionStatus('kpis'));
+  const taskDeliveryStatus   = useAppSelector(selectSectionStatus('task_delivery'));
+  const gitOutputStatus      = useAppSelector(selectSectionStatus('git_output'));
+  const collaborationStatus  = useAppSelector(selectSectionStatus('collaboration'));
+  const aiAdoptionStatus     = useAppSelector(selectSectionStatus('ai_adoption'));
+  const locTrendStatus       = useAppSelector(selectSectionStatus('loc_trend'));
+  const deliveryTrendStatus  = useAppSelector(selectSectionStatus('delivery_trend'));
 
   const reload = (): void => {
     if (!personId) return;
@@ -125,6 +136,28 @@ const IcDashboardScreen: React.FC = () => {
     if (!personId) return;
     openDrill(personId, drillIdVal);
   };
+
+  // Identity failure: hide the whole screen — the per-section progressive
+  // pattern doesn't apply because we cannot render a meaningful PersonHeader
+  // without it. Mirrors the previous setError() / IcDashboardLoadFailed path.
+  if (dashboardError) {
+    return (
+      <div className="flex items-center justify-center p-6">
+        <div className="bg-white border border-red-200 rounded-xl px-12 py-8 text-center">
+          <div className="text-4xl mb-3">⚠️</div>
+          <div className="text-base font-bold text-gray-900 mb-1.5">Unable to load dashboard</div>
+          <div className="text-sm text-gray-500 mb-3">{dashboardError}</div>
+          <button
+            type="button"
+            onClick={reload}
+            className="rounded-md border border-red-300 bg-white px-3 py-1 text-sm font-semibold text-red-600 hover:bg-red-50"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Not-found state — only after we actually have a personId to fetch for.
   if (personId && !loading && !person) {
@@ -159,7 +192,17 @@ const IcDashboardScreen: React.FC = () => {
 
       {/* 2. KPI strip + time-off banner */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <KpiStrip kpis={currentKpis} plain={true} />
+        {kpisStatus === 'loading' && currentKpis.length === 0 ? (
+          <div className="p-4">
+            <ComingSoon variant="row" state="loading" />
+          </div>
+        ) : kpisStatus === 'errored' ? (
+          <div className="p-4">
+            <ComingSoon variant="row" state="error" onRetry={reload} />
+          </div>
+        ) : (
+          <KpiStrip kpis={currentKpis} plain={true} />
+        )}
         <TimeOffBanner notice={timeOffNotice} />
       </div>
 
@@ -172,7 +215,8 @@ const IcDashboardScreen: React.FC = () => {
           onDrillClick={handleDrillClick}
           mode={viewMode}
           personName={person?.name}
-          errored={erroredSections.includes('task_delivery')}
+          loading={taskDeliveryStatus === 'loading'}
+          errored={taskDeliveryStatus === 'errored'}
           onRetry={reload}
         />
         <MetricCard
@@ -182,7 +226,8 @@ const IcDashboardScreen: React.FC = () => {
           onDrillClick={handleDrillClick}
           mode={viewMode}
           personName={person?.name}
-          errored={erroredSections.includes('git_output')}
+          loading={gitOutputStatus === 'loading'}
+          errored={gitOutputStatus === 'errored'}
           onRetry={reload}
         />
       </div>
@@ -203,7 +248,13 @@ const IcDashboardScreen: React.FC = () => {
         subtitle="Bitbucket · lines added per period · AI-assisted vs manual vs spec/config"
       >
         <div className="p-4">
-          {charts && <LocStackedBar data={charts.locTrend} />}
+          {locTrendStatus === 'loading' && charts.locTrend.length === 0 ? (
+            <ComingSoon variant="card" state="loading" />
+          ) : locTrendStatus === 'errored' ? (
+            <ComingSoon variant="card" state="error" onRetry={reload} />
+          ) : (
+            <LocStackedBar data={charts.locTrend} />
+          )}
         </div>
       </CollapsibleSection>
 
@@ -213,28 +264,46 @@ const IcDashboardScreen: React.FC = () => {
         subtitle="Jira + Bitbucket · activity counts · Commits, PRs and Tasks are independent signals — not directly comparable"
       >
         <div className="p-4">
-          {charts && <DeliveryTrends data={charts.deliveryTrend} />}
+          {deliveryTrendStatus === 'loading' && charts.deliveryTrend.length === 0 ? (
+            <ComingSoon variant="card" state="loading" />
+          ) : deliveryTrendStatus === 'errored' ? (
+            <ComingSoon variant="card" state="error" onRetry={reload} />
+          ) : (
+            <DeliveryTrends data={charts.deliveryTrend} />
+          )}
         </div>
       </CollapsibleSection>
 
       {/* 7. AI Dev Tools & AI Chat */}
       <CollapsibleSection title="AI Dev Tools & AI Chat">
-        <AiToolsSection
-          metrics={aiToolsMetrics}
-          viewMode={viewMode}
-          onDrillClick={handleDrillClick}
-          personName={person?.name}
-        />
+        {aiAdoptionStatus === 'loading' && aiToolsMetrics.length === 0 ? (
+          <div className="p-4"><ComingSoon variant="card" state="loading" /></div>
+        ) : aiAdoptionStatus === 'errored' ? (
+          <div className="p-4"><ComingSoon variant="card" state="error" onRetry={reload} /></div>
+        ) : (
+          <AiToolsSection
+            metrics={aiToolsMetrics}
+            viewMode={viewMode}
+            onDrillClick={handleDrillClick}
+            personName={person?.name}
+          />
+        )}
       </CollapsibleSection>
 
       {/* 8. Collaboration */}
       <CollapsibleSection title="Collaboration">
-        <CollaborationSection
-          metrics={collabMetrics}
-          viewMode={viewMode}
-          onDrillClick={handleDrillClick}
-          personName={person?.name}
-        />
+        {collaborationStatus === 'loading' && collabMetrics.length === 0 ? (
+          <div className="p-4"><ComingSoon variant="card" state="loading" /></div>
+        ) : collaborationStatus === 'errored' ? (
+          <div className="p-4"><ComingSoon variant="card" state="error" onRetry={reload} /></div>
+        ) : (
+          <CollaborationSection
+            metrics={collabMetrics}
+            viewMode={viewMode}
+            onDrillClick={handleDrillClick}
+            personName={person?.name}
+          />
+        )}
       </CollapsibleSection>
 
       {/* 9. Privacy footer */}

@@ -7,14 +7,15 @@
 import { type AppDispatch, eventBus } from '@hai3/react';
 import { IcDashboardEvents } from '../events/icDashboardEvents';
 import {
-  setLoading,
-  setIcDashboardData,
+  resetForLoad,
   setPerson,
   setAvailability,
   setError,
+  setSectionLoading,
+  setSectionLoaded,
+  setSectionFailed,
   setDrillState,
   clearDrill,
-  setErroredSections,
 } from '../slices/icDashboardSlice';
 import { setSelectedPerson } from '../slices/userContextSlice';
 
@@ -30,12 +31,26 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
   });
 
   eventBus.on(IcDashboardEvents.IcDashboardLoadStarted, () => {
-    dispatch(setLoading(true));
+    // Wipe out previous-load section status / aggregate data so per-section
+    // skeletons render immediately when the user changes person/period.
+    dispatch(resetForLoad());
   });
 
-  eventBus.on(IcDashboardEvents.IcDashboardLoaded, (data) => {
-    dispatch(setIcDashboardData(data));
+  eventBus.on(IcDashboardEvents.IcDashboardSectionLoading, (payload) => {
+    dispatch(setSectionLoading(payload));
   });
+
+  eventBus.on(IcDashboardEvents.IcDashboardSectionLoaded, (payload) => {
+    dispatch(setSectionLoaded(payload));
+  });
+
+  eventBus.on(IcDashboardEvents.IcDashboardSectionFailed, (payload) => {
+    dispatch(setSectionFailed(payload));
+  });
+
+  // Backwards-compat: legacy bulk `IcDashboardLoaded` is no longer emitted by
+  // the action layer, but keep the listener as a no-op so any external test
+  // harness emitting it doesn't crash with an unhandled event.
 
   eventBus.on(IcDashboardEvents.IcPersonLoaded, (person) => {
     dispatch(setPerson(person));
@@ -47,10 +62,6 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
 
   eventBus.on(IcDashboardEvents.IcDashboardLoadFailed, (msg) => {
     dispatch(setError(msg));
-  });
-
-  eventBus.on(IcDashboardEvents.IcDashboardSectionsErrored, (sections) => {
-    dispatch(setErroredSections(sections));
   });
 
   eventBus.on(IcDashboardEvents.DrillOpened, ({ drillId, drillData }) => {
