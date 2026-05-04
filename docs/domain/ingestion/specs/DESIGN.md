@@ -774,7 +774,7 @@ The project persists data in two stores with two different migration
 mechanisms. **ClickHouse** schema is file-based and invoked from
 `init.sh` (cluster bootstrap path); **MariaDB** schema is service-
 owned — each backend service carries its own embedded `Migrator` and
-applies its migrations at startup (see [ADR-0006](../ADR/0006-service-owned-migrations.md)).
+applies its migrations at startup (see [ADR-0006](ADR/0006-service-owned-migrations.md)).
 The two paths diverge on bookkeeping because of different evolution
 patterns.
 

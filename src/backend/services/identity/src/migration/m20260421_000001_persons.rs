@@ -110,7 +110,20 @@ CREATE TABLE IF NOT EXISTS persons (
     INDEX idx_value_full_text (insight_tenant_id, value_type, value_full_text),
     INDEX idx_person_id       (person_id),
     INDEX idx_tenant_person   (insight_tenant_id, person_id),
-    INDEX idx_source          (insight_source_type, insight_source_id)
+    INDEX idx_source          (insight_source_type, insight_source_id),
+
+    -- Enforces the routing invariant documented above (`Exactly one of
+    -- the three columns is non-null in each normal row`). All-three-
+    -- NULL is allowed and reserved for future `unset` events; the
+    -- constraint forbids `>= 2` populated columns, which would make
+    -- `value_effective` ambiguous and `value_hash` non-deterministic.
+    CONSTRAINT ck_persons_one_value
+        CHECK (
+            (CASE WHEN value_id        IS NULL THEN 0 ELSE 1 END)
+          + (CASE WHEN value_full_text IS NULL THEN 0 ELSE 1 END)
+          + (CASE WHEN value           IS NULL THEN 0 ELSE 1 END)
+            <= 1
+        )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ";
 

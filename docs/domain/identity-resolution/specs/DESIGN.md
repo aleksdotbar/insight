@@ -897,9 +897,9 @@ operate on the already-created table; they never issue `CREATE`,
 See [ADR-0002](ADR/0002-stable-person-id-via-persons-observations.md) for the full decision record.
 
 **Safety / idempotency**:
-- Re-running the script is **safe**: the `account_person_map` lookup keeps `person_id` stable across runs, and `INSERT IGNORE` on both tables skips duplicates.
+- Re-running the script is **safe**: the `account_person_map` lookup keeps `person_id` stable across runs, and `INSERT IGNORE` on `persons` skips duplicates.
 - Steady-state re-runs with new sources **do not auto-merge** the new sources' accounts into existing persons — each gets a fresh `person_id`. Merging is an operator-driven workflow (future work).
-- The script never issues `TRUNCATE`, `DELETE`, `UPDATE`, `CREATE`, or `ALTER`. Wipe-and-reseed is an explicit operator action outside this script.
+- The script never issues `TRUNCATE`, `DELETE`, or `UPDATE` against `persons`. `account_person_map` is rebuilt via an atomic rename-swap (`CREATE account_person_map_next` → `INSERT ... LEAD()` → `RENAME TABLE account_person_map TO account_person_map_old, account_person_map_next TO account_person_map` → `DROP TABLE IF EXISTS account_person_map_old`); the rename is the only window where readers see the cache change, and it is atomic. Wipe-and-reseed of `persons` is an explicit operator action outside this script.
 
 **Prerequisites and ordering** (end-to-end bootstrap):
 
@@ -1359,7 +1359,7 @@ This walkthrough demonstrates the min-propagation algorithm (§4.1) as a verific
 | identity-resolution migrate | InitContainer / one-shot Job — applies MariaDB schema via embedded SeaORM `Migrator` | 0.1 CPU, 64 MB RAM |
 | BootstrapJob (Phase 2+, not yet built) | Argo WorkflowTemplate (scheduled) | 0.5 CPU, 512 MB RAM per run |
 
-**identity-resolution** is a stateless Rust (axum) service. It owns the MariaDB `identity` database (migrations applied at startup via SeaORM `Migrator`; see ADR-0006) and reads ClickHouse `bronze_bamboohr.employees` for person lookup. Horizontal scaling via Kubernetes replicas.
+**identity-resolution** is a stateless Rust (axum) service. It owns the MariaDB `identity` database — `persons` (observation history) and `account_person_map` (SCD2 cache rebuilt from `persons.value_type='id'`) — with migrations applied at startup via SeaORM `Migrator` (see ADR-0006). The service does not read Bronze tables directly; observation history flows in through `identity.identity_inputs` (populated by the per-connector dbt models that use the `identity_inputs_from_history` macro), is projected into `persons` by the seed, and is consumed at runtime via the `account_person_map` cache. Horizontal scaling via Kubernetes replicas.
 
 **Initial `persons` seed** is a one-shot script (`src/backend/services/identity/seed/seed-persons-from-identity-input.py`) that reads ClickHouse `identity.identity_inputs` and writes MariaDB `persons` + `account_person_map`. Idempotent via `INSERT IGNORE`. See ADR-0002.
 

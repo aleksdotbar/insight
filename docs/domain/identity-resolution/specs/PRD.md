@@ -86,7 +86,7 @@ Insight connects to 10+ external platforms (GitLab, GitHub, Jira, YouTrack, Bamb
 | Split | Reversing a merge by restoring alias mappings from an audit snapshot |
 | Hot path | Direct alias lookup in `aliases` table (~90% of resolutions) |
 | Cold path | MatchingEngine rule evaluation when hot path misses |
-| Person domain | Separate domain owning the `persons` table, golden record, and person-level attributes |
+| Person domain | Separate domain owning the **golden record projection** of persons (and person-level attributes such as availability, conflicts). The MariaDB `persons` identity-attribute history table itself is owned by the identity-resolution domain (see DESIGN §3.7 and ADR-0006); the Person domain reads from it |
 | Org-chart domain | Separate domain owning `org_units` and `person_assignments` |
 
 ---
@@ -137,7 +137,7 @@ Insight connects to 10+ external platforms (GitLab, GitHub, Jira, YouTrack, Bamb
 
 ### 3.1 Module-Specific Environment Constraints
 
-- **Storage**: All identity resolution tables reside in ClickHouse. No separate RDBMS. This is a project-wide constraint applying to all three domains (identity-resolution, person, org-chart).
+- **Storage**: Analytical identity-resolution tables reside in ClickHouse (`identity_inputs`, `aliases`, `match_rules`, `unmapped`, `conflicts`, `merge_audits`, `alias_gdpr_deleted`). The identity-attribute observation history `persons` and its derived SCD2 cache `account_person_map` reside in MariaDB and are owned by this domain (see DESIGN §3.7 and [ADR-0006](../../ingestion/specs/ADR/0006-service-owned-migrations.md)). The Person and Org-Chart domains remain ClickHouse-only.
 - **Orchestration**: BootstrapJob runs as an Argo WorkflowTemplate on a Kind K8s cluster (per PR #45).
 - **Naming**: All tables and columns follow PR #55 glossary conventions (see Glossary and DESIGN §2.2).
 - **Temporal model**: Half-open intervals `[effective_from, effective_to)`. `BETWEEN` prohibited on temporal columns. Zero sentinel (`'1970-01-01'`) replaces NULL for ClickHouse compatibility.
@@ -190,7 +190,7 @@ The system **MUST** create initial alias records in the `aliases` table from HR 
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-resolve-alias`
 
-The system **MUST** resolve an `(value_type, value, insight_tenant_id)` tuple to a `person_id` by looking up active, non-deleted rows in the `aliases` table. If found, it **MUST** return the `person_id` and confidence. If not found, it **MUST** return a null `person_id` with status `unmapped`.
+The system **MUST** resolve an `(insight_tenant_id, insight_source_type, insight_source_id, value_type, value)` tuple to a `person_id` by looking up active, non-deleted rows in the `aliases` table. The source identifier is required because identifiers like `value_type='id'` (and platform usernames) are unique only within a single source — the same `source_account_id` value can refer to different persons across BambooHR vs Cursor, and the same email can appear with different `source_account_id`s in different platforms. If found, the system **MUST** return the `person_id` and confidence. If not found, it **MUST** return a null `person_id` with status `unmapped`.
 
 **Rationale**: This is the core capability — every downstream analytics query depends on resolving aliases to persons.
 

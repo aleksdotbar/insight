@@ -191,10 +191,13 @@ This ADR records:
    IGNORE` on the UNIQUE key `uq_person_observation`, so re-running
    is idempotent: identical observations are dropped statement-level.
 
-8. **The seed never issues `TRUNCATE`, `DELETE`, `UPDATE`** against
-   `persons`, and only `TRUNCATE` + rebuild against
-   `account_person_map`. Wiping `persons` is an explicit operator
-   action outside the seed.
+8. **The seed never issues `TRUNCATE`, `DELETE`, or `UPDATE`** against
+   `persons`. `account_person_map` is rebuilt via the atomic
+   rename-swap pattern (decision §5 above): the seed `CREATE`s a
+   sibling `account_person_map_next`, populates it via `INSERT ...
+   LEAD()`, atomically `RENAME TABLE`s the pair, and `DROP`s the
+   leftover `account_person_map_old`. Wiping `persons` is an explicit
+   operator action outside the seed.
 
 ## Rationale
 

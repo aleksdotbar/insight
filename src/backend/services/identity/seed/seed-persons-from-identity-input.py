@@ -566,6 +566,11 @@ def main():
         WHERE value_type = 'id' AND value_id IS NOT NULL
         """
     )
+    # Crash-recovery: a previous run that died between RENAME and the
+    # final DROP would leave `account_person_map_old` lingering and
+    # block the next RENAME (target name already exists). Idempotent
+    # cleanup before the swap.
+    cursor.execute("DROP TABLE IF EXISTS account_person_map_old")
     # Atomic swap. RENAME TABLE pair is atomic in MariaDB; readers
     # see either the old or the new map, never an empty in-between.
     cursor.execute(
