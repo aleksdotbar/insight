@@ -174,7 +174,24 @@ export const BULLET_DEFS: BulletThresholdDef[] = [
   { metric_key: 'pickup_time',           section: 'task_delivery', label: 'Pickup Time',                      sublabel: 'Jira \u00b7 created \u2192 first dev status \u00b7 per-task median \u00b7 lower = better',           unit: 'd',     drill_id: '',               higher_is_better: false, good: 3,   warn: 7   },
 
   // --- git_output ---
-  { metric_key: 'commits',            section: 'git_output',    label: 'Commits Authored',                   sublabel: 'Bitbucket \u00b7 commits authored \u00b7 period total',                 unit: 'count',  drill_id: '',               higher_is_better: true,  good: 30,  warn: 10  },
+  // Counters are summed over the period; pr_size / pr_cycle_time_h are
+  // distributions (per-PR rows), surfaced as period medians by the bullet
+  // aggregator. Ratios (merge_rate, lines_per_commit, commits_per_active_day)
+  // are computed in seed_metrics from per-person counter sums \u2014 \u03a3num / \u03a3den,
+  // not avg of daily ratios.
+  { metric_key: 'commits',                section: 'git_output',    label: 'Commits Authored',                   sublabel: 'Bitbucket \u00b7 commits authored \u00b7 period total \u00b7 excl. merge commits', unit: 'count', drill_id: 'commits',        higher_is_better: true,  good: 30,  warn: 10   },
+  { metric_key: 'prs_created',            section: 'git_output',    label: 'Pull Requests Created',              sublabel: 'Bitbucket \u00b7 PRs authored \u00b7 period total',                                unit: 'count', drill_id: 'pull-requests',  higher_is_better: true,  good: 6,   warn: 2    },
+  { metric_key: 'prs_merged',             section: 'git_output',    label: 'Pull Requests Merged',               sublabel: 'Bitbucket \u00b7 authored and merged \u00b7 period total',                         unit: 'count', drill_id: '',               higher_is_better: true,  good: 5,   warn: 2    },
+  { metric_key: 'clean_loc',              section: 'git_output',    label: 'Clean LOC',                          sublabel: 'Bitbucket \u00b7 lines added \u00b7 excl. spec/config \u00b7 period total',         unit: 'count', drill_id: '',               higher_is_better: true,  good: 5000, warn: 1000 },
+  // pr_cycle_time_h: opened \u2192 merged hours, per-PR median over period.
+  // Real "opened \u2192 first review" needs author\u2194reviewer identity-resolution
+  // (silver fct_git_review.person_key is reviewer-login namespace). Until
+  // that lands we surface the cycle-time distribution as the closest signal.
+  { metric_key: 'pr_cycle_time_h',        section: 'git_output',    label: 'Pull Request Cycle Time',            sublabel: 'Bitbucket \u00b7 PR opened \u2192 merged \u00b7 per-PR median \u00b7 lower = better',  unit: 'h',     drill_id: 'pull-requests',  higher_is_better: false, good: 24,  warn: 48   },
+  { metric_key: 'pr_size',                section: 'git_output',    label: 'PR Size',                            sublabel: 'Bitbucket \u00b7 lines changed per PR \u00b7 per-PR median \u00b7 smaller = reviewable', unit: 'count', drill_id: '',               higher_is_better: false, good: 200, warn: 500  },
+  { metric_key: 'merge_rate',             section: 'git_output',    label: 'PR Merge Rate',                      sublabel: 'Bitbucket \u00b7 \u03a3 merged \u00f7 \u03a3 created over period \u00b7 higher = better', unit: '%',    drill_id: '',               higher_is_better: true,  good: 80,  warn: 50   },
+  { metric_key: 'lines_per_commit',       section: 'git_output',    label: 'Lines / Commit',                     sublabel: 'Bitbucket \u00b7 \u03a3 LOC \u00f7 \u03a3 commits \u00b7 lower = reviewable',          unit: 'count', drill_id: '',               higher_is_better: false, good: 100, warn: 200  },
+  { metric_key: 'commits_per_active_day', section: 'git_output',    label: 'Commits / Active Day',               sublabel: 'Bitbucket \u00b7 \u03a3 commits \u00f7 days with any commit \u00b7 cadence',          unit: 'count', drill_id: '',               higher_is_better: true,  good: 3,   warn: 1    },
 
   // --- code_quality ---
   { metric_key: 'prs_per_dev',        section: 'code_quality',  label: 'Pull Requests Merged / Developer',   sublabel: 'Bitbucket \u00b7 authored and merged \u00b7 per developer · period total', unit: '',  drill_id: 'team-prs',       higher_is_better: true,  good: 6,   warn: 3   },
