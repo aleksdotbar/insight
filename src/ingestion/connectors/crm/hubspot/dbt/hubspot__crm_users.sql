@@ -8,7 +8,7 @@
     tags=['hubspot', 'silver:class_crm_users']
 ) }}
 
-SELECT * FROM (
+WITH src AS (
     SELECT
         tenant_id,
         source_id,
@@ -30,15 +30,22 @@ SELECT * FROM (
         custom_fields,
         collected_at,
         data_source,
-        coalesce(
-            toUnixTimestamp64Milli(updatedAt),
-            0
-        )                                               AS _version
+        coalesce(toUnixTimestamp64Milli(updatedAt), 0)  AS _version
     FROM {{ source('bronze_hubspot', 'owners') }}
     -- Silver class_crm_users requires email NOT NULL for identity resolution.
     -- HubSpot Owners for deactivated internal users can lack an email.
     WHERE email IS NOT NULL AND email != ''
 )
 {% if is_incremental() %}
-WHERE _version > coalesce((SELECT max(_version) FROM {{ this }}), 0)
+SELECT src.*
+FROM src
+LEFT JOIN (
+    SELECT tenant_id, source_id, max(_version) AS hwm
+    FROM {{ this }}
+    GROUP BY tenant_id, source_id
+) w
+  ON w.tenant_id = src.tenant_id AND w.source_id = src.source_id
+WHERE src._version > coalesce(w.hwm, 0)
+{% else %}
+SELECT * FROM src
 {% endif %}

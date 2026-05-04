@@ -139,6 +139,16 @@ class SourceHubspot(ConcurrentSourceAdapter):
     # ------- Stream discovery ----------------------------------------------
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+        # Fail-fast on bad ISO durations before constructing streams or
+        # cursors. Without this, _parse_duration silently falls back to
+        # defaults — operator sees no error but cursor/lookback ignore
+        # their config.
+        self._validate_iso_duration(
+            config.get("hubspot_stream_slice_step"), "hubspot_stream_slice_step"
+        )
+        self._validate_iso_duration(
+            config.get("hubspot_lookback_window"), "hubspot_lookback_window"
+        )
         start_date = self._resolve_start_date(config)
         hubspot = Hubspot(access_token=config["hubspot_access_token"])
         requested = self._resolve_stream_list(config)

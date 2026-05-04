@@ -36,7 +36,6 @@
         "title": "Start Date",
         "description": "UTC start (YYYY-MM-DD) for the initial incremental sync. Records with updatedAt older than this are skipped on first run. Leave blank to fall back to 2 years before now.",
         "format": "date",
-        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         "examples": ["2024-01-01"],
         "order": 3
       },

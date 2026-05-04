@@ -167,7 +167,16 @@ combined AS (
     UNION ALL SELECT * FROM meetings
     UNION ALL SELECT * FROM tasks
 )
-SELECT * FROM combined
 {% if is_incremental() %}
-WHERE _version > coalesce((SELECT max(_version) FROM {{ this }}), 0)
+SELECT combined.*
+FROM combined
+LEFT JOIN (
+    SELECT tenant_id, source_id, max(_version) AS hwm
+    FROM {{ this }}
+    GROUP BY tenant_id, source_id
+) w
+  ON w.tenant_id = combined.tenant_id AND w.source_id = combined.source_id
+WHERE combined._version > coalesce(w.hwm, 0)
+{% else %}
+SELECT * FROM combined
 {% endif %}
