@@ -8,10 +8,10 @@
     tags=['silver']
 ) }}
 
--- depends_on: {{ ref('claude_admin__ai_api_usage') }}
+-- depends_on: {{ ref('claude_enterprise__ai_assistant_usage') }}
 
 SELECT * FROM (
-    {{ union_by_tag('silver:class_ai_api_usage') }}
+    {{ union_by_tag('silver:class_ai_assistant_usage') }}
 )
 {% if is_incremental() %}
 WHERE _version > (SELECT max(_version) FROM {{ this }})
