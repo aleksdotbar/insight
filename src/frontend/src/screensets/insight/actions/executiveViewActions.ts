@@ -13,7 +13,7 @@ import { ExecutiveViewEvents } from '../events/executiveViewEvents';
 import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter, type DateRange } from '../utils/periodToDateRange';
+import { type DateRange } from '../utils/periodToDateRange';
 import { transformExecRows } from '../api/transforms';
 import type { ExecViewData } from '../types';
 import type { RawExecSummaryRow } from '../api/rawTypes';
@@ -25,11 +25,9 @@ export const loadExecutiveView = (range: DateRange): void => {
 
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
-  const filter     = odataDateFilter(range);
 
   void Promise.allSettled([
-    api.queryMetric<RawExecSummaryRow>(METRIC_REGISTRY.EXEC_SUMMARY, {
-      $filter:  filter,
+    api.queryMetric<RawExecSummaryRow>(METRIC_REGISTRY.EXEC_SUMMARY, range, {
       $orderby: 'org_unit_name asc',
       $top:     200,
     }),

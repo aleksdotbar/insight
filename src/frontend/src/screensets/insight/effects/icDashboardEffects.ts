@@ -8,6 +8,7 @@ import { type AppDispatch, eventBus } from '@hai3/react';
 import { IcDashboardEvents } from '../events/icDashboardEvents';
 import {
   resetForLoad,
+  revalidateForLoad,
   setPerson,
   setAvailability,
   setError,
@@ -30,10 +31,14 @@ export const initializeIcDashboardEffects = (appDispatch: AppDispatch): void => 
     dispatch(setSelectedPerson(personId));
   });
 
-  eventBus.on(IcDashboardEvents.IcDashboardLoadStarted, () => {
-    // Wipe out previous-load section status / aggregate data so per-section
-    // skeletons render immediately when the user changes person/period.
-    dispatch(resetForLoad());
+  eventBus.on(IcDashboardEvents.IcDashboardLoadStarted, (payload) => {
+    // Person change → hard reset (the previous numbers belong to someone
+    // else; flashing them under a new person's header is wrong).
+    // Period change → soft reset: keep current values on screen as stale,
+    // sections flip to `revalidating` so the layout doesn't collapse into
+    // skeletons on every range tick.
+    if (payload?.reason === 'period') dispatch(revalidateForLoad());
+    else dispatch(resetForLoad());
   });
 
   eventBus.on(IcDashboardEvents.IcDashboardSectionLoading, (payload) => {

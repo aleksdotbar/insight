@@ -78,10 +78,11 @@ const ExecutiveViewScreen: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-4 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Sticky header — same pattern as IcDashboard / TeamView. */}
+      <div className="sticky top-0 z-20 -mx-6 -mt-6 px-6 pt-6 pb-3 bg-background/95 backdrop-blur-sm border-b border-border/60 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-base font-bold text-gray-900 leading-tight">{t('header.title')}</div>
-          <div className="text-xs text-gray-400">{t('header.subtitle')}</div>
+          <div className="text-lg font-bold text-gray-900 leading-tight">{t('header.title')}</div>
+          <div className="text-sm text-gray-500">{t('header.subtitle')}</div>
         </div>
         <PeriodSelectorBar
           period={period}

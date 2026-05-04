@@ -57,7 +57,7 @@ export enum IcDashboardEvents {
 declare module '@hai3/react' {
   interface EventPayloadMap {
     [IcDashboardEvents.PersonSelected]:                string;
-    [IcDashboardEvents.IcDashboardLoadStarted]:        void;
+    [IcDashboardEvents.IcDashboardLoadStarted]:        { reason: 'person' | 'period' } | void;
     [IcDashboardEvents.IcDashboardLoaded]:             IcDashboardData;
     [IcDashboardEvents.IcPersonLoaded]:                IdentityPerson;
     [IcDashboardEvents.IcDashboardAvailabilityLoaded]: DataAvailability;

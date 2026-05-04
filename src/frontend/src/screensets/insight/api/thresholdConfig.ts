@@ -67,7 +67,8 @@ export type BulletThresholdDef = {
  * section — they only need to be unique within one section.
  *
  * Only sections that use sub-grouping need entries here: `estimation`
- * (3 groups), `ai_adoption` (7 groups), `collaboration` (3 groups).
+ * (3 groups), `ai_adoption` (7 groups), `collaboration` (4 groups by
+ * activity type: chat / email / meetings / files).
  * `task_delivery`, `git_output`, `code_quality` don't sub-group — the
  * screen just renders all metrics in the section — so their metric_keys
  * are intentionally absent.
@@ -100,19 +101,23 @@ export const BULLET_LAYOUT_GROUPS: Record<string, string> = {
   ai_loc_share2:      'ai_loc_share',
 
   // --- collaboration sub-groups ---
-  slack_messages_sent:        'slack',
-  slack_channel_posts:        'slack',
-  slack_active_days:          'slack',
-  slack_msgs_per_active_day:  'slack',
-  slack_dm_ratio:             'slack',
-  m365_active_days:           'm365',
-  m365_emails_sent:           'm365',
-  m365_emails_received:       'm365',
-  m365_emails_read:           'm365',
-  m365_teams_chats:           'm365',
-  m365_files_engaged:         'm365',
-  m365_files_shared_internal: 'm365',
-  m365_files_shared_external: 'm365',
+  // Grouped by activity type (chat / email / meetings / files), not by
+  // vendor — Slack-chat and Teams-chat answer the same question so they
+  // belong in one column. Source (Slack / Microsoft 365 / Zoom) stays
+  // visible per-row via each metric's own sublabel.
+  slack_messages_sent:        'chat',
+  slack_channel_posts:        'chat',
+  slack_active_days:          'chat',
+  slack_msgs_per_active_day:  'chat',
+  slack_dm_ratio:             'chat',
+  m365_teams_chats:           'chat',
+  m365_active_days:           'chat',  // M365 activity is dominated by chat
+  m365_emails_sent:           'email',
+  m365_emails_received:       'email',
+  m365_emails_read:           'email',
+  m365_files_engaged:         'files',
+  m365_files_shared_internal: 'files',
+  m365_files_shared_external: 'files',
   meeting_hours:              'meetings',
   meetings_count:             'meetings',
   teams_meeting_hours:        'meetings',

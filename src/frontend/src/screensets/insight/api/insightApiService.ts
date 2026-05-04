@@ -17,6 +17,7 @@ import { AuthPlugin } from '@/app/plugins/AuthPlugin';
 import { mocksEnabled } from '@/app/config/mocksEnabled';
 import type { ODataParams, ODataResponse } from '../types';
 import type { DashboardData, SpeedData } from '../types';
+import { odataDateFilter, type DateRange } from '../utils/periodToDateRange';
 
 export class InsightApiService extends BaseApiService {
   constructor() {
@@ -36,12 +37,44 @@ export class InsightApiService extends BaseApiService {
   }
 
   /**
-   * Execute an OData query against a seeded metric.
+   * Execute a metric query bound to a period.
+   *
+   * Every dashboard-facing metric is period-aware: the gold bullet/aggregate
+   * views are aggregations over a time window, so a query without a
+   * `metric_date` filter implicitly returns "all-time" — almost never what
+   * a screen wants. This method makes the period mandatory and prepends it
+   * to any caller-supplied `$filter` so it cannot be forgotten.
+   *
+   * Use this for **all** dashboard data fetches. The raw
+   * {@link queryMetricRaw} is reserved for the rare case where a metric is
+   * genuinely period-independent (e.g. catalog enumeration).
    *
    * @param metricId  UUID from METRIC_REGISTRY
-   * @param params    OData params ($filter, $orderby, $top, $select, $skip)
+   * @param range     Resolved {from, to} date range (use
+   *                  `resolveDateRange(period, customRange)`).
+   * @param params    Extra OData params. Any `$filter` here is ANDed AFTER
+   *                  the date filter — pass scopes like
+   *                  `person_id eq '…'` or `org_unit_id eq '…'` here.
    */
-  async queryMetric<T>(metricId: string, params: ODataParams): Promise<ODataResponse<T>> {
+  async queryMetric<T>(
+    metricId: string,
+    range: DateRange,
+    params?: ODataParams,
+  ): Promise<ODataResponse<T>> {
+    const dateFilter = odataDateFilter(range);
+    const combined = params?.$filter
+      ? `${dateFilter} and ${params.$filter}`
+      : dateFilter;
+    return this.queryMetricRaw<T>(metricId, { ...params, $filter: combined });
+  }
+
+  /**
+   * Escape hatch for period-independent metric queries. Prefer
+   * {@link queryMetric} for every dashboard call — forgetting the period
+   * silently returns all-time data and breaks any "this week / month"
+   * expectation on the UI.
+   */
+  async queryMetricRaw<T>(metricId: string, params: ODataParams): Promise<ODataResponse<T>> {
     return this.protocol(RestProtocol).post<ODataResponse<T>>(
       `/metrics/${metricId}/query`,
       params,

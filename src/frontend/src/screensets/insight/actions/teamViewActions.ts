@@ -17,7 +17,7 @@ import { TeamViewEvents, type TeamViewSectionData } from '../events/teamViewEven
 import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter, odataEscapeValue, type DateRange } from '../utils/periodToDateRange';
+import { odataEscapeValue, type DateRange } from '../utils/periodToDateRange';
 import { transformTeamMembers, transformBulletMetrics, transformDrill } from '../api/transforms';
 import type {
   PeriodValue,
@@ -88,7 +88,7 @@ export function deriveTeamKpis(members: TeamMember[], period: PeriodValue) {
     if (k.metric_key === 'focus_gte_60')  return { ...k, value: `${focusCount} / ${total}`, sublabel: `${belowFocus} member${belowFocus !== 1 ? 's' : ''} below target`, status: focusStatus };
     if (k.metric_key === 'not_using_ai')  return { ...k, value: String(noAiCount), status: noAiStatus };
     if (k.metric_key === 'team_dev_time') {
-      const value = devTimeMedian === null ? '—' : `${devTimeMedian.toFixed(1)}h`;
+      const value = devTimeMedian === null ? '—' : `${Math.round(devTimeMedian)}h`;
       // chipLabel: undefined — TeamHeroStrip uses `kpi.chipLabel ?? kpi.status`
       // for the badge, so empty string would render an empty badge; undefined
       // correctly falls back to status.
@@ -155,8 +155,9 @@ export const loadTeamView = (
   range: DateRange,
   roster: TeamRosterEntry[] | null,
   pivotDisplayName: string | null,
+  reason: 'team' | 'period' = 'team',
 ): void => {
-  eventBus.emit(TeamViewEvents.TeamViewLoadStarted);
+  eventBus.emit(TeamViewEvents.TeamViewLoadStarted, { reason });
 
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
@@ -164,9 +165,8 @@ export const loadTeamView = (
   // Bullet metrics still aggregate at org_unit level — known residual: when
   // pivot is an email (executive drilldown), these will return empty until
   // bullets are migrated to the IR-roster path.
-  const dateFilter = odataDateFilter(range);
   const bulletScope = teamId.includes('@') ? teamId.toLowerCase() : teamId;
-  const bulletFilter = `org_unit_id eq '${odataEscapeValue(bulletScope)}' and ${dateFilter}`;
+  const teamScope = `org_unit_id eq '${odataEscapeValue(bulletScope)}'`;
 
   // ---- Section: team_summary (synchronous — name + static config) ---------
   // Rendered immediately so the screen header is never empty waiting for
@@ -195,14 +195,14 @@ export const loadTeamView = (
   // an executive viewing a department-string org_unit.
   const memberQueries: Promise<ODataResponse<RawTeamMemberRow>>[] = roster
     ? roster.map((r) =>
-        api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, {
-          $filter: `person_id eq '${odataEscapeValue(r.email.toLowerCase())}' and ${dateFilter}`,
+        api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, range, {
+          $filter: `person_id eq '${odataEscapeValue(r.email.toLowerCase())}'`,
           $top:    1,
         }),
       )
     : [
-        api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, {
-          $filter:  bulletFilter,
+        api.queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, range, {
+          $filter:  teamScope,
           $orderby: 'display_name asc',
           $top:     200,
         }),
@@ -250,7 +250,7 @@ export const loadTeamView = (
   // ---- Bullet sections (independent) --------------------------------------
   const bulletSection = (sectionId: string, registryKey: keyof typeof METRIC_REGISTRY): void => {
     runSection(sectionId, () =>
-      api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY[registryKey], { $filter: bulletFilter })
+      api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY[registryKey], range, { $filter: teamScope })
         // teamSize is unknown at this point (members section may not have
         // landed yet); the bullet transform handles undefined teamSize by
         // marking member-scale rows as `unavailable` rather than inventing a
@@ -282,7 +282,7 @@ type TeamDrillFilter =
  * Open a drill modal for the team view. The filter shape determines which
  * OData filter is sent to the backend. Emits DrillOpened on success.
  */
-export const openTeamDrill = (filter: TeamDrillFilter): void => {
+export const openTeamDrill = (filter: TeamDrillFilter, range: DateRange): void => {
   const $filter =
     filter.kind === 'team'
       ? `org_unit_id eq '${odataEscapeValue(filter.teamId)}' and drill_id eq '${odataEscapeValue(filter.drillId)}'`
@@ -290,7 +290,7 @@ export const openTeamDrill = (filter: TeamDrillFilter): void => {
 
   void apiRegistry
     .getService(InsightApiService)
-    .queryMetric<RawDrillRow>(METRIC_REGISTRY.IC_DRILL, { $filter })
+    .queryMetric<RawDrillRow>(METRIC_REGISTRY.IC_DRILL, range, { $filter })
     .then((resp) => {
       const row = resp.items[0];
       if (!row) return;

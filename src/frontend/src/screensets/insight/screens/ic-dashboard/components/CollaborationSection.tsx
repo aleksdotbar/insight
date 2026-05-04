@@ -8,6 +8,7 @@ import React from 'react';
 import type { BulletMetric, ViewMode } from '../../../types';
 import BulletChart from '../../../uikit/composite/BulletChart';
 import ComingSoon from '../../../uikit/composite/ComingSoon';
+import { filterBulletsByLayoutGroup } from '../../../api/thresholdConfig';
 
 export interface CollaborationSectionProps {
   metrics: BulletMetric[];
@@ -65,48 +66,41 @@ const CollaborationSection: React.FC<CollaborationSectionProps> = ({
     );
   }
 
-  // Chart mode — 3-column grid with rows aligned by metric category so
-  // analogous metrics across Slack / Microsoft 365 / Meetings sit at the
-  // same level. Empty slots render an empty cell to preserve row height.
-  const byKey = new Map(metrics.map((m) => [m.metric_key, m]));
+  // Chart mode — 4 columns by activity type (chat / email / meetings /
+  // files) instead of by vendor. Source label (Slack / Microsoft 365 /
+  // Zoom) stays visible inside each metric's own sublabel, so users can
+  // still see "this number came from Slack" — they just don't have to
+  // mentally re-aggregate Slack-chat + Teams-chat themselves any more.
+  const chatMetrics     = filterBulletsByLayoutGroup(metrics, 'chat');
+  const emailMetrics    = filterBulletsByLayoutGroup(metrics, 'email');
+  const meetingsMetrics = filterBulletsByLayoutGroup(metrics, 'meetings');
+  const filesMetrics    = filterBulletsByLayoutGroup(metrics, 'files');
 
-  // Each row is one category; null slot = no analog in that channel.
-  const ALIGNED_ROWS: Array<{
-    slack: string | null;
-    m365: string | null;
-    meetings: string | null;
-  }> = [
-    { slack: 'slack_messages_sent',       m365: 'm365_emails_sent',         meetings: 'meetings_count' },
-    { slack: 'slack_channel_posts',       m365: 'm365_emails_received',     meetings: 'meeting_hours' },
-    { slack: 'slack_msgs_per_active_day', m365: 'm365_emails_read',         meetings: 'teams_meetings' },
-    { slack: 'slack_dm_ratio',            m365: 'm365_teams_chats',         meetings: 'teams_meeting_hours' },
-    { slack: 'slack_active_days',         m365: 'm365_files_engaged',       meetings: 'zoom_meetings' },
-    { slack: null,                        m365: 'm365_files_shared_internal', meetings: 'zoom_meeting_hours' },
-    { slack: null,                        m365: 'm365_files_shared_external', meetings: 'meeting_free' },
-    { slack: null,                        m365: 'm365_active_days',         meetings: null },
-  ];
-
-  const renderCell = (key: string | null) => {
-    if (!key) return <div />;
-    const metric = byKey.get(key);
-    if (!metric) return <div />;
+  function renderColumn(heading: string, items: BulletMetric[]): React.ReactElement {
     return (
-      <BulletChart metric={metric} onDrillClick={onDrillClick} mode="chart" personName={personName} />
+      <div className="flex flex-col gap-4">
+        <ColumnHeading>{heading}</ColumnHeading>
+        {items.map((m) => (
+          <BulletChart
+            key={m.metric_key}
+            metric={m}
+            onDrillClick={onDrillClick}
+            mode="chart"
+            personName={personName}
+          />
+        ))}
+      </div>
     );
-  };
+  }
 
   return (
     <div className="p-4">
       <ChartLegend />
-      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-4">
-        <ColumnHeading>Slack</ColumnHeading>
-        <ColumnHeading>Microsoft 365</ColumnHeading>
-        <ColumnHeading>Meetings · Microsoft 365 · Zoom</ColumnHeading>
-        {ALIGNED_ROWS.flatMap((row, i) => [
-          <React.Fragment key={`s-${i}`}>{renderCell(row.slack)}</React.Fragment>,
-          <React.Fragment key={`m-${i}`}>{renderCell(row.m365)}</React.Fragment>,
-          <React.Fragment key={`v-${i}`}>{renderCell(row.meetings)}</React.Fragment>,
-        ])}
+      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-4">
+        {renderColumn('Chat', chatMetrics)}
+        {renderColumn('Email', emailMetrics)}
+        {renderColumn('Meetings', meetingsMetrics)}
+        {renderColumn('Files', filesMetrics)}
       </div>
     </div>
   );

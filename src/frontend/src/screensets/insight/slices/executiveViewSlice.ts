@@ -37,6 +37,11 @@ export const executiveViewSlice = createSlice({
   initialState,
   reducers: {
     setLoading: (state, action: PayloadAction<boolean>) => {
+      // First-ever load → show skeletons. Subsequent re-fetches (period
+      // change) keep `loading=false` so the table doesn't flash skeletons
+      // over data already on screen — see icDashboardSlice for the same
+      // pattern. The user just sees the same numbers update in place.
+      if (action.payload && state.teams.length > 0) return;
       state.loading = action.payload;
     },
     setExecutiveViewData: (state, action: PayloadAction<ExecViewData>) => {

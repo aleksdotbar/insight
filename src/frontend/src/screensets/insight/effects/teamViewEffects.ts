@@ -8,6 +8,7 @@ import { type AppDispatch, eventBus } from '@hai3/react';
 import { TeamViewEvents } from '../events/teamViewEvents';
 import {
   resetForLoad,
+  revalidateForLoad,
   setAvailability,
   setError,
   setSectionLoading,
@@ -20,8 +21,9 @@ import {
 export const initializeTeamViewEffects = (appDispatch: AppDispatch): void => {
   const dispatch = appDispatch;
 
-  eventBus.on(TeamViewEvents.TeamViewLoadStarted, () => {
-    dispatch(resetForLoad());
+  eventBus.on(TeamViewEvents.TeamViewLoadStarted, (payload) => {
+    if (payload?.reason === 'period') dispatch(revalidateForLoad());
+    else dispatch(resetForLoad());
   });
 
   eventBus.on(TeamViewEvents.TeamViewSectionLoading, (payload) => {

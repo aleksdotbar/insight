@@ -26,7 +26,7 @@ import {
 import { InsightApiService } from '../../../api/insightApiService';
 import { METRIC_REGISTRY } from '../../../api/metricRegistry';
 import { BULLET_DEFS } from '../../../api/thresholdConfig';
-import { odataDateFilter, odataEscapeValue, type DateRange } from '../../../utils/periodToDateRange';
+import { odataEscapeValue, type DateRange } from '../../../utils/periodToDateRange';
 import { settled, emptyOdata } from '../../../utils/settledResult';
 import type { TeamMember } from '../../../types';
 import type { RawBulletAggregateRow } from '../../../api/rawTypes';
@@ -71,9 +71,8 @@ const metaFor = (metricKey: string): MetricMeta =>
 
 const formatValue = (v: number): string => {
   if (!Number.isFinite(v)) return '—';
-  if (Math.abs(v) >= 1000) return v.toLocaleString();
-  if (Number.isInteger(v)) return String(v);
-  return v.toFixed(1);
+  const rounded = Math.round(v);
+  return Math.abs(rounded) >= 1000 ? rounded.toLocaleString() : String(rounded);
 };
 
 export interface TeamMetricsModalProps {
@@ -100,17 +99,16 @@ const TeamMetricsModal: React.FC<TeamMetricsModalProps> = ({ open, onClose, memb
     setLoading(true);
 
     const api = apiRegistry.getService(InsightApiService);
-    const dateFilter = odataDateFilter(range);
 
     type Task = { personId: string; section: SectionId; promise: Promise<unknown> };
     const tasks: Task[] = [];
     for (const m of members) {
-      const personFilter = `person_id eq '${odataEscapeValue(m.person_id.toLowerCase())}' and ${dateFilter}`;
+      const personScope = `person_id eq '${odataEscapeValue(m.person_id.toLowerCase())}'`;
       for (const s of SECTIONS) {
         tasks.push({
           personId: m.person_id,
           section:  s.id,
-          promise:  api.queryMetric<RawBulletAggregateRow>(s.metricId, { $filter: personFilter }),
+          promise:  api.queryMetric<RawBulletAggregateRow>(s.metricId, range, { $filter: personScope }),
         });
       }
     }

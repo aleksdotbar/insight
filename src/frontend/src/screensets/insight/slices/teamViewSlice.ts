@@ -24,7 +24,8 @@ import type { TeamViewSectionData } from '../events/teamViewEvents';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/teamView` as const;
 
-export type SectionStatus = 'loading' | 'loaded' | 'errored';
+/** See `icDashboardSlice.SectionStatus` for the `revalidating` rationale. */
+export type SectionStatus = 'loading' | 'revalidating' | 'loaded' | 'errored';
 
 export interface TeamViewState {
   teamName: string;
@@ -89,10 +90,7 @@ export const teamViewSlice = createSlice({
   name: SLICE_KEY,
   initialState,
   reducers: {
-    /**
-     * Reset section status, error, and aggregate data slots when a new load
-     * cycle starts. Availability is left intact — re-emitted on every load.
-     */
+    /** Hard reset — used when the *team* changes. */
     resetForLoad: (state) => {
       state.teamName = '';
       state.members = [];
@@ -103,6 +101,11 @@ export const teamViewSlice = createSlice({
       state.sectionStatus = {};
       state.sectionErrors = {};
     },
+    /** Soft reset — period change, keep current values on screen as stale. */
+    revalidateForLoad: (state) => {
+      state.error = null;
+      state.sectionErrors = {};
+    },
     setAvailability: (state, action: PayloadAction<DataAvailability>) => {
       state.availability = action.payload;
     },
@@ -110,8 +113,14 @@ export const teamViewSlice = createSlice({
       state.error = action.payload;
     },
     setSectionLoading: (state, action: PayloadAction<{ sectionId: string }>) => {
-      state.sectionStatus[action.payload.sectionId] = 'loading';
-      delete state.sectionErrors[action.payload.sectionId];
+      const { sectionId } = action.payload;
+      // sectionId is dispatched by our own action layer with a literal string
+      // from a fixed enum; no user input reaches this lookup. See the IC
+      // slice for the full rationale.
+      const wasLoaded = state.sectionStatus[sectionId] === 'loaded'
+        || state.sectionStatus[sectionId] === 'revalidating';
+      state.sectionStatus[sectionId] = wasLoaded ? 'revalidating' : 'loading';
+      delete state.sectionErrors[sectionId];
     },
     setSectionLoaded: (
       state,
@@ -146,6 +155,7 @@ export const teamViewSlice = createSlice({
 // Export actions
 export const {
   resetForLoad,
+  revalidateForLoad,
   setAvailability,
   setError,
   setSectionLoading,

@@ -25,7 +25,13 @@ import type { IcDashboardSectionData } from '../events/icDashboardEvents';
 
 const SLICE_KEY = `${INSIGHT_SCREENSET_ID}/icDashboard` as const;
 
-export type SectionStatus = 'loading' | 'loaded' | 'errored';
+/**
+ * `revalidating` is "data on screen is from a previous load, a new fetch is
+ * in flight". UI should keep rendering the old values (so the layout doesn't
+ * collapse) and may overlay a subtle spinner. `loading` is "first-ever fetch
+ * for this slot — render skeletons because there's nothing to show".
+ */
+export type SectionStatus = 'loading' | 'revalidating' | 'loaded' | 'errored';
 
 /**
  * State interface
@@ -81,9 +87,8 @@ export const icDashboardSlice = createSlice({
   initialState,
   reducers: {
     /**
-     * Reset section status, error, and aggregate data slots when a new load
-     * cycle starts. Identity / availability are left intact — they're not
-     * "sections" and re-emit on every load anyway.
+     * Hard reset — used when the *person* changes. Wipes data so we don't
+     * flash the previous person's numbers under the new person's header.
      */
     resetForLoad: (state) => {
       state.kpis = [];
@@ -92,6 +97,16 @@ export const icDashboardSlice = createSlice({
       state.timeOffNotice = null;
       state.error = null;
       state.sectionStatus = {};
+      state.sectionErrors = {};
+    },
+    /**
+     * Soft reset — used when only the *period* changes. Keeps current data on
+     * screen as stale; per-section status flips to `revalidating` once the
+     * `IcDashboardSectionLoading` event fires (see `setSectionLoading`).
+     * Eliminates the layout flash that comes from clearing arrays back to [].
+     */
+    revalidateForLoad: (state) => {
+      state.error = null;
       state.sectionErrors = {};
     },
     setPerson: (state, action: PayloadAction<IdentityPerson>) => {
@@ -104,8 +119,19 @@ export const icDashboardSlice = createSlice({
       state.error = action.payload;
     },
     setSectionLoading: (state, action: PayloadAction<{ sectionId: string }>) => {
-      state.sectionStatus[action.payload.sectionId] = 'loading';
-      delete state.sectionErrors[action.payload.sectionId];
+      const { sectionId } = action.payload;
+      // sectionId is dispatched by our own action layer with a literal string
+      // from a fixed enum of section IDs; no user input reaches this lookup,
+      // so dynamic-key access here is safe. Codacy's
+      // security/detect-object-injection rule still flags it as a finding
+      // — mark as false positive in the Codacy UI on review.
+      // If this section already has data, mark it `revalidating` so the UI
+      // keeps rendering the previous values instead of flashing skeletons.
+      // First load (no prior `loaded`) still gets `loading` for proper empty UX.
+      const wasLoaded = state.sectionStatus[sectionId] === 'loaded'
+        || state.sectionStatus[sectionId] === 'revalidating';
+      state.sectionStatus[sectionId] = wasLoaded ? 'revalidating' : 'loading';
+      delete state.sectionErrors[sectionId];
     },
     setSectionLoaded: (
       state,
@@ -162,6 +188,7 @@ export const icDashboardSlice = createSlice({
 // Export actions
 export const {
   resetForLoad,
+  revalidateForLoad,
   setPerson,
   setAvailability,
   setError,

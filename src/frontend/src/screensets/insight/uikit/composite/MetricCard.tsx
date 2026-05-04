@@ -22,6 +22,12 @@ export interface MetricCardProps {
   errored?: boolean;
   /** True while the backend query is still in flight — shows a loading placeholder. */
   loading?: boolean;
+  /**
+   * True while a refetch is in flight but previous data is still on screen.
+   * Triggers a subtle dim+pulse on the values so the user can tell something
+   * is updating (without flashing skeletons over readable numbers).
+   */
+  revalidating?: boolean;
   onRetry?: () => void;
 }
 
@@ -57,8 +63,16 @@ const MetricCard: React.FC<MetricCardProps> = ({
   personName,
   errored = false,
   loading = false,
+  revalidating = false,
   onRetry,
 }) => {
+  // Subtle "I'm refreshing" cue without skeleton flicker. Slight opacity dim
+  // + a very gentle pulse on the chart area so the user notices something's
+  // happening; values stay readable. Tailwind's `animate-pulse` is too strong
+  // for this — we use a custom shorter-duration version inline.
+  const revalidateClass = revalidating
+    ? 'opacity-70 transition-opacity duration-300'
+    : 'opacity-100 transition-opacity duration-300';
   // Loading takes precedence: while in flight we don't know yet whether the
   // section will end up empty or with data, so we render the loading skeleton
   // instead of "no data".
@@ -68,7 +82,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
   if (mode === 'tile') {
     return (
       <Card>
-        <CardContent className="px-3.5 py-3">
+        <CardContent className={`px-3.5 py-3 ${revalidateClass}`}>
           <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">
             {title}
           </div>
@@ -104,7 +118,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
   return (
     <Card>
-      <CardContent className="px-3.5 py-3">
+      <CardContent className={`px-3.5 py-3 ${revalidateClass}`}>
         {/* Header */}
         <div className="flex justify-between items-start">
           <span className="text-xs font-bold uppercase tracking-wide text-gray-500">

@@ -16,7 +16,7 @@ export interface TeamBulletSectionsProps {
   bulletSections: BulletSection[];
   viewMode: ViewMode;
   /** Per-section status from the slice — drives skeleton/error placeholders. */
-  sectionStatus?: Record<string, 'loading' | 'loaded' | 'errored' | undefined>;
+  sectionStatus?: Record<string, 'loading' | 'revalidating' | 'loaded' | 'errored' | undefined>;
   /** Per-section error messages, only shown when status === 'errored'. */
   sectionErrors?: Record<string, string | undefined>;
   onDrillClick?: (drillId: string) => void;
@@ -146,45 +146,36 @@ const AiAdoptionSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id:
   );
 };
 
-// Collaboration — collapsible, 3 columns aligned by metric category so
-// analogous metrics across Slack / Microsoft 365 / Meetings sit at the
-// same row. Keep in sync with ic-dashboard CollaborationSection.tsx.
-const ALIGNED_COLLAB_ROWS: Array<{
-  slack: string | null;
-  m365: string | null;
-  meetings: string | null;
-}> = [
-  { slack: 'slack_messages_sent',       m365: 'm365_emails_sent',         meetings: 'meetings_count' },
-  { slack: 'slack_channel_posts',       m365: 'm365_emails_received',     meetings: 'meeting_hours' },
-  { slack: 'slack_msgs_per_active_day', m365: 'm365_emails_read',         meetings: 'teams_meetings' },
-  { slack: 'slack_dm_ratio',            m365: 'm365_teams_chats',         meetings: 'teams_meeting_hours' },
-  { slack: 'slack_active_days',         m365: 'm365_files_engaged',       meetings: 'zoom_meetings' },
-  { slack: null,                        m365: 'm365_files_shared_internal', meetings: 'zoom_meeting_hours' },
-  { slack: null,                        m365: 'm365_files_shared_external', meetings: 'meeting_free' },
-  { slack: null,                        m365: 'm365_active_days',         meetings: null },
-];
-
+// Collaboration — collapsible, 4 columns by activity type (chat / email /
+// meetings / files) via filterBulletsByLayoutGroup. Source vendor stays
+// visible inside each metric's own sublabel. Keep in sync with the
+// ic-dashboard CollaborationSection.
 const CollaborationSection: React.FC<{ metrics: BulletMetric[]; onDrillClick?: (id: string) => void }> = ({ metrics, onDrillClick }) => {
-  const byKey = new Map(metrics.map((m) => [m.metric_key, m]));
-  const renderCell = (key: string | null) => {
-    if (!key) return <div />;
-    const metric = byKey.get(key);
-    if (!metric) return <div />;
-    return <BulletChart metric={metric} onDrillClick={onDrillClick} mode="chart" />;
-  };
+  const chatMetrics     = filterBulletsByLayoutGroup(metrics, 'chat');
+  const emailMetrics    = filterBulletsByLayoutGroup(metrics, 'email');
+  const meetingsMetrics = filterBulletsByLayoutGroup(metrics, 'meetings');
+  const filesMetrics    = filterBulletsByLayoutGroup(metrics, 'files');
+
+  function renderColumn(heading: string, items: BulletMetric[]): React.ReactElement {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="text-xs font-bold text-gray-500 uppercase tracking-wide">{heading}</div>
+        {items.map((m) => (
+          <BulletChart key={m.metric_key} metric={m} onDrillClick={onDrillClick} mode="chart" />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <CollapsibleSection title="Collaboration" defaultOpen={false}>
       <div className="px-4 py-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-3.5 gap-y-2">
-          <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">Slack<Legend /></div>
-          <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">Microsoft 365<Legend /></div>
-          <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2.5">Meetings · Microsoft 365 · Zoom<Legend /></div>
-          {ALIGNED_COLLAB_ROWS.flatMap((row, i) => [
-            <React.Fragment key={`s-${i}`}>{renderCell(row.slack)}</React.Fragment>,
-            <React.Fragment key={`m-${i}`}>{renderCell(row.m365)}</React.Fragment>,
-            <React.Fragment key={`v-${i}`}>{renderCell(row.meetings)}</React.Fragment>,
-          ])}
+        <Legend />
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-3.5 gap-y-2">
+          {renderColumn('Chat', chatMetrics)}
+          {renderColumn('Email', emailMetrics)}
+          {renderColumn('Meetings', meetingsMetrics)}
+          {renderColumn('Files', filesMetrics)}
         </div>
       </div>
     </CollapsibleSection>
@@ -205,13 +196,25 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({
   // When status is undefined (server hasn't been asked yet), we render
   // nothing — same as before — so the screen layout stays compact when a
   // section isn't applicable.
-  const renderState = (sid: string): 'data' | 'loading' | 'errored' | 'skip' => {
+  function renderState(sid: string): 'data' | 'loading' | 'errored' | 'skip' {
+    // sid is one of a small fixed set of literal section names; no user
+    // input reaches this lookup. Codacy's security/detect-object-injection
+    // rule still flags the bracket access — mark as false positive on
+    // review.
     const st = sectionStatus[sid];
-    if (st === 'loaded' && byId[sid]) return 'data';
+    // Treat 'revalidating' the same as 'loaded' for layout — keep data on
+    // screen; the dim/fade is applied by the per-section wrapper below.
+    if ((st === 'loaded' || st === 'revalidating') && byId[sid]) return 'data';
     if (st === 'loading') return 'loading';
     if (st === 'errored') return 'errored';
     return 'skip';
-  };
+  }
+
+  function dimClass(sid: string): string {
+    return sectionStatus[sid] === 'revalidating'
+      ? 'opacity-70 transition-opacity duration-300'
+      : 'opacity-100 transition-opacity duration-300';
+  }
 
   const taskDeliveryState = renderState('task_delivery');
   const codeQualityState  = renderState('code_quality');
@@ -230,12 +233,14 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({
       {(taskDeliveryState !== 'skip' || codeQualityState !== 'skip') && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           {taskDeliveryState === 'data' && taskDelivery && (
-            <TwoColCard
-              title="Task Delivery"
-              subtitle="Team median vs company median"
-              metrics={taskDelivery.metrics}
-              onDrillClick={onDrillClick}
-            />
+            <div className={dimClass('task_delivery')}>
+              <TwoColCard
+                title="Task Delivery"
+                subtitle="Team median vs company median"
+                metrics={taskDelivery.metrics}
+                onDrillClick={onDrillClick}
+              />
+            </div>
           )}
           {taskDeliveryState === 'loading' && (
             <SectionPlaceholder title="Task Delivery" kind="loading" />
@@ -244,12 +249,14 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({
             <SectionPlaceholder title="Task Delivery" kind="errored" error={sectionErrors['task_delivery']} />
           )}
           {codeQualityState === 'data' && codeQuality && (
-            <TwoColCard
-              title="Code & Quality"
-              subtitle="Team median vs company median"
-              metrics={codeQuality.metrics}
-              onDrillClick={onDrillClick}
-            />
+            <div className={dimClass('code_quality')}>
+              <TwoColCard
+                title="Code & Quality"
+                subtitle="Team median vs company median"
+                metrics={codeQuality.metrics}
+                onDrillClick={onDrillClick}
+              />
+            </div>
           )}
           {codeQualityState === 'loading' && (
             <SectionPlaceholder title="Code & Quality" kind="loading" />
@@ -265,7 +272,9 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({
 
       {/* AI Adoption */}
       {aiAdoptionState === 'data' && aiAdoption && (
-        <AiAdoptionSection metrics={aiAdoption.metrics} onDrillClick={onDrillClick} />
+        <div className={dimClass('ai_adoption')}>
+          <AiAdoptionSection metrics={aiAdoption.metrics} onDrillClick={onDrillClick} />
+        </div>
       )}
       {aiAdoptionState === 'loading' && <SectionPlaceholder title="AI Adoption" kind="loading" />}
       {aiAdoptionState === 'errored' && (
@@ -274,7 +283,9 @@ export const TeamBulletSections: React.FC<TeamBulletSectionsProps> = ({
 
       {/* Collaboration */}
       {collabState === 'data' && collab && (
-        <CollaborationSection metrics={collab.metrics} onDrillClick={onDrillClick} />
+        <div className={dimClass('collaboration')}>
+          <CollaborationSection metrics={collab.metrics} onDrillClick={onDrillClick} />
+        </div>
       )}
       {collabState === 'loading' && <SectionPlaceholder title="Collaboration" kind="loading" />}
       {collabState === 'errored' && (

@@ -8,7 +8,7 @@
 
 import React, { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
-import { Popover, PopoverContent, PopoverTrigger, Calendar, ToggleGroup, ToggleGroupItem, Button } from '@hai3/uikit';
+import { Popover, PopoverContent, PopoverTrigger, Calendar, ToggleGroup, ToggleGroupItem, Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@hai3/uikit';
 import type { PeriodValue, CustomRange } from '../../types';
 import { toISODate, resolveDateRange } from '../../utils/periodToDateRange';
 
@@ -149,8 +149,32 @@ export const PeriodSelectorBar: React.FC<PeriodSelectorBarProps> = ({
         </PopoverContent>
       </Popover>
     </div>
-      <span className="text-xs text-gray-500 whitespace-nowrap" aria-label="Active date range">
-        {activeRangeLabel}
+      <span className="text-xs text-gray-500 whitespace-nowrap inline-flex items-center gap-1" aria-label="Active date range">
+        <span>{activeRangeLabel}</span>
+        {/* TZ marker — every metric_date in the gold layer is bucketed by UTC
+            midnight (CH server runs in UTC, all toDate(...) calls use server
+            tz). Surfacing this lets viewers in non-UTC zones know an event
+            at 22:30 their local time on day N may bucket as day N±1 here.
+            Per-person TZ-aware bucketing is on the roadmap (Sprint 2/3 of
+            multi-region work) but requires HR/Slack TZ data first. */}
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="text-[10px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-gray-100 text-gray-500 cursor-help"
+                aria-label="Dates bucketed by UTC midnight"
+              >
+                UTC
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+              All dates here are bucketed by UTC midnight. An event at, say,
+              22:30 your local time may show up on a different calendar day
+              than what your phone says. Per-person time-zone bucketing is
+              planned but not shipped yet.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </span>
     </div>
   );

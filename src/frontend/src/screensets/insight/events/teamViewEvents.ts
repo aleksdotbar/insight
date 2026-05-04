@@ -52,7 +52,7 @@ export enum TeamViewEvents {
  */
 declare module '@hai3/react' {
   interface EventPayloadMap {
-    [TeamViewEvents.TeamViewLoadStarted]:        void;
+    [TeamViewEvents.TeamViewLoadStarted]:        { reason: 'team' | 'period' } | void;
     [TeamViewEvents.TeamViewLoaded]:             TeamViewData;
     [TeamViewEvents.TeamViewAvailabilityLoaded]: DataAvailability;
     [TeamViewEvents.TeamViewLoadFailed]:         string;

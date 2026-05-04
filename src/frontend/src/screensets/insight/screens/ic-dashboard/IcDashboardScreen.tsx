@@ -3,7 +3,7 @@
  * Orchestration only — no direct state/API logic.
  */
 
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useAppSelector, useScreenTranslations, I18nRegistry, Language } from '@hai3/react';
 import { changePeriod, setDateRange } from '../../actions/periodActions';
 import { selectCustomRange } from '../../slices/periodSlice';
@@ -105,7 +105,7 @@ const IcDashboardScreen: React.FC = () => {
   const loading = useAppSelector(selectIcLoading);
   const dashboardError = useAppSelector(selectIcError);
 
-  // Per-section status (loading | loaded | errored | undefined-before-start)
+  // Per-section status (loading | revalidating | loaded | errored | undefined)
   const kpisStatus           = useAppSelector(selectSectionStatus('kpis'));
   const taskDeliveryStatus   = useAppSelector(selectSectionStatus('task_delivery'));
   const gitOutputStatus      = useAppSelector(selectSectionStatus('git_output'));
@@ -114,12 +114,33 @@ const IcDashboardScreen: React.FC = () => {
   const locTrendStatus       = useAppSelector(selectSectionStatus('loc_trend'));
   const deliveryTrendStatus  = useAppSelector(selectSectionStatus('delivery_trend'));
 
-  const reload = (): void => {
-    if (!personId) return;
-    loadIcDashboard(personId, period, resolveDateRange(period, customRange));
-  };
+  // Subtle "I'm refreshing" cue applied to sections that already have data but
+  // are re-fetching — fades content to ~70% opacity until the new payload
+  // lands. Animations are short (300ms) so they don't draw attention away.
+  function revalidatingClass(status: string | undefined): string {
+    return status === 'revalidating'
+      ? 'opacity-70 transition-opacity duration-300'
+      : 'opacity-100 transition-opacity duration-300';
+  }
 
-  useEffect(reload, [personId, period, customRange]);
+  // Distinguish person change (hard reset, drop stale data) vs. period change
+  // (soft reset, keep current values on screen as stale while fetch is in
+  // flight). Without this, every period tick wipes the dashboard back to
+  // skeletons, which reads as "everything jumped".
+  const lastPersonRef = useRef<string | null>(null);
+  const reload = useCallback((reason: 'person' | 'period' = 'person'): void => {
+    if (!personId) return;
+    loadIcDashboard(personId, period, resolveDateRange(period, customRange), reason);
+    lastPersonRef.current = personId;
+  }, [personId, period, customRange]);
+
+  useEffect(() => {
+    const reason: 'person' | 'period' =
+      lastPersonRef.current !== null && lastPersonRef.current === personId
+        ? 'period'
+        : 'person';
+    reload(reason);
+  }, [reload, personId]);
 
   // Filter bullet metrics by section. Section names are aligned with Team View
   // (transforms.ts / BULLET_DEFS) so the same defs drive labels+thresholds.
@@ -134,7 +155,7 @@ const IcDashboardScreen: React.FC = () => {
 
   const handleDrillClick = (drillIdVal: string): void => {
     if (!personId) return;
-    openDrill(personId, drillIdVal);
+    openDrill(personId, drillIdVal, resolveDateRange(period, customRange));
   };
 
   // Identity failure: hide the whole screen — the per-section progressive
@@ -149,7 +170,7 @@ const IcDashboardScreen: React.FC = () => {
           <div className="text-sm text-gray-500 mb-3">{dashboardError}</div>
           <button
             type="button"
-            onClick={reload}
+            onClick={() => { reload(); }}
             className="rounded-md border border-red-300 bg-white px-3 py-1 text-sm font-semibold text-red-600 hover:bg-red-50"
           >
             Retry
@@ -176,17 +197,24 @@ const IcDashboardScreen: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      {/* 0+1. Person header + controls in one row */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <PersonHeader person={person} inline />
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <PeriodSelectorBar
-            period={period}
-            customRange={customRange}
-            onPeriodChange={changePeriod}
-            onRangeChange={handleRangeChange}
-          />
-          <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
+      {/* 0+1. Person header + controls in one row — sticks to the top so the
+          context (who you're looking at, in what period) stays in view as
+          you scroll long sections. `-mx-4 px-4` so the bar stretches to the
+          edges of the parent's padding; `-mt-4 pt-4` for the same on top.
+          A faint bottom border + subtle shadow appear once the bar is
+          actually pinned (visually identical to "loose" while at the top). */}
+      <div className="sticky top-0 z-20 -mx-4 -mt-4 px-4 pt-4 pb-3 bg-background/95 backdrop-blur-sm border-b border-border/60">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <PersonHeader person={person} inline />
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <PeriodSelectorBar
+              period={period}
+              customRange={customRange}
+              onPeriodChange={changePeriod}
+              onRangeChange={handleRangeChange}
+            />
+            <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
+          </div>
         </div>
       </div>
 
@@ -198,10 +226,12 @@ const IcDashboardScreen: React.FC = () => {
           </div>
         ) : kpisStatus === 'errored' ? (
           <div className="p-4">
-            <ComingSoon variant="row" state="error" onRetry={reload} />
+            <ComingSoon variant="row" state="error" onRetry={() => { reload(); }} />
           </div>
         ) : (
-          <KpiStrip kpis={currentKpis} plain={true} />
+          <div className={revalidatingClass(kpisStatus)}>
+            <KpiStrip kpis={currentKpis} plain={true} />
+          </div>
         )}
         <TimeOffBanner notice={timeOffNotice} />
       </div>
@@ -216,8 +246,9 @@ const IcDashboardScreen: React.FC = () => {
           mode={viewMode}
           personName={person?.name}
           loading={taskDeliveryStatus === 'loading'}
+          revalidating={taskDeliveryStatus === 'revalidating'}
           errored={taskDeliveryStatus === 'errored'}
-          onRetry={reload}
+          onRetry={() => { reload(); }}
         />
         <MetricCard
           title="Git Output"
@@ -227,8 +258,9 @@ const IcDashboardScreen: React.FC = () => {
           mode={viewMode}
           personName={person?.name}
           loading={gitOutputStatus === 'loading'}
+          revalidating={gitOutputStatus === 'revalidating'}
           errored={gitOutputStatus === 'errored'}
-          onRetry={reload}
+          onRetry={() => { reload(); }}
         />
       </div>
 
@@ -251,9 +283,11 @@ const IcDashboardScreen: React.FC = () => {
           {locTrendStatus === 'loading' && charts.locTrend.length === 0 ? (
             <ComingSoon variant="card" state="loading" />
           ) : locTrendStatus === 'errored' ? (
-            <ComingSoon variant="card" state="error" onRetry={reload} />
+            <ComingSoon variant="card" state="error" onRetry={() => { reload(); }} />
           ) : (
-            <LocStackedBar data={charts.locTrend} />
+            <div className={revalidatingClass(locTrendStatus)}>
+              <LocStackedBar data={charts.locTrend} />
+            </div>
           )}
         </div>
       </CollapsibleSection>
@@ -267,9 +301,11 @@ const IcDashboardScreen: React.FC = () => {
           {deliveryTrendStatus === 'loading' && charts.deliveryTrend.length === 0 ? (
             <ComingSoon variant="card" state="loading" />
           ) : deliveryTrendStatus === 'errored' ? (
-            <ComingSoon variant="card" state="error" onRetry={reload} />
+            <ComingSoon variant="card" state="error" onRetry={() => { reload(); }} />
           ) : (
-            <DeliveryTrends data={charts.deliveryTrend} />
+            <div className={revalidatingClass(deliveryTrendStatus)}>
+              <DeliveryTrends data={charts.deliveryTrend} />
+            </div>
           )}
         </div>
       </CollapsibleSection>
@@ -279,14 +315,16 @@ const IcDashboardScreen: React.FC = () => {
         {aiAdoptionStatus === 'loading' && aiToolsMetrics.length === 0 ? (
           <div className="p-4"><ComingSoon variant="card" state="loading" /></div>
         ) : aiAdoptionStatus === 'errored' ? (
-          <div className="p-4"><ComingSoon variant="card" state="error" onRetry={reload} /></div>
+          <div className="p-4"><ComingSoon variant="card" state="error" onRetry={() => { reload(); }} /></div>
         ) : (
-          <AiToolsSection
-            metrics={aiToolsMetrics}
-            viewMode={viewMode}
-            onDrillClick={handleDrillClick}
-            personName={person?.name}
-          />
+          <div className={revalidatingClass(aiAdoptionStatus)}>
+            <AiToolsSection
+              metrics={aiToolsMetrics}
+              viewMode={viewMode}
+              onDrillClick={handleDrillClick}
+              personName={person?.name}
+            />
+          </div>
         )}
       </CollapsibleSection>
 
@@ -295,14 +333,16 @@ const IcDashboardScreen: React.FC = () => {
         {collaborationStatus === 'loading' && collabMetrics.length === 0 ? (
           <div className="p-4"><ComingSoon variant="card" state="loading" /></div>
         ) : collaborationStatus === 'errored' ? (
-          <div className="p-4"><ComingSoon variant="card" state="error" onRetry={reload} /></div>
+          <div className="p-4"><ComingSoon variant="card" state="error" onRetry={() => { reload(); }} /></div>
         ) : (
-          <CollaborationSection
-            metrics={collabMetrics}
-            viewMode={viewMode}
-            onDrillClick={handleDrillClick}
-            personName={person?.name}
-          />
+          <div className={revalidatingClass(collaborationStatus)}>
+            <CollaborationSection
+              metrics={collabMetrics}
+              viewMode={viewMode}
+              onDrillClick={handleDrillClick}
+              personName={person?.name}
+            />
+          </div>
         )}
       </CollapsibleSection>
 

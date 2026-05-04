@@ -230,15 +230,24 @@ const TeamViewScreen: React.FC = () => {
   const drillData = useAppSelector(selectTeamDrillData);
   const { navigateToScreen } = useNavigation();
 
+  // Same pattern as IcDashboardScreen — period change keeps current numbers on
+  // screen as stale; team change wipes them.
+  const lastTeamRef = React.useRef<string | null>(null);
   useEffect(() => {
     if (!teamId) return;
+    const reason: 'team' | 'period' =
+      lastTeamRef.current !== null && lastTeamRef.current === teamId
+        ? 'period'
+        : 'team';
     loadTeamView(
       teamId,
       period,
       resolveDateRange(period, customRange),
       roster,
       pivot?.display_name ?? null,
+      reason,
     );
+    lastTeamRef.current = teamId;
   }, [teamId, period, customRange, roster, pivot]);
 
   const handleNavigateToIc = (personId: string): void => {
@@ -252,29 +261,31 @@ const TeamViewScreen: React.FC = () => {
 
   const handleDrillClick = (drillId: string): void => {
     if (!teamId) return;
-    openTeamDrill({ kind: 'team', teamId, drillId });
+    openTeamDrill({ kind: 'team', teamId, drillId }, resolveDateRange(period, customRange));
   };
 
   const handleCellDrill = (personId: string, drillId: string): void => {
     if (!personId) return;
-    openTeamDrill({ kind: 'cell', personId, drillId });
+    openTeamDrill({ kind: 'cell', personId, drillId }, resolveDateRange(period, customRange));
   };
 
   return (
     <div className="flex flex-col gap-4 p-6">
-      {/* Screen header: team name left, controls right */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Screen header: team name left, controls right.
+          Sticky so the team name + period stay anchored as you scroll
+          long member tables / bullet sections. Mirrors IcDashboardScreen. */}
+      <div className="sticky top-0 z-20 -mx-6 -mt-6 px-6 pt-6 pb-3 bg-background/95 backdrop-blur-sm border-b border-border/60 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {teamName && (
             <>
-              <div className="w-8 h-8 bg-indigo-50 rounded-full flex items-center justify-center flex-shrink-0" role="img" aria-label={teamName}>
-                <span className="text-sm font-extrabold text-indigo-600">
+              <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center flex-shrink-0" role="img" aria-label={teamName}>
+                <span className="text-base font-extrabold text-indigo-600">
                   {getInitials(teamName)}
                 </span>
               </div>
               <div>
-                <div className="text-base font-bold text-gray-900 leading-tight">{teamName}</div>
-                <div className="text-xs text-gray-400">
+                <div className="text-lg font-bold text-gray-900 leading-tight">{teamName}</div>
+                <div className="text-sm text-gray-500">
                   {(() => {
                     // When an executive drills into a subordinate team, teamId
                     // is that subordinate's email — use teamName (which comes

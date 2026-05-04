@@ -18,7 +18,7 @@ import { InsightApiService } from '../api/insightApiService';
 import { ConnectorManagerService } from '../api/connectorManagerService';
 import { IdentityApiService } from '@/app/api/IdentityApiService';
 import { METRIC_REGISTRY } from '../api/metricRegistry';
-import { odataDateFilter, odataEscapeValue, type DateRange } from '../utils/periodToDateRange';
+import { odataEscapeValue, type DateRange } from '../utils/periodToDateRange';
 import {
   transformIcKpis,
   transformBulletMetrics,
@@ -124,8 +124,9 @@ export const loadIcDashboard = (
   personId: string,
   period: PeriodValue,
   range: DateRange,
+  reason: 'person' | 'period' = 'person',
 ): void => {
-  eventBus.emit(IcDashboardEvents.IcDashboardLoadStarted);
+  eventBus.emit(IcDashboardEvents.IcDashboardLoadStarted, { reason });
 
   const api        = apiRegistry.getService(InsightApiService);
   const connectors = apiRegistry.getService(ConnectorManagerService);
@@ -134,10 +135,9 @@ export const loadIcDashboard = (
   // ClickHouse gold views store person_id in lowercase (BambooHR emails come
   // in mixed case; the ingestion pipeline normalizes). Force lowercase in
   // OData filters so mixed-case identity emails don't produce empty results.
-  const personIdLc       = personId.toLowerCase();
-  const personFilter     = `person_id eq '${odataEscapeValue(personIdLc)}' and ${odataDateFilter(range)}`;
-  const prevRange        = previousPeriodRange(range, period);
-  const prevPersonFilter = `person_id eq '${odataEscapeValue(personIdLc)}' and ${odataDateFilter(prevRange)}`;
+  const personIdLc  = personId.toLowerCase();
+  const personScope = `person_id eq '${odataEscapeValue(personIdLc)}'`;
+  const prevRange   = previousPeriodRange(range, period);
 
   // ---- Identity (critical) -------------------------------------------------
   // Without identity we cannot show name/avatar/role; surface an explicit
@@ -164,8 +164,8 @@ export const loadIcDashboard = (
   // ---- Section: kpis (current + previous period combined) ------------------
   runSection('kpis', () =>
     Promise.all([
-      api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS, { $filter: personFilter }),
-      api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS, { $filter: prevPersonFilter }),
+      api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS, range,     { $filter: personScope }),
+      api.queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS, prevRange, { $filter: personScope }),
     ]).then(([cur, prev]) => ({
       kind: 'kpis',
       kpis: transformIcKpis(cur.items[0] ?? null, prev.items[0] ?? null, period),
@@ -174,43 +174,43 @@ export const loadIcDashboard = (
 
   // ---- Section: task_delivery ---------------------------------------------
   runSection('task_delivery', () =>
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_DELIVERY, { $filter: personFilter })
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_DELIVERY, range, { $filter: personScope })
       .then((resp) => ({ kind: 'bullet', sectionId: 'task_delivery', metrics: transformBulletMetrics(resp.items, 'task_delivery', period) })),
   );
 
   // ---- Section: collaboration ---------------------------------------------
   runSection('collaboration', () =>
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_COLLAB, { $filter: personFilter })
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_COLLAB, range, { $filter: personScope })
       .then((resp) => ({ kind: 'bullet', sectionId: 'collaboration', metrics: transformBulletMetrics(resp.items, 'collaboration', period) })),
   );
 
   // ---- Section: ai_adoption -----------------------------------------------
   runSection('ai_adoption', () =>
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_AI, { $filter: personFilter })
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_AI, range, { $filter: personScope })
       .then((resp) => ({ kind: 'bullet', sectionId: 'ai_adoption', metrics: transformBulletMetrics(resp.items, 'ai_adoption', period) })),
   );
 
   // ---- Section: git_output ------------------------------------------------
   runSection('git_output', () =>
-    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_GIT, { $filter: personFilter })
+    api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY.IC_BULLET_GIT, range, { $filter: personScope })
       .then((resp) => ({ kind: 'bullet', sectionId: 'git_output', metrics: transformBulletMetrics(resp.items, 'git_output', period) })),
   );
 
   // ---- Section: loc_trend -------------------------------------------------
   runSection('loc_trend', () =>
-    api.queryMetric<RawLocTrendRow>(METRIC_REGISTRY.IC_CHART_LOC, { $filter: personFilter })
+    api.queryMetric<RawLocTrendRow>(METRIC_REGISTRY.IC_CHART_LOC, range, { $filter: personScope })
       .then((resp) => ({ kind: 'locTrend', trend: transformLocTrend(resp.items, period) })),
   );
 
   // ---- Section: delivery_trend --------------------------------------------
   runSection('delivery_trend', () =>
-    api.queryMetric<RawDeliveryTrendRow>(METRIC_REGISTRY.IC_CHART_DELIVERY, { $filter: personFilter })
+    api.queryMetric<RawDeliveryTrendRow>(METRIC_REGISTRY.IC_CHART_DELIVERY, range, { $filter: personScope })
       .then((resp) => ({ kind: 'deliveryTrend', trend: transformDeliveryTrend(resp.items, period) })),
   );
 
   // ---- Section: time_off --------------------------------------------------
   runSection('time_off', () =>
-    api.queryMetric<RawTimeOffRow>(METRIC_REGISTRY.IC_TIMEOFF, { $filter: personFilter })
+    api.queryMetric<RawTimeOffRow>(METRIC_REGISTRY.IC_TIMEOFF, range, { $filter: personScope })
       .then((resp) => ({ kind: 'timeOff', notice: resp.items[0] ? transformTimeOff(resp.items[0]) : null })),
   );
 };
@@ -218,9 +218,9 @@ export const loadIcDashboard = (
 /**
  * Open drill modal — fetches drill detail for a specific metric on demand.
  */
-export const openDrill = (personId: string, drillId: string): void => {
+export const openDrill = (personId: string, drillId: string, range: DateRange): void => {
   void apiRegistry.getService(InsightApiService)
-    .queryMetric<RawDrillRow>(METRIC_REGISTRY.IC_DRILL, {
+    .queryMetric<RawDrillRow>(METRIC_REGISTRY.IC_DRILL, range, {
       $filter: `person_id eq '${odataEscapeValue(personId.toLowerCase())}' and drill_id eq '${odataEscapeValue(drillId)}'`,
     })
     .then((resp) => {
