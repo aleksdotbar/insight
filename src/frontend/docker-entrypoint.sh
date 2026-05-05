@@ -24,17 +24,33 @@ if contains_unsafe_chars "${OIDC_ISSUER:-}" || contains_unsafe_chars "${OIDC_CLI
   exit 1
 fi
 
+# OIDC_SCOPES is space-separated, so internal whitespace is expected. Validate
+# each token has no control chars (still a JS-string-injection concern).
+if [ -n "${OIDC_SCOPES:-}" ]; then
+  for tok in $OIDC_SCOPES; do
+    if printf '%s' "$tok" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+      echo "ERROR: OIDC_SCOPES contains control characters; refusing to start." >&2
+      exit 1
+    fi
+  done
+fi
+
 # Write runtime OIDC config to an external JS file. We can't inline the script
 # in index.html — strict CSP (`script-src 'self'`) would reject it. Always
 # write the file so index.html's <script src> tag never 404s; an empty config
 # leaves window.__OIDC_CONFIG__ undefined and the SPA falls back to dev mode.
 OIDC_CONFIG_FILE=/usr/share/nginx/html/oidc-config.js
 if [ -n "$OIDC_ISSUER" ] && [ -n "$OIDC_CLIENT_ID" ]; then
+  if [ -z "${OIDC_SCOPES:-}" ]; then
+    echo "ERROR: OIDC_SCOPES must be set when OIDC_ISSUER and OIDC_CLIENT_ID are set." >&2
+    exit 1
+  fi
   issuer_js=$(escape_js "$OIDC_ISSUER")
   client_id_js=$(escape_js "$OIDC_CLIENT_ID")
-  printf 'window.__OIDC_CONFIG__={issuer_url:"%s",client_id:"%s"};\n' \
-    "$issuer_js" "$client_id_js" > "$OIDC_CONFIG_FILE"
-  echo "OIDC config written to $OIDC_CONFIG_FILE: issuer=$OIDC_ISSUER client_id=$OIDC_CLIENT_ID"
+  scopes_js=$(escape_js "$OIDC_SCOPES")
+  printf 'window.__OIDC_CONFIG__={issuer_url:"%s",client_id:"%s",scopes:"%s"};\n' \
+    "$issuer_js" "$client_id_js" "$scopes_js" > "$OIDC_CONFIG_FILE"
+  echo "OIDC config written to $OIDC_CONFIG_FILE: issuer=$OIDC_ISSUER client_id=$OIDC_CLIENT_ID scopes=$OIDC_SCOPES"
 else
   : > "$OIDC_CONFIG_FILE"
   echo "OIDC config not set — $OIDC_CONFIG_FILE left empty (dev fallback)"
