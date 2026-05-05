@@ -14,8 +14,15 @@
 import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import type { OidcConfig } from '@/app/types/auth';
 
-// Runtime OIDC config injected by Docker entrypoint via window.__OIDC_CONFIG__
-declare global { interface Window { __OIDC_CONFIG__?: Partial<OidcConfig> } }
+// Runtime OIDC config injected by Docker entrypoint via window.__OIDC_CONFIG__.
+// Shape differs from OidcConfig: scopes is a space-separated string here
+// (easier for shell to emit safely), split into string[] before consumption.
+type RuntimeOidcConfig = {
+  issuer_url?: string;
+  client_id?: string;
+  scopes?: string;
+};
+declare global { interface Window { __OIDC_CONFIG__?: RuntimeOidcConfig } }
 const runtimeConfig = window.__OIDC_CONFIG__;
 
 const authConfigMap = {
@@ -23,7 +30,10 @@ const authConfigMap = {
     issuer_url: runtimeConfig?.issuer_url ?? '',
     client_id: runtimeConfig?.client_id ?? '',
     redirect_uri: `${window.location.origin}/callback`,
-    scopes: ['openid', 'profile', 'email'],
+    // Scopes are IdP-specific (Entra wants api://<clientId>/Access.Default,
+    // Okta uses bare names). Configured per-deploy via OIDC_SCOPES env →
+    // window.__OIDC_CONFIG__.scopes (space-separated string).
+    scopes: (runtimeConfig?.scopes ?? '').split(/\s+/).filter(Boolean),
     response_type: 'code',
   }),
 };
