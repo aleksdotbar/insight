@@ -352,7 +352,7 @@ const MOCK_BULLET_DIST: Partial<Record<string, MockBulletDist>> = {
   cursor_active:              { median: 6,     range_min: 0,  range_max: 12 },
   cc_active:                  { median: 3,     range_min: 0,  range_max: 12 },
   codex_active:               { median: 2,     range_min: 0,  range_max: 12 },
-  team_ai_loc:                { median: 1186,  range_min: 0,  range_max: 50000 },
+  team_ai_loc:                { median: 1186,  range_min: 0,  range_max: 5000 },
   cursor_acceptance:          { median: 58,    range_min: 0,  range_max: 100 },
   cc_tool_acceptance:         { median: 64,    range_min: 0,  range_max: 100 },
   cc_tool_accept:             { median: 64,    range_min: 0,  range_max: 100 },

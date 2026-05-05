@@ -15,6 +15,7 @@
 import { BaseApiService, RestProtocol, RestMockPlugin, apiRegistry } from '@hai3/react';
 import { AuthPlugin } from '@/app/plugins/AuthPlugin';
 import { mocksEnabled } from '@/app/config/mocksEnabled';
+import { insightMockMap } from './mocks';
 import type { ODataParams, ODataResponse } from '../types';
 import type { DashboardData, SpeedData } from '../types';
 import { odataDateFilter, type DateRange } from '../utils/periodToDateRange';
@@ -25,13 +26,16 @@ export class InsightApiService extends BaseApiService {
 
     super({ baseURL: '/api/analytics/v1' }, restProtocol);
 
+    // Mock plugin attached directly to restProtocol.plugins (was: registered
+    // via this.registerPlugin and activated by toggleMockMode → syncMockPlugins).
+    // The framework path races: syncMockPlugins iterates apiRegistry.getAll()
+    // before InsightApiService is fully instantiated on first dispatch, so
+    // the mock plugin never makes it into the active chain. Direct add
+    // avoids that ordering hazard. Mock chain runs BEFORE AuthPlugin so a
+    // matched route short-circuits without needing a token.
+    // Tree-shaken from prod via the mocksEnabled() === false constant fold.
     if (mocksEnabled()) {
-      void import('./mocks').then(({ insightMockMap }) => {
-        this.registerPlugin(
-          restProtocol,
-          new RestMockPlugin({ mockMap: insightMockMap, delay: 100 }),
-        );
-      });
+      restProtocol.plugins.add(new RestMockPlugin({ mockMap: insightMockMap, delay: 100 }));
     }
     restProtocol.plugins.add(new AuthPlugin());
   }

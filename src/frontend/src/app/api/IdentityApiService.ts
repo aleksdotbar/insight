@@ -19,16 +19,11 @@ export class IdentityApiService extends BaseApiService {
     super({ baseURL: '/api/identity-resolution/v1' }, restProtocol);
 
     if (mocksEnabled()) {
-      // Synchronous registration so the very first identity call after
-      // mount (Layout → fetchCurrentUser, which runs immediately) cannot
-      // race the mock plugin attachment. In prod, `mocksEnabled()` is
-      // statically `false` (Vite inlines `import.meta.env.DEV` as a
-      // literal), so this whole branch and the `identityMockMap` import
-      // are dead-code-eliminated.
-      this.registerPlugin(
-        restProtocol,
-        new RestMockPlugin({ mockMap: identityMockMap, delay: 50 }),
-      );
+      // Direct add — `this.registerPlugin` defers activation to
+      // syncMockPlugins() which races apiRegistry lazy instantiation; the
+      // mock plugin never made it into the active chain on first dispatch.
+      // See insightApiService.ts for full root-cause notes.
+      restProtocol.plugins.add(new RestMockPlugin({ mockMap: identityMockMap, delay: 50 }));
     }
 
     restProtocol.plugins.add(new AuthPlugin());

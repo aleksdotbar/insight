@@ -84,6 +84,17 @@ export const PEOPLE: MockPerson[] = [
   { person_id: 'hank.reed@example.com',     name: 'Hank Reed',   team_id: 'data',     role: 'Tech Lead',                seniority: 'Senior',    is_lead: true,  ai_tools: ['Cursor', 'Codex'],       supervisor_email: null },
   { person_id: 'jake.fox@example.com',      name: 'Jake Fox',    team_id: 'qa',       role: 'Tech Lead',                seniority: 'Mid',       is_lead: true,  ai_tools: ['Cursor'],                supervisor_email: null },
   { person_id: 'kira.sato@example.com',     name: 'Kira Sato',   team_id: 'mobile',   role: 'Tech Lead',                seniority: 'Senior',    is_lead: true,  ai_tools: ['Claude Code', 'Codex'],  supervisor_email: null },
+  // Extra members to vary team headcounts on the executive view.
+  // Final shape: backend=4, frontend=4, platform=4, data=3, qa=2, mobile=2.
+  // Noah/Olivia report to Alice (Backend sub-lead) — keeps Bob's direct
+  // reports at 6 so sidebar count == team-view "(6/6)" for Bob.
+  { person_id: 'noah.bell@example.com',     name: 'Noah Bell',     team_id: 'backend',  role: 'Senior Software Engineer', seniority: 'Senior',    is_lead: false, ai_tools: ['Cursor', 'Claude Code'], supervisor_email: 'alice.kim@example.com' },
+  { person_id: 'olivia.park@example.com',   name: 'Olivia Park',   team_id: 'backend',  role: 'Software Engineer',        seniority: 'Mid',       is_lead: false, ai_tools: ['Claude Code'],           supervisor_email: 'alice.kim@example.com' },
+  { person_id: 'priya.shah@example.com',    name: 'Priya Shah',    team_id: 'frontend', role: 'Software Engineer',        seniority: 'Mid',       is_lead: false, ai_tools: ['Cursor'],                supervisor_email: 'carol.chen@example.com' },
+  { person_id: 'quinn.lee@example.com',     name: 'Quinn Lee',     team_id: 'frontend', role: 'Junior Software Engineer', seniority: 'Junior',    is_lead: false, ai_tools: [],                        supervisor_email: 'carol.chen@example.com' },
+  { person_id: 'ravi.iyer@example.com',     name: 'Ravi Iyer',     team_id: 'platform', role: 'Senior Software Engineer', seniority: 'Senior',    is_lead: false, ai_tools: ['Codex'],                 supervisor_email: 'frank.moss@example.com' },
+  { person_id: 'sara.bishop@example.com',   name: 'Sara Bishop',   team_id: 'platform', role: 'Software Engineer',        seniority: 'Mid',       is_lead: false, ai_tools: ['Cursor', 'Codex'],       supervisor_email: 'frank.moss@example.com' },
+  { person_id: 'tom.alvarez@example.com',   name: 'Tom Alvarez',   team_id: 'data',     role: 'Software Engineer',        seniority: 'Mid',       is_lead: false, ai_tools: ['Cursor'],                supervisor_email: 'hank.reed@example.com' },
 ];
 
 // ---------------------------------------------------------------------------

@@ -1,25 +1,18 @@
 /**
  * Identity Resolution mock map.
  *
- * Mirrors the pattern used by `src/screensets/insight/api/mocks.ts` for the
- * analytics endpoints: the mock map is a separate, dynamically-imported
- * module that the consuming `*ApiService` registers when `mocksEnabled()`
- * is true. Identity tree is sourced from the screenset's `PEOPLE` registry
- * via `buildIdentityTree`, so the demo-tenant hierarchy lives in exactly
- * one place.
+ * Identity tree sourced from screenset's `PEOPLE` registry via
+ * `buildIdentityTree`. One mock entry per known email — hai3's
+ * `RestMockPlugin` matches `:email` patterns but does NOT pass extracted
+ * params to the factory (only body), so the previous `:email`-placeholder
+ * implementation always saw `params.email === undefined` and threw.
+ * Per-email keys avoid that limitation.
  */
 
 import type { MockMap } from '@hai3/react';
-import { buildIdentityTree } from '@/screensets/insight/api/mocks/registry';
+import { PEOPLE, buildIdentityTree } from '@/screensets/insight/api/mocks/registry';
 import type { IdentityPersonRaw } from '@/app/types/identity';
 
-/**
- * Error shaped to look like the real backend's 404 so consumers don't have
- * to special-case the mock. `IdentityApiService.getPersonByEmail` calls
- * `toIdentityPerson(raw)` on the response — returning `null` body would
- * crash there. Throwing mirrors what `RestProtocol` surfaces from a real
- * 404 response.
- */
 class MockNotFoundError extends Error {
   status = 404;
   constructor(email: string) {
@@ -28,14 +21,21 @@ class MockNotFoundError extends Error {
   }
 }
 
-export const identityMockMap: MockMap = {
-  'GET /api/identity-resolution/v1/persons/:email': (
-    _body: unknown,
-    params?: Record<string, string>,
-  ): IdentityPersonRaw => {
-    const email = decodeURIComponent(params?.email ?? '');
-    const tree = buildIdentityTree(email);
-    if (!tree) throw new MockNotFoundError(email);
+const map: Record<string, () => IdentityPersonRaw> = {};
+for (const p of PEOPLE) {
+  const factory = (): IdentityPersonRaw => {
+    const tree = buildIdentityTree(p.person_id);
+    if (!tree) throw new MockNotFoundError(p.person_id);
     return tree as IdentityPersonRaw;
-  },
-};
+  };
+  // hai3 RestMockPlugin matches against `context.url`, which may be either
+  // the absolute request URL or the baseURL-relative path depending on how
+  // axios is configured. Register both so neither path falls through to the
+  // real backend (analytics mocks use the same dual-key strategy).
+  for (const id of [encodeURIComponent(p.person_id), p.person_id]) {
+    map[`GET /api/identity-resolution/v1/persons/${id}`] = factory;
+    map[`GET /persons/${id}`] = factory;
+  }
+}
+
+export const identityMockMap: MockMap = map;

@@ -127,4 +127,46 @@ export const initializeCurrentUserEffects = (dispatch: AppDispatch): void => {
     }));
     dispatch(clearSelection());
   });
+
+  // Dev/mock bridge: bootstrap fetches identity and emits 'app/user/loaded'
+  // (header consumer), but no path turns that into a typed CurrentUser
+  // (role + teamId + identity tree) so menus/team-view never receive
+  // scope. When mocks are on, resolve everything from the PEOPLE registry
+  // by email and dispatch the same slice updates the UserChanged listener
+  // does (effects cannot emit events — FLUX rule).
+  //
+  // Listener is registered SYNCHRONOUSLY (kick off the registry import in
+  // parallel and `await` it inside the callback) so the startup
+  // `app/user/loaded` emit cannot land before subscribe.
+  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCKS === 'true') {
+    const registryPromise = import('../api/mocks/registry');
+    eventBus.on('app/user/loaded' as never, (payload: unknown) => {
+      void (async () => {
+        const user = (payload as { user?: { email?: string } }).user;
+        if (!user?.email) return;
+        const { PEOPLE_BY_ID, buildIdentityTree } = await registryPromise;
+        const person = PEOPLE_BY_ID[user.email];
+        if (!person) return;
+        const tree = buildIdentityTree(user.email) as IdentityPerson | null;
+        // Top-level lead (no supervisor) → executive; lead with supervisor →
+        // team_lead; everyone else → ic. Matches the demo's role hierarchy
+        // so executives see the org-wide menu while sub-leads see their
+        // team's drill.
+        const role = person.is_lead
+          ? (person.supervisor_email ? 'team_lead' : 'executive')
+          : 'ic';
+        const cu: CurrentUser = {
+          personId: person.person_id,
+          name: person.name,
+          role,
+          teamId: person.team_id,
+          _identity: tree ?? undefined,
+        };
+        dispatch(setCurrentUser(cu));
+        dispatch(setMenuItems(buildMenuFromIdentity(cu) as Parameters<typeof setMenuItems>[0]));
+        dispatch(setViewer({ id: cu.personId, name: cu.name, role: cu.role, identity: tree }));
+        dispatch(clearSelection());
+      })();
+    });
+  }
 };

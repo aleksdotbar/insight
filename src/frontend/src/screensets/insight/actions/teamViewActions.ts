@@ -248,18 +248,19 @@ export const loadTeamView = (
   );
 
   // ---- Bullet sections (independent) --------------------------------------
+  // Best-effort teamSize from roster when available — IR pivot mode supplies
+  // it synchronously. Fallback path (legacy org_unit_id query) leaves it
+  // undefined, and member-scale bullets render as `unavailable` until the
+  // upstream slice re-derivation lands. Mock mode always has a roster, so
+  // member-scale AI bullets get their headcount denominator immediately.
+  const teamSize = roster?.length;
   const bulletSection = (sectionId: string, registryKey: keyof typeof METRIC_REGISTRY): void => {
     runSection(sectionId, () =>
       api.queryMetric<RawBulletAggregateRow>(METRIC_REGISTRY[registryKey], range, { $filter: teamScope })
-        // teamSize is unknown at this point (members section may not have
-        // landed yet); the bullet transform handles undefined teamSize by
-        // marking member-scale rows as `unavailable` rather than inventing a
-        // denominator. AI bullets reconcile their denominator when the
-        // members section lands (see slice.setTeamSize re-derivation).
         .then((resp) => ({
           kind: 'bullet',
           sectionId,
-          metrics: transformBulletMetrics(resp.items, sectionId, period, undefined, 'team'),
+          metrics: transformBulletMetrics(resp.items, sectionId, period, teamSize, 'team'),
         })),
     );
   };

@@ -34,10 +34,10 @@ export class ConnectorManagerService extends BaseApiService {
           () => ({ id, name: id, status: 'available' as ConnectorAvailability }),
         ]),
       );
-      this.registerPlugin(
-        restProtocol,
-        new RestMockPlugin({ mockMap, delay: 50 }),
-      );
+      // Direct add (was this.registerPlugin → syncMockPlugins race; see
+      // insightApiService.ts for full root-cause notes). Mock first so it
+      // short-circuits before AuthPlugin runs.
+      restProtocol.plugins.add(new RestMockPlugin({ mockMap, delay: 50 }));
     }
     restProtocol.plugins.add(new AuthPlugin());
   }

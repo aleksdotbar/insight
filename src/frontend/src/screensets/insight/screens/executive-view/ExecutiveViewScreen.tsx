@@ -81,8 +81,12 @@ const ExecutiveViewScreen: React.FC = () => {
       {/* Sticky header — same pattern as IcDashboard / TeamView. */}
       <div className="sticky top-0 z-20 -mx-6 -mt-6 px-6 pt-6 pb-3 bg-background/95 backdrop-blur-sm border-b border-border/60 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-lg font-bold text-gray-900 leading-tight">{t('header.title')}</div>
-          <div className="text-sm text-gray-500">{t('header.subtitle')}</div>
+          <div className="text-lg font-bold text-gray-900 leading-tight">
+            {(() => { const v = t('header.title'); return v === 'header.title' ? 'Executive View' : v; })()}
+          </div>
+          <div className="text-sm text-gray-500">
+            {(() => { const v = t('header.subtitle'); return v === 'header.subtitle' ? 'All teams · Organization overview' : v; })()}
+          </div>
         </div>
         <PeriodSelectorBar
           period={period}
