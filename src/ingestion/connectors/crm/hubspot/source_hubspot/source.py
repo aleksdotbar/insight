@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Tuple
 
-import isodate
 import pendulum
 from dateutil.relativedelta import relativedelta
 
@@ -44,7 +43,6 @@ from source_hubspot.streams import (
 
 logger = logging.getLogger("airbyte")
 
-_DEFAULT_LOOKBACK = timedelta(minutes=10)
 _START_DATE_FALLBACK_YEARS = 2
 
 
@@ -74,13 +72,22 @@ class SourceHubspot(AbstractSource):
                 hubspot.properties_for(probe_object)
             except AirbyteTracedException as exc:
                 return False, exc.message
-        # Verify the token has association read scope. Empty associations are
-        # worse than a clear config error: they silently corrupt FK joins in
-        # Silver without failing the sync.
-        reason = hubspot.probe_association_scope()
-        if reason is not None:
-            return False, reason
+        # Verify the token has association read scope only when at least one
+        # enabled stream actually uses associations. Owners-only or
+        # leads/tickets-only configs (no association fetches) shouldn't be
+        # rejected for missing a scope they'll never call.
+        if self._has_association_streams(config):
+            reason = hubspot.probe_association_scope()
+            if reason is not None:
+                return False, reason
         return True, None
+
+    def _has_association_streams(self, config: Mapping[str, Any]) -> bool:
+        for name in self._resolve_stream_list(config):
+            entry = STREAM_REGISTRY.get(name)
+            if entry and entry.get("associations"):
+                return True
+        return False
 
     def _pick_properties_probe_object(
         self, config: Mapping[str, Any]
@@ -98,29 +105,12 @@ class SourceHubspot(AbstractSource):
     # ------- Stream discovery ----------------------------------------------
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
-        # Fail-fast on a bad lookback duration before constructing streams.
-        self._validate_iso_duration(
-            config.get("hubspot_lookback_window"), "hubspot_lookback_window"
-        )
         start_date = self._resolve_start_date(config)
-        lookback = _parse_duration(
-            config.get("hubspot_lookback_window"), _DEFAULT_LOOKBACK
-        )
         hubspot = Hubspot(access_token=config["hubspot_access_token"])
-        requested = self._resolve_stream_list(config)
-
-        streams: List[Stream] = []
-        for stream_name in requested:
-            if stream_name not in STREAM_REGISTRY:
-                logger.warning(
-                    "Unknown HubSpot stream '%s' in hubspot_streams override; skipping",
-                    stream_name,
-                )
-                continue
-            streams.append(
-                self._build_stream(stream_name, config, hubspot, start_date, lookback)
-            )
-        return streams
+        return [
+            self._build_stream(name, config, hubspot, start_date)
+            for name in self._resolve_stream_list(config)
+        ]
 
     def _build_stream(
         self,
@@ -128,7 +118,6 @@ class SourceHubspot(AbstractSource):
         config: Mapping[str, Any],
         hubspot: Hubspot,
         start_date: pendulum.DateTime,
-        lookback: timedelta,
     ) -> HubspotStream:
         kwargs = dict(
             stream_name=stream_name,
@@ -137,7 +126,6 @@ class SourceHubspot(AbstractSource):
             tenant_id=config["insight_tenant_id"],
             source_id=config["insight_source_id"],
             start_date=start_date,
-            lookback=lookback,
         )
         registry = STREAM_REGISTRY[stream_name]
         is_archived = bool(registry.get("is_archived"))
@@ -187,63 +175,12 @@ class SourceHubspot(AbstractSource):
         return pendulum.instance(fallback)
 
     def _resolve_stream_list(self, config: Mapping[str, Any]) -> List[str]:
-        override = list(config.get("hubspot_streams") or [])
-        if override:
-            # Operator picks streams explicitly — `deals` and `deals_archived`
-            # are independent registry entries and pass through untouched.
-            return override
         names = list(CURATED_STREAMS)
-        if bool(config.get("hubspot_include_archived", True)):
-            for live_name in CURATED_STREAMS:
-                archived_name = f"{live_name}{ARCHIVED_STREAM_SUFFIX}"
-                if archived_name in STREAM_REGISTRY:
-                    names.append(archived_name)
+        for live_name in CURATED_STREAMS:
+            archived_name = f"{live_name}{ARCHIVED_STREAM_SUFFIX}"
+            if archived_name in STREAM_REGISTRY:
+                names.append(archived_name)
         return names
-
-    @staticmethod
-    def _validate_iso_duration(value: Any, key: str) -> None:
-        if not value:
-            return
-        try:
-            duration = isodate.parse_duration(value)
-        except (isodate.ISO8601Error, ValueError, TypeError, AttributeError) as e:
-            raise AirbyteTracedException(
-                failure_type=FailureType.config_error,
-                internal_message=str(e),
-                message=(
-                    f"{key} must be an ISO-8601 duration (e.g. 'PT10M', 'P30D'). "
-                    f"Got: {value!r}"
-                ),
-            ) from e
-        td = duration if isinstance(duration, timedelta) else None
-        if td is None and hasattr(duration, "totimedelta"):
-            try:
-                td = duration.totimedelta(start=datetime.now(timezone.utc))
-            except Exception:
-                td = None
-        if td is None or td < timedelta(seconds=0):
-            raise AirbyteTracedException(
-                failure_type=FailureType.config_error,
-                internal_message=f"{key} must be a non-negative duration",
-                message=f"{key} must be a non-negative ISO-8601 duration. Got: {value!r}",
-            )
-
-
-def _parse_duration(value: Any, fallback: timedelta) -> timedelta:
-    if not value:
-        return fallback
-    try:
-        parsed = isodate.parse_duration(value)
-    except Exception:
-        return fallback
-    if isinstance(parsed, timedelta):
-        return parsed
-    if hasattr(parsed, "totimedelta"):
-        try:
-            return parsed.totimedelta(start=datetime.now(timezone.utc))
-        except Exception:
-            return fallback
-    return fallback
 
 
 def main() -> None:

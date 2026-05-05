@@ -6,7 +6,7 @@ classic ``AbstractSource`` path; HubSpot's search endpoint is rate-limited to
 4 rps portal-wide so concurrency adds 429 retries rather than throughput.
 
 - ``CrmSearchStream`` — incremental via ``/crm/v3/objects/{type}/search``.
-  One search window per sync ``[state - lookback, init_sync]`` filtered on
+  One search window per sync ``[state, init_sync]`` filtered on
   ``hs_lastmodifieddate``, sorted by ``hs_object_id ASC``, paged via ``after``;
   when ``after >= 10_000`` (HubSpot's search-result hard cap) the loop
   restarts the same window with ``hs_object_id > last_seen_id`` keyset.
@@ -31,7 +31,6 @@ from __future__ import annotations
 import copy
 import logging
 from abc import ABC, abstractmethod
-from datetime import timedelta
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple
 
 import pendulum
@@ -80,7 +79,6 @@ class HubspotStream(Stream, ABC):
         tenant_id: str,
         source_id: str,
         start_date: pendulum.DateTime,
-        lookback: timedelta = timedelta(0),
     ) -> None:
         self._stream_name = stream_name
         self._hubspot = hubspot_api
@@ -89,7 +87,6 @@ class HubspotStream(Stream, ABC):
         self._tenant_id = tenant_id
         self._source_id = source_id
         self._start_date = start_date
-        self._lookback = lookback
         self._envelope_collisions_seen: set = set()
         # Cursor state — populated by the state setter from prior sync output;
         # advanced by read_records as records flow through.
@@ -166,17 +163,6 @@ class HubspotStream(Stream, ABC):
             self._state = pendulum.datetime(
                 parsed.year, parsed.month, parsed.day, tz="UTC"
             )
-
-    def _state_lower_bound(self) -> pendulum.DateTime:
-        """Effective floor for the current sync, with lookback applied.
-
-        First sync: configured start_date.
-        Subsequent: max(state - lookback, start_date).
-        """
-        if self._state is None:
-            return self._start_date
-        candidate = self._state - self._lookback
-        return max(candidate, self._start_date)
 
     def _advance_state(self, latest: Optional[pendulum.DateTime]) -> None:
         if latest is None:
@@ -297,7 +283,7 @@ class CrmSearchStream(HubspotStream):
     """Incremental stream via ``/crm/v3/objects/{type}/search``.
 
     Single window per sync — ``hs_lastmodifieddate`` between
-    ``state - lookback`` (or the configured start_date on the first sync) and
+    ``state`` (or the configured start_date on the first sync) and
     ``init_sync`` (the moment the source was constructed). Records are sorted
     by ``hs_object_id ASC`` and paged via ``after``; when HubSpot's hard cap
     of ``after = 10000`` is hit the loop restarts the same window filtered on
@@ -321,7 +307,7 @@ class CrmSearchStream(HubspotStream):
         stream_slice: Optional[Mapping[str, Any]],
         stream_state: Optional[Mapping[str, Any]],
     ) -> Iterable[Mapping[str, Any]]:
-        lower = self._state_lower_bound().to_iso8601_string()
+        lower = (self._state or self._start_date).to_iso8601_string()
         upper = self._init_sync.to_iso8601_string()
         property_names = list(self._hubspot.property_names(self._object_type))
         min_object_id: Optional[str] = None
@@ -469,7 +455,7 @@ class OwnersStream(HubspotStream):
         stream_slice: Optional[Mapping[str, Any]],
         stream_state: Optional[Mapping[str, Any]],
     ) -> Iterable[Mapping[str, Any]]:
-        threshold = self._state_lower_bound() if self._state is not None else None
+        threshold = self._state  # None on first sync → emit all
         for record in self._paginate_owners(archived=False):
             if _record_cursor_passes(record, "updatedAt", threshold):
                 yield record
@@ -549,10 +535,12 @@ class OwnersArchivedStream(OwnersStream):
         stream_slice: Optional[Mapping[str, Any]],
         stream_state: Optional[Mapping[str, Any]],
     ) -> Iterable[Mapping[str, Any]]:
-        # archivedAt is immutable — no lookback needed.
         threshold = self._state if self._state is not None else self._start_date
+        # First sync uses start_date as floor — be inclusive so a record
+        # archived exactly at start_date isn't dropped at the boundary.
+        inclusive = self._state is None
         for record in self._paginate_owners(archived=True):
-            if _record_cursor_passes(record, "archivedAt", threshold):
+            if _record_cursor_passes(record, "archivedAt", threshold, inclusive=inclusive):
                 yield record
 
 
@@ -602,8 +590,8 @@ class CrmArchivedListStream(HubspotStream):
         stream_slice: Optional[Mapping[str, Any]],
         stream_state: Optional[Mapping[str, Any]],
     ) -> Iterable[Mapping[str, Any]]:
-        # archivedAt is a one-time immutable event — no lookback needed.
         threshold = self._state if self._state is not None else self._start_date
+        inclusive = self._state is None
         property_names = list(self._hubspot.property_names(self._object_type))
 
         # Buffer at most BATCH_READ_LIMIT stubs before flushing Pass 2 so we
@@ -611,7 +599,7 @@ class CrmArchivedListStream(HubspotStream):
         # hundreds of thousands of archived records).
         pending: List[Tuple[str, Any]] = []  # (id, archivedAt)
         for stub in self._paginate_archived_ids():
-            if not _record_cursor_passes(stub, "archivedAt", threshold):
+            if not _record_cursor_passes(stub, "archivedAt", threshold, inclusive=inclusive):
                 continue
             stub_id = stub.get("id")
             if not stub_id:
@@ -724,8 +712,15 @@ def _record_cursor_passes(
     record: Mapping[str, Any],
     cursor_field: str,
     threshold: Optional[pendulum.DateTime],
+    *,
+    inclusive: bool = False,
 ) -> bool:
-    """True if ``record[cursor_field] > threshold`` (or threshold absent)."""
+    """True if record's cursor passes ``threshold`` (or threshold absent).
+
+    ``inclusive=True`` uses ``>=`` instead of ``>`` — used on the first
+    archived sync so a record archived exactly at ``start_date`` isn't
+    dropped at the boundary.
+    """
     value = _parse_datetime(record.get(cursor_field))
     if value is None:
         logger.warning(
@@ -736,4 +731,4 @@ def _record_cursor_passes(
         return False
     if threshold is None:
         return True
-    return value > threshold
+    return value >= threshold if inclusive else value > threshold

@@ -1,6 +1,6 @@
 # HubSpot Connector
 
-CDK-based Python connector for HubSpot CRM. Pulls live data via CRM v3 Search API with v4 associations and archived data via list + batch_read; property-discovery driven so every `hubspotDefined` standard property surfaces as a typed Bronze column and tenant-defined (`hubspotDefined=false`) properties are folded into a single `custom_fields` JSON column so Bronze stays stable across portals.
+CDK-based Python connector for HubSpot CRM. Pulls live data via CRM v3 Search API with v4 associations and archived data via list + batch_read; only an allowlisted subset of `hubspotDefined` standard properties (the curated `ALLOWED_PROPERTIES_BY_OBJECT`) surfaces as typed Bronze columns. Tenant-defined (`hubspotDefined=false`) properties are folded into a single `custom_fields` JSON column so Bronze stays stable across portals and bounded in width regardless of customization depth.
 
 Streams sync sequentially. HubSpot's search endpoint is rate-limited to 4 rps portal-wide so a single thread saturates the cap; concurrency would only redistribute the same 4 rps across more 429 retries.
 
@@ -37,9 +37,6 @@ stringData:
 |-------|----------|-------------|
 | `hubspot_access_token` | Yes | Private App access token (sensitive) |
 | `hubspot_start_date` | No | Incremental sync start (ISO 8601). Defaults to two years before current date |
-| `hubspot_streams` | No | JSON array of stream names (e.g. `["contacts", "deals"]`). Overrides curated default |
-| `hubspot_lookback_window` | No | Re-read window for `hs_lastmodifieddate` eventual consistency. Default `PT10M` |
-| `hubspot_include_archived` | No | Register archived sibling streams. Default `true` |
 
 ### Automatically injected
 
@@ -54,7 +51,7 @@ Deploy additional Secrets with distinct `source-id` annotations to ingest multip
 
 ## Streams
 
-Active by default with `hubspot_include_archived=true`: **19 streams** — 10 live + 9 archived siblings (one per live object whose archived listing HubSpot supports). Live streams feed Silver via search on `hs_lastmodifieddate`; archived siblings full-sweep `/crm/v3/objects/{type}?archived=true` and are merged into Silver with `_version = greatest(updatedAt, archivedAt)` so an archive event outranks the prior live update.
+**19 streams** — 10 live + 9 archived siblings (one per live object whose archived listing HubSpot supports). Live streams feed Silver via search on `hs_lastmodifieddate`; archived siblings full-sweep `/crm/v3/objects/{type}?archived=true` and are merged into Silver with `_version = greatest(updatedAt, archivedAt)` so an archive event outranks the prior live update.
 
 ### Live (search)
 
@@ -117,12 +114,11 @@ HubSpot's CRM Search endpoint caps at `after = 10,000`. The connector sorts ever
 - `5xx`, chunked-encoding, connection resets — retried with exponential backoff.
 
 ### Property scope
-Bronze advertises **every `hubspotDefined` standard property** as a typed `properties_*` column for both live and archived streams; tenant-defined (`hubspotDefined=False`) properties land in the `custom_fields` JSON column. The Airbyte ClickHouse destination ALTERs Bronze on schema diff, so portals adding a new standard property surface it as a new Bronze column on the next sync without connector changes. Expect 50–100 typed columns per object on a typical portal; the destination's binary-insert buffer scales with column count, so very large portals with 250+ standard properties on an object can stress the dedup pass — a curated allowlist can be reintroduced behind a config flag if that proves an issue.
+Bronze advertises **only the curated `ALLOWED_PROPERTIES_BY_OBJECT` allowlist** of `hubspotDefined` standard properties as typed `properties_*` columns; standard properties outside the allowlist are skipped. Tenant-defined (`hubspotDefined=False`) properties land in the `custom_fields` JSON column with null/empty values dropped and per-value byte cap applied (see envelope). This keeps Bronze width bounded regardless of portal customization depth — typical width is 5–15 typed columns per object plus `custom_fields`, instead of the 50–250+ you'd get from projecting every standard property. To project a new standard column, add it to `ALLOWED_PROPERTIES_BY_OBJECT[object_type]` in `constants.py`.
 
 ### Deleted / archived records
-`hubspot_include_archived=true` (default) registers the `_archived` sibling streams listed above. Each one runs as **client-side incremental on `archivedAt`** — page the full archived set, drop records at-or-below the prior cursor state, batch_read full properties for the survivors. After the first sync, only newly-archived rows write to Bronze. Silver UNIONs the live and archived sources and ranks rows by `greatest(updatedAt, archivedAt)` so an archive event outranks the prior live update. The `archived: true` flag is still surfaced on Silver rows via the `metadata` JSON column.
+Each archived stream runs as **client-side incremental on `archivedAt`** — page the full archived set, drop records at-or-below the prior cursor state, batch_read full properties for the survivors. After the first sync, only newly-archived rows write to Bronze. Silver UNIONs the live and archived sources and ranks rows by `greatest(updatedAt, archivedAt)` so an archive event outranks the prior live update. The `archived: true` flag is still surfaced on Silver rows via the `metadata` JSON column.
 
-Set `hubspot_include_archived=false` to skip every `_archived` stream; live syncs are unaffected.
 
 ## Local development
 
@@ -148,8 +144,6 @@ Run a sync:
 ```
 
 ## Troubleshooting
-
-**Sync succeeds but a busy portal seems to be missing recent records.** Bump `hubspot_lookback_window` from `PT10M` to `PT30M` so the search window covers HubSpot's `hs_lastmodifieddate` eventual-consistency lag.
 
 **401 immediately after token rotation.** Private App tokens propagate eventually but HubSpot can cache the previous value at the edge for a minute or two. Wait and retry; if it persists, regenerate.
 

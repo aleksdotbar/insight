@@ -33,10 +33,21 @@ _VALUE_MAX_BYTES = 2048
 _TRUNCATED_SUFFIX = "…[truncated]"
 
 
+_TRUNCATED_SUFFIX_BYTES = _TRUNCATED_SUFFIX.encode("utf-8")
+
+
 def _truncate(value: Any) -> Any:
-    if isinstance(value, str) and len(value) > _VALUE_MAX_BYTES:
-        return value[:_VALUE_MAX_BYTES] + _TRUNCATED_SUFFIX
-    return value
+    if not isinstance(value, str):
+        return value
+    encoded = value.encode("utf-8")
+    if len(encoded) <= _VALUE_MAX_BYTES:
+        return value
+    allowed = _VALUE_MAX_BYTES - len(_TRUNCATED_SUFFIX_BYTES)
+    if allowed <= 0:
+        return _TRUNCATED_SUFFIX
+    # Slice on bytes; ``errors="ignore"`` drops a partial multi-byte char at
+    # the boundary so the result remains valid UTF-8.
+    return encoded[:allowed].decode("utf-8", errors="ignore") + _TRUNCATED_SUFFIX
 
 
 def _now_iso() -> str:

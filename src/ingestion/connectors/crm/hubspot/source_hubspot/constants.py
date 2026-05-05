@@ -76,8 +76,6 @@ CLOUDFLARE_ORIGIN_DNS_ERROR = 530
 # this object type — when False, no ``{name}_archived`` stream is derived.
 # Meetings (object 0-47) returns HTTP 400 "Paging through deleted objects is
 # not yet supported" so it has no archived sibling.
-#
-# Operator can override the active set via config.hubspot_streams.
 _LIVE_STREAM_REGISTRY: Mapping[str, Mapping] = {
     "contacts": {
         "object_type": "contacts",
@@ -208,7 +206,7 @@ STREAM_REGISTRY: Mapping[str, Mapping] = {
 }
 
 # Curated default list — live streams only; archived siblings are appended at
-# runtime when ``hubspot_include_archived=True`` (see source._resolve_stream_list).
+# runtime by ``source._resolve_stream_list``.
 CURATED_STREAMS = list(_LIVE_STREAM_REGISTRY.keys())
 
 # Stream-name suffix used by the source to derive archived siblings.
