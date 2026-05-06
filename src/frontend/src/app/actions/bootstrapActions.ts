@@ -61,7 +61,7 @@ export function fetchCurrentUser(): void {
         const claims = decodeJwtPayload(token);
         // MVP: Entra ID puts the email in `unique_name`; Okta defaults `sub` to the user's login (email).
         // TODO: switch to the standard `email` claim once the backend extracts and validates it.
-        if (typeof claims?.unique_name === 'string') email = claims.unique_name;
+        if (typeof claims?.email === 'string') email = claims.email;
         else if (typeof claims?.sub === 'string') email = claims.sub;
       } catch { /* ignore */ }
     }
