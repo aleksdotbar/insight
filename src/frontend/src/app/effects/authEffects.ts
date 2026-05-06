@@ -30,6 +30,11 @@ export function initAuthEffects(dispatch: AppDispatch): void {
     dispatch(setStatus('expired'));
   });
 
+  eventBus.on(AuthEvent.Unauthorized, () => {
+    dispatch(setToken(null));
+    dispatch(setStatus('unauthorized'));
+  });
+
   eventBus.on(AuthEvent.LogoutRequested, () => {
     dispatch(clearAuth());
   });
