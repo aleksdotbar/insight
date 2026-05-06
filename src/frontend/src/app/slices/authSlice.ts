@@ -12,7 +12,7 @@ const SLICE_KEY = 'auth' as const;
 export type AuthState = {
   token: string | null;
   config: OidcConfig | null;
-  status: 'idle' | 'loading' | 'authenticated' | 'expired';
+  status: 'idle' | 'loading' | 'authenticated' | 'expired' | 'unauthorized';
 }
 
 const initialState: AuthState = {

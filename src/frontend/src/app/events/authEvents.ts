@@ -13,6 +13,7 @@ export const AuthEvent = {
   TokenStored:       `${APP_ID}/${DOMAIN_ID}/tokenStored`,
   CallbackCompleted: `${APP_ID}/${DOMAIN_ID}/callbackCompleted`,
   SessionExpired:    `${APP_ID}/${DOMAIN_ID}/sessionExpired`,
+  Unauthorized:      `${APP_ID}/${DOMAIN_ID}/unauthorized`,
   LogoutRequested:   `${APP_ID}/${DOMAIN_ID}/logoutRequested`,
 } as const;
 
@@ -26,6 +27,9 @@ declare module '@hai3/react' {
     'app/auth/callbackCompleted': { returnUrl: string };
     /** 401 received — session expired, re-initiate OIDC flow */
     'app/auth/sessionExpired': void;
+    /** Token refresh exhausted (silent renew failed, or backend rejected
+     *  even the freshly-renewed token) — terminal error, surface to UI. */
+    'app/auth/unauthorized': void;
     /** User requested logout */
     'app/auth/logoutRequested': void;
   }

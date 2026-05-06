@@ -8,13 +8,18 @@
  */
 
 import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
-import { eventBus, apiRegistry } from '@hai3/react';
+import { eventBus, apiRegistry, getStore } from '@hai3/react';
 import { AuthEvent } from '@/app/events/authEvents';
 import { AuthApiService } from '@/app/api/AuthApiService';
+import { setToken } from '@/app/slices/authSlice';
 import type { OidcConfig, OidcSigninState } from '@/app/types/auth';
 
 let userManager: UserManager | null = null;
 let initPromise: Promise<void> | null = null;
+// Deduplicates concurrent refresh attempts so a burst of in-flight 401s
+// triggers only one silent renew (otherwise oidc-client-ts spawns one
+// hidden iframe per failing request and they race against each other).
+let refreshPromise: Promise<string | null> | null = null;
 
 /** Resolves when auth state is determined (user found or not) */
 let authReadyResolve: (user: User | null) => void;
@@ -102,6 +107,34 @@ export const OidcManager = {
   async getUser(): Promise<User | null> {
     if (!userManager) return null;
     return userManager.getUser();
+  },
+
+  /**
+   * Drop the cached user and acquire a fresh access token via silent renew.
+   * Returns the new access token, or null if renewal failed (session at IdP
+   * is gone, network error, etc.). Caller is expected to surface that as a
+   * terminal "unauthorized" state.
+   *
+   * Concurrent callers share one in-flight renewal — see `refreshPromise`.
+   */
+  async refresh(): Promise<string | null> {
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = (async () => {
+      if (!userManager) return null;
+      try {
+        await userManager.removeUser();
+        const newUser = await userManager.signinSilent();
+        const token = newUser?.access_token ?? null;
+        // signinSilent fires addUserLoaded which emits TokenStored, but
+        // eventBus delivery may be deferred — dispatch to the store
+        // directly so the immediate retry path sees the new token.
+        if (token) getStore().dispatch(setToken(token));
+        return token;
+      } catch {
+        return null;
+      }
+    })().finally(() => { refreshPromise = null; });
+    return refreshPromise;
   },
 
   /** Redirect to OIDC provider login page (Authorization Code + PKCE) */

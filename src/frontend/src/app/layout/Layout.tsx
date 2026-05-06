@@ -12,7 +12,9 @@ import { useAppSelector } from '@hai3/react';
 import { Icon } from '@iconify/react';
 import { fetchCurrentUser } from '@/app/actions/bootstrapActions';
 import { initAuth } from '@/app/actions/authActions';
+import { OidcManager } from '@/app/auth/OidcManager';
 import { selectAuthStatus } from '@/app/slices/authSlice';
+import { AuthErrorCard } from '@/screensets/auth/uikit/base/AuthErrorCard';
 import { Footer } from './Footer';
 import { Menu } from './Menu';
 import { Sidebar } from './Sidebar';
@@ -63,6 +65,23 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
+
+  // Top-level guard: a terminal "unauthorized" state means the SPA already
+  // tried a silent renew and the backend STILL rejected the token. Render
+  // the error card instead of any app content; "sign in again" kicks off
+  // a full redirect to the IdP. (Distinct from `expired`, which is a
+  // mid-callback state handled in CallbackScreen.)
+  if (authStatus === 'unauthorized') {
+    return (
+      <AuthErrorCard
+        onRetry={() => {
+          sessionStorage.clear();
+          localStorage.clear();
+          void OidcManager.signIn();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
