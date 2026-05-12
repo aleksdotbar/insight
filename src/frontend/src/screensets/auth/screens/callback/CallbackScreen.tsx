@@ -11,6 +11,7 @@ import { useAppSelector } from '@hai3/react';
 import { selectAuthStatus } from '@/app/slices/authSlice';
 import { handleOidcCallback } from '../../actions/callbackActions';
 import { getStartUrl } from '@/app/auth/startUrl';
+import { DEFAULT_INSIGHT_PATH } from '@/screensets/insight/ids';
 import { AuthErrorCard } from '../../uikit/base/AuthErrorCard';
 import { AuthSpinner } from '../../uikit/base/AuthSpinner';
 
@@ -22,10 +23,9 @@ const CallbackScreen: React.FC = () => {
     if (attempted.current) return;
     attempted.current = true;
 
-    // If no code in startUrl, this isn't a real OIDC callback — redirect to main app
     const url = getStartUrl();
     if (!url || !url.includes('code=')) {
-      window.location.replace('/executive-view');
+      window.location.replace(DEFAULT_INSIGHT_PATH);
       return;
     }
 

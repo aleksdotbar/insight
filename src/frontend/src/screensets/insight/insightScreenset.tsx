@@ -12,7 +12,7 @@ import {
   screensetRegistry,
   i18nRegistry,
 } from '@hai3/react';
-import { INSIGHT_SCREENSET_ID, EXECUTIVE_VIEW_SCREEN_ID, TEAM_VIEW_SCREEN_ID, IC_DASHBOARD_SCREEN_ID, MY_DASHBOARD_SCREEN_ID } from './ids';
+import { INSIGHT_SCREENSET_ID, EXECUTIVE_VIEW_SCREEN_ID, TEAM_VIEW_SCREEN_ID, IC_DASHBOARD_SCREEN_ID, MY_DASHBOARD_SCREEN_ID, DEFAULT_INSIGHT_SCREEN_ID } from './ids';
 import { withAuth } from '@/app/auth/withAuth';
 import insightSlice from './slices/insightSlice';
 import { initializeInsightEffects } from './effects/insightEffects';
@@ -122,7 +122,7 @@ export const insightScreenset: ScreensetConfig = {
   id: INSIGHT_SCREENSET_ID,
   name: 'insight',
   category: ScreensetCategory.Production,
-  defaultScreen: MY_DASHBOARD_SCREEN_ID,
+  defaultScreen: DEFAULT_INSIGHT_SCREEN_ID,
   menu: [
     {
       menuItem: {
