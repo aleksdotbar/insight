@@ -2,9 +2,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HAI3Provider, apiRegistry, createHAI3App, registerSlice, toggleMockMode, type ThemeApplyFn } from '@hai3/react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, applyTheme } from '@hai3/uikit';
 import MockBanner from '@/app/components/MockBanner';
 import { ErrorBoundary } from '@/app/components/ErrorBoundary';
+import { queryClient } from '@/app/queryClient';
 // Side-effect imports — services self-register with apiRegistry
 import '@/app/api/AccountsApiService';
 import '@/app/api/AuthApiService';
@@ -68,9 +70,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <HAI3Provider app={app}>
-        <MockBanner />
-        <App />
-        <Toaster />
+        <QueryClientProvider client={queryClient}>
+          <MockBanner />
+          <App />
+          <Toaster />
+        </QueryClientProvider>
       </HAI3Provider>
     </ErrorBoundary>
   </StrictMode>

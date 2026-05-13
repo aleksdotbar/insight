@@ -18,6 +18,8 @@ import type {
   ExecViewConfig,
   IcKpi,
   BulletMetric,
+  CrmKpis,
+  CrmFlowPoint,
   LocDataPoint,
   DeliveryDataPoint,
   TeamMember,
@@ -28,6 +30,8 @@ import type {
   RawExecSummaryRow,
   RawIcAggregateRow,
   RawBulletAggregateRow,
+  RawCrmKpisRow,
+  RawCrmFlowRow,
   RawLocTrendRow,
   RawDeliveryTrendRow,
   RawTeamMemberRow,
@@ -516,7 +520,195 @@ export function transformTimeOff(row: RawTimeOffRow): TimeOffNotice {
 }
 
 // ---------------------------------------------------------------------------
-// 7. Drill data
+// 7. CRM KPIs (sales-rep dashboard)
+// ---------------------------------------------------------------------------
+
+/**
+ * ClickHouse JSON encodes UInt aggregates as strings (e.g. `"419"`) and
+ * Float64 as numbers. Coerce uniformly here so the slice / display only see
+ * `number`s. Returns `null` when the backend had no row for this rep —
+ * KpiStrip cells then render ComingSoon instead of misleading zeros.
+ */
+export function transformCrmKpis(row: RawCrmKpisRow | null): CrmKpis | null {
+  if (row === null) return null;
+  const num = (v: number | string | null | undefined): number => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'number') return v;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  return {
+    dealsOpened:      num(row.deals_opened),
+    dealsClosed:      num(row.deals_closed),
+    dealsWon:         num(row.deals_won),
+    dealsValueClosed: num(row.deals_value_closed),
+    commsCount:       num(row.comms_count),
+    pipelineCount:    num(row.pipeline_count),
+    pipelineValue:    num(row.pipeline_value),
+  };
+}
+
+/**
+ * Weekly trend points for the Deal Flow chart. CH returns one row per
+ * (person, week) pre-formatted with `date_bucket` ("Apr 28") and ISO
+ * `metric_date`. We just project the three series and sort ascending so the
+ * chart renders left-to-right chronologically.
+ */
+export function transformCrmFlow(rows: RawCrmFlowRow[]): CrmFlowPoint[] {
+  const num = (v: number | string | null | undefined): number => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'number') return v;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  return [...rows]
+    .sort((a, b) => a.metric_date.localeCompare(b.metric_date))
+    .map((r) => ({
+      label:  r.date_bucket,
+      opened: num(r.opened),
+      closed: num(r.closed),
+      won:    num(r.won),
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// 7b. CRM Velocity & Quality bullet
+// ---------------------------------------------------------------------------
+
+/**
+ * Local bullet defs for the sales bullet cards. Kept inline (instead of
+ * folded into BULLET_DEFS) so the eng metric catalog isn't polluted with
+ * sales-only keys. Each def list mirrors the array-join of
+ * `crm_bullet_rows` in the corresponding MariaDB `query_ref` row.
+ */
+interface CrmBulletDef {
+  metric_key: string;
+  label: string;
+  sublabel: string;
+  unit: string;            // '', '%', 'd', '$'
+  higher_is_better: boolean;
+}
+
+/** Velocity & Quality bullet (UUID …0022) — outcome-side metrics. */
+export const CRM_BULLET_DEFS_QUALITY: CrmBulletDef[] = [
+  { metric_key: 'win_rate',      label: 'Win Rate',         sublabel: 'Won ÷ closed in period',                       unit: '%', higher_is_better: true  },
+  { metric_key: 'avg_deal_size', label: 'Avg Deal Size',    sublabel: 'Won deals · mean of properties_amount',        unit: '$', higher_is_better: true  },
+  { metric_key: 'cycle_days',    label: 'Avg Cycle Time',   sublabel: 'Created → won · mean days · lower = better', unit: 'd', higher_is_better: false },
+  { metric_key: 'deals_opened',  label: 'Deals Opened',     sublabel: 'Volume · deals created in period',             unit: '',  higher_is_better: true  },
+];
+
+/** Outreach Activity bullet (UUID …0023) — input-side / effort metrics. */
+export const CRM_BULLET_DEFS_ACTIVITY: CrmBulletDef[] = [
+  { metric_key: 'calls',         label: 'Calls',            sublabel: 'HubSpot · engagements_calls in period',                  unit: '',  higher_is_better: true  },
+  { metric_key: 'emails',        label: 'Emails',           sublabel: 'HubSpot · engagements_emails in period',                 unit: '',  higher_is_better: true  },
+  { metric_key: 'meetings',      label: 'Meetings',         sublabel: 'HubSpot · engagements_meetings in period',               unit: '',  higher_is_better: true  },
+  { metric_key: 'comms_per_won', label: 'Comms / Won Deal', sublabel: 'Total comms ÷ deals won · efficiency · lower = better', unit: '',  higher_is_better: false },
+];
+
+/**
+ * Render-safe formatter for sales-bullet values. Keeps `$` formatting in line
+ * with the hero strip's currency abbreviation so the same metric reads the
+ * same way across cards.
+ */
+function fmtCrm(v: number | null, unit: string): string {
+  if (v === null || !Number.isFinite(v)) return '—';
+  if (unit === '%') return `${v.toFixed(1)}%`;
+  if (unit === 'd') return `${v.toFixed(1)}d`;
+  if (unit === '$') {
+    const a = Math.abs(v);
+    if (a >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
+    if (a >= 1_000)     return `$${(v / 1_000).toFixed(0)}k`;
+    return `$${v.toFixed(0)}`;
+  }
+  return new Intl.NumberFormat('en-US').format(Math.round(v));
+}
+
+/**
+ * Convert raw bullet rows (one per metric_key) into BulletMetric[] suitable
+ * for `<BulletChart>` / `<MetricCard>`. Computes bar/median positions inside
+ * the team's [min, max] range and a directional good/warn/bad status from the
+ * value vs the team median (`higher_is_better` flips the comparison).
+ */
+export function transformCrmBullets(
+  rows: RawBulletAggregateRow[],
+  period: PeriodValue,
+  section: string,
+  defs: CrmBulletDef[],
+): BulletMetric[] {
+  const byKey = keyBy(rows, 'metric_key');
+  return defs.map((def) => {
+    const r = byKey[def.metric_key];
+    const value = r?.value ?? null;
+    const median = r?.median ?? null;
+    const rMin = r?.range_min ?? null;
+    const rMax = r?.range_max ?? null;
+
+    // No backend row OR no distribution → render value but mark unavailable.
+    const distAvailable = value !== null && rMin !== null && rMax !== null && rMin !== rMax;
+    if (!distAvailable) {
+      return {
+        period,
+        section,
+        metric_key: def.metric_key,
+        label: def.label,
+        sublabel: def.sublabel,
+        value: fmtCrm(value, def.unit),
+        unit: def.unit,
+        range_min: '—',
+        range_max: '—',
+        median: '—',
+        median_label: '',
+        bar_left_pct: 0,
+        bar_width_pct: 0,
+        median_left_pct: 0,
+        status: 'unavailable',
+        drill_id: '',
+      };
+    }
+
+    // Position computation — same shape as IC bullet pipeline.
+    const safeValue  = value as number;
+    const safeMedian = median as number | null;
+    const safeMin    = rMin as number;
+    const safeMax    = rMax as number;
+    const barWidthPct  = pctInRange(safeValue, safeMin, safeMax);
+    const medianLeftPct = safeMedian !== null ? pctInRange(safeMedian, safeMin, safeMax) : 0;
+
+    // Status: good if on the favorable side of the median by a margin,
+    // bad if on the unfavorable side, warn otherwise. Margins are loose since
+    // sales metrics are noisier than eng — tighten in phase 2b.
+    let status: 'good' | 'warn' | 'bad' = 'warn';
+    if (safeMedian !== null) {
+      const diff = safeValue - safeMedian;
+      const tolerance = Math.abs(safeMedian) * 0.1;
+      if (Math.abs(diff) <= tolerance) status = 'warn';
+      else if ((diff > 0) === def.higher_is_better) status = 'good';
+      else status = 'bad';
+    }
+
+    return {
+      period,
+      section,
+      metric_key: def.metric_key,
+      label: def.label,
+      sublabel: def.sublabel,
+      value: fmtCrm(safeValue, def.unit),
+      unit: def.unit,
+      range_min: fmtCrm(safeMin, def.unit),
+      range_max: fmtCrm(safeMax, def.unit),
+      median: fmtCrm(safeMedian, def.unit),
+      median_label: safeMedian !== null ? `Median: ${fmtCrm(safeMedian, def.unit)}` : '',
+      bar_left_pct: 0,
+      bar_width_pct: barWidthPct,
+      median_left_pct: medianLeftPct,
+      status,
+      drill_id: '',
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 8. Drill data
 // ---------------------------------------------------------------------------
 
 export function transformDrill(row: RawDrillRow): DrillData {

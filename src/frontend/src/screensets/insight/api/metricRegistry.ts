@@ -30,6 +30,19 @@ export const METRIC_REGISTRY = {
   IC_DRILL:             '00000000-0000-0000-0001-000000000016',
   IC_TIMEOFF:           '00000000-0000-0000-0001-000000000017',
   IC_BULLET_GIT:        '00000000-0000-0000-0001-000000000018',
+
+  // CRM Dashboard (Sales rep variant of My Dashboard) — POC
+  CRM_KPIS:             '00000000-0000-0000-0001-000000000020',
+  CRM_CHART_FLOW:       '00000000-0000-0000-0001-000000000021',
+  CRM_BULLET_QUALITY:   '00000000-0000-0000-0001-000000000022',
+  CRM_BULLET_ACTIVITY:  '00000000-0000-0000-0001-000000000023',
+  // 0024 (CRM Open Deals — Closing Soon table) was dropped: list-of-deals
+  // is action-queue UX rather than rep-performance metric, off-axis for
+  // Insight's mission. UUID stays reserved.
+  // 0025 (CRM Lost Reasons), 0026 (CRM Deal Types), 0027 (CRM Sources)
+  // reserved — dropped for now because Constructor's HubSpot doesn't fill
+  // the underlying fields. Restore here + in analytics-api seed if they
+  // get populated.
 } as const satisfies Record<string, string>;
 
 export type MetricRegistryKey = keyof typeof METRIC_REGISTRY;
