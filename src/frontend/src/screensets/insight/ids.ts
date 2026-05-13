@@ -24,3 +24,6 @@ export const EXECUTIVE_VIEW_SCREEN_ID = 'executive-view';
 export const TEAM_VIEW_SCREEN_ID = 'team-view';
 export const IC_DASHBOARD_SCREEN_ID = 'ic-dashboard';
 export const MY_DASHBOARD_SCREEN_ID = 'my-dashboard';
+
+export const DEFAULT_INSIGHT_SCREEN_ID = MY_DASHBOARD_SCREEN_ID;
+export const DEFAULT_INSIGHT_PATH = `/${DEFAULT_INSIGHT_SCREEN_ID}` as const;

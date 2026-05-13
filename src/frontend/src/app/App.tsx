@@ -33,7 +33,7 @@ import { Layout } from '@/app/layout';
 import {
   INSIGHT_SCREENSET_ID,
   EXECUTIVE_VIEW_SCREEN_ID,
-  MY_DASHBOARD_SCREEN_ID,
+  DEFAULT_INSIGHT_SCREEN_ID,
 } from '@/screensets/insight/ids';
 
 function App() {
@@ -48,7 +48,7 @@ function App() {
       currentScreenset === INSIGHT_SCREENSET_ID &&
       currentScreen === EXECUTIVE_VIEW_SCREEN_ID
     ) {
-      navigateToScreen(INSIGHT_SCREENSET_ID, MY_DASHBOARD_SCREEN_ID);
+      navigateToScreen(INSIGHT_SCREENSET_ID, DEFAULT_INSIGHT_SCREEN_ID);
     }
   }, [currentScreen, currentScreenset, navigateToScreen]);
 
