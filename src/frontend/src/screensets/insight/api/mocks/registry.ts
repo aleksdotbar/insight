@@ -122,7 +122,7 @@ export function teamHeadcount(teamId: string): number {
 
 /**
  * Raw shape returned by Identity Resolution's
- * `GET /api/identity-resolution/v1/persons/{email}` endpoint, mirrored here
+ * `GET /api/identity/v1/persons/{email}` endpoint, mirrored here
  * to keep the screenset registry self-contained (no upward import into
  * `src/app/types`). Field names match `IdentityPersonRaw`.
  */

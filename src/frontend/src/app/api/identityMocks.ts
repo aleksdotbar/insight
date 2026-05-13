@@ -33,7 +33,7 @@ for (const p of PEOPLE) {
   // axios is configured. Register both so neither path falls through to the
   // real backend (analytics mocks use the same dual-key strategy).
   for (const id of [encodeURIComponent(p.person_id), p.person_id]) {
-    map[`GET /api/identity-resolution/v1/persons/${id}`] = factory;
+    map[`GET /api/identity/v1/persons/${id}`] = factory;
     map[`GET /persons/${id}`] = factory;
   }
 }
