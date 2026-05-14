@@ -21,10 +21,24 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      build_tag: ${{ steps.tag.outputs.build_tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Compute the build tag once and pass it to both the image tag and
+      # the cross-repo dispatch step below. Format mirrors
+      # cyberfabric/cyber-insight's build-images.yml exactly so that
+      # `sort -V` over mixed subchart appVersions on the umbrella side
+      # stays consistent.
+      - name: Compute build tag
+        id: tag
+        run: |
+          BUILD_TAG="$(date -u +%Y.%m.%d.%H.%M)-$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          echo "build_tag=${BUILD_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Build tag for this run: ${BUILD_TAG}"
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -38,11 +52,11 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Two tags on default-branch pushes — matches cyberfabric/insight
+          # Two tags on default-branch pushes — matches cyberfabric/cyber-insight
           # backend scheme. The date-based tag already embeds the sha, so
           # a separate short-sha tag is redundant.
           tags: |
-            type=raw,value={{date 'YYYY.MM.DD.HH.mm'}}-{{sha}},enable={{is_default_branch}}
+            type=raw,value=${{ steps.tag.outputs.build_tag }},enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Set up Docker Buildx
@@ -57,3 +71,44 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ─── Umbrella chart dispatch ───────────────────────────────────────────────
+  # After a successful main-branch image build, trigger the umbrella chart
+  # workflow in cyberfabric/cyber-insight so it bumps the frontend subchart
+  # appVersion to the just-published tag and cuts a new umbrella chart
+  # release. PR builds and non-main dispatches don't promote (no image
+  # was pushed in those cases either — metadata-action's
+  # enable={{is_default_branch}} guards image tags).
+  #
+  # Auth: mints a short-lived installation token from the
+  # `insight-chart-release-bot` GitHub App, scoped to the umbrella repo.
+  # The App is installed on cyberfabric/cyber-insight-front (this repo)
+  # and on cyberfabric/cyber-insight, with Actions: read & write on the
+  # umbrella repo. We use the App over a PAT so dispatches aren't tied
+  # to a single human.
+  dispatch-umbrella:
+    name: Dispatch umbrella chart publish
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint chart-release App token (scoped to umbrella repo)
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.INSIGHT_RELEASE_APP_ID }}
+          private-key: ${{ secrets.INSIGHT_RELEASE_APP_PRIVATE_KEY }}
+          owner: cyberfabric
+          repositories: cyber-insight
+
+      - name: Dispatch umbrella build-images workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          FRONTEND_TAG: ${{ needs.build-and-push.outputs.build_tag }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching umbrella build-images.yml with frontend_tag=${FRONTEND_TAG}"
+          gh workflow run build-images.yml \
+            --repo cyberfabric/cyber-insight \
+            --ref main \
+            -f frontend_tag="${FRONTEND_TAG}"
