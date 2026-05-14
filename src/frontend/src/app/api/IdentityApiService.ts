@@ -16,7 +16,7 @@ export class IdentityApiService extends BaseApiService {
   constructor() {
     const restProtocol = new RestProtocol({ timeout: 10000 });
 
-    super({ baseURL: '/api/identity-resolution/v1' }, restProtocol);
+    super({ baseURL: '/api/identity/v1' }, restProtocol);
 
     if (mocksEnabled()) {
       // Direct add — `this.registerPlugin` defers activation to
