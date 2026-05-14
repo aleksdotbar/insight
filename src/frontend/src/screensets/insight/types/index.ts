@@ -338,6 +338,44 @@ export interface IcKpi {
   delta: string;
   delta_type: 'good' | 'warn' | 'bad' | 'neutral';
 }
+/**
+ * Sales-rep KPIs returned by the CRM dashboard pipeline. All values are
+ * coerced to numbers in the transform layer; `null` means the backend had no
+ * row at all (rep has never owned anything in HubSpot — render as ComingSoon
+ * rather than a misleading zero).
+ *
+ * Every field is a flow measure attributed to its event date in the CH gold
+ * view, so all four respond consistently to the period selector. (The earlier
+ * snapshot-of-now `dealsOpen` was dropped — stock metrics don't fit a
+ * period-driven UI cleanly. If a "pipeline now" indicator is wanted later,
+ * surface it outside the period strip.)
+ */
+export interface CrmKpis {
+  /** Deals **created** with createdAt date in period. */
+  dealsOpened: number;
+  /** Deals whose closedate falls in period (won + lost). */
+  dealsClosed: number;
+  /** Subset of dealsClosed that were won. */
+  dealsWon: number;
+  /** Sum of properties_amount for won deals in period. */
+  dealsValueClosed: number;
+  /** HubSpot engagement count (calls + emails + meetings + tasks). */
+  commsCount: number;
+  /** Currently-open deal count (snapshot, period-invariant). */
+  pipelineCount: number;
+  /** Currently-open deal $ value (snapshot, period-invariant). */
+  pipelineValue: number;
+}
+
+/** One weekly bucket of opened/closed/won counts for the deal-flow trend chart. */
+export interface CrmFlowPoint {
+  /** Display label (e.g. "Apr 28"). */
+  label: string;
+  opened: number;
+  closed: number;
+  won: number;
+}
+
 export interface TimeOffNotice {
   days: number;
   dateRange: string;

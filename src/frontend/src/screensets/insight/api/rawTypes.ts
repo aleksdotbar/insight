@@ -117,6 +117,36 @@ export type RawTimeOffRow = {
 };
 
 // ---------------------------------------------------------------------------
+// CRM KPIs  (POST /metrics/{CRM_KPIS}/query) — Sales-rep dashboard
+// ---------------------------------------------------------------------------
+
+/**
+ * ClickHouse JSON encodes UInt aggregates as strings (e.g. "419"), and
+ * Float64 as numbers (e.g. 32014.0). Values arrive uncoerced; the transform
+ * layer is responsible for turning everything into `number`s.
+ */
+export type RawCrmKpisRow = {
+  person_id: string;
+  deals_opened:       number | string | null;
+  deals_closed:       number | string | null;
+  deals_won:          number | string | null;
+  deals_value_closed: number | string | null;
+  comms_count:        number | string | null;
+  /** Stock: count of currently open deals (snapshot from view, period-invariant via max() agg). */
+  pipeline_count:     number | string | null;
+  /** Stock: $ sum of currently open deals (snapshot, period-invariant via max() agg). */
+  pipeline_value:     number | string | null;
+};
+
+export type RawCrmFlowRow = {
+  date_bucket: string;
+  metric_date: string;
+  opened: number | string;
+  closed: number | string;
+  won:    number | string;
+};
+
+// ---------------------------------------------------------------------------
 // Drill Detail  (POST /metrics/{IC_DRILL}/query)
 // ---------------------------------------------------------------------------
 
