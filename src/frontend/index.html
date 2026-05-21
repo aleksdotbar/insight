@@ -2,14 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Constructor Insight — engineering analytics dashboard" />
-    <meta name="theme-color" content="#1e293b" />
     <title>Insight</title>
+    <!--
+      In prod the container entrypoint injects:
+        <script src="/oidc-config.js"></script>
+      idempotently when OIDC_* env vars are set. The source HTML stays clean
+      so dev (no OIDC) doesn't 404 on a missing config. For local OIDC test:
+      drop a `public/oidc-config.js` AND add the tag here temporarily.
+    -->
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/app/main.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

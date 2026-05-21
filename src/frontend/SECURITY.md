@@ -74,13 +74,14 @@ Defined in `Dockerfile`:
 - [ ] `window.__OIDC_CONFIG__` is injected at container startup with the real
       issuer URL, client id, and redirect URI. No fallback to mock auth in prod.
 - [ ] Backend (`api-gateway`, `analytics-api`, `identity-resolution`) validates
-      the `X-Tenant-ID` header against the JWT's tenant claim. The FE sets this
-      header from Redux state — without server-side validation, a logged-in
-      user can read other tenants by editing the header in DevTools.
+      the `X-Tenant-ID` header against the JWT's tenant claim. When the FE sends
+      this header (currently reserved — wired through `authStore.tenantId` in
+      `src/api/fetch-with-auth.ts`), without server-side validation a
+      logged-in user can read other tenants by editing the header in DevTools.
 - [ ] Backend rate-limits unauthenticated and authenticated endpoints
       separately. The FE has no rate-limiting and shouldn't.
 - [ ] Verify silent renew works in staging for ≥10 minutes of idle session.
-- [ ] Confirm CSP doesn't break recharts/HAI3 styling on every screen.
+- [ ] Confirm CSP doesn't break recharts / shadcn / @base-ui styling on every screen.
 - [ ] Run `npm audit --omit=dev` — no high-severity findings.
 
 ## Reporting

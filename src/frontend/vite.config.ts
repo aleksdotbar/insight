@@ -1,34 +1,34 @@
-import { defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import babel from "@rolldown/plugin-babel";
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import path from "path";
+import { defineConfig, loadEnv } from "vite";
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget = env.VITE_API_PROXY_TARGET;
-
   return {
-    plugins: [react()],
+    plugins: [
+      tanstackRouter({ target: "react", autoCodeSplitting: true }),
+      react(),
+      babel({ presets: [reactCompilerPreset()] }),
+      tailwindcss(),
+    ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        "@": path.resolve(__dirname, "./src"),
       },
     },
-    optimizeDeps: {
-      include: ['react', 'react-dom', 'react/jsx-runtime'],
-    },
     server: proxyTarget
-      ? { proxy: { '/api': { target: proxyTarget, changeOrigin: true } } }
+      ? {
+          proxy: {
+            "/api": {
+              target: proxyTarget,
+              changeOrigin: true,
+            },
+          },
+        }
       : undefined,
-    build: {
-      chunkSizeWarningLimit: 500,
-      // Never ship source maps to production — they would expose original sources.
-      sourcemap: false,
-    },
-    esbuild: {
-      // Strip `debugger` statements from production bundles. `console.*` calls are
-      // already gated behind `import.meta.env.DEV` and tree-shaken by Vite.
-      drop: ['debugger'],
-    },
   };
 });

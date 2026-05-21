@@ -1,0 +1,36 @@
+import { TriangleAlertIcon } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+function isVisible(): boolean {
+  if (!import.meta.env.DEV) return false;
+  if (import.meta.env.VITE_ENABLE_MOCKS !== "true") return false;
+  if (import.meta.env.VITE_HIDE_MOCK_BANNER === "true") return false;
+  return true;
+}
+
+export function MockBanner(): React.ReactElement | null {
+  const { t } = useTranslation();
+  if (!isVisible()) return null;
+  return (
+    <div
+      role="status"
+      className="sticky top-0 z-30 border-b border-warning/30 bg-warning/10 px-4 py-2"
+    >
+      <Alert
+        variant="warning"
+        className="mx-auto max-w-5xl border-0 bg-transparent px-0 py-0"
+      >
+        <TriangleAlertIcon />
+        <AlertTitle>{t("mock_banner.title")}</AlertTitle>
+        <AlertDescription>
+          <Trans
+            i18nKey="mock_banner.description_html"
+            components={{ code: <code className="font-mono" /> }}
+          />
+        </AlertDescription>
+      </Alert>
+    </div>
+  );
+}

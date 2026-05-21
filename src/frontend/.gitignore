@@ -1,15 +1,57 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist
+dist-ssr
+
+# Env files
 .env
 .env.local
 .env.*.local
+*.local
+
+# Vite
 .vite/
-.DS_Store
-**/.DS_Store
+
+# TanStack Router (auto-generated)
+src/routeTree.gen.ts
+.tanstack/
+
+# Claude Code
+.claude/scheduled_tasks.lock
+.claude/launch.json
+
+# Logs
+logs
 *.log
-.idea/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Caches
 .eslintcache
 coverage/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+**/.DS_Store
+
+# Python
 __pycache__/
 *.pyc
+
+# Cypilot
 cypilot.*.backup/
