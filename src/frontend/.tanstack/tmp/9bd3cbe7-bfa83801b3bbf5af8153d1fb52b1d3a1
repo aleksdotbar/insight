@@ -1,9 +1,0 @@
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/ic/personal/$section')({
-  component: RouteComponent,
-})
-
-function RouteComponent() {
-  return <div>Hello "/ic/personal/$section"!</div>
-}
