@@ -4,6 +4,7 @@ import { AttentionNeeded } from "@/components/widgets/attention-needed";
 import { DrillModal } from "@/components/widgets/drill-modal";
 import { IcViewToggle } from "@/components/ic-view-toggle";
 import { MembersTable } from "@/components/widgets/members-table";
+import { TeamMetricsModal } from "@/components/widgets/team-metrics-modal";
 import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
 import { TeamBulletSections } from "@/components/widgets/team-bullet-sections";
 import { TeamHeroStrip } from "@/components/widgets/team-hero-strip";
@@ -82,6 +83,7 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
   const { viewMode, setViewMode } = useViewMode();
   const [directReportsOnly, setDirectReportsOnly] = useState(true);
   const [drillTarget, setDrillTarget] = useState<TeamDrillTarget | null>(null);
+  const [metricsModalOpen, setMetricsModalOpen] = useState(false);
 
   const viewerQ = useIcPerson(viewerEmail);
   const viewerTree = viewerQ.data ?? null;
@@ -175,10 +177,6 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
     ? `AI Adoption is scoped to direct reports (${members.length} of ${allMembers.length} members). Other sections still reflect the whole team.`
     : null;
 
-  const handleNavigateToIc = (personId: string): void => {
-    window.location.href = `/ic/${encodeURIComponent(personId)}/personal`;
-  };
-
   const handleDrillClick = (drillId: string): void => {
     setDrillTarget({ kind: "team", teamId, drillId });
   };
@@ -245,15 +243,16 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
       <AttentionNeeded
         members={members}
         alertThresholds={TEAM_VIEW_CONFIG.alert_thresholds}
-        onNavigate={handleNavigateToIc}
       />
 
       <MembersTable
         members={members}
         columnThresholds={TEAM_VIEW_CONFIG.column_thresholds}
         loading={membersQ.isPending}
-        onRowClick={handleNavigateToIc}
         onCellDrill={handleCellDrill}
+        onViewAllStats={
+          members.length > 0 ? () => setMetricsModalOpen(true) : undefined
+        }
       />
 
       {scopedBulletNote ? (
@@ -289,6 +288,13 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
         errored={drillQ.isError}
         onClose={() => setDrillTarget(null)}
         onRetry={() => drillQ.refetch()}
+      />
+
+      <TeamMetricsModal
+        open={metricsModalOpen}
+        onClose={() => setMetricsModalOpen(false)}
+        members={members}
+        range={dateRange}
       />
     </div>
   );

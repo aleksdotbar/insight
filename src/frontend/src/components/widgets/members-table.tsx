@@ -1,5 +1,6 @@
-import { ExternalLink } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import type { MouseEvent, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,6 @@ export interface MembersTableProps {
   members: TeamMember[];
   columnThresholds: ColumnThreshold[];
   loading: boolean;
-  onRowClick: (personId: string) => void;
   onCellDrill?: (personId: string, drillId: string) => void;
   onViewAllStats?: () => void;
 }
@@ -187,10 +187,10 @@ export function MembersTable({
   members,
   columnThresholds,
   loading,
-  onRowClick,
   onCellDrill,
   onViewAllStats,
 }: MembersTableProps) {
+  const { t } = useTranslation();
   const drill =
     (personId: string, drillId: string) => (e: MouseEvent) => {
       e.stopPropagation();
@@ -210,18 +210,12 @@ export function MembersTable({
         <span className="text-foreground text-sm font-bold">Team Members</span>
         <div className="flex items-center gap-3">
           {onViewAllStats ? (
-            <Button
-              variant="link"
-              size="sm"
-              onClick={onViewAllStats}
-              className="text-primary h-auto gap-1 p-0 text-xs font-medium"
-            >
-              View team stats
-              <ExternalLink className="size-3" />
+            <Button variant="ghost" size="sm" onClick={onViewAllStats}>
+              {t("members_table.view_team_stats")}
             </Button>
           ) : null}
           <span className="text-muted-foreground hidden text-xs sm:inline">
-            Click member to open IC dashboard
+            {t("members_table.click_hint")}
           </span>
         </div>
       </div>
@@ -259,16 +253,21 @@ export function MembersTable({
               members.map((m) => (
                 <TableRow
                   key={m.person_id}
-                  className="border-border hover:bg-muted/30 cursor-pointer border-b"
-                  onClick={() => onRowClick(m.person_id)}
+                  className="border-border border-b hover:bg-transparent"
                 >
                   <TableCell className="px-3 py-2.5">
-                    <div className="text-foreground text-sm font-bold">
-                      {m.name}
-                    </div>
-                    <div className="text-muted-foreground text-xs">
-                      {m.seniority}
-                    </div>
+                    <Link
+                      to="/ic/$person/personal"
+                      params={{ person: m.person_id }}
+                      className="block"
+                    >
+                      <div className="text-foreground text-sm font-bold">
+                        {m.name}
+                      </div>
+                      <div className="text-muted-foreground text-xs">
+                        {m.seniority}
+                      </div>
+                    </Link>
                   </TableCell>
                   <TableCell className="px-3 py-2.5 text-sm">
                     {onCellDrill ? (

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { AlertTriangle, ArrowRight, CircleAlert } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
@@ -79,13 +80,11 @@ function computeAlerts(
 export interface AttentionNeededProps {
   members: TeamMember[];
   alertThresholds: AlertThreshold[];
-  onNavigate: (personId: string) => void;
 }
 
 export function AttentionNeeded({
   members,
   alertThresholds,
-  onNavigate,
 }: AttentionNeededProps) {
   const alerts = computeAlerts(members, alertThresholds);
   if (alerts.length === 0) return null;
@@ -127,8 +126,13 @@ export function AttentionNeeded({
               <Button
                 variant="link"
                 size="sm"
-                onClick={() => onNavigate(alert.member.person_id)}
                 className="text-primary mt-1 h-auto gap-1 p-0 text-xs font-semibold"
+                render={
+                  <Link
+                    to="/ic/$person/personal"
+                    params={{ person: alert.member.person_id }}
+                  />
+                }
               >
                 <ArrowRight className="size-3" />
                 Open IC dashboard
