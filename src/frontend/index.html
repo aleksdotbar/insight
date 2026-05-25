@@ -4,13 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Insight</title>
-    <!--
-      In prod the container entrypoint injects:
-        <script src="/oidc-config.js"></script>
-      idempotently when OIDC_* env vars are set. The source HTML stays clean
-      so dev (no OIDC) doesn't 404 on a missing config. For local OIDC test:
-      drop a `public/oidc-config.js` AND add the tag here temporarily.
-    -->
   </head>
   <body>
     <div id="root"></div>
