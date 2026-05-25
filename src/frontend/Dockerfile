@@ -1,12 +1,14 @@
 FROM node:24-bookworm-slim AS builder
 
+RUN corepack enable
+
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
-RUN npm run build
+RUN pnpm run build
 
 FROM nginx:1.27-alpine
 
