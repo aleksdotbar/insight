@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { queryMetric } from "@/api/analytics-client";
+import { queryBatchWithRange, queryMetric } from "@/api/analytics-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import type { DateRange } from "@/api/period-to-date-range";
@@ -18,7 +18,6 @@ import type { RosterEntry } from "@/lib/insight/identity-tree";
 import type {
   BulletMetric,
   DrillData,
-  ODataResponse,
   PeriodValue,
   TeamMember,
 } from "@/types/insight";
@@ -64,24 +63,24 @@ export function useTeamMembers(
     enabled: Boolean(teamId),
     queryFn: async () => {
       if (roster) {
-        const settled = await Promise.allSettled(
-          roster.map((r) =>
-            queryMetric<RawTeamMemberRow>(METRIC_REGISTRY.TEAM_MEMBER, range, {
-              $filter: `person_id eq '${odataEscapeValue(r.email.toLowerCase())}'`,
-              $top: 1,
-            }),
-          ),
+        const resp = await queryBatchWithRange<RawTeamMemberRow>(
+          range,
+          roster.map((r) => ({
+            id: r.email.toLowerCase(),
+            metric_id: METRIC_REGISTRY.TEAM_MEMBER,
+            $filter: `person_id eq '${odataEscapeValue(r.email.toLowerCase())}'`,
+            $top: 1,
+          })),
         );
-        const ok = settled.filter(
-          (s): s is PromiseFulfilledResult<ODataResponse<RawTeamMemberRow>> =>
-            s.status === "fulfilled",
+        const okResults = resp.results.filter(
+          (r): r is Extract<typeof r, { status: "ok" }> => r.status === "ok",
         );
-        if (settled.length > 0 && ok.length === 0) {
-          throw new Error("TEAM_MEMBER queries all rejected");
+        if (resp.results.length > 0 && okResults.length === 0) {
+          throw new Error("TEAM_MEMBER batch returned no successful items");
         }
         const byEmail = new Map<string, RawTeamMemberRow>();
-        for (const r of ok) {
-          for (const row of r.value.items) {
+        for (const r of okResults) {
+          for (const row of r.items) {
             byEmail.set(row.person_id.toLowerCase(), row);
           }
         }

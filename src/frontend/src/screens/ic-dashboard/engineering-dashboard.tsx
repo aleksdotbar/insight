@@ -16,30 +16,15 @@ import { TimeOffBanner } from "@/components/widgets/time-off-banner";
 import { ViewModeToggle } from "@/components/widgets/view-mode-toggle";
 import { usePeriod, useViewMode } from "@/hooks/use-period";
 import {
-  useIcBulletSection,
-  useIcDeliveryTrend,
+  useIcDashboardData,
   useIcDrill,
-  useIcKpis,
-  useIcLocTrend,
-  useIcTimeOff,
+  type IcDashboardSection,
 } from "@/queries/ic-dashboard";
 import type { IdentityPerson } from "@/types/insight";
 
 export interface EngineeringDashboardProps {
   personId: string;
   person?: IdentityPerson | null;
-}
-
-function sectionState<T>(q: {
-  isPending: boolean;
-  isError: boolean;
-  data: T | undefined;
-}) {
-  return {
-    loading: q.isPending,
-    errored: q.isError,
-    revalidating: false,
-  };
 }
 
 export function EngineeringDashboard({
@@ -52,31 +37,14 @@ export function EngineeringDashboard({
   const { viewMode, setViewMode } = useViewMode();
   const [drillId, setDrillId] = useState<string | null>(null);
 
-  const kpisQ = useIcKpis(personId, period, dateRange);
-  const taskQ = useIcBulletSection(
-    "task_delivery",
-    personId,
-    period,
-    dateRange,
-  );
-  const gitQ = useIcBulletSection("git_output", personId, period, dateRange);
-  const codeQ = useIcBulletSection(
-    "code_quality",
-    personId,
-    period,
-    dateRange,
-  );
-  const aiQ = useIcBulletSection("ai_adoption", personId, period, dateRange);
-  const collabQ = useIcBulletSection(
-    "collaboration",
-    personId,
-    period,
-    dateRange,
-  );
-  const locQ = useIcLocTrend(personId, period, dateRange);
-  const deliveryQ = useIcDeliveryTrend(personId, period, dateRange);
-  const timeOffQ = useIcTimeOff(personId, dateRange);
+  const dashQ = useIcDashboardData(personId, period, dateRange);
   const drillQ = useIcDrill(personId, drillId, dateRange);
+
+  const sectionState = (section: IcDashboardSection) => ({
+    loading: dashQ.isPending,
+    errored: dashQ.isError || (dashQ.data?.errors[section] ?? false),
+    revalidating: false,
+  });
 
   // Dispatcher (`<IcDashboardScreen>`) owns the identity fetch and forwards
   // it as a prop — children trust it and don't re-issue the query.
@@ -111,56 +79,56 @@ export function EngineeringDashboard({
       </div>
 
       <div className="border-border bg-card overflow-hidden rounded-xl border">
-        {kpisQ.isPending ? (
+        {dashQ.isPending ? (
           <div className="p-4">
             <ComingSoon variant="row" state="loading" />
           </div>
-        ) : kpisQ.isError ? (
+        ) : dashQ.isError || dashQ.data?.errors.kpis ? (
           <div className="p-4">
             <ComingSoon
               variant="row"
               state="error"
-              onRetry={() => kpisQ.refetch()}
+              onRetry={() => dashQ.refetch()}
             />
           </div>
         ) : (
-          <KpiStrip kpis={kpisQ.data ?? []} plain />
+          <KpiStrip kpis={dashQ.data?.kpis ?? []} plain />
         )}
-        <TimeOffBanner notice={timeOffQ.data ?? null} />
+        <TimeOffBanner notice={dashQ.data?.timeOff ?? null} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <MetricCard
           title={t("ic_dashboard.sections.task_delivery")}
-          metrics={taskQ.data ?? []}
+          metrics={dashQ.data?.taskDelivery ?? []}
           columns={1}
           mode={viewMode}
           personName={person?.display_name}
           onDrillClick={handleDrillClick}
-          onRetry={() => taskQ.refetch()}
-          {...sectionState(taskQ)}
+          onRetry={() => dashQ.refetch()}
+          {...sectionState("task_delivery")}
         />
         <MetricCard
           title={t("ic_dashboard.sections.git_output")}
-          metrics={gitQ.data ?? []}
+          metrics={dashQ.data?.gitOutput ?? []}
           columns={1}
           mode={viewMode}
           personName={person?.display_name}
           onDrillClick={handleDrillClick}
-          onRetry={() => gitQ.refetch()}
-          {...sectionState(gitQ)}
+          onRetry={() => dashQ.refetch()}
+          {...sectionState("git_output")}
         />
       </div>
 
       <MetricCard
         title={t("ic_dashboard.sections.code_quality")}
-        metrics={codeQ.data ?? []}
+        metrics={dashQ.data?.codeQuality ?? []}
         columns={3}
         mode={viewMode}
         personName={person?.display_name}
         onDrillClick={handleDrillClick}
-        onRetry={() => codeQ.refetch()}
-        {...sectionState(codeQ)}
+        onRetry={() => dashQ.refetch()}
+        {...sectionState("code_quality")}
       />
 
       <CollapsibleSection
@@ -169,16 +137,16 @@ export function EngineeringDashboard({
         storageKey="insight:ic-dashboard:loc-breakdown"
       >
         <div className="p-4">
-          {locQ.isPending ? (
+          {dashQ.isPending ? (
             <ComingSoon variant="card" state="loading" />
-          ) : locQ.isError ? (
+          ) : dashQ.isError || dashQ.data?.errors.loc_trend ? (
             <ComingSoon
               variant="card"
               state="error"
-              onRetry={() => locQ.refetch()}
+              onRetry={() => dashQ.refetch()}
             />
           ) : (
-            <LocStackedBar data={locQ.data ?? []} />
+            <LocStackedBar data={dashQ.data?.locTrend ?? []} />
           )}
         </div>
       </CollapsibleSection>
@@ -189,16 +157,16 @@ export function EngineeringDashboard({
         storageKey="insight:ic-dashboard:delivery-trends"
       >
         <div className="p-4">
-          {deliveryQ.isPending ? (
+          {dashQ.isPending ? (
             <ComingSoon variant="card" state="loading" />
-          ) : deliveryQ.isError ? (
+          ) : dashQ.isError || dashQ.data?.errors.delivery_trend ? (
             <ComingSoon
               variant="card"
               state="error"
-              onRetry={() => deliveryQ.refetch()}
+              onRetry={() => dashQ.refetch()}
             />
           ) : (
-            <DeliveryTrends data={deliveryQ.data ?? []} />
+            <DeliveryTrends data={dashQ.data?.deliveryTrend ?? []} />
           )}
         </div>
       </CollapsibleSection>
@@ -210,13 +178,13 @@ export function EngineeringDashboard({
         <div className="p-4">
           <MetricCard
             title={t("ic_dashboard.sections.ai_adoption")}
-            metrics={aiQ.data ?? []}
+            metrics={dashQ.data?.aiAdoption ?? []}
             columns={2}
             mode={viewMode}
             personName={person?.display_name}
             onDrillClick={handleDrillClick}
-            onRetry={() => aiQ.refetch()}
-            {...sectionState(aiQ)}
+            onRetry={() => dashQ.refetch()}
+            {...sectionState("ai_adoption")}
           />
         </div>
       </CollapsibleSection>
@@ -228,13 +196,13 @@ export function EngineeringDashboard({
         <div className="p-4">
           <MetricCard
             title={t("ic_dashboard.sections.collaboration")}
-            metrics={collabQ.data ?? []}
+            metrics={dashQ.data?.collaboration ?? []}
             columns={2}
             mode={viewMode}
             personName={person?.display_name}
             onDrillClick={handleDrillClick}
-            onRetry={() => collabQ.refetch()}
-            {...sectionState(collabQ)}
+            onRetry={() => dashQ.refetch()}
+            {...sectionState("collaboration")}
           />
         </div>
       </CollapsibleSection>

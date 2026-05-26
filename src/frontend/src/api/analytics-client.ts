@@ -1,7 +1,7 @@
 import { fetchWithAuth } from "@/api/fetch-with-auth";
 import { andFilters, odataDateFilter } from "@/api/odata";
 import type { DateRange } from "@/api/period-to-date-range";
-import type { ODataParams, ODataResponse } from "@/types/insight";
+import type { ODataParams, ODataResponse, ProblemDetails } from "@/types/insight";
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ??
   "/api/analytics/v1";
@@ -69,4 +69,54 @@ export async function queryMetricRaw<T>(
     method: "POST",
     body: JSON.stringify(params),
   });
+}
+
+export interface BatchQueryItem extends ODataParams {
+  id?: string;
+  metric_id: string;
+}
+
+export type BatchQueryResult<T> =
+  | {
+      status: "ok";
+      id?: string;
+      metric_id: string;
+      items: T[];
+      page_info: { has_next: boolean; cursor: string | null };
+    }
+  | {
+      status: "error";
+      id?: string;
+      metric_id: string;
+      error: ProblemDetails;
+    };
+
+export interface BatchQueryResponse<T> {
+  results: BatchQueryResult<T>[];
+}
+
+export async function queryBatch<T>(
+  items: BatchQueryItem[],
+): Promise<BatchQueryResponse<T>> {
+  return request<BatchQueryResponse<T>>("/metrics/queries", {
+    method: "POST",
+    body: JSON.stringify({ queries: items }),
+  });
+}
+
+/**
+ * Period-aware batch query. ANDs `odataDateFilter(range)` into every item's
+ * `$filter`, matching `queryMetric`'s contract — prefer this over `queryBatch`
+ * for dashboard calls so the period boundary cannot be silently dropped.
+ */
+export async function queryBatchWithRange<T>(
+  range: DateRange,
+  items: BatchQueryItem[],
+): Promise<BatchQueryResponse<T>> {
+  const dateFilter = odataDateFilter(range);
+  const scoped = items.map((it) => ({
+    ...it,
+    $filter: andFilters(dateFilter, it.$filter),
+  }));
+  return queryBatch<T>(scoped);
 }

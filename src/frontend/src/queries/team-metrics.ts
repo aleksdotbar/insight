@@ -1,10 +1,8 @@
-import { useQueries } from "@tanstack/react-query";
-
-import { queryMetric } from "@/api/analytics-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import type { DateRange } from "@/api/period-to-date-range";
 import type { RawBulletAggregateRow } from "@/api/raw-types";
+import { useBatchedMetrics } from "@/queries/batched-metrics";
 import type { TeamMember } from "@/types/insight";
 
 export type TeamMetricsSectionId =
@@ -39,13 +37,6 @@ export interface UseTeamMetricsOptions {
   enabled?: boolean;
 }
 
-/**
- * Fans out one bullet-aggregate query per (member, section) pair using
- * `useQueries`. Returns the raw `RawBulletAggregateRow[]` per entry —
- * consumers handle pivoting / column derivation themselves. Cache keys are
- * shared with IC dashboard so revisiting a member who was just viewed
- * resolves from cache.
- */
 export function useTeamMetrics(
   members: TeamMember[],
   range: DateRange,
@@ -58,35 +49,32 @@ export function useTeamMetrics(
       personId: m.person_id,
       sectionId: s.id,
       metricId: s.metricId,
+      key: `${m.person_id.toLowerCase()}:${s.id}`,
     })),
   );
 
-  const queries = useQueries({
-    queries: pairs.map((p) => ({
-      queryKey: [
-        "team-metrics",
-        p.metricId,
-        p.personId.toLowerCase(),
-        range.from,
-        range.to,
-      ] as const,
-      queryFn: () =>
-        queryMetric<RawBulletAggregateRow>(p.metricId, range, {
-          $filter: `person_id eq '${odataEscapeValue(p.personId.toLowerCase())}'`,
-        }),
-      enabled: enabled && Boolean(p.personId),
-      staleTime: 5 * 60_000,
+  const query = useBatchedMetrics<RawBulletAggregateRow>(
+    pairs.map((p) => ({
+      id: p.key,
+      metricId: p.metricId,
+      filter: `person_id eq '${odataEscapeValue(p.personId.toLowerCase())}'`,
     })),
+    range,
+    { enabled, keyPrefix: "team-metrics" },
+  );
+
+  const entries: TeamMetricsEntry[] = pairs.map((p) => {
+    const result = query.data?.get(p.key);
+    return {
+      personId: p.personId,
+      sectionId: p.sectionId,
+      rows: result && result.status === "ok" ? result.items : undefined,
+    };
   });
 
-  const entries: TeamMetricsEntry[] = pairs.map((p, i) => ({
-    personId: p.personId,
-    sectionId: p.sectionId,
-    rows: queries[i]?.data?.items,
-  }));
-
-  const isPending = enabled && queries.some((q) => q.isPending);
-  const isError = queries.some((q) => q.isError);
-
-  return { entries, isPending, isError };
+  return {
+    entries,
+    isPending: enabled && pairs.length > 0 && query.isPending,
+    isError: query.isError,
+  };
 }

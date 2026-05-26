@@ -18,6 +18,23 @@ export interface ODataResponse<T> {
   items: T[];
   page_info: { has_next: boolean; cursor: string | null };
 }
+export interface ProblemFieldViolation {
+  field: string;
+  description?: string;
+  reason?: string;
+}
+export interface ProblemContext {
+  resource_type?: string;
+  resource_name?: string;
+  field_violations?: ProblemFieldViolation[];
+}
+export interface ProblemDetails {
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  context?: ProblemContext;
+}
 export type ThresholdLevel = "good" | "warning" | "critical";
 export type Thresholds = Record<string, ThresholdLevel>;
 

@@ -1,6 +1,10 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { queryMetric } from "@/api/analytics-client";
+import {
+  queryBatchWithRange,
+  queryMetric,
+  type BatchQueryResult,
+} from "@/api/analytics-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import {
   previousPeriodRange,
@@ -179,6 +183,191 @@ export function useIcDrill(
         { $filter: filter }
       );
       return resp.items[0] ? transformDrill(resp.items[0]) : null;
+    },
+  });
+}
+
+export type IcDashboardSection =
+  | "kpis"
+  | "task_delivery"
+  | "code_quality"
+  | "git_output"
+  | "ai_adoption"
+  | "collaboration"
+  | "loc_trend"
+  | "delivery_trend"
+  | "time_off";
+
+export interface IcDashboardData {
+  kpis: IcKpi[];
+  taskDelivery: BulletMetric[];
+  codeQuality: BulletMetric[];
+  gitOutput: BulletMetric[];
+  aiAdoption: BulletMetric[];
+  collaboration: BulletMetric[];
+  locTrend: LocDataPoint[];
+  deliveryTrend: DeliveryDataPoint[];
+  timeOff: TimeOffNotice | null;
+  errors: Record<IcDashboardSection, boolean>;
+}
+
+function isOk<T>(
+  r: BatchQueryResult<T> | undefined,
+): r is Extract<BatchQueryResult<T>, { status: "ok" }> {
+  return r?.status === "ok";
+}
+
+export function useIcDashboardData(
+  personId: string,
+  period: PeriodValue,
+  range: DateRange,
+): UseQueryResult<IcDashboardData> {
+  const prevRange = previousPeriodRange(range, period);
+  const filter = personScope(personId);
+  return useQuery({
+    queryKey: [
+      "ic",
+      "dashboard",
+      personId,
+      period,
+      range.from,
+      range.to,
+    ],
+    enabled: Boolean(personId),
+    queryFn: async () => {
+      const [current, prior] = await Promise.all([
+        queryBatchWithRange<
+          | RawIcAggregateRow
+          | RawBulletAggregateRow
+          | RawLocTrendRow
+          | RawDeliveryTrendRow
+          | RawTimeOffRow
+        >(range, [
+          { id: "kpis", metric_id: METRIC_REGISTRY.IC_KPIS, $filter: filter },
+          {
+            id: "task_delivery",
+            metric_id: METRIC_REGISTRY.IC_BULLET_DELIVERY,
+            $filter: filter,
+          },
+          {
+            id: "code_quality",
+            metric_id: METRIC_REGISTRY.IC_BULLET_DELIVERY,
+            $filter: filter,
+          },
+          {
+            id: "git_output",
+            metric_id: METRIC_REGISTRY.IC_BULLET_GIT,
+            $filter: filter,
+          },
+          {
+            id: "ai_adoption",
+            metric_id: METRIC_REGISTRY.IC_BULLET_AI,
+            $filter: filter,
+          },
+          {
+            id: "collaboration",
+            metric_id: METRIC_REGISTRY.IC_BULLET_COLLAB,
+            $filter: filter,
+          },
+          {
+            id: "loc_trend",
+            metric_id: METRIC_REGISTRY.IC_CHART_LOC,
+            $filter: filter,
+          },
+          {
+            id: "delivery_trend",
+            metric_id: METRIC_REGISTRY.IC_CHART_DELIVERY,
+            $filter: filter,
+          },
+          {
+            id: "time_off",
+            metric_id: METRIC_REGISTRY.IC_TIMEOFF,
+            $filter: filter,
+          },
+        ]),
+        queryBatchWithRange<RawIcAggregateRow>(prevRange, [
+          { id: "kpis_prior", metric_id: METRIC_REGISTRY.IC_KPIS, $filter: filter },
+        ]),
+      ]);
+
+      const byId = new Map<string, BatchQueryResult<unknown>>();
+      for (const r of current.results) {
+        if (r.id) byId.set(r.id, r as BatchQueryResult<unknown>);
+      }
+      for (const r of prior.results) {
+        if (r.id) byId.set(r.id, r as BatchQueryResult<unknown>);
+      }
+
+      const get = <T>(id: string): T[] | undefined => {
+        const r = byId.get(id) as BatchQueryResult<T> | undefined;
+        return isOk(r) ? r.items : undefined;
+      };
+
+      const kpisCur = get<RawIcAggregateRow>("kpis");
+      const kpisPrior = get<RawIcAggregateRow>("kpis_prior");
+
+      const kpisErrored =
+        !isOk(byId.get("kpis") as BatchQueryResult<unknown> | undefined) ||
+        !isOk(byId.get("kpis_prior") as BatchQueryResult<unknown> | undefined);
+
+      const sectionErrored = (id: IcDashboardSection): boolean =>
+        !isOk(byId.get(id) as BatchQueryResult<unknown> | undefined);
+
+      return {
+        kpis: transformIcKpis(
+          kpisCur?.[0] ?? null,
+          kpisPrior?.[0] ?? null,
+          period,
+        ),
+        taskDelivery: transformBulletMetrics(
+          get<RawBulletAggregateRow>("task_delivery") ?? [],
+          "task_delivery",
+          period,
+        ),
+        codeQuality: transformBulletMetrics(
+          get<RawBulletAggregateRow>("code_quality") ?? [],
+          "code_quality",
+          period,
+        ),
+        gitOutput: transformBulletMetrics(
+          get<RawBulletAggregateRow>("git_output") ?? [],
+          "git_output",
+          period,
+        ),
+        aiAdoption: transformBulletMetrics(
+          get<RawBulletAggregateRow>("ai_adoption") ?? [],
+          "ai_adoption",
+          period,
+        ),
+        collaboration: transformBulletMetrics(
+          get<RawBulletAggregateRow>("collaboration") ?? [],
+          "collaboration",
+          period,
+        ),
+        locTrend: transformLocTrend(
+          get<RawLocTrendRow>("loc_trend") ?? [],
+          period,
+        ),
+        deliveryTrend: transformDeliveryTrend(
+          get<RawDeliveryTrendRow>("delivery_trend") ?? [],
+          period,
+        ),
+        timeOff: (() => {
+          const rows = get<RawTimeOffRow>("time_off");
+          return rows?.[0] ? transformTimeOff(rows[0]) : null;
+        })(),
+        errors: {
+          kpis: kpisErrored,
+          task_delivery: sectionErrored("task_delivery"),
+          code_quality: sectionErrored("code_quality"),
+          git_output: sectionErrored("git_output"),
+          ai_adoption: sectionErrored("ai_adoption"),
+          collaboration: sectionErrored("collaboration"),
+          loc_trend: sectionErrored("loc_trend"),
+          delivery_trend: sectionErrored("delivery_trend"),
+          time_off: sectionErrored("time_off"),
+        },
+      };
     },
   });
 }
