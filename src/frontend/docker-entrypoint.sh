@@ -58,7 +58,9 @@ fi
 
 # Inject <script src="/oidc-config.js"> into index.html if not already present.
 # Idempotent: only adds the tag once even on container restart.
-if ! grep -q 'src="/oidc-config.js"' /usr/share/nginx/html/index.html; then
+# Match the full tag (not just the src attr) so an HTML comment mentioning
+# the path verbatim can't fool the guard into skipping the real injection.
+if ! grep -q '<script src="/oidc-config.js"></script>' /usr/share/nginx/html/index.html; then
   sed -i 's|</head>|<script src="/oidc-config.js"></script></head>|' \
     /usr/share/nginx/html/index.html
 fi

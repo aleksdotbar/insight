@@ -1,0 +1,169 @@
+{
+  "common": {
+    "app_name": "Insight",
+    "em_dash": "—",
+    "metrics": {
+      "ai_adoption": "AI adoption",
+      "ai_pct": "AI %",
+      "avg_pr_cycle": "Avg PR Cycle",
+      "bugs": "Bugs",
+      "build_pct": "Build %",
+      "build_success": "Build success",
+      "commits": "Commits",
+      "focus_pct": "Focus %",
+      "focus_time": "Focus time",
+      "headcount": "Headcount",
+      "pr_cycle_h": "PR Cycle (h)",
+      "prs": "PRs",
+      "prs_merged": "PRs merged",
+      "prs_merged_label": "PRs Merged",
+      "tasks": "Tasks",
+      "tasks_closed": "Tasks closed",
+      "teams": "Teams"
+    },
+    "status": {
+      "good": "good",
+      "warn": "warn",
+      "bad": "bad",
+      "neutral": "neutral",
+      "no_data": "no data"
+    },
+    "table": {
+      "member": "Member",
+      "person": "Person",
+      "role": "Role",
+      "status": "Status",
+      "team": "Team"
+    },
+    "cohort": {
+      "org": "org",
+      "team": "team"
+    },
+    "sections": {
+      "task_delivery": "Task delivery",
+      "git_output": "Git output",
+      "code_quality": "Code quality",
+      "collaboration": "Collaboration",
+      "ai_adoption": "AI adoption"
+    },
+    "section_blocks": {
+      "counters": "Counters",
+      "distribution": "Distribution",
+      "distributions": "Distributions"
+    },
+    "actions": {
+      "back": "Back",
+      "close": "Close",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "try_again": "Try again",
+      "reload": "Reload",
+      "retry": "Retry"
+    },
+    "ui_components": {
+      "sidebar": {
+        "title": "Sidebar",
+        "description": "Displays the mobile sidebar.",
+        "toggle": "Toggle Sidebar"
+      }
+    },
+    "period_presets": {
+      "7d": "7d",
+      "14d": "14d",
+      "30d": "30d",
+      "90d": "90d"
+    },
+    "ic_sections_meta": {
+      "kpis": "KPI strip",
+      "loc_trend": "LOC breakdown",
+      "delivery_trend": "Delivery trends",
+      "ai_dev_tools": "AI dev tools"
+    },
+    "team_sections_meta": {
+      "team_summary": "Team summary",
+      "attention": "Attention needed",
+      "members": "Members"
+    }
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "auth": {
+    "callback": {
+      "completing": "Completing sign-in...",
+      "failed_title": "Sign-in failed",
+      "missing_code": "No authorization code in the callback URL.",
+      "exchange_failed": "We couldn't exchange the authorization code for a session."
+    }
+  },
+  "error_boundary": {
+    "title": "Something went wrong"
+  },
+  "mock_banner": {
+    "title": "Synthetic data",
+    "description_html": "UI is rendering mocks because <code>VITE_ENABLE_MOCKS=true</code>. Set <code>VITE_HIDE_MOCK_BANNER=true</code> to hide this notice during screenshots."
+  },
+  "dev_impersonation_hint": {
+    "title": "Dev impersonation not configured",
+    "description_html": "Nothing to display. Either set <code>VITE_DEV_USER_EMAIL</code> in <code>.env.local</code> to a person email present in the identity service, or configure <code>window.__OIDC_CONFIG__</code> via <code>public/oidc-config.js</code> and sign in."
+  },
+  "members_table": {
+    "view_team_stats": "View team stats",
+    "click_hint": "Click member to open IC dashboard"
+  },
+  "team_metrics_modal": {
+    "title": "All Team Member Metrics",
+    "member_column": "Member",
+    "empty": "No metrics returned for these members.",
+    "sections": {
+      "task_delivery": "Delivery",
+      "collaboration": "Collaboration",
+      "ai_adoption": "AI Adoption",
+      "git_output": "Git"
+    }
+  },
+  "ic_dashboard": {
+    "sections": {
+      "task_delivery": "Task Delivery",
+      "git_output": "Git Output",
+      "code_quality": "Code Quality",
+      "loc_breakdown_title": "LOC Breakdown",
+      "loc_breakdown_subtitle": "Bitbucket · lines added per period · AI-assisted vs manual vs spec/config",
+      "delivery_trends_title": "Delivery Trends",
+      "delivery_trends_subtitle": "Jira + Bitbucket · activity counts · Commits, PRs and Tasks are independent signals",
+      "ai_dev_tools_title": "AI Dev Tools & AI Chat",
+      "ai_adoption": "AI Adoption",
+      "collaboration": "Collaboration"
+    }
+  },
+  "sales_dashboard": {
+    "sections": {
+      "velocity_quality": "Velocity & Quality",
+      "outreach_activity": "Outreach Activity",
+      "deal_flow_title": "Deal Flow",
+      "deal_flow_subtitle": "HubSpot · weekly · opened / closed / won counts"
+    },
+    "hero": {
+      "deals_opened": "Deals Opened",
+      "deals_opened_sublabel": "Created in period",
+      "deals_closed": "Deals Closed",
+      "deals_closed_sublabel": "Won + lost in period",
+      "closed_value": "Closed Value",
+      "closed_value_sublabel": "Won deals · sum",
+      "win_rate": "Win Rate",
+      "win_rate_sublabel": "Won ÷ Closed",
+      "pipeline_now": "Pipeline Now",
+      "pipeline_sublabel": "{{count}} open · as of today"
+    },
+    "pacing": {
+      "closed_this_period": "Closed this period",
+      "vs_prior_year": "vs prior-year same period"
+    }
+  },
+  "ic_route": {
+    "personal_view_label": "Personal",
+    "team_view_label": "Team"
+  }
+}

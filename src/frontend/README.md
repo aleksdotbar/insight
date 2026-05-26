@@ -2,7 +2,7 @@
 
 Frontend application for **Insight** — a decision intelligence platform for engineering analytics, productivity insights, bottleneck detection, AI adoption tracking, and team health visibility.
 
-Built with HAI3 framework as a single-page application. Uses mock API layer for development; switches to real backend automatically in production.
+Single-page application built on React 19 + TanStack Router + TanStack Query + shadcn/ui. Uses MSW for offline / demo mocking; talks to the Insight backend in production.
 
 - [Insight monorepo](https://github.com/cyberfabric/insight) (backend, infra, Helm charts)
 - [Insight spec](https://github.com/cyberfabric/insight-spec) (connector specs, API contracts)
@@ -11,138 +11,151 @@ Built with HAI3 framework as a single-page application. Uses mock API layer for 
 
 | Layer | Technology |
 |---|---|
-| Framework | HAI3 (React 19 + Redux + event-driven architecture) |
-| Build | Vite 6 |
-| Language | TypeScript 5 (strict) |
-| Styling | Tailwind CSS 3 + HAI3 UIKit (Radix primitives) |
+| Routing | TanStack Router (file-based, auto-generated route tree) |
+| Data | TanStack Query (per-query hooks under `src/queries/`) |
+| Build | Vite 8 |
+| Language | TypeScript 6 (strict) |
+| Styling | Tailwind CSS 4 + shadcn/ui (`base-vega` style, CSS variables) |
 | Charts | Recharts 3 |
-| Auth | OIDC via oidc-client-ts (Okta, Authentik, any OIDC provider) |
-| Linting | ESLint + custom architecture rules |
-| Package manager | npm 11 |
-| Node | >= 25.1.0 (see `.nvmrc`) |
+| Auth | OIDC via `oidc-client-ts` (Authorization Code + PKCE) |
+| i18n | `i18next` + `react-i18next` (English only today) |
+| Mocks | MSW (Mock Service Worker) |
+| Linting | ESLint (flat config) |
+| Package manager | pnpm 10 |
+| Node | 24 (see `.nvmrc`) |
 
 ## Prerequisites
 
-- Node.js >= 25.1.0 (`nvm use` will pick up `.nvmrc`)
-- npm >= 11.6.0
+- Node.js 24 (`nvm use` picks up `.nvmrc`)
+- pnpm 10+
 - Docker (for container builds)
-- Chrome (for browser-based dev tools via MCP)
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/cyberfabric/insight-front.git
 cd insight-front
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
-Open http://localhost:5173. HAI3 Studio panel (bottom-right) controls screenset, theme, and language.
+Open http://localhost:5173.
 
 ### Mock API
 
-**Mocks are OFF by default** — `npm run dev` talks to whatever your Vite proxy is pointed at (`/api/*` → `http://localhost:8080` by default, i.e. the real backend gateway port-forwarded from k8s).
+**Mocks are OFF by default** — `pnpm dev` talks to the Vite proxy (see `VITE_API_PROXY_TARGET`).
 
-To opt in to synthetic data for a demo / offline session, copy `.env.example` to `.env.local` and set:
+To enable synthetic data for an offline / demo session, copy `.env.example` to `.env.local` and set:
 
 ```
 VITE_ENABLE_MOCKS=true
+VITE_DEV_USER_EMAIL=bob.park@example.com
 ```
 
-Restart `npm run dev`. A yellow warning strip renders at the top of the page whenever mocks are active so you cannot mistake synthetic values for real ones. Prod builds (`npm run build`) drop the flag's branch entirely — there is no way for fake analytics data to leak into a deployed bundle.
+A yellow warning strip renders at the top of the page whenever mocks are active so synthetic values cannot be mistaken for real ones. Set `VITE_HIDE_MOCK_BANNER=true` to hide the strip during screenshots — mocks remain active. Prod builds (`pnpm build`) drop the mock subtree entirely.
 
-## NPM Scripts
+Seeded mock people: `bob.park@example.com`, `carol.chen@example.com`, `alice.kim@example.com`, `frank.moss@example.com` (see [src/mocks/registry.ts](src/mocks/registry.ts)).
+
+## Scripts
 
 | Script | Description |
 |---|---|
-| `npm run dev` | Start Vite dev server with HMR |
-| `npm run build` | Production build (generate colors + Vite) |
-| `npm run preview` | Serve production build locally |
-| `npm run type-check` | TypeScript strict check (`tsc --noEmit`) |
-| `npm run lint` | ESLint with zero warnings policy |
-| `npm run arch:check` | Architecture compliance (type-check + lint + dependency rules) |
-| `npm run arch:deps` | Dependency graph validation via dependency-cruiser |
+| `pnpm dev` | Start Vite dev server |
+| `pnpm build` | Production build (`tsc -b && vite build`) |
+| `pnpm preview` | Serve production build locally |
+| `pnpm typecheck` | TypeScript strict check (`tsc --noEmit`) |
+| `pnpm lint` | ESLint (zero warnings) |
+| `pnpm format` | Prettier write |
 
 ## Project Structure
 
 ```
 src/
-  app/                        # Application shell (shared across screensets)
-    auth/                     #   OIDC manager, withAuth HOC, startUrl capture
-    api/                      #   App-level API services (Auth, Identity, Accounts)
-    layout/                   #   Layout component (sidebar, mobile nav)
-    plugins/                  #   REST plugins (AuthPlugin — token injection)
-    slices/                   #   App-level Redux slices (auth state)
-    effects/                  #   App-level effects (auth lifecycle)
-    events/                   #   App-level events (bootstrap, auth)
-    themes/                   #   Theme definitions (default, dark, light, dracula)
-    main.tsx                  #   Entry point — HAI3 app init, theme registration
-    App.tsx                   #   Root component — Layout + AppRouter + StudioOverlay
-  screensets/
-    insight/                  # Main product screenset
-      screens/
-        executive-view/       #   Org-level KPIs, team health radar, metrics table
-        team-view/            #   Per-team member table, bullet sections, drill modals
-        ic-dashboard/         #   Individual contributor dashboard (KPIs, charts, AI tools)
-        dashboard/            #   Legacy dashboard (dev)
-        speed/                #   Speed gauge (dev)
-      api/                    #   InsightApiService + ConnectorManager + IdentityResolution
-      api/mocks/              #   Mock data fixtures (team members, IC data, drills)
-      slices/                 #   Redux state per domain (executive, team, IC, period)
-      actions/                #   Flux actions (emit events, call API services)
-      effects/                #   Event listeners → slice updates
-      events/                 #   Typed event enums per domain
-      uikit/                  #   Screenset-local UI components (base + composite)
-      i18n/                   #   36 language files (screenset-level)
-    auth/                     # OIDC callback screenset
-      screens/callback/       #   Handles /callback route after OIDC redirect
+  auth/                  # OIDC manager singleton, useAuth hook, start-url capture
+  api/                   # Fetch clients (analytics, identity, accounts) + fetchWithAuth wrapper
+  queries/               # React Query hooks per screen (ic-dashboard, team-view, executive-view)
+  routes/                # TanStack Router file-based routes (auto-discovered)
+  routeTree.gen.ts       #   ← auto-generated, do not edit
+  screens/               # Page components composed by routes
+  components/
+    ui/                  #   shadcn/ui primitives (button, card, dialog, alert, …)
+    widgets/             #   Feature widgets (metric-card, bullet-chart, drill-modal, …)
+    app-sidebar.tsx      #   Org-tree sidebar (recursive nav)
+    theme-provider.tsx   #   Light/dark/system theme (localStorage-backed)
+    mock-banner.tsx      #   Warning strip when mocks are on
+    app-error-boundary.tsx
+    error-fallback.tsx
+  hooks/                 # Shared hooks (use-period, use-mobile)
+  lib/                   # Domain helpers (format, status, scoring, peers, …)
+  mocks/                 # MSW handlers, factories, registry (dev-only, tree-shaken in prod)
+  locales/en/            # i18next translation files
+  i18n/                  # i18next setup
+  types/                 # Shared TypeScript types
+  index.css              # Tailwind v4 inline config + theme tokens (light + dark)
+  main.tsx               # Entry: storeStartUrl → enableMocking → OidcManager.init → render
+  router.ts              # createRouter(routeTree)
 ```
-
-## Architecture
-
-### Event-Driven (Flux)
-
-All state flows through: **Component -> Action -> Event -> Effect -> Slice -> Store**
-
-- **Actions** — pure functions that emit events and call API services. No `getState`, no direct dispatch.
-- **Effects** — subscribe to events, update only their own slice. Registered via `registerSlice(slice, initEffects)`.
-- **Events** — past-tense named, scoped to `screensetId/domainId/eventName`. Type-safe payloads via module augmentation.
-
-### API Services
-
-Each service extends `BaseApiService`, self-registers via `apiRegistry.register()`, and conditionally registers a `RestMockPlugin` when `VITE_ENABLE_MOCKS=true` (see `src/app/config/mocksEnabled.ts` — the single gate consulted by every service). Mock modules are `import()`ed lazily, so prod builds tree-shake the entire mocks subtree and the bundle never includes synthetic fixtures.
-
-### Screens
-
-| Screen | Path | Description |
-|---|---|---|
-| Executive View | `/executive-view` | Org KPIs, team health radar, team metrics table |
-| Team View | `/team-view` | Per-team member metrics, bullet sections, drills |
-| IC Dashboard | `/ic-dashboard` | Individual contributor KPIs, LOC charts, delivery trends |
-| My Dashboard | `/my-dashboard` | Same as IC Dashboard, scoped to current user |
 
 ## Authentication (OIDC)
 
-The app uses OpenID Connect (Authorization Code + PKCE) for authentication.
+Authorization Code + PKCE via [`oidc-client-ts`](https://github.com/authts/oidc-client-ts). The OIDC issuer/client are not baked into the build — they're injected at container start.
 
 ### Flow
 
-1. `main.tsx` — captures start URL, initializes `OidcManager`
-2. `withAuth` HOC — wraps protected screens, redirects to OIDC provider if no session
-3. `/callback` screen — exchanges authorization code for tokens
-4. `AuthPlugin` — injects `Bearer` token into all API requests
-5. `authEffects` — listens for token/expiry events, updates `authSlice`
+1. [src/main.tsx](src/main.tsx) calls `storeStartUrl()` (captures the full URL with any `?code=…&state=…` before the router strips it), then `OidcManager.init()` reads `window.__OIDC_CONFIG__` and restores a session from `sessionStorage` if one exists.
+2. Root route's `beforeLoad` ([src/routes/__root.tsx](src/routes/__root.tsx)) inspects `authStore`. `authenticated` → render; `idle` / `expired` → `OidcManager.signIn()` (redirects to the IdP). `/callback` is whitelisted.
+3. [src/routes/callback.tsx](src/routes/callback.tsx) calls `OidcManager.handleCallback(startUrl)` to exchange the code for tokens, then `window.location.replace(state.returnUrl)`.
+4. [src/api/fetch-with-auth.ts](src/api/fetch-with-auth.ts) injects `Authorization: Bearer <token>` on every request. `X-Tenant-ID` is reserved for future use (current backend doesn't require it); when `authStore.tenantId` is populated by something downstream, the header fires automatically. On 401, it calls `OidcManager.refresh()` once and retries — concurrent in-flight refreshes are deduplicated inside `OidcManager.refresh()`.
+5. Viewer identity is sourced directly from JWT claims via `oidc-client-ts` (`user.profile.email` / `user.profile.sub`) — no extra `/api/accounts/user/current` round-trip. The auth module's `useViewer()` hook is the single source of truth: it prefers the OIDC-authenticated user's email and falls back to `VITE_DEV_USER_EMAIL` in dev.
 
-### Configuration
+### Dev bypass
 
-OIDC config is provided at **runtime** (not build time) via environment variables:
+When `window.__OIDC_CONFIG__` is absent (typical for local dev) **and** `import.meta.env.DEV` is true, `OidcManager.init()` sets status to `authenticated` and resolves with no user. Combine with `VITE_DEV_USER_EMAIL` to impersonate a person from the identity service.
+
+### Runtime config (Docker)
+
+The container's `docker-entrypoint.sh` writes `/oidc-config.js` from env vars and injects a `<script src="/oidc-config.js">` tag into `index.html`. The script sets `window.__OIDC_CONFIG__ = { issuer_url, client_id, scopes }`.
 
 | Variable | Description | Example |
 |---|---|---|
-| `OIDC_ISSUER` | OIDC provider issuer URL | `https://auth.example.com/application/o/insight/` |
-| `OIDC_CLIENT_ID` | OAuth2 client ID (public client) | `C6YjC67CCDBUMygEeoBIlSX3mhRkNpCPxQxa2zaT` |
+| `OIDC_ISSUER` | OIDC issuer URL | `https://auth.example.com/application/o/insight/` |
+| `OIDC_CLIENT_ID` | OAuth2 public client ID | `C6YjC67CCDBUMygEeoBIlSX3mhRkNpCPxQxa2zaT` |
+| `OIDC_SCOPES` | Space-separated scopes | `openid profile email api://insight/Access.Default` |
 
-The Docker entrypoint injects these into `index.html` as `window.__OIDC_CONFIG__` at container start. Without these variables, the app falls back to empty config (OIDC disabled).
+## Environment Variables
+
+Build-time (Vite, `.env.local`):
+
+| Variable | Description |
+|---|---|
+| `VITE_ENABLE_MOCKS` | `"true"` to enable MSW (dev only; stripped from prod). |
+| `VITE_HIDE_MOCK_BANNER` | `"true"` to hide the warning strip while mocks are on (for screenshots). |
+| `VITE_DEV_USER_EMAIL` | Impersonate a person by email when no OIDC session is present. |
+| `VITE_API_PROXY_TARGET` | Dev-only `/api` proxy target (e.g. `http://localhost:8080`). |
+| `VITE_API_BASE` | Override analytics API base URL (default `/api/analytics/v1`). |
+| `VITE_IDENTITY_BASE` | Override identity API base URL (default `/api/identity/v1`). |
+| `VITE_ACCOUNTS_BASE` | Override accounts API base URL (default `/api/accounts`). |
+
+Runtime (container only, **no** `VITE_` prefix): `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_SCOPES`.
+
+## Routes
+
+| Path | Screen | Notes |
+|---|---|---|
+| `/` | IC dashboard (or impersonation prompt) | Resolves viewer via OIDC user or `VITE_DEV_USER_EMAIL`. |
+| `/ic/$person` | (redirects to `/ic/$person/personal`) | |
+| `/ic/$person/personal` | IC dashboard | Branches on viewer department (engineering vs sales). |
+| `/ic/$person/team` | Team view | Members table, bullet sections, drill modals. |
+| `/ic/$person/exec` | Executive view | Org KPIs, health radar, teams table. |
+| `/callback` | OIDC callback handler | Exchanges code for tokens, redirects to original URL. |
+
+## Theming
+
+`light` / `dark` / `system`. Theme tokens are CSS variables defined in [src/index.css](src/index.css); use the semantic Tailwind utilities (`bg-background`, `text-muted-foreground`, `border-border`, `text-destructive`, `bg-warning/10`, etc.). The shadcn theme is `base-vega` with `cssVariables: true` (see [components.json](components.json)).
+
+## i18n
+
+`i18next` + `react-i18next`. English-only today (`supportedLngs: ["en"]`). Translations live in [src/locales/en/translation.json](src/locales/en/translation.json); component code uses `const { t } = useTranslation()` + `t("key")`.
 
 ## Docker
 
@@ -158,59 +171,27 @@ docker build -t insight-frontend:local .
 docker run -d -p 8080:80 \
   -e OIDC_ISSUER=https://auth.example.com/application/o/insight/ \
   -e OIDC_CLIENT_ID=your-client-id \
+  -e OIDC_SCOPES="openid profile email" \
   insight-frontend:local
-```
-
-### Docker Image (GHCR)
-
-#### Prerequisites
-
-1. Create a GitHub Personal Access Token (classic) with `write:packages` scope
-2. If the repo is in an org, authorize the token for SSO (Settings → Developer settings → PAT → Configure SSO)
-3. Log in to GHCR:
-   ```bash
-   echo "YOUR_TOKEN" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
-   ```
-
-#### Build & Push
-
-```bash
-./scripts/ghcr-push.sh          # pushes as :latest
-./scripts/ghcr-push.sh 0.1.0    # pushes as :0.1.0
-```
-
-Image: `ghcr.io/cyberfabric/insight-front`
-
-#### Pull
-
-```bash
-docker pull ghcr.io/cyberfabric/insight-front:latest
 ```
 
 ### Run without a backend (mock mode)
 
-For a self-contained demo with no backend, build with mocks enabled:
-
 ```bash
-VITE_ENABLE_MOCKS=true npm run build
+VITE_ENABLE_MOCKS=true pnpm build
 docker run -d -p 8080:80 insight-frontend:local
 ```
 
-All screens render synthetic data and the yellow "MOCK DATA" strip stays
-visible at the top of every page. Without `VITE_ENABLE_MOCKS=true`, builds
-drop the mock plugins entirely and the UI tries to talk to a real backend.
+All screens render synthetic data and the warning strip stays visible.
 
 ### Docker Compose
 
 ```bash
-# Copy and edit env vars
 cp docker-compose.yml docker-compose.override.yml
-# Edit OIDC_ISSUER and OIDC_CLIENT_ID in the override
+# Edit OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_SCOPES in the override
 
 docker compose up -d --build
 ```
-
-Open http://localhost:8080.
 
 ### With Insight Backend (Kind cluster)
 
@@ -222,109 +203,7 @@ From the [insight monorepo](https://github.com/cyberfabric/insight):
 ./up.sh             # full stack (ingestion + backend + frontend)
 ```
 
-Frontend is available at http://localhost:8000. Helm chart supports OIDC config via `--set oidc.issuer=... --set oidc.clientId=...`.
-
-## Development Guidelines
-
-This project uses HAI3 development guidelines. Before making changes:
-
-1. Read `.ai/GUIDELINES.md` — routing table, import rules, type rules, blocklist
-2. Route to the correct target file (SCREENSETS.md, EVENTS.md, API.md, STYLING.md)
-3. Run checks before submitting:
-
-```bash
-npm run type-check    # TypeScript
-npm run lint          # ESLint (zero warnings)
-npm run arch:check    # Full architecture compliance
-```
-
-### Key Rules
-
-- **Event-driven only** — no direct dispatch, no prop drilling
-- **Self-registration** — services, screensets, slices register themselves
-- **No `any`** — no `as unknown as`, no `eslint-disable`
-- **No inline styles** outside `uikit/base/` — use theme tokens
-- **lodash** for non-trivial array/object operations
-- **Constants/enums** for all string IDs
-
-### AI-Assisted Development
-
-The project supports AI-assisted workflows via HAI3 CLI:
-
-| Command | Description |
-|---|---|
-| `/hai3-new-screenset` | Scaffold a new screenset |
-| `/hai3-new-screen` | Add a screen to existing screenset |
-| `/hai3-validate` | Run architecture validation |
-| `/hai3-quick-ref` | Common patterns reference |
-| `/hai3-rules` | Show guidelines for a topic |
-
-## Cypilot (artifact traceability)
-
-This repo ships with [Cypilot](https://github.com/cyberfabric/cyber-pilot) v3.7.0-beta
-for artifact traceability and validation. Usage and workflows are covered by the upstream
-project README — this section only covers what you need to set it up locally.
-
-### Prerequisites (one-time setup)
-
-- Python 3.11+
-- [pipx](https://pipx.pypa.io/) for the global CLI
-- `gh` (optional — needed by kit workflows `pr-review` / `pr-status`)
-- Clone [cyberfabric/insight](https://github.com/cyberfabric/insight) at `../insight` —
-  `cypilot/config/core.toml` declares a workspace source that resolves cross-repo artifacts
-  from the backend monorepo; without it, workspace-scoped validation skips that source.
-
-Install the CLI globally:
-
-```bash
-pipx install git+https://github.com/cyberfabric/cyber-pilot.git
-cpt --version     # cypilot-proxy 3.7.0b0 or newer
-cpt info          # should list InsightFront system + SDLC kit v1.3.0
-```
-
-### Upgrading Cypilot (later)
-
-When a new release comes out:
-
-```bash
-pipx upgrade cypilot            # upgrade the global CLI
-cpt init --force --yes          # refresh cypilot/.core and cypilot/.gen
-cpt generate-agents -y          # regenerate host integrations (.claude, .cursor, …)
-cpt validate --local-only       # smoke test
-```
-
-**Do a `git diff` before committing** — `cpt init --force`:
-
-1. **Overwrites** `cypilot/config/artifacts.toml` to an empty template. Restore with
-   `git restore cypilot/config/artifacts.toml` and re-apply any local additions.
-2. **Rewrites** `cypilot/config/core.toml` in the new expanded format and **drops** the
-   `[workspace]` section. Merge the workspace block back by hand.
-3. Leaves a backup at `cypilot.<timestamp>.backup/` (gitignored). Delete once the diff
-   is clean.
-
-### Known issues
-
-- `cpt validate --local-only` reports 46 errors of kind `id-system-unrecognized`: artifact
-  IDs use prefixes like `cpt-auth-*`, `cpt-layout-*`, `cpt-*-view-*` while only
-  `insightfront` is registered in `artifacts.toml`. Tracked separately; not blocking.
-
-## Themes
-
-Built-in themes: **Default**, **Light**, **Dark**, **Dracula**, **Dracula Large**.
-
-Switch via HAI3 Studio panel or programmatically:
-
-```ts
-app.themeRegistry.apply(DARK_THEME_ID);
-```
-
-## i18n
-
-36 languages supported. Two-tier system:
-- **Screenset-level** — shared keys (menu labels, common terms)
-- **Screen-level** — screen-specific translations
-
-Translations use `I18nRegistry.createLoader` with lazy-loaded JSON files per language.
+Helm chart supports OIDC config via `--set oidc.issuer=… --set oidc.clientId=… --set oidc.scopes=…`.
 
 ## License
 

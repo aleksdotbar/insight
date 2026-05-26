@@ -20,6 +20,13 @@ server {
     # `https:` if OIDC_ISSUER is not set at runtime.
     include /etc/nginx/snippets/security-headers.conf;
 
+    # MSW service worker ships in dist/ from public/ but is inert without
+    # an explicit start() call. Block direct access so it can't be
+    # registered as a post-XSS persistence vector.
+    location = /mockServiceWorker.js {
+        return 404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
