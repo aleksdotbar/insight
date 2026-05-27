@@ -71,8 +71,8 @@ Defined in `Dockerfile`:
       double-check there's no DEV build going to production.
 - [ ] Container is served behind HTTPS-terminating reverse proxy. HSTS only
       makes sense over TLS.
-- [ ] Backend gateway's `GET /api/v1/auth/config` returns the real issuer URL,
-      client id, redirect URI, and scopes. No fallback to mock auth in prod.
+- [ ] `window.__OIDC_CONFIG__` is injected at container startup with the real
+      issuer URL, client id, and redirect URI. No fallback to mock auth in prod.
 - [ ] Backend (`api-gateway`, `analytics-api`, `identity-resolution`) validates
       the `X-Tenant-ID` header against the JWT's tenant claim. When the FE sends
       this header (currently reserved — wired through `authStore.tenantId` in

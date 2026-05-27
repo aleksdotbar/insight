@@ -98,11 +98,11 @@ src/
 
 ## Authentication (OIDC)
 
-Authorization Code + PKCE via [`oidc-client-ts`](https://github.com/authts/oidc-client-ts). OIDC parameters (`issuer_url`, `client_id`, `redirect_uri`, `scopes`) are served by the backend api-gateway at `GET /api/v1/auth/config` (public, no auth) — the frontend fetches them at startup before initiating the auth flow.
+Authorization Code + PKCE via [`oidc-client-ts`](https://github.com/authts/oidc-client-ts). The OIDC issuer/client are not baked into the build — they're injected at container start.
 
 ### Flow
 
-1. [src/main.tsx](src/main.tsx) calls `storeStartUrl()` (captures the full URL with any `?code=…&state=…` before the router strips it), then `OidcManager.init()` fetches `/api/v1/auth/config` and restores a session from `sessionStorage` if one exists.
+1. [src/main.tsx](src/main.tsx) calls `storeStartUrl()` (captures the full URL with any `?code=…&state=…` before the router strips it), then `OidcManager.init()` reads `window.__OIDC_CONFIG__` and restores a session from `sessionStorage` if one exists.
 2. Root route's `beforeLoad` ([src/routes/__root.tsx](src/routes/__root.tsx)) inspects `authStore`. `authenticated` → render; `idle` / `expired` → `OidcManager.signIn()` (redirects to the IdP). `/callback` is whitelisted.
 3. [src/routes/callback.tsx](src/routes/callback.tsx) calls `OidcManager.handleCallback(startUrl)` to exchange the code for tokens, then `window.location.replace(state.returnUrl)`.
 4. [src/api/fetch-with-auth.ts](src/api/fetch-with-auth.ts) injects `Authorization: Bearer <token>` on every request. `X-Tenant-ID` is reserved for future use (current backend doesn't require it); when `authStore.tenantId` is populated by something downstream, the header fires automatically. On 401, it calls `OidcManager.refresh()` once and retries — concurrent in-flight refreshes are deduplicated inside `OidcManager.refresh()`.
@@ -110,21 +110,17 @@ Authorization Code + PKCE via [`oidc-client-ts`](https://github.com/authts/oidc-
 
 ### Dev bypass
 
-When `/api/v1/auth/config` is unreachable or returns an invalid payload **and** `import.meta.env.DEV` is true, `OidcManager.init()` sets status to `authenticated` and resolves with no user. Combine with `VITE_DEV_USER_EMAIL` to impersonate a person from the identity service.
+When `window.__OIDC_CONFIG__` is absent (typical for local dev) **and** `import.meta.env.DEV` is true, `OidcManager.init()` sets status to `authenticated` and resolves with no user. Combine with `VITE_DEV_USER_EMAIL` to impersonate a person from the identity service.
 
-### Runtime config
+### Runtime config (Docker)
 
-OIDC parameters live on the backend api-gateway (`modules.auth-info.config`, populated from `OIDC_ISSUER_URL` / `OIDC_CLIENT_ID` / `OIDC_REDIRECT_URI` / `OIDC_SCOPES`). The frontend container does not need them — set them on the gateway deployment instead.
+The container's `docker-entrypoint.sh` writes `/oidc-config.js` from env vars and injects a `<script src="/oidc-config.js">` tag into `index.html`. The script sets `window.__OIDC_CONFIG__ = { issuer_url, client_id, scopes }`.
 
-The frontend container reads `OIDC_ISSUER` only to render the CSP `connect-src` / `frame-src` for the IdP origin. Falls back to `https:` if unset.
-
-| Variable | Where | Description |
+| Variable | Description | Example |
 |---|---|---|
-| `OIDC_ISSUER` | frontend container | IdP issuer URL — used for CSP only. Optional. |
-| `OIDC_ISSUER_URL` | api-gateway | IdP issuer URL returned to the SPA. |
-| `OIDC_CLIENT_ID` | api-gateway | OAuth2 public client ID returned to the SPA. |
-| `OIDC_REDIRECT_URI` | api-gateway | Frontend callback URL (must match IdP whitelist). |
-| `OIDC_SCOPES` | api-gateway | Space-separated scopes returned to the SPA. |
+| `OIDC_ISSUER` | OIDC issuer URL | `https://auth.example.com/application/o/insight/` |
+| `OIDC_CLIENT_ID` | OAuth2 public client ID | `C6YjC67CCDBUMygEeoBIlSX3mhRkNpCPxQxa2zaT` |
+| `OIDC_SCOPES` | Space-separated scopes | `openid profile email api://insight/Access.Default` |
 
 ## Environment Variables
 
@@ -140,7 +136,7 @@ Build-time (Vite, `.env.local`):
 | `VITE_IDENTITY_BASE` | Override identity API base URL (default `/api/identity/v1`). |
 | `VITE_ACCOUNTS_BASE` | Override accounts API base URL (default `/api/accounts`). |
 
-Runtime (container only, **no** `VITE_` prefix): `OIDC_ISSUER` (CSP only — see Runtime config above).
+Runtime (container only, **no** `VITE_` prefix): `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_SCOPES`.
 
 ## Routes
 
@@ -174,10 +170,10 @@ docker build -t insight-frontend:local .
 ```bash
 docker run -d -p 8080:80 \
   -e OIDC_ISSUER=https://auth.example.com/application/o/insight/ \
+  -e OIDC_CLIENT_ID=your-client-id \
+  -e OIDC_SCOPES="openid profile email" \
   insight-frontend:local
 ```
-
-`OIDC_ISSUER` is only used to tighten CSP — the SPA fetches `client_id`, `scopes`, and `redirect_uri` from the backend gateway's `/api/v1/auth/config`.
 
 ### Run without a backend (mock mode)
 
@@ -192,8 +188,7 @@ All screens render synthetic data and the warning strip stays visible.
 
 ```bash
 cp docker-compose.yml docker-compose.override.yml
-# Edit OIDC_ISSUER (CSP-only) in the override. Real OIDC params (client_id,
-# redirect_uri, scopes) belong on the api-gateway service.
+# Edit OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_SCOPES in the override
 
 docker compose up -d --build
 ```
@@ -208,7 +203,7 @@ From the [insight monorepo](https://github.com/cyberfabric/insight):
 ./up.sh             # full stack (ingestion + backend + frontend)
 ```
 
-OIDC config is served by the api-gateway chart — set `oidc.issuerUrl`, `oidc.clientId`, `oidc.redirectUri`, `oidc.scopes` on that chart. The frontend chart only needs `oidc.issuer` to scope its CSP.
+Helm chart supports OIDC config via `--set oidc.issuer=… --set oidc.clientId=… --set oidc.scopes=…`.
 
 ## License
 

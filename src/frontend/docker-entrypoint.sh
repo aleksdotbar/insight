@@ -1,21 +1,75 @@
 #!/bin/sh
 set -e
 
-# Reject values containing characters that don't belong in an OIDC issuer:
-# whitespace, control chars, anything that breaks safe interpolation in nasty
-# ways. If the var has those, fail loudly.
+# Escape a value for safe interpolation inside a JavaScript string literal
+# wrapped in double quotes. Backslash MUST be first so the other escapes
+# we add aren't themselves doubled. Newlines / CR aren't realistic in an
+# OIDC issuer URL or client_id, but if anything weird ever creeps in via
+# env, we reject the value at validation time below — never silently
+# embed a multi-line value.
+escape_js() {
+  printf '%s' "$1" | sed \
+    -e 's|\\|\\\\|g' \
+    -e 's|"|\\"|g'
+}
+
+# Reject values containing characters that don't belong in an OIDC issuer
+# or client_id: whitespace, control chars, anything that breaks a JS
+# string literal in nasty ways. If any var has those, fail loudly.
 contains_unsafe_chars() {
   printf '%s' "$1" | LC_ALL=C grep -q '[[:cntrl:][:space:]]'
 }
-if contains_unsafe_chars "${OIDC_ISSUER:-}"; then
-  echo "ERROR: OIDC_ISSUER contains whitespace or control characters; refusing to start." >&2
+if contains_unsafe_chars "${OIDC_ISSUER:-}" || contains_unsafe_chars "${OIDC_CLIENT_ID:-}"; then
+  echo "ERROR: OIDC_ISSUER or OIDC_CLIENT_ID contains whitespace or control characters; refusing to start." >&2
   exit 1
 fi
+
+# OIDC_SCOPES is space-separated, so internal whitespace is expected. Validate
+# each token has no control chars (still a JS-string-injection concern).
+if [ -n "${OIDC_SCOPES:-}" ]; then
+  for tok in $OIDC_SCOPES; do
+    if printf '%s' "$tok" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+      echo "ERROR: OIDC_SCOPES contains control characters; refusing to start." >&2
+      exit 1
+    fi
+  done
+fi
+
+# Write runtime OIDC config to an external JS file. We can't inline the script
+# in index.html — strict CSP (`script-src 'self'`) would reject it. Always
+# write the file so index.html's <script src> tag never 404s; an empty config
+# leaves window.__OIDC_CONFIG__ undefined and the SPA falls back to dev mode.
+OIDC_CONFIG_FILE=/usr/share/nginx/html/oidc-config.js
+if [ -n "$OIDC_ISSUER" ] && [ -n "$OIDC_CLIENT_ID" ]; then
+  if [ -z "${OIDC_SCOPES:-}" ]; then
+    echo "ERROR: OIDC_SCOPES must be set when OIDC_ISSUER and OIDC_CLIENT_ID are set." >&2
+    exit 1
+  fi
+  issuer_js=$(escape_js "$OIDC_ISSUER")
+  client_id_js=$(escape_js "$OIDC_CLIENT_ID")
+  scopes_js=$(escape_js "$OIDC_SCOPES")
+  printf 'window.__OIDC_CONFIG__={issuer_url:"%s",client_id:"%s",scopes:"%s"};\n' \
+    "$issuer_js" "$client_id_js" "$scopes_js" > "$OIDC_CONFIG_FILE"
+  echo "OIDC config written to $OIDC_CONFIG_FILE: issuer=$OIDC_ISSUER client_id=$OIDC_CLIENT_ID scopes=$OIDC_SCOPES"
+else
+  : > "$OIDC_CONFIG_FILE"
+  echo "OIDC config not set — $OIDC_CONFIG_FILE left empty (dev fallback)"
+fi
+
+# Inject <script src="/oidc-config.js?v=<ts>"> into index.html.
+# Query string is a cache-bust — some intermediates (CDN, browser SW) have
+# been observed serving a stale /oidc-config.js after env changes. Strip any
+# prior oidc-config tag first (matches with or without an existing ?v=…) so
+# restarts replace the tag in-place rather than stacking duplicates.
+CACHE_BUST=$(date +%s)
+sed -i 's|<script src="/oidc-config\.js[^"]*"></script>||g' /usr/share/nginx/html/index.html
+sed -i "s|</head>|<script src=\"/oidc-config.js?v=${CACHE_BUST}\"></script></head>|" \
+  /usr/share/nginx/html/index.html
 
 # Render CSP with the actual OIDC issuer origin so connect-src / frame-src can
 # be tight (specific host) instead of broad `https:`. Falls back to `https:` if
 # OIDC_ISSUER is not set, keeping the build usable without runtime config.
-if [ -n "${OIDC_ISSUER:-}" ]; then
+if [ -n "$OIDC_ISSUER" ]; then
   # Strip path/query/fragment to get just `scheme://host[:port]`. Validate
   # that the input actually looks like a URL — if not, fall back to `https:`
   # rather than splatting a malformed value into the CSP header. The

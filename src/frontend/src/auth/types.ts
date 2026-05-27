@@ -28,3 +28,13 @@ export type AuthSnapshot = {
   tenantId: string | null;
   error: string | null;
 };
+
+declare global {
+  interface Window {
+    __OIDC_CONFIG__?: {
+      issuer_url?: string;
+      client_id?: string;
+      scopes?: string;
+    };
+  }
+}

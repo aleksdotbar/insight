@@ -1,7 +1,7 @@
 import { UserManager, WebStorageStateStore, type User } from "oidc-client-ts";
 
 import { authStore } from "./auth-store";
-import { fetchOidcConfig } from "./config";
+import { readOidcConfig } from "./config";
 import type { AuthUser, OidcConfig, OidcSigninState } from "./types";
 
 let userManager: UserManager | null = null;
@@ -76,12 +76,12 @@ function wireEvents(um: UserManager): void {
 async function doInit(): Promise<void> {
   authStore.setStatus("loading");
 
-  const config = await fetchOidcConfig();
+  const config = readOidcConfig();
 
   if (!config) {
     if (import.meta.env.DEV) {
       console.warn(
-        "[OidcManager] Dev mode: /api/v1/auth/config unavailable. Auth bypassed."
+        "[OidcManager] Dev mode: no window.__OIDC_CONFIG__. Auth bypassed."
       );
       authStore.setStatus("authenticated");
       authReadyResolve(null);
