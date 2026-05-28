@@ -12,25 +12,19 @@ function isVisible(): boolean {
 
 export function MockBanner(): React.ReactElement | null {
   const { t } = useTranslation();
+
   if (!isVisible()) return null;
+
   return (
-    <div
-      role="status"
-      className="sticky top-0 z-30 border-b border-warning/30 bg-warning/10 px-4 py-2"
-    >
-      <Alert
-        variant="warning"
-        className="mx-auto max-w-5xl border-0 bg-transparent px-0 py-0"
-      >
-        <TriangleAlertIcon />
-        <AlertTitle>{t("mock_banner.title")}</AlertTitle>
-        <AlertDescription>
-          <Trans
-            i18nKey="mock_banner.description_html"
-            components={{ code: <code className="font-mono" /> }}
-          />
-        </AlertDescription>
-      </Alert>
-    </div>
+    <Alert variant="warning" className="rounded-none border-0 border-b">
+      <TriangleAlertIcon />
+      <AlertTitle>{t("mock_banner.title")}</AlertTitle>
+      <AlertDescription>
+        <Trans
+          i18nKey="mock_banner.description_html"
+          components={{ code: <code className="font-mono" /> }}
+        />
+      </AlertDescription>
+    </Alert>
   );
 }

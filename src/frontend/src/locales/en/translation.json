@@ -90,6 +90,21 @@
     "dark": "Dark",
     "system": "System"
   },
+  "settings": {
+    "focus_mode": {
+      "label": "Focus mode",
+      "all": "Show all",
+      "critical": "Critical only",
+      "rewards": "Rewards only",
+      "neutral": "Mute all"
+    },
+    "explanations": {
+      "label": "Explanations"
+    },
+    "metrics_v2": {
+      "label": "New metrics UI"
+    }
+  },
   "auth": {
     "callback": {
       "completing": "Completing sign-in...",
@@ -103,7 +118,7 @@
   },
   "mock_banner": {
     "title": "Synthetic data",
-    "description_html": "UI is rendering mocks because <code>VITE_ENABLE_MOCKS=true</code>. Set <code>VITE_HIDE_MOCK_BANNER=true</code> to hide this notice during screenshots."
+    "description_html": "UI is rendering using mock data."
   },
   "dev_impersonation_hint": {
     "title": "Dev impersonation not configured",

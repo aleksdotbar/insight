@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import { queryBatchWithRange, queryMetric } from "@/api/analytics-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
@@ -48,6 +48,7 @@ export function useTeamMembers(
   roster: RosterEntry[] | null,
   period: PeriodValue,
   range: DateRange,
+  options?: { keepPrevious?: boolean },
 ): UseQueryResult<TeamMember[]> {
   const rosterKey = roster ? roster.map((r) => r.email).join(",") : null;
   return useQuery({
@@ -61,6 +62,7 @@ export function useTeamMembers(
       range.to,
     ],
     enabled: Boolean(teamId),
+    placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
       if (roster) {
         const resp = await queryBatchWithRange<RawTeamMemberRow>(
@@ -123,6 +125,7 @@ export function useTeamBulletSection(
   teamSize: number | undefined,
   period: PeriodValue,
   range: DateRange,
+  options?: { keepPrevious?: boolean },
 ): UseQueryResult<BulletMetric[]> {
   const metricId = TEAM_BULLET_SECTIONS[sectionId];
   const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
@@ -138,6 +141,7 @@ export function useTeamBulletSection(
       range.to,
     ],
     enabled: Boolean(teamId),
+    placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
       const resp = await queryMetric<RawBulletAggregateRow>(metricId, range, {
         $filter: `org_unit_id eq '${odataEscapeValue(scopeId)}'`,

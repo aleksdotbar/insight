@@ -9,7 +9,7 @@ import { OidcManager, storeStartUrl } from "@/auth";
 import { AppErrorBoundary } from "@/components/app-error-boundary";
 import { ThemeProvider } from "@/components/theme-provider";
 import i18n from "@/i18n";
-import { queryClient } from "@/queryClient";
+import { queryClient } from "@/query-client";
 import { router } from "./router";
 
 storeStartUrl();

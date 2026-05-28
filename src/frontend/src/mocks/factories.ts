@@ -30,8 +30,8 @@ function hashStr(s: string): number {
   return Math.abs(h);
 }
 
-import { TEAMS, PEOPLE, teamMembers, teamHeadcount } from "./registry";
-export { TEAMS, PEOPLE, teamMembers, teamHeadcount };
+import { PEOPLE, teamMembers, teamHeadcount, topLevelManagers } from "./registry";
+export { PEOPLE, teamMembers, teamHeadcount, topLevelManagers };
 
 type IcBulletDef = {
   metric_key: string;
@@ -127,8 +127,8 @@ const IC_SECTIONS: Record<string, string[]> = {
 
 export function mockExecRow(overrides?: Partial<RawExecSummaryRow>): RawExecSummaryRow {
   return {
-    org_unit_id: 'platform',
-    org_unit_name: 'Platform',
+    org_unit_id: 'carol.chen@example.com',
+    org_unit_name: "Carol Chen's org",
     headcount: 12,
     tasks_closed: 48,
     bugs_fixed: 18,
@@ -207,13 +207,13 @@ export function mockBulletRow(overrides?: Partial<RawBulletAggregateRow>): RawBu
   };
 }
 
-export function mockExecRows(count = TEAMS.length): RawExecSummaryRow[] {
-  return Array.from({ length: count }, (_, i) => {
-    const t = TEAMS[i % TEAMS.length];
-    return mockExecRow({
-      org_unit_id: t.id,
-      org_unit_name: t.name,
-      headcount: teamHeadcount(t.id),
+export function mockExecRows(): RawExecSummaryRow[] {
+  const managers = topLevelManagers();
+  return managers.map((m, i) =>
+    mockExecRow({
+      org_unit_id: m.person_id,
+      org_unit_name: `${m.name}'s org`,
+      headcount: teamHeadcount(m.person_id),
       tasks_closed: Math.round(vary(35, i, 15)),
       bugs_fixed: Math.round(vary(12, i, 7)),
       build_success_pct: Math.min(100, Math.max(70, Math.round(vary(90, i, 8)))),
@@ -221,8 +221,8 @@ export function mockExecRows(count = TEAMS.length): RawExecSummaryRow[] {
       ai_adoption_pct: Math.min(100, Math.max(10, Math.round(vary(58, i, 20)))),
       ai_loc_share_pct: Math.min(50, Math.max(0, Math.round(vary(20, i, 12)))),
       pr_cycle_time_h: Math.max(5, Math.round(vary(22, i, 8))),
-    });
-  });
+    }),
+  );
 }
 
 export function mockTeamMemberRows(count = PEOPLE.length): RawTeamMemberRow[] {
@@ -347,16 +347,17 @@ const MOCK_BULLET_DIST: Partial<Record<string, MockBulletDist>> = {
   meeting_free:               { median: 5,     range_min: 0,  range_max: 15 },
 };
 
-export function mockTeamBulletSection(section: string, seed = 0): RawBulletAggregateRow[] {
+export function mockTeamBulletSection(
+  section: string,
+  seed = 0,
+  periodDays = 30,
+): RawBulletAggregateRow[] {
+  const scale = periodDays / 30;
   return BULLET_DEFS
     .filter((d) => d.section === section)
     .map((d, i) => {
       const dist = MOCK_BULLET_DIST[d.metric_key];
       if (!dist && import.meta.env.DEV) {
-        // Dev-only warn — prevents silent drift when someone adds a new
-        // BULLET_DEFS entry without a MOCK_BULLET_DIST row. Without this,
-        // the new metric falls back to median=0, range=[0,100], producing
-        // a plausible-looking "zero adoption" mock that hides the gap.
         console.warn(
           `[insight/mocks] MOCK_BULLET_DIST missing entry for "${d.metric_key}" ` +
           `(section=${section}) — falling back to zero distribution. ` +
@@ -364,9 +365,14 @@ export function mockTeamBulletSection(section: string, seed = 0): RawBulletAggre
         );
       }
       const d0 = dist ?? { median: 0, range_min: 0, range_max: 100 };
+      const baseValue =
+        Math.round(vary(d0.median, i + seed, Math.max(1, d0.median * 0.3)) * 10) / 10;
+      const value = shouldScaleMetric(d.metric_key, d.unit)
+        ? Math.round(baseValue * scale * 10) / 10
+        : baseValue;
       return {
         metric_key: d.metric_key,
-        value: Math.round(vary(d0.median, i + seed, Math.max(1, d0.median * 0.3)) * 10) / 10,
+        value,
         median: d0.median,
         range_min: d0.range_min,
         range_max: d0.range_max,
@@ -376,9 +382,38 @@ export function mockTeamBulletSection(section: string, seed = 0): RawBulletAggre
 
 // Returns rows with passthrough display fields that transforms.ts reads
 // via a `Record<string,unknown>` cast.
-export function mockIcBulletSection(section: string, seed = 0): RawBulletAggregateRow[] {
+const NON_SCALING_UNITS = new Set<string>(["%", "h", "d", "×", "lines"]);
+const NON_SCALING_KEYS = new Set<string>([
+  "build_success",
+  "focus_time_pct",
+  "ai_loc_share",
+  "ai_loc_share2",
+  "merge_rate",
+  "due_date_compliance",
+  "task_reopen_rate",
+  "estimation_accuracy",
+  "bugs_to_task_ratio",
+  "flow_efficiency",
+  "worklog_logging_accuracy",
+  "cursor_acceptance",
+  "cc_tool_acceptance",
+  "slack_dm_ratio",
+]);
+
+function shouldScaleMetric(metricKey: string, unit: string): boolean {
+  if (NON_SCALING_KEYS.has(metricKey)) return false;
+  if (NON_SCALING_UNITS.has(unit)) return false;
+  return true;
+}
+
+export function mockIcBulletSection(
+  section: string,
+  seed = 0,
+  periodDays = 30,
+): RawBulletAggregateRow[] {
   const keys = IC_SECTIONS[section];
   if (!keys) return [];
+  const scale = periodDays / 30;
 
   return keys.map((key, i) => {
     const def = IC_BULLET_DEFS.find((d) => d.metric_key === key);
@@ -392,7 +427,10 @@ export function mockIcBulletSection(section: string, seed = 0): RawBulletAggrega
       };
     }
 
-    const value = Math.round(vary(def.defaultValue, i + seed, def.defaultValue * 0.2) * 10) / 10;
+    const baseValue = Math.round(vary(def.defaultValue, i + seed, def.defaultValue * 0.2) * 10) / 10;
+    const value = shouldScaleMetric(def.metric_key, def.unit)
+      ? Math.round(baseValue * scale * 10) / 10
+      : baseValue;
 
     // Build the base raw row
     const row: RawBulletAggregateRow = {
@@ -439,10 +477,10 @@ export function mockIcBulletSection(section: string, seed = 0): RawBulletAggrega
 }
 
 export function mockExecScenario(): { teams: RawExecSummaryRow[] } {
-  return { teams: mockExecRows(6) };
+  return { teams: mockExecRows() };
 }
 
-export function mockTeamScenario(teamId = 'backend'): {
+export function mockTeamScenario(teamId = 'bob.park@example.com'): {
   members: RawTeamMemberRow[];
   bullets: Record<string, RawBulletAggregateRow[]>;
 } {

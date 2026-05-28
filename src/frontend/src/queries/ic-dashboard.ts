@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import {
   queryBatchWithRange,
@@ -221,6 +221,7 @@ export function useIcDashboardData(
   personId: string,
   period: PeriodValue,
   range: DateRange,
+  options?: { keepPrevious?: boolean },
 ): UseQueryResult<IcDashboardData> {
   const prevRange = previousPeriodRange(range, period);
   const filter = personScope(personId);
@@ -234,6 +235,7 @@ export function useIcDashboardData(
       range.to,
     ],
     enabled: Boolean(personId),
+    placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
       const [current, prior] = await Promise.all([
         queryBatchWithRange<

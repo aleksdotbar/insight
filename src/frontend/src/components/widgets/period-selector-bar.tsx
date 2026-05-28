@@ -10,14 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { cn } from "@/lib/utils";
 import type { CustomRange, PeriodValue } from "@/types/insight";
 
 function formatShortDate(iso: string): string {
@@ -61,7 +54,7 @@ export function PeriodSelectorBar({
           from: new Date(`${customRange.from}T00:00:00`),
           to: new Date(`${customRange.to}T00:00:00`),
         }
-      : undefined,
+      : undefined
   );
 
   const activeRange = resolveDateRange(period, customRange);
@@ -77,78 +70,47 @@ export function PeriodSelectorBar({
     setCalOpen(open);
   };
 
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex items-center gap-1">
-        <ToggleGroup
-          value={customRange ? [] : [period]}
-          onValueChange={(values) => {
-            const next = Array.isArray(values) ? values[0] : values;
-            if (
-              next === "week" ||
-              next === "month" ||
-              next === "quarter" ||
-              next === "year"
-            ) {
-              onPeriodChange(next);
-            }
-          }}
-          variant="outline"
-          size="default"
-        >
-          {TABS.map(({ value, label, short }) => (
-            <ToggleGroupItem key={value} value={value}>
-              <span className="hidden sm:inline">{label}</span>
-              <span className="sm:hidden">{short}</span>
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+  const groupValue = customRange ? ["custom"] : [period];
+  const customLabel = customRange ? activeRangeLabel : "Custom";
 
+  return (
+    <div className="flex items-center gap-2">
+      <ToggleGroup
+        value={groupValue}
+        onValueChange={(values) => {
+          const next = Array.isArray(values) ? values[0] : values;
+          if (
+            next === "week" ||
+            next === "month" ||
+            next === "quarter" ||
+            next === "year"
+          ) {
+            onPeriodChange(next);
+            setCalOpen(false);
+          }
+        }}
+        variant="outline"
+        size="default"
+      >
+        {TABS.map(({ value, label, short }) => (
+          <ToggleGroupItem key={value} value={value}>
+            <span className="hidden sm:inline">{label}</span>
+            <span className="sm:hidden">{short}</span>
+          </ToggleGroupItem>
+        ))}
         <Popover open={calOpen} onOpenChange={handleOpenChange}>
           <PopoverTrigger
             render={
-              <Button
-                variant={customRange ? "default" : "outline"}
-                size="default"
-                className="gap-2"
-              >
-                <CalendarIcon className="size-4" />
-                <span>{activeRangeLabel}</span>
-                <TooltipProvider delay={200}>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span
-                          className={cn(
-                            "rounded px-1 py-px text-[10px] font-semibold tracking-wider uppercase",
-                            customRange
-                              ? "bg-primary-foreground/15 text-primary-foreground"
-                              : "bg-muted text-muted-foreground",
-                          )}
-                          aria-label="Dates bucketed by UTC midnight"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          UTC
-                        </span>
-                      }
-                    />
-                    <TooltipContent
-                      side="bottom"
-                      className="max-w-xs text-xs leading-relaxed"
-                    >
-                      All dates here are bucketed by UTC midnight. An event at,
-                      say, 22:30 your local time may show up on a different
-                      calendar day than what your phone says.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </Button>
+              <ToggleGroupItem value="custom" className="gap-1.5">
+                <CalendarIcon className="size-3.5" />
+                <span>{customLabel}</span>
+              </ToggleGroupItem>
             }
           />
           <PopoverContent align="end" className="w-auto p-0">
             {tempRange?.from ? (
-              <div className="border-border border-b px-4 py-3">
-                <p className="text-foreground text-sm font-semibold">
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-semibold text-foreground">
                   {formatLongDate(tempRange.from)}
                   {tempRange.to ? (
                     ` – ${formatLongDate(tempRange.to)}`
@@ -166,12 +128,10 @@ export function PeriodSelectorBar({
               onSelect={(r) => setTempRange(r)}
               defaultMonth={tempRange?.from}
               numberOfMonths={
-                typeof window !== "undefined" && window.innerWidth < 640
-                  ? 1
-                  : 2
+                typeof window !== "undefined" && window.innerWidth < 640 ? 1 : 2
               }
             />
-            <div className="border-border flex items-center gap-3 border-t px-4 py-2">
+            <div className="flex items-center gap-3 border-t border-border px-4 py-2">
               {customRange ? (
                 <Button
                   variant="ghost"
@@ -212,7 +172,7 @@ export function PeriodSelectorBar({
             </div>
           </PopoverContent>
         </Popover>
-      </div>
+      </ToggleGroup>
     </div>
   );
 }

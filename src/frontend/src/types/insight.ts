@@ -168,6 +168,7 @@ export interface IcKpi {
   metric_key: string;
   label: string;
   value: string | null;
+  raw_value: number | null;
   unit: string;
   sublabel: string;
   description?: string;
@@ -246,5 +247,7 @@ export interface IdentityPerson {
   parent_email?: string | null;
   parent_id?: string | null;
   parent_person_id?: string | null;
+  supervisor_email?: string | null;
+  supervisor_name?: string | null;
   subordinates: IdentityPerson[];
 }
