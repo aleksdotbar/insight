@@ -7,10 +7,21 @@ import type { BulletMetric } from "@/types/insight";
 import { BulletChart } from "./bullet-chart";
 import { ComingSoon } from "./coming-soon";
 
+export interface MetricColumnGroup {
+  heading: string;
+  metrics: Array<BulletMetric & { period?: string }>;
+}
+
 export interface MetricCardProps {
   title: string;
   metrics: Array<BulletMetric & { period?: string }>;
   columns?: 1 | 2 | 3;
+  /**
+   * Pre-filtered, headed column groups for chart mode (e.g. collaboration's
+   * Chat / Email / Meetings / Files). When set, overrides the round-robin
+   * `columns` split. Ignored in tile mode.
+   */
+  groups?: MetricColumnGroup[];
   onDrillClick?: (drillId: string) => void;
   mode?: "chart" | "tile";
   personName?: string;
@@ -24,6 +35,7 @@ const GRID_COLS_CLASS = {
   1: "grid-cols-1",
   2: "grid-cols-1 sm:grid-cols-2",
   3: "grid-cols-1 sm:grid-cols-2 md:grid-cols-3",
+  4: "grid-cols-1 sm:grid-cols-2 md:grid-cols-4",
 } as const;
 
 function ChartLegend() {
@@ -47,6 +59,7 @@ function MetricCardImpl({
   title,
   metrics,
   columns = 1,
+  groups,
   onDrillClick,
   mode = "chart",
   personName,
@@ -118,6 +131,32 @@ function MetricCardImpl({
               state={placeholderState}
               onRetry={onRetry}
             />
+          </div>
+        ) : groups ? (
+          <div
+            className={cn(
+              "mt-3 grid gap-x-3.5 gap-y-4",
+              GRID_COLS_CLASS[
+                Math.min(groups.length, 4) as 1 | 2 | 3 | 4
+              ],
+            )}
+          >
+            {groups.map((group) => (
+              <div key={group.heading} className="flex flex-col gap-4">
+                <div className="text-muted-foreground text-xs font-bold tracking-wide uppercase">
+                  {group.heading}
+                </div>
+                {group.metrics.map((metric) => (
+                  <BulletChart
+                    key={metric.metric_key}
+                    metric={metric}
+                    onDrillClick={onDrillClick}
+                    mode="chart"
+                    personName={personName}
+                  />
+                ))}
+              </div>
+            ))}
           </div>
         ) : (
           <div className={cn("mt-3 grid gap-3.5", GRID_COLS_CLASS[cols])}>

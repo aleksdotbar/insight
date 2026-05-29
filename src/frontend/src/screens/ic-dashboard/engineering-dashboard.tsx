@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { filterBulletsByLayoutGroup } from "@/api/threshold-config";
 import { IcViewToggle } from "@/components/ic-view-toggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { CollapsibleSection } from "@/components/widgets/collapsible-section";
@@ -194,16 +195,38 @@ export function EngineeringDashboard({
         storageKey="insight:ic-dashboard:collaboration"
       >
         <div className="p-4">
-          <MetricCard
-            title={t("ic_dashboard.sections.collaboration")}
-            metrics={dashQ.data?.collaboration ?? []}
-            columns={2}
-            mode={viewMode}
-            personName={person?.display_name}
-            onDrillClick={handleDrillClick}
-            onRetry={() => dashQ.refetch()}
-            {...sectionState("collaboration")}
-          />
+          {(() => {
+            const collab = dashQ.data?.collaboration ?? [];
+            return (
+              <MetricCard
+                title={t("ic_dashboard.sections.collaboration")}
+                metrics={collab}
+                groups={[
+                  {
+                    heading: "Chat",
+                    metrics: filterBulletsByLayoutGroup(collab, "chat"),
+                  },
+                  {
+                    heading: "Email",
+                    metrics: filterBulletsByLayoutGroup(collab, "email"),
+                  },
+                  {
+                    heading: "Meetings",
+                    metrics: filterBulletsByLayoutGroup(collab, "meetings"),
+                  },
+                  {
+                    heading: "Files",
+                    metrics: filterBulletsByLayoutGroup(collab, "files"),
+                  },
+                ]}
+                mode={viewMode}
+                personName={person?.display_name}
+                onDrillClick={handleDrillClick}
+                onRetry={() => dashQ.refetch()}
+                {...sectionState("collaboration")}
+              />
+            );
+          })()}
         </div>
       </CollapsibleSection>
 
