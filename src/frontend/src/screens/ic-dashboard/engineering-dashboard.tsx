@@ -59,15 +59,15 @@ export function EngineeringDashboard({
     <div className="flex flex-col gap-4 p-6">
       <div className="bg-background/95 border-border/60 sticky top-0 z-20 -mx-6 -mt-6 border-b px-6 pt-6 pb-3 backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-3">
             <SidebarTrigger className="md:hidden" />
             <PersonHeader person={person} fallbackEmail={personId} inline />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
             <IcViewToggle
               person={personId}
               hasReports={(person?.subordinates?.length ?? 0) > 0}
             />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <PeriodSelectorBar
               period={period}
               customRange={customRange}
