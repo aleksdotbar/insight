@@ -1,6 +1,11 @@
 import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { queryBatchWithRange, queryMetric } from "@/api/analytics-client";
+import {
+  queryBatchWithRange,
+  queryMetric,
+  type BatchQueryItem,
+  type BatchQueryResult,
+} from "@/api/analytics-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import type { DateRange } from "@/api/period-to-date-range";
@@ -153,6 +158,70 @@ export function useTeamBulletSection(
         teamSize,
         "team",
       );
+    },
+  });
+}
+
+export interface TeamBulletSectionsData {
+  bySection: Record<string, BulletMetric[]>;
+  errors: Record<string, boolean>;
+}
+
+export function useTeamBulletSections(
+  sectionIds: readonly TeamBulletSectionId[],
+  teamId: string,
+  teamSize: number | undefined,
+  period: PeriodValue,
+  range: DateRange,
+  options?: { keepPrevious?: boolean },
+): UseQueryResult<TeamBulletSectionsData> {
+  const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
+  return useQuery({
+    queryKey: [
+      "team",
+      "bullet-batch",
+      sectionIds.join(","),
+      scopeId,
+      teamSize,
+      period,
+      range.from,
+      range.to,
+    ],
+    enabled: Boolean(teamId),
+    placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
+    queryFn: async () => {
+      const items: BatchQueryItem[] = sectionIds.map((id) => ({
+        id,
+        metric_id: TEAM_BULLET_SECTIONS[id],
+        $filter: `org_unit_id eq '${odataEscapeValue(scopeId)}'`,
+      }));
+      const resp = await queryBatchWithRange<RawBulletAggregateRow>(
+        range,
+        items,
+      );
+      const byId = new Map<string, BatchQueryResult<RawBulletAggregateRow>>();
+      for (const r of resp.results) {
+        if (r.id) byId.set(r.id, r);
+      }
+      const bySection: Record<string, BulletMetric[]> = {};
+      const errors: Record<string, boolean> = {};
+      for (const id of sectionIds) {
+        const r = byId.get(id);
+        if (r && r.status === "ok") {
+          errors[id] = false;
+          bySection[id] = transformBulletMetrics(
+            r.items,
+            id,
+            period,
+            teamSize,
+            "team",
+          );
+        } else {
+          errors[id] = true;
+          bySection[id] = [];
+        }
+      }
+      return { bySection, errors };
     },
   });
 }

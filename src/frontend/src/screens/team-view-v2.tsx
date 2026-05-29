@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ComingSoon } from "@/components/widgets/coming-soon";
-import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
 import { DashboardEmptyState } from "@/components/widgets/v2/dashboard-empty-state";
+import { DashboardHeader } from "@/components/widgets/v2/dashboard-header";
 import { SectionCard } from "@/components/widgets/v2/section-card";
 import { SectionDrilldownSheet } from "@/components/widgets/v2/section-drilldown-sheet";
 import { MembersHeatmap } from "@/components/widgets/v2/members-heatmap";
 import { SectionStatus } from "@/components/widgets/v2/section-status";
 import { TeamMembersAttention } from "@/components/widgets/v2/team-members-attention";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { usePeriod } from "@/hooks/use-period";
@@ -24,7 +23,7 @@ import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import {
-  useTeamBulletSection,
+  useTeamBulletSections,
   useTeamMembers,
 } from "@/queries/team-view";
 import {
@@ -35,14 +34,15 @@ import { useIcCohortStats } from "@/queries/v2/ic-extras";
 import type { PeerStats } from "@/lib/peers";
 import type { BulletMetric, TeamMember } from "@/types/insight";
 
+const SECTION_KEYS = TEAM_SECTIONS.map((s) => s.id);
+
 export interface TeamViewV2ScreenProps {
   teamId: string;
   viewerEmail: string;
 }
 
 export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps) {
-  const { period, customRange, dateRange, setPeriod, setCustomRange } =
-    usePeriod();
+  const { period, dateRange, setPeriod } = usePeriod();
   const [openSection, setOpenSection] = useState<TeamSectionId | null>(null);
   const [, setFocusedMember] = useState<TeamMember | null>(null);
 
@@ -81,32 +81,8 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
     dateRange,
   );
 
-  const taskQ = useTeamBulletSection(
-    "task_delivery",
-    teamId,
-    teamSize,
-    period,
-    dateRange,
-    { keepPrevious: true },
-  );
-  const qualityQ = useTeamBulletSection(
-    "code_quality",
-    teamId,
-    teamSize,
-    period,
-    dateRange,
-    { keepPrevious: true },
-  );
-  const collabQ = useTeamBulletSection(
-    "collaboration",
-    teamId,
-    teamSize,
-    period,
-    dateRange,
-    { keepPrevious: true },
-  );
-  const aiQ = useTeamBulletSection(
-    "ai_adoption",
+  const sectionsQ = useTeamBulletSections(
+    SECTION_KEYS,
     teamId,
     teamSize,
     period,
@@ -132,11 +108,24 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
 
   const cohortSize = cohortStatsQ.data?.[0]?.n ?? 0;
 
+  const sectionData = sectionsQ.data;
   const rowsBySection: Record<TeamSectionId, BulletMetric[]> = {
-    task_delivery: orderRowsForSection("task_delivery", taskQ.data ?? []),
-    code_quality: orderRowsForSection("code_quality", qualityQ.data ?? []),
-    collaboration: orderRowsForSection("collaboration", collabQ.data ?? []),
-    ai_adoption: orderRowsForSection("ai_adoption", aiQ.data ?? []),
+    task_delivery: orderRowsForSection(
+      "task_delivery",
+      sectionData?.bySection.task_delivery ?? [],
+    ),
+    code_quality: orderRowsForSection(
+      "code_quality",
+      sectionData?.bySection.code_quality ?? [],
+    ),
+    collaboration: orderRowsForSection(
+      "collaboration",
+      sectionData?.bySection.collaboration ?? [],
+    ),
+    ai_adoption: orderRowsForSection(
+      "ai_adoption",
+      sectionData?.bySection.ai_adoption ?? [],
+    ),
   };
 
   const heroSections = TEAM_SECTIONS.map((s) => ({
@@ -145,24 +134,8 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
     rows: rowsBySection[s.id],
   }));
 
-  const sectionQByKey = {
-    task_delivery: taskQ,
-    code_quality: qualityQ,
-    collaboration: collabQ,
-    ai_adoption: aiQ,
-  } as const;
-  const heroErrored =
-    taskQ.isError || qualityQ.isError || collabQ.isError || aiQ.isError;
-  const sectionsPending =
-    taskQ.isPending ||
-    qualityQ.isPending ||
-    collabQ.isPending ||
-    aiQ.isPending;
-  const sectionsFetching =
-    taskQ.isFetching ||
-    qualityQ.isFetching ||
-    collabQ.isFetching ||
-    aiQ.isFetching;
+  const sectionsPending = sectionsQ.isPending;
+  const sectionsFetching = sectionsQ.isFetching;
   const isFetching =
     sectionsFetching || membersQ.isFetching || bulletsQ.isFetching;
   const hasSectionData = Object.values(rowsBySection).some((rows) =>
@@ -179,25 +152,12 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
 
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
-          <SidebarTrigger />
-          <div className="flex flex-col">
-            <h1 className="text-xl font-semibold tracking-tight">
-              Team of {teamName}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {members.length} member{members.length === 1 ? "" : "s"}
-            </p>
-          </div>
-        </div>
-        <PeriodSelectorBar
-          period={period}
-          customRange={customRange}
-          onPeriodChange={setPeriod}
-          onRangeChange={setCustomRange}
-        />
-      </header>
+      <DashboardHeader
+        title={`Team of ${teamName}`}
+        subtitle={`${members.length} member${members.length === 1 ? "" : "s"}`}
+        person={teamId}
+        hasReports
+      />
       <main className="flex flex-1 flex-col gap-8 p-4 md:p-6">
         {showFullSpinner ? (
           <div className="flex min-h-[70vh] items-center justify-center">
@@ -216,34 +176,20 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
               isFetching && "opacity-60",
             )}
           >
-            {heroErrored ? (
-              <ComingSoon
-                state="error"
-                onRetry={() => {
-                  void taskQ.refetch();
-                  void qualityQ.refetch();
-                  void collabQ.refetch();
-                  void aiQ.refetch();
-                }}
-              />
-            ) : (
-              <>
-                <TeamMembersAttention
-                  members={members}
-                  bulletsByPerson={bulletsQ.data}
-                  cohortStats={cohortStatsByKey}
-                  cohortSize={cohortSize}
-                  onMemberClick={setFocusedMember}
-                />
-                <SectionStatus
-                  sections={heroSections}
-                  peerLabel="other teams"
-                  cols="four"
-                  cohortStats={cohortStatsByKey}
-                  onSectionClick={setOpenSection}
-                />
-              </>
-            )}
+            <TeamMembersAttention
+              members={members}
+              bulletsByPerson={bulletsQ.data}
+              cohortStats={cohortStatsByKey}
+              cohortSize={cohortSize}
+              onMemberClick={setFocusedMember}
+            />
+            <SectionStatus
+              sections={heroSections}
+              peerLabel="other teams"
+              cols="four"
+              cohortStats={cohortStatsByKey}
+              onSectionClick={setOpenSection}
+            />
 
             {membersQ.isError ? (
               <ComingSoon
@@ -267,14 +213,15 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
               </p>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
                 {TEAM_SECTIONS.map((s) => {
-                  const q = sectionQByKey[s.id];
-                  if (q.isError) {
+                  if (sectionsQ.isError || sectionData?.errors[s.id]) {
                     return (
-                      <ComingSoon
+                      <SectionCard
                         key={s.id}
-                        state="error"
-                        label={`${s.label} — unable to load`}
-                        onRetry={() => q.refetch()}
+                        title={s.label}
+                        sectionId={s.id}
+                        rows={[]}
+                        onOpen={() => {}}
+                        unavailable
                       />
                     );
                   }

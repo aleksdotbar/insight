@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { filterBulletsByLayoutGroup } from "@/api/threshold-config";
 import { IcViewToggle } from "@/components/ic-view-toggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { CollapsibleSection } from "@/components/widgets/collapsible-section";
@@ -58,15 +59,15 @@ export function EngineeringDashboard({
     <div className="flex flex-col gap-4 p-6">
       <div className="bg-background/95 border-border/60 sticky top-0 z-20 -mx-6 -mt-6 border-b px-6 pt-6 pb-3 backdrop-blur-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-3">
             <SidebarTrigger className="md:hidden" />
             <PersonHeader person={person} fallbackEmail={personId} inline />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
             <IcViewToggle
               person={personId}
               hasReports={(person?.subordinates?.length ?? 0) > 0}
             />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <PeriodSelectorBar
               period={period}
               customRange={customRange}
@@ -194,16 +195,38 @@ export function EngineeringDashboard({
         storageKey="insight:ic-dashboard:collaboration"
       >
         <div className="p-4">
-          <MetricCard
-            title={t("ic_dashboard.sections.collaboration")}
-            metrics={dashQ.data?.collaboration ?? []}
-            columns={2}
-            mode={viewMode}
-            personName={person?.display_name}
-            onDrillClick={handleDrillClick}
-            onRetry={() => dashQ.refetch()}
-            {...sectionState("collaboration")}
-          />
+          {(() => {
+            const collab = dashQ.data?.collaboration ?? [];
+            return (
+              <MetricCard
+                title={t("ic_dashboard.sections.collaboration")}
+                metrics={collab}
+                groups={[
+                  {
+                    heading: "Chat",
+                    metrics: filterBulletsByLayoutGroup(collab, "chat"),
+                  },
+                  {
+                    heading: "Email",
+                    metrics: filterBulletsByLayoutGroup(collab, "email"),
+                  },
+                  {
+                    heading: "Meetings",
+                    metrics: filterBulletsByLayoutGroup(collab, "meetings"),
+                  },
+                  {
+                    heading: "Files",
+                    metrics: filterBulletsByLayoutGroup(collab, "files"),
+                  },
+                ]}
+                mode={viewMode}
+                personName={person?.display_name}
+                onDrillClick={handleDrillClick}
+                onRetry={() => dashQ.refetch()}
+                {...sectionState("collaboration")}
+              />
+            );
+          })()}
         </div>
       </CollapsibleSection>
 

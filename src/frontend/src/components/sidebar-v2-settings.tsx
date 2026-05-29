@@ -1,18 +1,13 @@
-import { Filter, HelpCircle, Sparkles } from "lucide-react";
+import { HelpCircle, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useSettings } from "@/hooks/use-settings";
 import {
   setMetricsV2Enabled,
@@ -21,10 +16,10 @@ import {
 import type { FocusMode } from "@/lib/peers";
 
 const FOCUS_MODES: ReadonlyArray<FocusMode> = [
-  "all",
-  "rewards",
   "critical",
+  "rewards",
   "neutral",
+  "all",
 ];
 
 export function SidebarV2Settings() {
@@ -37,28 +32,31 @@ export function SidebarV2Settings() {
     <SidebarMenu>
       {v2 ? (
         <>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <SidebarMenuButton aria-label={t("settings.focus_mode.label")}>
-                    <Filter className="size-4" />
-                    <span>{t(`settings.focus_mode.${focusMode}`)}</span>
-                  </SidebarMenuButton>
-                }
-              />
-              <DropdownMenuContent side="top" align="start">
-                {FOCUS_MODES.map((mode) => (
-                  <DropdownMenuCheckboxItem
-                    key={mode}
-                    checked={focusMode === mode}
-                    onCheckedChange={() => setFocusMode(mode)}
-                  >
-                    {t(`settings.focus_mode.${mode}`)}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <SidebarMenuItem className="flex flex-col items-stretch gap-1.5 p-1">
+            <span className="px-1 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
+              {t("settings.focus_mode.label")}
+            </span>
+            <ToggleGroup
+              aria-label={t("settings.focus_mode.label")}
+              value={[focusMode]}
+              onValueChange={(values) => {
+                const next = Array.isArray(values) ? values[0] : values;
+                if (next) setFocusMode(next as FocusMode);
+              }}
+              variant="outline"
+              size="sm"
+              className="w-full"
+            >
+              {FOCUS_MODES.map((mode) => (
+                <ToggleGroupItem
+                  key={mode}
+                  value={mode}
+                  className="flex-1 text-xs"
+                >
+                  {t(`settings.focus_mode.${mode}`)}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton

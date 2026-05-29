@@ -1,7 +1,6 @@
-import {
-  MetricInfoIcon,
-  MetricSublabel,
-} from "@/components/widgets/v2/metric-sublabel";
+import { Sparkles } from "lucide-react";
+
+import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
 import { Card } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
 import { IC_KPI_DEFS_BY_KEY } from "@/lib/insight/v2/kpi-defs";
@@ -82,12 +81,9 @@ export function KpiTile({ kpi, median, onClick }: KpiTileProps) {
       )}
     >
       <div className="flex w-full min-w-0 flex-col gap-0.5">
-        <div className="flex items-center gap-1">
-          <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {kpi.label}
-          </span>
-          <MetricInfoIcon description={def?.description} />
-        </div>
+        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {kpi.label}
+        </span>
         <MetricSublabel description={def?.description} />
       </div>
       <div className="flex items-baseline gap-1">
@@ -116,6 +112,20 @@ export function KpiTile({ kpi, median, onClick }: KpiTileProps) {
           </p>
         </div>
       ) : null}
+    </Card>
+  );
+}
+
+export function KpiTilePlaceholder({ label }: { label: string }) {
+  return (
+    <Card data-size="sm" className="flex flex-col items-start gap-2 px-4 py-4">
+      <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <Sparkles className="size-3.5 shrink-0" aria-hidden />
+        Coming soon
+      </span>
     </Card>
   );
 }

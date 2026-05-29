@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import {
-  MetricInfoIcon,
-  MetricSublabel,
-} from "@/components/widgets/v2/metric-sublabel";
+import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
 import { Card } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
 import { BULLET_DEFS_BY_KEY } from "@/lib/insight/v2/bullet-defs";
@@ -19,7 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { BulletMetric } from "@/types/insight";
 
-import type { PeerCohortLabel } from "./bullet-row";
+import type { PeerCohortLabel } from "@/lib/peers";
 
 interface StoryEntry {
   row: BulletMetric;
@@ -213,11 +210,8 @@ function HeroTile({
           {kind === "bad" ? "Top issue" : "Top win"}
         </span>
       </div>
-      <h3 className="flex items-center gap-1.5 text-xl font-semibold tracking-tight sm:text-2xl">
-        <span className="truncate">{entry.row.label}</span>
-        <MetricInfoIcon
-          description={BULLET_DEFS_BY_KEY[entry.row.metric_key]?.description}
-        />
+      <h3 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">
+        {entry.row.label}
       </h3>
       <MetricSublabel
         description={BULLET_DEFS_BY_KEY[entry.row.metric_key]?.description}
@@ -271,6 +265,9 @@ function OutlierTile({
         <span className="text-sm font-medium leading-tight line-clamp-2">
           {entry.row.label}
         </span>
+        <MetricSublabel
+          description={BULLET_DEFS_BY_KEY[entry.row.metric_key]?.description}
+        />
         {dense ? null : (
           <span className={cn("text-[11px]", PEER_TEXT[focused])}>
             {entry.status === "top"

@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ComingSoon } from "@/components/widgets/coming-soon";
-import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
 import { DashboardEmptyState } from "@/components/widgets/v2/dashboard-empty-state";
+import { DashboardHeader } from "@/components/widgets/v2/dashboard-header";
 import { IcNeedsAttention } from "@/components/widgets/v2/ic-needs-attention";
-import { KpiTile } from "@/components/widgets/v2/kpi-tile";
+import { KpiTile, KpiTilePlaceholder } from "@/components/widgets/v2/kpi-tile";
 import { SectionCard } from "@/components/widgets/v2/section-card";
 import { SectionDrilldownSheet } from "@/components/widgets/v2/section-drilldown-sheet";
 import { SectionStatus } from "@/components/widgets/v2/section-status";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { usePeriod } from "@/hooks/use-period";
 import {
@@ -39,8 +38,7 @@ export function EngineeringDashboardV2({
   personId,
   person,
 }: EngineeringDashboardV2Props) {
-  const { period, customRange, dateRange, setPeriod, setCustomRange } =
-    usePeriod();
+  const { period, dateRange, setPeriod } = usePeriod();
   const dashQ = useIcDashboardData(personId, period, dateRange, {
     keepPrevious: true,
   });
@@ -121,29 +119,20 @@ export function EngineeringDashboardV2({
 
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
-          <SidebarTrigger />
-          <div className="flex flex-col">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {displayName}
-            </h1>
-            {role ? (
-              <p className="text-xs text-muted-foreground">{role}</p>
-            ) : null}
-          </div>
-        </div>
-        <PeriodSelectorBar
-          period={period}
-          customRange={customRange}
-          onPeriodChange={setPeriod}
-          onRangeChange={setCustomRange}
-        />
-      </header>
+      <DashboardHeader
+        title={displayName}
+        subtitle={role}
+        person={personId}
+        hasReports={(person?.subordinates?.length ?? 0) > 0}
+      />
       <main className="flex flex-1 flex-col gap-8 p-4 md:p-6">
         {showFullSpinner ? (
           <div className="flex min-h-[70vh] items-center justify-center">
             <Spinner className="size-12 text-muted-foreground" />
+          </div>
+        ) : dashQ.isError && !data ? (
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <ComingSoon state="error" onRetry={() => dashQ.refetch()} />
           </div>
         ) : isAllEmpty ? (
           <div
@@ -166,13 +155,9 @@ export function EngineeringDashboardV2({
                 At a glance
               </p>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
-                {dashQ.isError || data?.errors.kpis
-                  ? Array.from({ length: IC_KPI_DEFS.length }, (_, i) => (
-                      <ComingSoon
-                        key={i}
-                        state="error"
-                        onRetry={() => dashQ.refetch()}
-                      />
+                {data?.errors.kpis
+                  ? IC_KPI_DEFS.map((d) => (
+                      <KpiTilePlaceholder key={d.metric_key} label={d.label} />
                     ))
                   : (data?.kpis ?? []).map((kpi) => (
                       <KpiTile
@@ -185,24 +170,18 @@ export function EngineeringDashboardV2({
               </div>
             </section>
 
-            {dashQ.isError ? (
-              <ComingSoon state="error" onRetry={() => dashQ.refetch()} />
-            ) : data ? (
-              <>
-                <IcNeedsAttention
-                  sections={heroSections}
-                  cohortStats={cohortStatsByKey}
-                  onSectionClick={setOpenSection}
-                />
-                <SectionStatus
-                  sections={heroSections}
-                  peerLabel="peers"
-                  cols="five"
-                  cohortStats={cohortStatsByKey}
-                  onSectionClick={setOpenSection}
-                />
-              </>
-            ) : null}
+            <IcNeedsAttention
+              sections={heroSections}
+              cohortStats={cohortStatsByKey}
+              onSectionClick={setOpenSection}
+            />
+            <SectionStatus
+              sections={heroSections}
+              peerLabel="peers"
+              cols="five"
+              cohortStats={cohortStatsByKey}
+              onSectionClick={setOpenSection}
+            />
 
             <section className="flex flex-col gap-3">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -210,13 +189,15 @@ export function EngineeringDashboardV2({
               </p>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {IC_SECTIONS.map((s) => {
-                  if (dashQ.isError || data?.errors[s.id]) {
+                  if (data?.errors[s.id]) {
                     return (
-                      <ComingSoon
+                      <SectionCard
                         key={s.id}
-                        state="error"
-                        label={`${s.label} — unable to load`}
-                        onRetry={() => dashQ.refetch()}
+                        title={s.label}
+                        sectionId={s.id}
+                        rows={[]}
+                        onOpen={() => {}}
+                        unavailable
                       />
                     );
                   }

@@ -213,6 +213,9 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
                 : `${pivot?.display_name ?? teamName}'s department`}
             </div>
           </div>
+          <div className="shrink-0">
+            <IcViewToggle person={teamId} hasReports={canFilterDirectReports} />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canFilterDirectReports ? (
@@ -227,7 +230,6 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
               </span>
             </label>
           ) : null}
-          <IcViewToggle person={teamId} hasReports={canFilterDirectReports} />
           <PeriodSelectorBar
             period={period}
             customRange={customRange}
