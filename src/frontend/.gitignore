@@ -15,7 +15,6 @@ dist-ssr
 .vite/
 
 # TanStack Router (auto-generated)
-src/routeTree.gen.ts
 .tanstack/
 
 # Claude Code
