@@ -56,14 +56,15 @@ else
   echo "OIDC config not set — $OIDC_CONFIG_FILE left empty (dev fallback)"
 fi
 
-# Inject <script src="/oidc-config.js"> into index.html if not already present.
-# Idempotent: only adds the tag once even on container restart.
-# Match the full tag (not just the src attr) so an HTML comment mentioning
-# the path verbatim can't fool the guard into skipping the real injection.
-if ! grep -q '<script src="/oidc-config.js"></script>' /usr/share/nginx/html/index.html; then
-  sed -i 's|</head>|<script src="/oidc-config.js"></script></head>|' \
-    /usr/share/nginx/html/index.html
-fi
+# Inject <script src="/oidc-config.js?v=<ts>"> into index.html.
+# Query string is a cache-bust — some intermediates (CDN, browser SW) have
+# been observed serving a stale /oidc-config.js after env changes. Strip any
+# prior oidc-config tag first (matches with or without an existing ?v=…) so
+# restarts replace the tag in-place rather than stacking duplicates.
+CACHE_BUST=$(date +%s)
+sed -i 's|<script src="/oidc-config\.js[^"]*"></script>||g' /usr/share/nginx/html/index.html
+sed -i "s|</head>|<script src=\"/oidc-config.js?v=${CACHE_BUST}\"></script></head>|" \
+  /usr/share/nginx/html/index.html
 
 # Render CSP with the actual OIDC issuer origin so connect-src / frame-src can
 # be tight (specific host) instead of broad `https:`. Falls back to `https:` if
