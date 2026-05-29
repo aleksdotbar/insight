@@ -5,14 +5,28 @@ import { authStore } from "./auth-store";
 const DEV_VIEWER_EMAIL =
   (import.meta.env.VITE_DEV_USER_EMAIL as string | undefined) ?? "";
 
-export type ViewerSource = "oidc" | "dev" | "none";
+export type ViewerSource = "override" | "oidc" | "dev" | "none";
 
 export type Viewer = {
   email: string | null;
   source: ViewerSource;
 };
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// `__override=<email>` in the URL query string wins over the OIDC identity,
+// letting any valid email be viewed regardless of the JWT subject.
+function resolveOverrideEmail(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("__override");
+  if (!raw) return null;
+  const email = raw.trim();
+  return EMAIL_RE.test(email) ? email : null;
+}
+
 function resolve(): Viewer {
+  const override = resolveOverrideEmail();
+  if (override) return { email: override, source: "override" };
   const snap = authStore.getSnapshot();
   if (snap.user?.email) return { email: snap.user.email, source: "oidc" };
   if (DEV_VIEWER_EMAIL) return { email: DEV_VIEWER_EMAIL, source: "dev" };
