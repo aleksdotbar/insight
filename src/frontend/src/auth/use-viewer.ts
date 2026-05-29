@@ -5,6 +5,9 @@ import { authStore } from "./auth-store";
 const DEV_VIEWER_EMAIL =
   (import.meta.env.VITE_DEV_USER_EMAIL as string | undefined) ?? "";
 
+const MOCK_VIEWER_EMAIL = "bob.park@example.com";
+const MOCKS_ENABLED = import.meta.env.VITE_ENABLE_MOCKS === "true";
+
 export type ViewerSource = "override" | "oidc" | "dev" | "none";
 
 export type Viewer = {
@@ -29,6 +32,7 @@ function resolve(): Viewer {
   if (override) return { email: override, source: "override" };
   const snap = authStore.getSnapshot();
   if (snap.user?.email) return { email: snap.user.email, source: "oidc" };
+  if (MOCKS_ENABLED) return { email: MOCK_VIEWER_EMAIL, source: "dev" };
   if (DEV_VIEWER_EMAIL) return { email: DEV_VIEWER_EMAIL, source: "dev" };
   return { email: null, source: "none" };
 }
@@ -54,5 +58,6 @@ export function getViewerEmail(): string | null {
 }
 
 export function isDevImpersonating(): boolean {
-  return import.meta.env.DEV && Boolean(DEV_VIEWER_EMAIL);
+  if (!import.meta.env.DEV) return false;
+  return MOCKS_ENABLED || Boolean(DEV_VIEWER_EMAIL);
 }

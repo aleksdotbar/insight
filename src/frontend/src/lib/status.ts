@@ -1,3 +1,5 @@
+import type { FocusMode } from "./peers"
+
 export type Status = "good" | "warn" | "bad" | "neutral"
 
 export type StatusDef = {
@@ -20,6 +22,13 @@ export function statusForValue(
   if (value <= good) return "good"
   if (value <= warn) return "warn"
   return "bad"
+}
+
+export function applyFocusStatus(status: Status, mode: FocusMode): Status {
+  if (mode === "all") return status
+  if (mode === "critical") return status === "bad" ? status : "neutral"
+  if (mode === "rewards") return status === "good" ? status : "neutral"
+  return "neutral"
 }
 
 export const STATUS_BG: Record<Status, string> = {

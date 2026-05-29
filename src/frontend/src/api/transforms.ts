@@ -242,6 +242,7 @@ export function transformIcKpis(
       metric_key: def.metric_key,
       label: def.label,
       value,
+      raw_value: curVal,
       unit: def.unit,
       sublabel: def.sublabel,
       description: def.description,
@@ -268,6 +269,7 @@ export function transformBulletMetrics(
 ): BulletMetric[] {
   const sectionDefs = BULLET_DEFS.filter((d) => d.section === section);
   const defsByKey = keyBy(sectionDefs, 'metric_key');
+  const defsByKeyAnySection = keyBy(BULLET_DEFS, 'metric_key');
 
   const pickSublabel = (d: { sublabel: string; teamSublabel?: string }) =>
     viewKind === 'team' && d.teamSublabel ? d.teamSublabel : d.sublabel;
@@ -291,7 +293,7 @@ export function transformBulletMetrics(
   const allRows = [...rows, ...synthetic];
 
   return allRows.map((r) => {
-      const def = defsByKey[r.metric_key];
+      const def = defsByKey[r.metric_key] ?? defsByKeyAnySection[r.metric_key];
 
       if (!def) {
         // Unknown metric_key — backend surfaced something the FE doesn't know.

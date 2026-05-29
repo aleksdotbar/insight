@@ -8,6 +8,54 @@ export type PeerStats = {
 }
 
 export type PeerStatus = "top" | "in_pack" | "bottom"
+export type PeerStatusWithNeutral = PeerStatus | "neutral"
+
+export type FocusMode = "all" | "critical" | "rewards" | "neutral"
+
+export function applyFocus(
+  status: PeerStatusWithNeutral,
+  mode: FocusMode,
+): PeerStatusWithNeutral {
+  if (mode === "all") return status
+  if (mode === "critical") return status === "bottom" ? status : "neutral"
+  if (mode === "rewards") return status === "top" ? status : "neutral"
+  return "neutral"
+}
+
+export const PEER_CELL: Record<PeerStatusWithNeutral, string> = {
+  top: "bg-success text-success-foreground",
+  bottom: "bg-destructive text-destructive-foreground",
+  in_pack: "bg-secondary text-secondary-foreground",
+  neutral: "bg-muted text-muted-foreground",
+}
+
+export const PEER_TEXT: Record<PeerStatusWithNeutral, string> = {
+  top: "text-success",
+  bottom: "text-destructive",
+  in_pack: "text-foreground",
+  neutral: "text-muted-foreground",
+}
+
+export const PEER_BORDER: Record<PeerStatusWithNeutral, string> = {
+  top: "border-success",
+  bottom: "border-destructive",
+  in_pack: "border-border",
+  neutral: "border-muted",
+}
+
+export const PEER_LABEL: Record<PeerStatusWithNeutral, string> = {
+  top: "top 25%",
+  in_pack: "on par",
+  bottom: "bottom 25%",
+  neutral: "no peer data",
+}
+
+export const PEER_FILL: Record<PeerStatusWithNeutral, string> = {
+  top: "bg-success",
+  bottom: "bg-destructive",
+  in_pack: "bg-muted-foreground/40",
+  neutral: "bg-muted-foreground/20",
+}
 
 function percentile(sorted: number[], q: number): number {
   if (sorted.length === 0) return 0
