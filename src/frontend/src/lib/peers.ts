@@ -10,6 +10,8 @@ export type PeerStats = {
 export type PeerStatus = "top" | "in_pack" | "bottom"
 export type PeerStatusWithNeutral = PeerStatus | "neutral"
 
+export type PeerCohortLabel = "team" | "org"
+
 export type FocusMode = "all" | "critical" | "rewards" | "neutral"
 
 export function applyFocus(

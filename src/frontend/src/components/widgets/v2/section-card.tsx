@@ -1,3 +1,5 @@
+import { Sparkles } from "lucide-react";
+
 import {
   Card,
   CardContent,
@@ -50,6 +52,7 @@ export interface SectionCardProps {
   sectionId?: string;
   subtitle?: string;
   cohortStats?: Map<string, PeerStats>;
+  unavailable?: boolean;
 }
 
 export function SectionCard({
@@ -60,8 +63,27 @@ export function SectionCard({
   sectionId,
   subtitle,
   cohortStats,
+  unavailable,
 }: SectionCardProps) {
   const { focusMode } = useSettings();
+
+  if (unavailable) {
+    return (
+      <Card className="border-l-2 border-l-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold">{title}</CardTitle>
+          <CardDescription className="flex items-center gap-1.5 text-xs">
+            <Sparkles className="size-3.5 shrink-0" aria-hidden />
+            Coming soon
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="text-sm text-muted-foreground">Not tracked yet.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const scored: ScoredMetric<BulletMetric>[] = rows.map((r) => ({
     row: r,
     status: rowStatus(r, cohortStats),

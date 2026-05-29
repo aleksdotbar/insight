@@ -1,9 +1,5 @@
-import {
-  BulletRow,
-  type PeerCohortLabel,
-} from "@/components/widgets/v2/bullet-row";
 import { CountersBlock } from "@/components/widgets/v2/counters-block";
-import { HistogramStrip } from "@/components/widgets/v2/histogram-strip";
+import { DistributionStrip } from "@/components/widgets/v2/distribution-strip";
 import { LocStackedBar } from "@/components/widgets/v2/loc-stacked-bar";
 import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
 import {
@@ -26,14 +22,12 @@ import { partitionBullets } from "@/lib/insight/v2/partition";
 import {
   useIcDrilldownBatch,
   type DrilldownBatchData,
-  type HistogramBin,
 } from "@/queries/v2/ic-extras";
-import { BULLET_DEFS_BY_KEY } from "@/lib/insight/v2/bullet-defs";
 import {
   deriveAiToolComposition,
   deriveCollabActivities,
 } from "@/lib/insight/v2/derivations";
-import type { PeerStats } from "@/lib/peers";
+import type { PeerCohortLabel, PeerStats } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 import type { BulletMetric, PeriodValue } from "@/types/insight";
 
@@ -168,23 +162,15 @@ function DrilldownBody({
       ) : null}
       {distributions.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {distributions.map((r) => {
-            const bins = batch?.histograms.get(r.metric_key) ?? null;
-            return personId && range && bins ? (
-              <DistributionHistogram
-                key={r.metric_key}
-                row={r}
-                bins={bins}
-              />
-            ) : (
-              <BulletRow
-                key={r.metric_key}
-                row={r}
-                cohortStats={cohortStats?.get(r.metric_key) ?? null}
-                cohortLabel={cohortLabel}
-              />
-            );
-          })}
+          {distributions.map((r) => (
+            <DistributionStrip
+              key={r.metric_key}
+              row={r}
+              bins={batch?.histograms.get(r.metric_key) ?? null}
+              cohortStats={cohortStats?.get(r.metric_key) ?? null}
+              cohortLabel={cohortLabel}
+            />
+          ))}
         </div>
       ) : null}
       {rows.length === 0 ? (
@@ -193,23 +179,6 @@ function DrilldownBody({
         </p>
       ) : null}
     </div>
-  );
-}
-
-function DistributionHistogram({
-  row,
-  bins,
-}: {
-  row: BulletMetric;
-  bins: HistogramBin[];
-}) {
-  const medianRaw = Number(row.median);
-  const median = Number.isFinite(medianRaw) ? medianRaw : undefined;
-  const def = BULLET_DEFS_BY_KEY[row.metric_key];
-  const title = def?.label ?? row.label;
-  const unit = row.unit || def?.unit || "";
-  return (
-    <HistogramStrip title={title} unit={unit} bins={bins} median={median} />
   );
 }
 
@@ -233,7 +202,7 @@ function DrilldownExtras({
     return (
       <SectionTrend
         title="Daily task throughput"
-        description="Jira · daily closed issues"
+        description="Closed issues per day"
         series={series}
         data={data}
       />
@@ -254,7 +223,7 @@ function DrilldownExtras({
         <LocStackedBar data={batch.loc ?? []} />
         <SectionTrend
           title="Commits & PRs merged"
-          description="Bitbucket · per-day counts"
+          description="Counts per day"
           series={series}
           data={data}
         />
@@ -269,7 +238,7 @@ function DrilldownExtras({
     return (
       <SectionTrend
         title="PR cycle & build trend"
-        description="Bitbucket + CI · daily"
+        description="Cycle time and build success per day"
         series={series}
         data={(batch.sectionTrend ?? []) as SectionTrendPoint[]}
         rightAxis
