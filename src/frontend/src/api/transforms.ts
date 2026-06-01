@@ -33,8 +33,25 @@ import type {
   RawDrillRow,
 } from './raw-types';
 import { BULLET_DEFS, IC_KPI_DEFS } from './threshold-config';
-import type { IcKpiDef } from './threshold-config';
+import type { BulletThresholdDef, IcKpiDef } from './threshold-config';
+import {
+  type CatalogMetric,
+  type CatalogResponse,
+  prefixForBulletSection,
+} from './catalog-client';
 import { evaluateStatus } from './metric-semantics';
+
+/** Format strings the catalog may surface; map to `IcKpiDef['format']`. */
+type IcKpiFormat = IcKpiDef['format'];
+
+function asIcKpiFormat(v: string | undefined): IcKpiFormat {
+  if (v === 'integer' || v === 'decimal1' || v === 'percent' || v === 'hours') {
+    return v;
+  }
+  // Fallback when catalog row predates a `format` value — keep parity with
+  // the old compile-in default for IC KPIs.
+  return 'integer';
+}
 
 function keyBy<T, K extends keyof T>(items: T[], key: K): Record<string, T> {
   const out: Record<string, T> = {};
@@ -208,48 +225,72 @@ export function transformExecRows(
   });
 }
 
+const IC_KPI_PREFIX = 'ic_kpis.';
+
 export function transformIcKpis(
   current: RawIcAggregateRow | null,
   previous: RawIcAggregateRow | null,
   period: PeriodValue,
+  catalog: CatalogResponse,
 ): IcKpi[] {
   // Data-driven: no current row means the backend has nothing for this person
   // in the selected period — return empty so composites render ComingSoon
   // uniformly instead of forcing zeros onto the UI.
   if (current === null) return [];
 
-  return IC_KPI_DEFS.map((def) => {
-    // Distinguish "raw value missing" (NULL from backend → source not ingested)
-    // from "raw value is zero" (real measurement). Missing → value:null so the
-    // KpiStrip cell can render ComingSoon. Zero → formatted '0' like any number.
-    const rawCur = current[def.raw_field];
-    const rawPrev = previous?.[def.raw_field];
+  // `raw_field` is FE-only (the catalog wire shape doesn't carry it). Look it
+  // up from the compile-in defs keyed by the bare metric_key (after the
+  // `ic_kpis.` prefix). Catalog rows whose bare key has no FE raw_field
+  // mapping are silently omitted — the FE doesn't know how to source their
+  // value from the raw aggregate row.
+  const rawFieldByBareKey = new Map<string, IcKpiDef['raw_field']>();
+  for (const d of IC_KPI_DEFS) {
+    rawFieldByBareKey.set(d.metric_key, d.raw_field);
+  }
+
+  const out: IcKpi[] = [];
+  for (const m of catalog.metrics) {
+    if (!m.metric_key || !m.metric_key.startsWith(IC_KPI_PREFIX)) continue;
+    const bareKey = m.metric_key.slice(IC_KPI_PREFIX.length);
+    const rawField = rawFieldByBareKey.get(bareKey);
+    if (!rawField) continue;
+
+    // Distinguish "raw value missing" (NULL from backend → source not
+    // ingested) from "raw value is zero" (real measurement).
+    const rawCur = current[rawField];
+    const rawPrev = previous?.[rawField];
     const curVal = rawCur == null ? null : (rawCur as number);
     const prevVal = rawPrev == null ? null : (rawPrev as number);
 
-    const value = curVal === null ? null : formatValue(curVal, def.format);
+    const format = asIcKpiFormat(m.format);
+    // Synthesize an IcKpiDef-shaped object for shared formatters; cheap and
+    // keeps `formatDelta` unchanged.
+    const fmtDef: Pick<IcKpiDef, 'format'> = { format };
+
+    const value = curVal === null ? null : formatValue(curVal, format);
     let delta = '';
     let dt: 'good' | 'warn' | 'bad' | 'neutral' = 'neutral';
 
     if (curVal !== null && prevVal !== null) {
       const diff = curVal - prevVal;
-      delta = formatDelta(diff, def);
-      dt = deltaType(diff, def.higher_is_better);
+      delta = formatDelta(diff, fmtDef as IcKpiDef);
+      dt = deltaType(diff, m.higher_is_better);
     }
 
-    return {
+    out.push({
       period,
-      metric_key: def.metric_key,
-      label: def.label,
+      metric_key: bareKey,
+      label: m.label,
       value,
       raw_value: curVal,
-      unit: def.unit,
-      sublabel: def.sublabel,
-      description: def.description,
+      unit: m.unit ?? '',
+      sublabel: m.sublabel ?? '',
+      description: m.description,
       delta,
       delta_type: dt,
-    };
-  });
+    });
+  }
+  return out;
 }
 
 /**
@@ -264,177 +305,167 @@ export function transformBulletMetrics(
   rows: RawBulletAggregateRow[],
   section: string,
   period: PeriodValue,
-  teamSize?: number,
-  viewKind: 'ic' | 'team' = 'ic',
+  teamSize: number | undefined,
+  viewKind: 'ic' | 'team',
+  catalog: CatalogResponse,
 ): BulletMetric[] {
-  const sectionDefs = BULLET_DEFS.filter((d) => d.section === section);
-  const defsByKey = keyBy(sectionDefs, 'metric_key');
-  const defsByKeyAnySection = keyBy(BULLET_DEFS, 'metric_key');
+  const wirePrefixDot = prefixForBulletSection(section) + '.';
 
-  const pickSublabel = (d: { sublabel: string; teamSublabel?: string }) =>
-    viewKind === 'team' && d.teamSublabel ? d.teamSublabel : d.sublabel;
+  // Section catalog rows, keyed by bare metric_key (the form raw aggregate
+  // rows carry, e.g. `tasks_completed`). Catalog metric_keys are
+  // wire-prefixed (e.g. `task_delivery_bullet_rows.tasks_completed`).
+  const catalogByBareKey = new Map<string, CatalogMetric>();
+  for (const m of catalog.metrics) {
+    if (!m.metric_key || !m.metric_key.startsWith(wirePrefixDot)) continue;
+    const bare = m.metric_key.slice(wirePrefixDot.length);
+    if (!catalogByBareKey.has(bare)) catalogByBareKey.set(bare, m);
+  }
 
-  // Synthesize honest-zero rows for every metric_key the section knows about
-  // but the backend didn't return. Without this, an unanswered metric makes
-  // the whole bullet disappear from the screen, which reads as "we forgot to
-  // show it" instead of "this person has 0 of this in this period".
-  // Synthetic rows have value=0 and range null → fall through to the
-  // "no distribution" branch below (renders the 0 with placeholder bar).
+  // FE-only fields the catalog doesn't carry yet (drill_id, teamSublabel).
+  // Looked up by bare metric_key.
+  const defsByKey: Record<string, BulletThresholdDef> = {};
+  for (const d of BULLET_DEFS) defsByKey[d.metric_key] = d;
+
+  const pickSublabel = (
+    catalogSublabel: string,
+    teamSublabel: string | undefined,
+  ): string =>
+    viewKind === 'team' && teamSublabel ? teamSublabel : catalogSublabel;
+
+  // Synthesize honest-zero rows for every metric_key the catalog knows about
+  // for this section but the backend didn't return. Without this, an
+  // unanswered metric makes the whole bullet disappear from the screen.
   const seenKeys = new Set(rows.map((r) => r.metric_key));
-  const synthetic: RawBulletAggregateRow[] = sectionDefs
-    .filter((d) => !seenKeys.has(d.metric_key))
-    .map((d) => ({
-      metric_key: d.metric_key,
-      value: 0,
-      median: null,
-      range_min: null,
-      range_max: null,
-    }));
+  const synthetic: RawBulletAggregateRow[] = [];
+  for (const bareKey of catalogByBareKey.keys()) {
+    if (!seenKeys.has(bareKey)) {
+      synthetic.push({
+        metric_key: bareKey,
+        value: 0,
+        median: null,
+        range_min: null,
+        range_max: null,
+      });
+    }
+  }
   const allRows = [...rows, ...synthetic];
 
-  return allRows.map((r) => {
-      const def = defsByKey[r.metric_key] ?? defsByKeyAnySection[r.metric_key];
+  const out: BulletMetric[] = [];
+  for (const r of allRows) {
+    const catalogRow = catalogByBareKey.get(r.metric_key);
+    // Missing-id (catalog row absent for this section) → silently omit per
+    // DESIGN §3.3 Catalog Consumer Contract.
+    if (!catalogRow) continue;
 
-      if (!def) {
-        // Unknown metric_key — backend surfaced something the FE doesn't know.
-        // Render what we can and mark unavailable so the bar doesn't pretend
-        // to reflect a distribution we can't describe.
-        const passthrough = r as unknown as Record<string, unknown>;
-        const passStr = (k: string): string | null =>
-          typeof passthrough[k] === 'string' ? (passthrough[k] as string) : null;
-        const passNum = (k: string): number | null => {
-          const v = passthrough[k];
-          if (typeof v === 'number' && Number.isFinite(v)) return v;
-          if (typeof v === 'string') {
-            const n = Number(v.replace(/[^\d.-]/g, ''));
-            return Number.isFinite(n) ? n : null;
-          }
-          return null;
-        };
-        const passLabel    = passStr('label');
-        const passSublabel = passStr('sublabel');
-        const passUnit     = passStr('unit');
-        const passDrillId  = passStr('drill_id');
-        const passStatus   = passStr('status');
-        const rMin = typeof r.range_min === 'number' ? r.range_min : passNum('range_min');
-        const rMax = typeof r.range_max === 'number' ? r.range_max : passNum('range_max');
-        const rMed = typeof r.median    === 'number' ? r.median    : passNum('median');
-        const passBarL = passNum('bar_left_pct')   ?? 0;
-        const passBarW = passNum('bar_width_pct')  ?? 0;
-        const passMedL = passNum('median_left_pct') ?? 0;
-        const unitStr = passUnit ?? '';
-        const haveDist = rMin != null && rMax != null;
-        return {
-          period,
-          section,
-          metric_key: r.metric_key,
-          label: passLabel ?? r.metric_key,
-          sublabel: passSublabel ?? '',
-          value: formatBulletValue(r.value, unitStr),
-          unit: unitStr,
-          range_min: haveDist ? formatRangeStr(rMin, unitStr) : '\u2014',
-          range_max: haveDist ? formatRangeStr(rMax, unitStr) : '\u2014',
-          median:    rMed != null ? formatBulletValue(rMed, unitStr) : '\u2014',
-          median_label: passStr('median_label') ?? '',
-          bar_left_pct: passBarL,
-          bar_width_pct: passBarW,
-          median_left_pct: passMedL,
-          status: (passStatus === 'good' || passStatus === 'warn' || passStatus === 'bad')
-            ? passStatus
-            : (haveDist ? 'good' : 'unavailable'),
-          drill_id: passDrillId ?? '',
-        };
-      }
+    const fbDef = defsByKey[r.metric_key];
+    const drillId = fbDef?.drill_id ?? '';
+    const teamSublabel = fbDef?.teamSublabel;
 
-      // Member-scale metrics use team headcount as the denominator. Unit
-      // becomes "/ N" at the team view; IC view keeps them unavailable.
-      const effectiveUnit = def.isMemberScale
-        ? teamSize != null
-          ? `/ ${teamSize}`
-          : ''
-        : def.unit;
+    const label = catalogRow.label;
+    const sublabel = pickSublabel(catalogRow.sublabel ?? '', teamSublabel);
+    const baseUnit = catalogRow.unit ?? '';
+    const isMemberScale = catalogRow.is_member_scale;
+    const higherIsBetter = catalogRow.higher_is_better;
+    const goodThr = catalogRow.thresholds.good;
+    const warnThr = catalogRow.thresholds.warn;
+    const isSchemaError = catalogRow.schema_status === 'error';
 
-      const valueUnavailable = r.value === null || r.value === undefined || !Number.isFinite(r.value);
-      const rangeAvailable = r.range_min != null && r.range_max != null;
-      // For member-scale metrics, override range_max with team size when
-      // known (the backend emits min/max across team members, but the chart
-      // scale should run 0..teamSize so "out of N" reads correctly).
-      const rangeMax = def.isMemberScale && teamSize != null
-        ? teamSize
-        : r.range_max;
-      const rangeMin = def.isMemberScale && teamSize != null
-        ? 0
-        : r.range_min;
-      // Member-scale metrics rendered without a known team size have no
-      // meaningful denominator — fall through to unavailable instead of
-      // showing a bare "N" with an implicit scale (IC dashboard doesn't
-      // know the viewer's team size today).
-      const memberScaleMissingSize = def.isMemberScale && teamSize == null;
+    // Member-scale metrics use team headcount as the denominator. Unit
+    // becomes "/ N" at the team view; IC view keeps them unavailable.
+    const effectiveUnit = isMemberScale
+      ? teamSize != null
+        ? `/ ${teamSize}`
+        : ''
+      : baseUnit;
 
-      // Distribution not provided by the backend → can't draw a meaningful
-      // bullet. Show value + label; render ComingSoon in the bar slot.
-      if (
-        valueUnavailable ||
-        !rangeAvailable ||
-        rangeMin == null ||
-        rangeMax == null ||
-        memberScaleMissingSize
-      ) {
-        return {
-          period,
-          section,
-          metric_key: r.metric_key,
-          label: def.label,
-          sublabel: pickSublabel(def),
-          value: formatBulletValue(r.value, effectiveUnit),
-          unit: effectiveUnit,
-          range_min: '\u2014',
-          range_max: '\u2014',
-          median: '\u2014',
-          median_label: '',
-          bar_left_pct: 0,
-          bar_width_pct: 0,
-          median_left_pct: 0,
-          status: 'unavailable',
-          drill_id: def.drill_id,
-        };
-      }
+    const valueUnavailable =
+      r.value === null || r.value === undefined || !Number.isFinite(r.value);
+    const rangeAvailable = r.range_min != null && r.range_max != null;
+    const rangeMax =
+      isMemberScale && teamSize != null ? teamSize : r.range_max;
+    const rangeMin = isMemberScale && teamSize != null ? 0 : r.range_min;
+    const memberScaleMissingSize = isMemberScale && teamSize == null;
 
-      // Auto-scale hour-bullets to days when the upper range crosses a
-      // few days (industry default: 48h). Keeps display readable without
-      // changing the underlying metric semantics or thresholds.
-      const scaled = scaleHoursToDays(effectiveUnit, r.value, r.median, rangeMin, rangeMax);
-      const dispUnit  = scaled?.unit  ?? effectiveUnit;
-      const dispVal   = scaled?.value ?? r.value;
-      const dispMin   = scaled?.rangeMin ?? rangeMin;
-      const dispMax   = scaled?.rangeMax ?? rangeMax;
-      const median    = scaled?.median   ?? r.median;
-      // Use formatRangeStr for median too so units stay consistent with the
-      // min/max labels rendered under the bar — previously the median-only
-      // formatter handled `%`/`h` but missed `×`, `h/mo`, `d`, producing
-      // labels like "0× … Median: 1.1 … 3×".
-      const medianFormatted = median != null ? formatRangeStr(median, dispUnit) : '\u2014';
-      return {
+    if (
+      valueUnavailable ||
+      !rangeAvailable ||
+      rangeMin == null ||
+      rangeMax == null ||
+      memberScaleMissingSize
+    ) {
+      out.push({
         period,
         section,
         metric_key: r.metric_key,
-        label: def.label,
-        sublabel: pickSublabel(def),
-        // Format counters as integers (round), ratios/percents/hours as 2-decimal.
-        value: formatBulletValue(dispVal, dispUnit),
-        unit: dispUnit,
-        range_min: formatRangeStr(dispMin, dispUnit),
-        range_max: formatRangeStr(dispMax, dispUnit),
-        median: median != null ? formatBulletValue(median, dispUnit) : '\u2014',
-        median_label: median != null ? `Median: ${medianFormatted}` : '',
+        label,
+        sublabel,
+        value: formatBulletValue(r.value, effectiveUnit),
+        unit: effectiveUnit,
+        range_min: '—',
+        range_max: '—',
+        median: '—',
+        median_label: '',
         bar_left_pct: 0,
-        bar_width_pct: pctInRange(dispVal, dispMin, dispMax),
-        median_left_pct: median != null ? pctInRange(median, dispMin, dispMax) : 0,
-        status: evaluateStatus(r.value, def),
-        drill_id: def.drill_id,
-      };
+        bar_width_pct: 0,
+        median_left_pct: 0,
+        status: 'unavailable',
+        drill_id: drillId,
+        ...(isSchemaError ? { schema_error: true } : {}),
+      });
+      continue;
+    }
+
+    // Auto-scale hour-bullets to days when the upper range crosses a few
+    // days (industry default: 48h). Keeps display readable without changing
+    // the underlying metric semantics or thresholds.
+    const scaled = scaleHoursToDays(
+      effectiveUnit,
+      r.value,
+      r.median,
+      rangeMin,
+      rangeMax,
+    );
+    const dispUnit = scaled?.unit ?? effectiveUnit;
+    const dispVal = scaled?.value ?? r.value;
+    const dispMin = scaled?.rangeMin ?? rangeMin;
+    const dispMax = scaled?.rangeMax ?? rangeMax;
+    const median = scaled?.median ?? r.median;
+    const medianFormatted =
+      median != null ? formatRangeStr(median, dispUnit) : '—';
+
+    out.push({
+      period,
+      section,
+      metric_key: r.metric_key,
+      label,
+      sublabel,
+      value: formatBulletValue(dispVal, dispUnit),
+      unit: dispUnit,
+      range_min: formatRangeStr(dispMin, dispUnit),
+      range_max: formatRangeStr(dispMax, dispUnit),
+      median: median != null ? formatBulletValue(median, dispUnit) : '—',
+      median_label: median != null ? `Median: ${medianFormatted}` : '',
+      bar_left_pct: 0,
+      bar_width_pct: pctInRange(dispVal, dispMin, dispMax),
+      median_left_pct:
+        median != null ? pctInRange(median, dispMin, dispMax) : 0,
+      // schema_status='error' suppresses threshold-based coloring per DESIGN
+      // §3.3: bar dimensions render normally but the row is flagged so
+      // consumers can show the "Metric source unavailable" indicator.
+      status: isSchemaError
+        ? 'unavailable'
+        : evaluateStatus(r.value, {
+            good: goodThr,
+            warn: warnThr,
+            higher_is_better: higherIsBetter,
+          }),
+      drill_id: drillId,
+      ...(isSchemaError ? { schema_error: true } : {}),
     });
+  }
+  return out;
 }
+
 
 export function transformLocTrend(
   rows: RawLocTrendRow[],

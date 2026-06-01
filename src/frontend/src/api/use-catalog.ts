@@ -46,30 +46,10 @@ import {
   type CatalogRequest,
   type CatalogResponse,
   fetchCatalog,
+  prefixForBulletSection,
 } from '@/api/catalog-client';
 import { BULLET_DEFS, IC_KPI_DEFS } from '@/api/threshold-config';
 import { useAuth } from '@/auth/use-auth';
-
-/**
- * Storage-table prefix for each FE-known `metric_key` so the fallback
- * catalog emits wire-shape-identical `metric_key` strings (e.g.
- * `task_delivery_bullet_rows.tasks_completed` rather than the bare
- * `tasks_completed`). Mirrors the prefixes the backend seed migration
- * writes; if the seed list ever changes, this map MUST stay in sync —
- * the byte-for-byte parity gate (PRD §12) is the regression detector.
- *
- * Sections that aren't covered (defensive) default to
- * `task_delivery_bullet_rows`, matching the backend's most-common bucket.
- */
-function prefixForBulletKey(metricKey: string, section: string): string {
-  if (section === 'git_output') return 'git_bullet_rows';
-  if (section === 'code_quality') return 'code_quality_bullet_rows';
-  if (section === 'ai_adoption') return 'ai_bullet_rows';
-  if (section === 'collaboration') return 'collab_bullet_rows';
-  // task_delivery + estimation share storage in v1 seed.
-  void metricKey;
-  return 'task_delivery_bullet_rows';
-}
 
 /** 5-minute TTL per DESIGN §3.3 Catalog Consumer Contract. */
 export const CATALOG_TTL_MS = 5 * 60_000;
@@ -111,7 +91,7 @@ export type UseCatalogResult = {
 function buildFallbackCatalog(tenantId: string | null): CatalogResponse {
   const now = new Date().toISOString();
   const bulletMetrics: CatalogMetric[] = BULLET_DEFS.map((d) => {
-    const wireKey = `${prefixForBulletKey(d.metric_key, d.section)}.${d.metric_key}`;
+    const wireKey = `${prefixForBulletSection(d.section)}.${d.metric_key}`;
     return {
       // Fallback ids are `fallback:<wire-key>` so they're recognizably
       // distinct from real UUIDv7s in the QueryClient cache but byId

@@ -5,6 +5,7 @@ import {
   queryMetric,
   type BatchQueryResult,
 } from "@/api/analytics-client";
+import type { CatalogResponse } from "@/api/catalog-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import {
   previousPeriodRange,
@@ -20,6 +21,7 @@ import {
   transformLocTrend,
   transformTimeOff,
 } from "@/api/transforms";
+import { useCatalog } from "@/api/use-catalog";
 import type {
   RawBulletAggregateRow,
   RawDeliveryTrendRow,
@@ -57,6 +59,7 @@ export function useIcKpis(
   range: DateRange
 ): UseQueryResult<IcKpi[]> {
   const prevRange = previousPeriodRange(range, period);
+  const { data: catalog } = useCatalog();
   return useQuery({
     queryKey: ["ic", "kpis", personId, period, range.from, range.to],
     queryFn: async () => {
@@ -71,7 +74,8 @@ export function useIcKpis(
       return transformIcKpis(
         cur.items[0] ?? null,
         prev.items[0] ?? null,
-        period
+        period,
+        catalog,
       );
     },
   });
@@ -94,6 +98,7 @@ export function useIcBulletSection(
   range: DateRange
 ): UseQueryResult<BulletMetric[]> {
   const metricId = BULLET_SECTIONS[sectionId];
+  const { data: catalog } = useCatalog();
   return useQuery({
     queryKey: [
       "ic",
@@ -108,7 +113,14 @@ export function useIcBulletSection(
       const resp = await queryMetric<RawBulletAggregateRow>(metricId, range, {
         $filter: personScope(personId),
       });
-      return transformBulletMetrics(resp.items, sectionId, period);
+      return transformBulletMetrics(
+        resp.items,
+        sectionId,
+        period,
+        undefined,
+        "ic",
+        catalog,
+      );
     },
   });
 }
@@ -225,6 +237,7 @@ export function useIcDashboardData(
 ): UseQueryResult<IcDashboardData> {
   const prevRange = previousPeriodRange(range, period);
   const filter = personScope(personId);
+  const { data: catalog } = useCatalog();
   return useQuery({
     queryKey: [
       "ic",
@@ -236,7 +249,8 @@ export function useIcDashboardData(
     ],
     enabled: Boolean(personId),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
-    queryFn: async () => {
+    queryFn: async (): Promise<IcDashboardData> => {
+      const cat: CatalogResponse = catalog;
       const [current, prior] = await Promise.all([
         queryBatchWithRange<
           | RawIcAggregateRow
@@ -320,31 +334,47 @@ export function useIcDashboardData(
           kpisCur?.[0] ?? null,
           kpisPrior?.[0] ?? null,
           period,
+          cat,
         ),
         taskDelivery: transformBulletMetrics(
           get<RawBulletAggregateRow>("task_delivery") ?? [],
           "task_delivery",
           period,
+          undefined,
+          "ic",
+          cat,
         ),
         codeQuality: transformBulletMetrics(
           get<RawBulletAggregateRow>("code_quality") ?? [],
           "code_quality",
           period,
+          undefined,
+          "ic",
+          cat,
         ),
         gitOutput: transformBulletMetrics(
           get<RawBulletAggregateRow>("git_output") ?? [],
           "git_output",
           period,
+          undefined,
+          "ic",
+          cat,
         ),
         aiAdoption: transformBulletMetrics(
           get<RawBulletAggregateRow>("ai_adoption") ?? [],
           "ai_adoption",
           period,
+          undefined,
+          "ic",
+          cat,
         ),
         collaboration: transformBulletMetrics(
           get<RawBulletAggregateRow>("collaboration") ?? [],
           "collaboration",
           period,
+          undefined,
+          "ic",
+          cat,
         ),
         locTrend: transformLocTrend(
           get<RawLocTrendRow>("loc_trend") ?? [],
