@@ -120,6 +120,11 @@
     "title": "Synthetic data",
     "description_html": "UI is rendering using mock data."
   },
+  "impersonation_banner": {
+    "title": "Impersonation active",
+    "description_html": "Viewing as <strong>{{email}}</strong>",
+    "stop": "Stop"
+  },
   "dev_impersonation_hint": {
     "title": "Dev impersonation not configured",
     "description_html": "Nothing to display. Either set <code>VITE_DEV_USER_EMAIL</code> in <code>.env.local</code> to a person email present in the identity service, or configure <code>window.__OIDC_CONFIG__</code> via <code>public/oidc-config.js</code> and sign in."
