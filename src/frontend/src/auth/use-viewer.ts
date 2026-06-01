@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 import { authStore } from "./auth-store";
+import { getOverrideEmail, overrideStore } from "./impersonation";
 
 const DEV_VIEWER_EMAIL =
   (import.meta.env.VITE_DEV_USER_EMAIL as string | undefined) ?? "";
@@ -15,20 +16,8 @@ export type Viewer = {
   source: ViewerSource;
 };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// `__override=<email>` in the URL query string wins over the OIDC identity,
-// letting any valid email be viewed regardless of the JWT subject.
-function resolveOverrideEmail(): string | null {
-  if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get("__override");
-  if (!raw) return null;
-  const email = raw.trim();
-  return EMAIL_RE.test(email) ? email : null;
-}
-
 function resolve(): Viewer {
-  const override = resolveOverrideEmail();
+  const override = getOverrideEmail();
   if (override) return { email: override, source: "override" };
   const snap = authStore.getSnapshot();
   if (snap.user?.email) return { email: snap.user.email, source: "oidc" };
@@ -49,6 +38,11 @@ export function useViewer(): Viewer {
     authStore.subscribe,
     authStore.getSnapshot,
     authStore.getSnapshot,
+  );
+  useSyncExternalStore(
+    overrideStore.subscribe,
+    overrideStore.getSnapshot,
+    overrideStore.getSnapshot,
   );
   return resolve();
 }
