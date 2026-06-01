@@ -1,4 +1,4 @@
-import { EXEC_VIEW_CONFIG } from "@/api/view-configs";
+import { useExecViewConfig } from "@/api/view-configs";
 import { OrgHealthRadar } from "@/components/widgets/org-health-radar";
 import { OrgKpiCards } from "@/components/widgets/org-kpi-cards";
 import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
@@ -11,7 +11,8 @@ import { useExecSummary } from "@/queries/executive-view";
 export function ExecutiveViewScreen() {
   const { period, customRange, dateRange, setPeriod, setCustomRange } =
     usePeriod();
-  const execQ = useExecSummary(dateRange);
+  const execViewConfig = useExecViewConfig();
+  const execQ = useExecSummary(dateRange, execViewConfig.column_thresholds);
   const teams = execQ.data?.teams ?? [];
   const orgKpis = execQ.data?.orgKpis ?? null;
 
@@ -40,7 +41,7 @@ export function ExecutiveViewScreen() {
       <OrgKpiCards
         teams={teams}
         orgKpis={orgKpis}
-        columnThresholds={EXEC_VIEW_CONFIG.column_thresholds}
+        columnThresholds={execViewConfig.column_thresholds}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -55,7 +56,7 @@ export function ExecutiveViewScreen() {
       <TeamsTable
         teams={teams}
         loading={execQ.isPending}
-        columnThresholds={EXEC_VIEW_CONFIG.column_thresholds}
+        columnThresholds={execViewConfig.column_thresholds}
       />
     </div>
   );

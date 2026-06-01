@@ -12,14 +12,14 @@ import { ViewModeToggle } from "@/components/widgets/view-mode-toggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Switch } from "@/components/ui/switch";
-import { TEAM_VIEW_CONFIG } from "@/api/view-configs";
+import { useTeamViewConfig } from "@/api/view-configs";
 import { usePeriod, useViewMode } from "@/hooks/use-period";
 import {
   flattenSubordinates,
   findIdentityNode,
 } from "@/lib/insight/identity-tree";
 import { getInitials } from "@/lib/insight/get-initials";
-import { deriveTeamKpis } from "@/lib/insight/team-kpis";
+import { useTeamKpis } from "@/lib/insight/team-kpis";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import {
   useTeamBulletSection,
@@ -118,10 +118,8 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
         )
       : allMembers;
 
-  const teamKpis = useMemo(
-    () => deriveTeamKpis(members, period),
-    [members, period],
-  );
+  const teamViewConfig = useTeamViewConfig();
+  const teamKpis = useTeamKpis(members, period);
 
   const teamSize = roster?.length;
   const taskQ = useTeamBulletSection(
@@ -244,12 +242,12 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
 
       <AttentionNeeded
         members={members}
-        alertThresholds={TEAM_VIEW_CONFIG.alert_thresholds}
+        alertThresholds={teamViewConfig.alert_thresholds}
       />
 
       <MembersTable
         members={members}
-        columnThresholds={TEAM_VIEW_CONFIG.column_thresholds}
+        columnThresholds={teamViewConfig.column_thresholds}
         loading={membersQ.isPending}
         onCellDrill={handleCellDrill}
         onViewAllStats={

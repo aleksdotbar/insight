@@ -46,6 +46,12 @@ export type ResolvedThresholds = {
   warn: number;
   alert_trigger?: number;
   alert_bad?: number;
+  /**
+   * Human-readable reason surfaced in AttentionNeeded callouts (Team View).
+   * Optional on the wire — older backends will omit it; FE consumers MUST
+   * tolerate `undefined` and fall through to a generic message.
+   */
+  alert_reason?: string;
   resolved_from: ResolvedFrom;
   bounded_by_lock: boolean;
 };

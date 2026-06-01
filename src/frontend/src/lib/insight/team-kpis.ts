@@ -1,6 +1,8 @@
+import { useMemo } from "react";
+
 import { teamHealthStatus } from "@/api/metric-semantics";
-import { TEAM_KPIS_BY_PERIOD, TEAM_VIEW_CONFIG } from "@/api/view-configs";
-import type { PeriodValue, TeamKpi, TeamMember } from "@/types/insight";
+import { useTeamKpisByPeriod, useTeamViewConfig } from "@/api/view-configs";
+import type { AlertThreshold, PeriodValue, TeamKpi, TeamMember } from "@/types/insight";
 
 function median(values: number[]): number | null {
   const nums = values.filter((v) => Number.isFinite(v));
@@ -12,20 +14,26 @@ function median(values: number[]): number | null {
     : sorted[mid]!;
 }
 
+/**
+ * Build the period-scoped overview KPIs ("At Risk", "Focus ≥60%", etc.)
+ * from the loaded team members. Pure on inputs — exported so call sites
+ * that already hold the resolved alert thresholds (tests, future
+ * imperative call sites) can derive KPIs without spinning up a hook.
+ */
 export function deriveTeamKpis(
   members: TeamMember[],
-  period: PeriodValue,
+  templates: TeamKpi[],
+  alertThresholds: AlertThreshold[],
 ): TeamKpi[] {
   if (members.length === 0) return [];
 
   const total = members.length;
   const focusTrigger =
-    TEAM_VIEW_CONFIG.alert_thresholds.find(
-      (t) => t.metric_key === "focus_time_pct",
-    )?.trigger ?? 60;
+    alertThresholds.find((t) => t.metric_key === "focus_time_pct")?.trigger ??
+    60;
 
   const atRisk = members.filter((m) =>
-    TEAM_VIEW_CONFIG.alert_thresholds.some((t) => {
+    alertThresholds.some((t) => {
       const v = m[t.metric_key as keyof TeamMember];
       return typeof v === "number" && Number.isFinite(v) && v < t.trigger;
     }),
@@ -51,7 +59,6 @@ export function deriveTeamKpis(
   const focusStatus = teamHealthStatus(belowFocus, total);
   const noAiStatus = teamHealthStatus(noAiCount, total);
 
-  const templates = TEAM_KPIS_BY_PERIOD[period] ?? TEAM_KPIS_BY_PERIOD.month;
   return templates.map((k) => {
     if (k.metric_key === "at_risk_count")
       return { ...k, value: String(atRisk), status: atRiskStatus };
@@ -76,4 +83,22 @@ export function deriveTeamKpis(
     }
     return k;
   });
+}
+
+/**
+ * React hook variant — wires the catalog-resolved team view config and
+ * the period-scoped templates into `deriveTeamKpis`. This is the entry
+ * point screens should call; the pure `deriveTeamKpis` stays exported
+ * for unit tests and direct callers.
+ */
+export function useTeamKpis(
+  members: TeamMember[],
+  period: PeriodValue,
+): TeamKpi[] {
+  const { alert_thresholds } = useTeamViewConfig();
+  const templates = useTeamKpisByPeriod(period);
+  return useMemo(
+    () => deriveTeamKpis(members, templates, alert_thresholds),
+    [members, templates, alert_thresholds],
+  );
 }

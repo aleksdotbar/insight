@@ -454,11 +454,11 @@ export function transformBulletMetrics(
       // consumers can show the "Metric source unavailable" indicator.
       status: isSchemaError
         ? 'unavailable'
-        : evaluateStatus(r.value, {
-            good: goodThr,
-            warn: warnThr,
-            higher_is_better: higherIsBetter,
-          }),
+        : evaluateStatus(
+            r.value,
+            { good: goodThr, warn: warnThr },
+            higherIsBetter,
+          ),
       drill_id: drillId,
       ...(isSchemaError ? { schema_error: true } : {}),
     });
