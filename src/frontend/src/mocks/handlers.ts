@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 
+import { buildMockCatalogResponse } from "./catalog-factory";
 import {
   mockCrmBulletSection,
   mockCrmFlowSeries,
@@ -281,6 +282,18 @@ export const handlers = [
       if (!handler) return HttpResponse.json(wrap([]));
       const body = await request.json().catch(() => ({}));
       return HttpResponse.json(handler(body));
+    },
+  ),
+  http.post(
+    "/api/analytics/v1/catalog/get_metrics",
+    ({ request }) => {
+      // Dev mode uses the X-Tenant-ID header injected by fetchWithAuth so
+      // the mocked response echoes a tenant_id consistent with the
+      // caller's session. Falling back to a synthetic id keeps anonymous
+      // smoke tests from 401'ing in the mock layer.
+      const tenantId =
+        request.headers.get("X-Tenant-ID") ?? "00000000-0000-0000-0000-000000000001";
+      return HttpResponse.json(buildMockCatalogResponse(tenantId));
     },
   ),
   http.get(
