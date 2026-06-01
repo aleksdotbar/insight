@@ -3,6 +3,7 @@ import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { getPerson } from "@/api/identity-client";
 import { OidcManager, authStore, getViewerEmail } from "@/auth";
 import { AppSidebar } from "@/components/app-sidebar";
+import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { MockBanner } from "@/components/mock-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { queryClient } from "@/query-client";
@@ -37,6 +38,7 @@ function RootLayout() {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset className="min-w-0 overflow-x-clip">
+        <ImpersonationBanner />
         <MockBanner />
         <Outlet />
       </SidebarInset>
