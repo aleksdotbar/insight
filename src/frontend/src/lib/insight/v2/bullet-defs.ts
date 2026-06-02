@@ -297,6 +297,33 @@ export const BULLET_DEFS: BulletDef[] = [
     drill_id: "",
     higher_is_better: true,
   },
+  {
+    metric_key: "cc_cost",
+    section: "ai_adoption",
+    label: "Claude Code cost",
+    description: "Per-user cost from Claude Team plan in cents",
+    unit: "¢",
+    drill_id: "",
+    higher_is_better: false,
+  },
+  {
+    metric_key: "prs_with_cc",
+    section: "ai_adoption",
+    label: "PRs with Claude Code",
+    description: "PRs where Claude Code was active (requires Anthropic GitHub-app)",
+    unit: "PRs",
+    drill_id: "",
+    higher_is_better: true,
+  },
+  {
+    metric_key: "prs_total",
+    section: "ai_adoption",
+    label: "Total PRs (CC window)",
+    description: "Total PRs in measurement window — denominator for CC attribution rate",
+    unit: "PRs",
+    drill_id: "",
+    higher_is_better: true,
+  },
 
   {
     metric_key: "slack_messages_sent",

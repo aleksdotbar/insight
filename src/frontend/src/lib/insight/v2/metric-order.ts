@@ -46,6 +46,9 @@ export const METRIC_ORDER_BY_SECTION: Record<string, string[]> = {
     "cursor_lines",
     "cc_lines",
     "team_ai_loc",
+    "cc_cost",
+    "prs_with_cc",
+    "prs_total",
   ],
 };
 
