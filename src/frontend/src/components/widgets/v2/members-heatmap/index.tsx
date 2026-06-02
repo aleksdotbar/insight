@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 
+import { useCatalog } from "@/api/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,8 +10,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useSettings } from "@/hooks/use-settings";
-import { BULLET_DEFS_BY_KEY } from "@/lib/insight/v2/bullet-defs";
-import { peerStatusForRow } from "@/lib/insight/v2/peer-status";
+import {
+  bulletCatalogKey,
+  peerStatusForRow,
+  type CatalogByKey,
+} from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_CELL,
@@ -72,6 +76,15 @@ interface BulletColumn extends BaseColumn {
 
 type ColumnDef = TeamRowColumn | BulletColumn;
 
+// FE-controlled column layout: `label`/`short`/`unit`/`mobile`/`source`
+// are display concerns the wire response doesn't carry, and the
+// `team_row` source columns reference `TeamMember` wire fields with no
+// matching catalog row (e.g. `tasks_closed` from `RawTeamMemberRow`).
+// `higher_is_better` is therefore left compile-in here even though
+// bullet-source widgets (#80, wave 3) source it from `useCatalog`.
+// A future wave can fold the bullet-source `higher_is_better` entries
+// into a catalog lookup once team_row policy thresholds also move to
+// the wire.
 const COLUMNS: ColumnDef[] = [
   {
     key: "tasks_closed",
@@ -215,6 +228,7 @@ export function MembersHeatmap({
   onMemberClick,
 }: MembersHeatmapProps) {
   const { focusMode } = useSettings();
+  const { byMetricKey } = useCatalog();
   const [sortKey, setSortKey] = useState<SortKey>("issues");
   const [sheetMember, setSheetMember] = useState<TeamMember | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -239,8 +253,19 @@ export function MembersHeatmap({
           ? valueForColumn(col, prevMember, prevBullets)
           : null;
         const stats = statsByColumn.get(col.key);
+        // Bullet-source columns honor the wave-1 schema_status='error'
+        // contract: a broken-catalog bullet's heatmap cell renders the
+        // value but suppresses peer coloring (status → 'neutral'). The
+        // belowCount/topCount chips therefore don't count broken
+        // metrics, matching the same rule applied to the bullet-derived
+        // attention surfaces above.
+        const sourceBullet =
+          col.source === "bullet"
+            ? (bullets ?? []).find((b) => b.metric_key === col.metricKey)
+            : null;
+        const colSchemaError = sourceBullet?.schema_error === true;
         const status: PeerStatusWithNeutral =
-          value !== null && stats
+          !colSchemaError && value !== null && stats
             ? peerStatusVsQuartiles(value, stats, col.higher_is_better)
             : "neutral";
         return {
@@ -258,10 +283,12 @@ export function MembersHeatmap({
           .map((b) => {
             const value = Number(b.value);
             const stats = cohortStats?.get(b.metric_key);
-            const def = BULLET_DEFS_BY_KEY[b.metric_key];
-            const higherIsBetter = def?.higher_is_better ?? true;
+            const catalogRow = byMetricKey(bulletCatalogKey(b));
+            const higherIsBetter = catalogRow?.higher_is_better ?? true;
             let gap = 0;
             if (
+              !b.schema_error &&
+              catalogRow &&
               stats &&
               Number.isFinite(value) &&
               Math.abs(stats.p50) > 1e-9
@@ -271,7 +298,7 @@ export function MembersHeatmap({
             }
             return {
               bullet: b,
-              ps: peerStatusForRow(b, cohortStats),
+              ps: peerStatusForRow(b, cohortStats, byMetricKey),
               gap,
             };
           })
@@ -287,7 +314,7 @@ export function MembersHeatmap({
       };
     });
     return built;
-  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, statsByColumn, cohortStats]);
+  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, statsByColumn, cohortStats, byMetricKey]);
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -394,6 +421,7 @@ export function MembersHeatmap({
                 row={row}
                 focusMode={focusMode}
                 cohortStats={cohortStats}
+                byMetricKey={byMetricKey}
                 expanded={expandedId === row.member.person_id}
                 onToggleExpand={() =>
                   setExpandedId((cur) =>
@@ -518,6 +546,7 @@ function MemberRow({
   row,
   focusMode,
   cohortStats,
+  byMetricKey,
   expanded,
   onToggleExpand,
   onOpenSheet,
@@ -525,6 +554,7 @@ function MemberRow({
   row: RowShape;
   focusMode: FocusMode;
   cohortStats?: Map<string, PeerStats>;
+  byMetricKey: CatalogByKey;
   expanded: boolean;
   onToggleExpand: () => void;
   onOpenSheet: () => void;
@@ -601,6 +631,7 @@ function MemberRow({
           columnCount={cells.length}
           focusMode={focusMode}
           cohortStats={cohortStats}
+          byMetricKey={byMetricKey}
         />
       ) : null}
     </>
@@ -612,11 +643,13 @@ function ExpandedBullets({
   columnCount,
   focusMode,
   cohortStats,
+  byMetricKey,
 }: {
   bullets: BulletMetric[];
   columnCount: number;
   focusMode: FocusMode;
   cohortStats?: Map<string, PeerStats>;
+  byMetricKey: CatalogByKey;
 }) {
   const RANK: Record<PeerStatusWithNeutral, number> = {
     bottom: 0,
@@ -626,7 +659,7 @@ function ExpandedBullets({
   };
   const annotated = bullets.map((b) => ({
     bullet: b,
-    status: peerStatusForRow(b, cohortStats),
+    status: peerStatusForRow(b, cohortStats, byMetricKey),
   }));
   annotated.sort((a, b) => RANK[a.status] - RANK[b.status]);
   return (

@@ -1,9 +1,9 @@
 import { Sparkles } from "lucide-react";
 
+import { useCatalog } from "@/api/use-catalog";
 import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
 import { Card } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
-import { IC_KPI_DEFS_BY_KEY } from "@/lib/insight/v2/kpi-defs";
 import {
   STATUS_BG,
   STATUS_TEXT,
@@ -38,23 +38,30 @@ function peerStatusVsMedian(
 
 export function KpiTile({ kpi, median, onClick }: KpiTileProps) {
   const { focusMode } = useSettings();
-  const def = IC_KPI_DEFS_BY_KEY[kpi.metric_key];
+  const { byMetricKey } = useCatalog();
+  // Wire key is `ic_kpis.<bare>`; `kpi.metric_key` here is the bare form
+  // because `transformIcKpis` strips the `ic_kpis.` prefix.
+  const catalogRow = byMetricKey(`ic_kpis.${kpi.metric_key}`);
+  const isSchemaError = catalogRow?.schema_status === "error";
   const hasValue = kpi.raw_value !== null;
   const hasMedian =
     median != null && Number.isFinite(median.p50) && median.p50 > 0;
 
+  // schema_status='error' rows: render the tile label/value but suppress
+  // peer coloring per the wave-1 DESIGN §3.3 contract.
   const rawStatus: Status =
-    def && hasValue && hasMedian
+    !isSchemaError && catalogRow && hasValue && hasMedian
       ? peerStatusVsMedian(
           kpi.raw_value as number,
           median.p50,
-          def.higher_is_better,
+          catalogRow.higher_is_better,
         )
       : "neutral";
   const status = applyFocusStatus(rawStatus, focusMode);
   const value = kpi.value ?? "—";
 
-  const showMedian = hasMedian && hasValue && def !== undefined;
+  const showMedian =
+    hasMedian && hasValue && catalogRow !== undefined && !isSchemaError;
   const fillPct = showMedian
     ? Math.max(0, Math.min(1, (kpi.raw_value as number) / median.p50))
     : 0;
@@ -84,7 +91,7 @@ export function KpiTile({ kpi, median, onClick }: KpiTileProps) {
         <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {kpi.label}
         </span>
-        <MetricSublabel description={def?.description} />
+        <MetricSublabel description={catalogRow?.description} />
       </div>
       <div className="flex items-baseline gap-1">
         <span

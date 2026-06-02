@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
+import { useCatalog } from "@/api/use-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSettings } from "@/hooks/use-settings";
-import { BULLET_DEFS_BY_KEY } from "@/lib/insight/v2/bullet-defs";
+import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_TEXT,
@@ -42,17 +43,23 @@ export function IcNeedsAttention({
   onSectionClick,
 }: IcNeedsAttentionProps) {
   const { focusMode } = useSettings();
+  const { byMetricKey } = useCatalog();
   const [showAll, setShowAll] = useState(false);
 
   const attentionAll: AttentionItem[] = [];
   for (const s of sections) {
     for (const r of s.rows) {
+      // schema_status='error' rows never trigger the attention surface —
+      // we can't compare a broken metric to peers. Missing-id rows likewise
+      // collapse out (no catalog row → no higher_is_better signal).
+      if (r.schema_error) continue;
       const value = Number(r.value);
       if (!Number.isFinite(value)) continue;
       const stats = cohortStats?.get(r.metric_key);
       if (!stats) continue;
-      const def = BULLET_DEFS_BY_KEY[r.metric_key];
-      const higherIsBetter = def?.higher_is_better ?? true;
+      const m = byMetricKey(bulletCatalogKey(r));
+      if (!m) continue;
+      const higherIsBetter = m.higher_is_better;
       const ps = peerStatusVsQuartiles(value, stats, higherIsBetter);
       if (ps !== "bottom") continue;
       const median = stats.p50;

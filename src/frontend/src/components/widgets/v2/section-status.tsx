@@ -1,6 +1,10 @@
+import { useCatalog } from "@/api/use-catalog";
 import { Card } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
-import { peerStatusForRow } from "@/lib/insight/v2/peer-status";
+import {
+  peerStatusForRow,
+  type CatalogByKey,
+} from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_FILL,
@@ -28,12 +32,13 @@ interface SectionAggregate<T extends string> {
 function aggregate<T extends string>(
   section: SectionStatusItem<T>,
   cohortStats: Map<string, PeerStats> | undefined,
+  byMetricKey: CatalogByKey,
 ): SectionAggregate<T> {
   let below = 0;
   let top = 0;
   let evaluated = 0;
   for (const r of section.rows) {
-    const ps = peerStatusForRow(r, cohortStats);
+    const ps = peerStatusForRow(r, cohortStats, byMetricKey);
     if (ps === "neutral") continue;
     evaluated += 1;
     if (ps === "bottom") below += 1;
@@ -71,7 +76,10 @@ export function SectionStatus<T extends string>({
   onSectionClick,
 }: SectionStatusProps<T>) {
   const { focusMode } = useSettings();
-  const aggregates = sections.map((s) => aggregate(s, cohortStats));
+  const { byMetricKey } = useCatalog();
+  const aggregates = sections.map((s) =>
+    aggregate(s, cohortStats, byMetricKey),
+  );
   const gridCols =
     cols === "five"
       ? "grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5"

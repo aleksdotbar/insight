@@ -1,8 +1,9 @@
 import { AlertTriangle } from "lucide-react";
 
+import { useCatalog } from "@/api/use-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSettings } from "@/hooks/use-settings";
-import { BULLET_DEFS_BY_KEY } from "@/lib/insight/v2/bullet-defs";
+import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_TEXT,
@@ -28,18 +29,26 @@ export function TeamMembersAttention({
   onMemberClick,
 }: TeamMembersAttentionProps) {
   const { focusMode } = useSettings();
+  const { byMetricKey } = useCatalog();
 
   const attention = members
     .map((m) => {
       const bullets = bulletsByPerson?.get(m.person_id.toLowerCase()) ?? [];
       let belowCount = 0;
       for (const b of bullets) {
+        // schema_error / missing-id rows can't contribute to the "below
+        // peers" count — they collapse to neutral per DESIGN §3.3.
+        if (b.schema_error) continue;
         const stats = cohortStats?.get(b.metric_key);
         const value = Number(b.value);
         if (!stats || !Number.isFinite(value)) continue;
-        const def = BULLET_DEFS_BY_KEY[b.metric_key];
-        const higherIsBetter = def?.higher_is_better ?? true;
-        const ps = peerStatusVsQuartiles(value, stats, higherIsBetter);
+        const catalogRow = byMetricKey(bulletCatalogKey(b));
+        if (!catalogRow) continue;
+        const ps = peerStatusVsQuartiles(
+          value,
+          stats,
+          catalogRow.higher_is_better,
+        );
         if (ps === "bottom") belowCount += 1;
       }
       return { member: m, belowCount };

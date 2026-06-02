@@ -38,7 +38,7 @@
  * compile-in defaults.
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -252,12 +252,22 @@ export function useCatalog(args: CatalogRequest = {}): UseCatalogResult {
     return { byId, byKey };
   }, [data]);
 
+  // Keep the lookup closures reference-stable across renders so consumers
+  // can include them in useMemo / useEffect dep arrays without
+  // re-running every render. The closures key off `indexes`, which is
+  // itself memoized on the response identity.
+  const byId = useCallback((id: string) => indexes.byId.get(id), [indexes]);
+  const byMetricKey = useCallback(
+    (key: string) => indexes.byKey.get(key),
+    [indexes],
+  );
+
   return {
     data,
     isLoading: query.isLoading,
     isError: query.isError,
     isFallback,
-    byId: (id) => indexes.byId.get(id),
-    byMetricKey: (key) => indexes.byKey.get(key),
+    byId,
+    byMetricKey,
   };
 }
