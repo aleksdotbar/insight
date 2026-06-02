@@ -60,8 +60,13 @@ export function useIcKpis(
 ): UseQueryResult<IcKpi[]> {
   const prevRange = previousPeriodRange(range, period);
   const { data: catalog } = useCatalog();
+  // Catalog identity in the query key so a late-arriving catalog
+  // hydration re-runs the transform — the queryFn closes over `catalog`
+  // and would otherwise cache an empty result built against an
+  // undefined catalog.
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
-    queryKey: ["ic", "kpis", personId, period, range.from, range.to],
+    queryKey: ["ic", "kpis", personId, period, range.from, range.to, catalogKey],
     queryFn: async () => {
       const [cur, prev] = await Promise.all([
         queryMetric<RawIcAggregateRow>(METRIC_REGISTRY.IC_KPIS, range, {
@@ -99,6 +104,7 @@ export function useIcBulletSection(
 ): UseQueryResult<BulletMetric[]> {
   const metricId = BULLET_SECTIONS[sectionId];
   const { data: catalog } = useCatalog();
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
     queryKey: [
       "ic",
@@ -108,6 +114,7 @@ export function useIcBulletSection(
       period,
       range.from,
       range.to,
+      catalogKey,
     ],
     queryFn: async () => {
       const resp = await queryMetric<RawBulletAggregateRow>(metricId, range, {
@@ -238,6 +245,7 @@ export function useIcDashboardData(
   const prevRange = previousPeriodRange(range, period);
   const filter = personScope(personId);
   const { data: catalog } = useCatalog();
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
     queryKey: [
       "ic",
@@ -246,11 +254,12 @@ export function useIcDashboardData(
       period,
       range.from,
       range.to,
+      catalogKey,
     ],
     enabled: Boolean(personId),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async (): Promise<IcDashboardData> => {
-      const cat: CatalogResponse = catalog;
+      const cat: CatalogResponse | undefined = catalog;
       const [current, prior] = await Promise.all([
         queryBatchWithRange<
           | RawIcAggregateRow

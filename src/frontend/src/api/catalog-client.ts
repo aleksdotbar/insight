@@ -15,10 +15,10 @@
  *   }
  *
  * `id` (UUIDv7) is the stable lookup contract — consumers MUST key off `id`.
- * `metric_key` is the FE-bridge identifier (ADR-002) used during the
- * transitional release to align compile-in `BULLET_DEFS` constants to wire
- * rows; it is parsed as optional here so a deployed environment that
- * predates ADR-002 still hydrates cleanly.
+ * `metric_key` is the FE-bridge identifier (ADR-002) used while consumers
+ * still refer to metrics by their bare wire name; it is parsed as optional
+ * here so a deployed environment that predates ADR-002 still hydrates
+ * cleanly.
  */
 
 import { fetchWithAuth } from '@/api/fetch-with-auth';

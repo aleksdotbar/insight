@@ -40,7 +40,7 @@ export function useCatalogLinkMap(): UseCatalogLinkMapResult {
   return useMemo(() => {
     const linksByQuery = new Map<string, readonly string[]>();
     const queriesByCatalogId = new Map<string, string[]>();
-    const links = data.links ?? [];
+    const links = data?.links ?? [];
     for (const link of links) {
       linksByQuery.set(link.query_id, link.catalog_metric_ids);
       for (const catalogId of link.catalog_metric_ids) {

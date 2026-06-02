@@ -5,8 +5,8 @@ import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import { type DateRange, toISODate } from "@/api/period-to-date-range";
 import {
-  CRM_BULLET_DEFS_ACTIVITY,
-  CRM_BULLET_DEFS_QUALITY,
+  CRM_ACTIVITY_BULLETS,
+  CRM_QUALITY_BULLETS,
   transformCrmFlow,
   transformCrmBullets,
   transformCrmKpis,
@@ -113,7 +113,7 @@ export function useSalesBulletSection(
       ? METRIC_REGISTRY.CRM_BULLET_QUALITY
       : METRIC_REGISTRY.CRM_BULLET_ACTIVITY;
   const defs =
-    kind === "quality" ? CRM_BULLET_DEFS_QUALITY : CRM_BULLET_DEFS_ACTIVITY;
+    kind === "quality" ? CRM_QUALITY_BULLETS : CRM_ACTIVITY_BULLETS;
   const sectionId =
     kind === "quality" ? "velocity_quality" : "outreach_activity";
   return useQuery({
@@ -195,7 +195,7 @@ export function useSalesDashboardQueries(
             resp.items,
             period,
             "velocity_quality",
-            CRM_BULLET_DEFS_QUALITY,
+            CRM_QUALITY_BULLETS,
           );
         },
       },
@@ -211,7 +211,7 @@ export function useSalesDashboardQueries(
             resp.items,
             period,
             "outreach_activity",
-            CRM_BULLET_DEFS_ACTIVITY,
+            CRM_ACTIVITY_BULLETS,
           );
         },
       },

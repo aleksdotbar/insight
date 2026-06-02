@@ -25,7 +25,10 @@ import type { IcSectionId } from "./sections";
 export const IC_KPI_SECTION_BY_KEY: ReadonlyMap<string, IcSectionId> =
   new Map<string, IcSectionId>([
     ["bugs_fixed", "code_quality"],
-    ["ai_loc_share", "ai_adoption"],
+    // Wire key is `ic_kpis.ai_loc_share_pct` (the seed migration carries the
+    // `_pct` suffix). #81 parity capture flagged this rename; the entry
+    // here matches the bare metric_key post-`ic_kpis.` strip.
+    ["ai_loc_share_pct", "ai_adoption"],
     ["focus_time_pct", "collaboration"],
     ["tasks_closed", "task_delivery"],
     ["prs_merged", "git_output"],

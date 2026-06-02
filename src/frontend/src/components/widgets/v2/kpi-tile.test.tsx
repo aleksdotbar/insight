@@ -72,13 +72,15 @@ describe("<KpiTile>", () => {
     renderWithCatalogClient(
       <KpiTile kpi={makeKpi()} median={{ p50: 6, n: 4 }} />,
     );
-    await waitFor(() => {
-      expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
-    });
-    expect(screen.getByText("12")).toBeInTheDocument();
     // `vs median 6 · 4 peers` proves the catalog row drove the median
-    // bar render (showMedian gates on `catalogRow !== undefined`).
-    expect(screen.getByText(/vs median 6/)).toBeInTheDocument();
+    // bar render (showMedian gates on `catalogRow !== undefined`). Wait
+    // for it directly — the label renders synchronously from the prop,
+    // but the median bar only appears once the catalog query resolves.
+    await waitFor(() => {
+      expect(screen.getByText(/vs median 6/)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
   });
 
   it("suppresses the median bar for schema_status='error'", async () => {

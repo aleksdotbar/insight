@@ -1,15 +1,15 @@
 /**
- * Catalog-driven transform tests (Refs #78).
+ * Catalog-driven transform tests (Refs #78, #82).
  *
- * Pins the wave-1 contract: `transformBulletMetrics` / `transformIcKpis`
- * consume the hydrated Metric Catalog instead of compile-in
- * `BULLET_DEFS` / `IC_KPI_DEFS`. See DESIGN §3.3 "Catalog Consumer
- * Contract":
+ * Pins the contract: `transformBulletMetrics` / `transformIcKpis` consume
+ * the hydrated Metric Catalog and have no compile-in fallback. See
+ * DESIGN §3.3 "Catalog Consumer Contract":
  *  - `schema_status='error'` → suppress threshold-based coloring
  *    (`status='unavailable'`) and flag the row with `schema_error: true`.
  *  - `schema_status='unchecked'` → render identically to `ok`.
  *  - Missing-id (catalog row absent) → silently omit.
- *  - Honest-zero rows use the catalog's label, not compile-in.
+ *  - Honest-zero rows use the catalog's label.
+ *  - Catalog === undefined → empty array (consumers render skeletons).
  */
 
 import { describe, expect, it } from "vitest";
@@ -143,9 +143,9 @@ describe("transformBulletMetrics", () => {
     expect(out[0]!.metric_key).toBe("tasks_completed");
   });
 
-  it("synthesizes honest-zero rows using the catalog's label, not compile-in", () => {
-    // Override the label so we can confirm the transform doesn't fall back
-    // to BULLET_DEFS for the label.
+  it("synthesizes honest-zero rows using the catalog's label", () => {
+    // Override the label so we can confirm the transform sources from the
+    // catalog row (no compile-in fallback exists post-#82).
     const catalog = catalogWith([
       bulletCatalogRow("tasks_completed", { label: "Catalog Override Label" }),
     ]);
@@ -252,9 +252,9 @@ describe("transformIcKpis", () => {
     expect(byKey.get("bugs_fixed")?.raw_value).toBe(2);
   });
 
-  it("omits catalog ic_kpis rows whose bare key has no FE raw_field mapping", () => {
-    // `unknown_metric` is not in IC_KPI_DEFS → transform can't source its
-    // raw value and silently omits.
+  it("omits catalog ic_kpis rows whose bare key has no raw aggregate column", () => {
+    // `unknown_metric` is not a column on RawIcAggregateRow → transform
+    // can't source its raw value and silently omits.
     const catalog = catalogWith([
       icKpiRow("tasks_closed"),
       icKpiRow("unknown_metric"),
@@ -271,5 +271,26 @@ describe("transformIcKpis", () => {
   it("returns [] when the current raw aggregate row is null", () => {
     const catalog = catalogWith([icKpiRow("tasks_closed")]);
     expect(transformIcKpis(null, null, "week", catalog)).toEqual([]);
+  });
+
+  it("returns [] when catalog is undefined (no labels → skeletons)", () => {
+    expect(
+      transformIcKpis(rawIcAggregate({ tasks_closed: 8 }), null, "week", undefined),
+    ).toEqual([]);
+  });
+});
+
+describe("transformBulletMetrics undefined-catalog handling", () => {
+  it("returns [] when catalog is undefined", () => {
+    expect(
+      transformBulletMetrics(
+        [rawBullet("tasks_completed", { value: 7 })],
+        "task_delivery",
+        "week",
+        undefined,
+        "ic",
+        undefined,
+      ),
+    ).toEqual([]);
   });
 });

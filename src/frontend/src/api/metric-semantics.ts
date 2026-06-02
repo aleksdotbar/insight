@@ -1,11 +1,11 @@
 /**
  * Pure status / health helpers (Refs #79).
  *
- * Per-metric threshold values now flow through `useCatalog()` (see
- * `view-configs.ts`); this module no longer owns the metric → threshold
- * table. The compile-in defaults previously held here moved to
- * `VIEW_CONFIG_DEFS` in `threshold-config.ts` where they survive as the
- * fallback source for the catalog hook.
+ * Per-metric threshold values flow through `useCatalog()` (see
+ * `view-configs.ts`); this module owns the rendering rule only. Compile-in
+ * defaults were removed in #82 — when the catalog is unavailable the
+ * surfaces render skeletons / error states instead of falling back to a
+ * synthesized threshold.
  */
 
 // Fractions of headcount — chip status scales with team size instead of

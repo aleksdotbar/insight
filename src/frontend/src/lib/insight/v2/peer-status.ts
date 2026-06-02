@@ -2,7 +2,7 @@
  * Peer-status helpers, catalog-driven (Refs #80).
  *
  * Wave-3 swap: `higher_is_better` for peer comparisons comes from the
- * catalog row, not a compile-in `BULLET_DEFS_BY_KEY[..]` lookup. Helpers
+ * catalog row, not a compile-in lookup table. Helpers
  * take `byMetricKey` (the `useCatalog().byMetricKey` index function) so
  * downstream callers pay one shared lookup per render instead of
  * rebuilding an index. The wire key is built from `row.section +

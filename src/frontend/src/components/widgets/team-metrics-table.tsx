@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { BULLET_DEFS } from "@/api/threshold-config";
+import { prefixForBulletSection } from "@/api/catalog-client";
+import { useCatalog } from "@/api/use-catalog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -23,13 +24,6 @@ interface MetricMeta {
   label: string;
   unit: string;
 }
-
-const METRIC_META: Record<string, MetricMeta> = BULLET_DEFS.reduce<
-  Record<string, MetricMeta>
->((acc, d) => {
-  if (!acc[d.metric_key]) acc[d.metric_key] = { label: d.label, unit: d.unit };
-  return acc;
-}, {});
 
 const META_FALLBACK = (metricKey: string): MetricMeta => ({
   label: metricKey,
@@ -61,7 +55,12 @@ interface Pivot {
   cells: Map<string, Map<string, number>>;
 }
 
-function buildPivot(entries: TeamMetricsEntry[]): Pivot {
+type MetaLookup = (sectionId: TeamMetricsSectionId, bareKey: string) => MetricMeta;
+
+function buildPivot(
+  entries: TeamMetricsEntry[],
+  lookupMeta: MetaLookup,
+): Pivot {
   const cells = new Map<string, Map<string, number>>();
   const seen = new Map<TeamMetricsSectionId, Set<string>>();
 
@@ -91,11 +90,11 @@ function buildPivot(entries: TeamMetricsEntry[]): Pivot {
     const keys = seen.get(sectionId);
     if (!keys || keys.size === 0) continue;
     const sectionCols = Array.from(keys)
-      .sort((a, b) => {
-        const la = (METRIC_META[a] ?? META_FALLBACK(a)).label;
-        const lb = (METRIC_META[b] ?? META_FALLBACK(b)).label;
-        return la.localeCompare(lb);
-      })
+      .sort((a, b) =>
+        lookupMeta(sectionId, a).label.localeCompare(
+          lookupMeta(sectionId, b).label,
+        ),
+      )
       .map((metricKey) => ({ sectionId, metricKey }));
     bySection.set(sectionId, sectionCols);
     columns.push(...sectionCols);
@@ -110,8 +109,7 @@ function formatValue(v: number | undefined): string {
   return Math.abs(rounded) >= 1000 ? rounded.toLocaleString() : String(rounded);
 }
 
-function formatColumnHeader(metricKey: string): string {
-  const meta = METRIC_META[metricKey] ?? META_FALLBACK(metricKey);
+function formatColumnHeader(meta: MetricMeta): string {
   if (!meta.unit) return meta.label;
   return `${meta.label} (${meta.unit})`;
 }
@@ -130,7 +128,19 @@ export function TeamMetricsTable({
   isPending,
 }: TeamMetricsTableProps) {
   const { t } = useTranslation();
-  const pivot = useMemo(() => buildPivot(entries), [entries]);
+  const { byMetricKey } = useCatalog();
+  const lookupMeta = useMemo<MetaLookup>(
+    () => (sectionId, bareKey) => {
+      const m = byMetricKey(`${prefixForBulletSection(sectionId)}.${bareKey}`);
+      if (!m) return META_FALLBACK(bareKey);
+      return { label: m.label, unit: m.unit ?? "" };
+    },
+    [byMetricKey],
+  );
+  const pivot = useMemo(
+    () => buildPivot(entries, lookupMeta),
+    [entries, lookupMeta],
+  );
 
   if (isPending && pivot.columns.length === 0) {
     const skeletonRows = Math.min(6, Math.max(1, members.length));
@@ -218,7 +228,7 @@ export function TeamMetricsTable({
                   isSectionStart && "border-l border-border"
                 )}
               >
-                {formatColumnHeader(col.metricKey)}
+                {formatColumnHeader(lookupMeta(col.sectionId, col.metricKey))}
               </TableHead>
             );
           })}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { filterBulletsByLayoutGroup } from "@/api/threshold-config";
+import { filterBulletsByLayoutGroup } from "@/lib/insight/bullet-layout-groups";
 import { IcViewToggle } from "@/components/ic-view-toggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { CollapsibleSection } from "@/components/widgets/collapsible-section";

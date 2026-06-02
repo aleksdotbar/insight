@@ -9,7 +9,8 @@
  * - AC #2 — lookups key by `id` (UUIDv7) → `byId` returns the right row.
  * - AC #3 — `schema_status='error'` is observable on the wire response → tests confirm presence + indicator hook.
  * - AC #4 — missing-id degrades to undefined (not an error).
- * - AC #5 — fallback to local consts on API failure (isFallback flag flips).
+ * - AC #5 — API failure surfaces as `isError=true` with `data=undefined`
+ *   (post-#82: no compile-in fallback — consumers render skeletons / error states).
  * - AC #8 cache-layer tests — TTL refresh + tenant-switch invalidation + Layer-2 invariance.
  */
 
@@ -116,7 +117,7 @@ describe("useCatalog", () => {
     expect(result.current.byId("id-B")).toBeUndefined();
   });
 
-  it("falls back to compile-in BULLET_DEFS on API failure (AC #5, PRD §12)", async () => {
+  it("surfaces isError on API failure with data=undefined (AC #5, post-#82)", async () => {
     fetchCatalog.mockRejectedValue(
       new catalogClient.CatalogApiError(500, { type: "internal" }),
     );
@@ -124,23 +125,19 @@ describe("useCatalog", () => {
     const { result } = renderHook(() => useCatalog(), { wrapper });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.isFallback).toBe(true);
-    // Fallback rows are derived from the local consts and exposed via
-    // `byMetricKey` using the wire-shape prefixed form (matches the
-    // backend seed migration; see `prefixForBulletKey` in use-catalog.ts).
-    const tasksCompleted = result.current.byMetricKey(
-      "task_delivery_bullet_rows.tasks_completed",
-    );
-    expect(tasksCompleted).toBeDefined();
-    expect(tasksCompleted?.schema_status).toBe("unchecked");
-    expect(tasksCompleted?.thresholds.resolved_from).toBe("product-default");
+    // No compile-in fallback — `data` is undefined and consumers render
+    // skeletons / error states. Any lookup misses.
+    expect(result.current.data).toBeUndefined();
+    expect(
+      result.current.byMetricKey("task_delivery_bullet_rows.tasks_completed"),
+    ).toBeUndefined();
   });
 
-  it("treats a tenant-id mismatch in the cached payload as fallback (cross-tenant defense)", async () => {
+  it("treats a tenant-id mismatch in the cached payload as no data (cross-tenant defense)", async () => {
     // Simulate a stale cached payload from a previous tenant — the wire
     // response carries `tenant_id = 't-OTHER'` but the signed-in tenant
-    // is `t-1`. `useCatalog` MUST surface the fallback rather than paint
-    // the other tenant's data, even for one render.
+    // is `t-1`. `useCatalog` MUST treat the mismatch as no data rather
+    // than paint the other tenant's catalog, even for one render.
     fetchCatalog.mockResolvedValue({
       tenant_id: "t-OTHER",
       generated_at: "2026-06-01T00:00:00Z",
@@ -167,7 +164,7 @@ describe("useCatalog", () => {
     const { result } = renderHook(() => useCatalog(), { wrapper });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    expect(result.current.isFallback).toBe(true);
+    expect(result.current.data).toBeUndefined();
     // The cross-tenant payload's `id-OTHER` MUST NOT be reachable.
     expect(result.current.byId("id-OTHER")).toBeUndefined();
   });
