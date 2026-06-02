@@ -98,10 +98,11 @@ export function useCatalog(args: CatalogRequest = {}): UseCatalogResult {
     // gap so re-entry doesn't pay the round-trip when the data is still
     // fresh under the 5-min staleTime.
     gcTime: 30 * 60_000,
-    // No retry: a 4xx is deterministic; a 5xx during hydration surfaces
-    // as `isError` so consumers render their error state instead of
-    // burning retry budget on a backend that's down.
-    retry: 0,
+    // Inherit TanStack's default retry (one attempt with backoff). A
+    // transient 5xx during hydration is plausible enough that the
+    // single retry pays for itself; the prior `retry: 0` rule existed
+    // only while the compile-in fallback could mask a backend outage
+    // and is no longer load-bearing post-#82.
   });
 
   // Cross-tenant defense in depth: if the cached payload's
