@@ -1,417 +1,77 @@
-import type { IcSectionId } from "./sections";
+/**
+ * FE-only `description` strings for bullet metrics (Refs #80).
+ *
+ * Wave-3 of the catalog hydration (#66) moved every other piece of bullet
+ * metadata — `label`, `sublabel`, `unit`, `higher_is_better`, `thresholds`,
+ * `schema_status` — into the wire response surfaced by `useCatalog()`. The
+ * one field the catalog doesn't yet carry for bullets is `description`:
+ * the long-form explainer text shown under the metric label when the
+ * Explanations toggle is on. IC KPIs already source `description` from
+ * the catalog (see `mocks/catalog-factory.ts::buildKpiMetric`); bullets
+ * have no equivalent. When the backend grows a `description` field for
+ * bullet catalog rows, this map can fold into the wire.
+ *
+ * Lookup is by bare `metric_key` (e.g. `tasks_completed`) — the same
+ * shape `BulletMetric.metric_key` carries. Missing entries return
+ * `undefined`; consumers MUST tolerate that (`<MetricSublabel>` renders
+ * `null` when description is absent).
+ *
+ * Exposed as a `Map` (not a `Record`) so an attacker-controlled or
+ * malformed `metric_key` like `"__proto__"` / `"constructor"` /
+ * `"hasOwnProperty"` returns `undefined` instead of leaking
+ * `Object.prototype` members through bracket access — keeps render
+ * paths in `<MetricSublabel>` immune to "function rendered as React
+ * child" crashes if the backend ever ships an unsanitized key.
+ */
+export const BULLET_DESCRIPTION_BY_KEY: ReadonlyMap<string, string> = new Map<
+  string,
+  string
+>(Object.entries({
+  tasks_completed: "Closed tasks per developer",
+  task_dev_time: "Median time in development statuses",
+  task_reopen_rate: "Closed tasks reopened later",
+  due_date_compliance: "Tasks closed by their due date",
+  estimation_accuracy: "Estimate vs actual dev time",
+  bugs_to_task_ratio: "Bugs as a share of closed tasks",
+  mean_time_to_resolution: "Median issue lifetime, create to close",
+  flow_efficiency: "Dev time vs total lifetime",
+  pickup_time: "Created to first dev status",
 
-export interface BulletDef {
-  metric_key: string;
-  section: IcSectionId;
-  label: string;
-  description: string;
-  unit: string;
-  drill_id: string;
-  higher_is_better: boolean;
-  isMemberScale?: boolean;
-}
+  commits: "Distinct commits authored",
+  prs_created: "Pull requests authored",
+  prs_merged: "Authored PRs that merged",
+  clean_loc: "Lines added, excl. spec/config/generated",
+  pr_cycle_time_h: "Avg hours from PR open to merge",
+  pr_size: "Median lines changed per PR",
+  merge_rate: "PRs merged vs created",
+  lines_per_commit: "Average commit size",
+  commits_per_active_day: "Commits per committing day",
 
-export const BULLET_DEFS: BulletDef[] = [
-  {
-    metric_key: "tasks_completed",
-    section: "task_delivery",
-    label: "Tasks closed per developer",
-    description: "Closed tasks per developer",
-    unit: "tasks",
-    drill_id: "team-tasks",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "task_dev_time",
-    section: "task_delivery",
-    label: "Task development time",
-    description: "Median time in development statuses",
-    unit: "h",
-    drill_id: "team-dev-time",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "task_reopen_rate",
-    section: "task_delivery",
-    label: "Task reopen rate",
-    description: "Closed tasks reopened later",
-    unit: "%",
-    drill_id: "team-reopen",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "due_date_compliance",
-    section: "task_delivery",
-    label: "Due date compliance",
-    description: "Tasks closed by their due date",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "estimation_accuracy",
-    section: "task_delivery",
-    label: "Estimation accuracy",
-    description: "Estimate vs actual dev time",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "bugs_to_task_ratio",
-    section: "task_delivery",
-    label: "Bug share of closed tasks",
-    description: "Bugs as a share of closed tasks",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "mean_time_to_resolution",
-    section: "task_delivery",
-    label: "Mean time to resolution",
-    description: "Median issue lifetime, create to close",
-    unit: "d",
-    drill_id: "",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "flow_efficiency",
-    section: "task_delivery",
-    label: "Flow efficiency",
-    description: "Dev time vs total lifetime",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "pickup_time",
-    section: "task_delivery",
-    label: "Pickup time",
-    description: "Created to first dev status",
-    unit: "d",
-    drill_id: "",
-    higher_is_better: false,
-  },
+  prs_per_dev: "Merged PRs per developer",
+  build_success: "CI runs passed vs total",
+  pr_cycle_time: "Hours from PR open to merge",
+  bugs_fixed: "Bug-type issues closed",
 
-  {
-    metric_key: "commits",
-    section: "git_output",
-    label: "Commits authored",
-    description: "Distinct commits authored",
-    unit: "count",
-    drill_id: "commits",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "prs_created",
-    section: "git_output",
-    label: "Pull requests created",
-    description: "Pull requests authored",
-    unit: "count",
-    drill_id: "pull-requests",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "prs_merged",
-    section: "git_output",
-    label: "Pull requests merged",
-    description: "Authored PRs that merged",
-    unit: "count",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "clean_loc",
-    section: "git_output",
-    label: "Clean LOC",
-    description: "Lines added, excl. spec/config/generated",
-    unit: "count",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "pr_cycle_time_h",
-    section: "git_output",
-    label: "PR cycle time",
-    description: "Avg hours from PR open to merge",
-    unit: "h",
-    drill_id: "pull-requests",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "pr_size",
-    section: "git_output",
-    label: "PR size",
-    description: "Median lines changed per PR",
-    unit: "count",
-    drill_id: "",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "merge_rate",
-    section: "git_output",
-    label: "PR merge rate",
-    description: "PRs merged vs created",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "lines_per_commit",
-    section: "git_output",
-    label: "Lines per commit",
-    description: "Average commit size",
-    unit: "count",
-    drill_id: "",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "commits_per_active_day",
-    section: "git_output",
-    label: "Commits per active day",
-    description: "Commits per committing day",
-    unit: "count",
-    drill_id: "",
-    higher_is_better: true,
-  },
+  active_ai_members: "Members using any AI tool",
+  cursor_active: "Members using Cursor",
+  cc_active: "Members using Claude Code",
+  team_ai_loc: "Lines accepted across AI tools",
+  cursor_acceptance: "Cursor suggestions accepted vs shown",
+  cc_tool_acceptance: "Claude Code calls accepted vs proposed",
+  cursor_lines: "Lines accepted from Cursor",
+  cc_lines: "Lines accepted from Claude Code",
+  ai_loc_share2: "AI-assisted lines vs clean LOC",
+  cc_cost: "Per-user cost from Claude Team plan in cents",
+  prs_with_cc: "PRs where Claude Code was active (requires Anthropic GitHub-app)",
+  prs_total: "Total PRs in measurement window — denominator for CC attribution rate",
 
-  {
-    metric_key: "prs_per_dev",
-    section: "code_quality",
-    label: "PRs merged per developer",
-    description: "Merged PRs per developer",
-    unit: "",
-    drill_id: "team-prs",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "build_success",
-    section: "code_quality",
-    label: "Build success rate",
-    description: "CI runs passed vs total",
-    unit: "%",
-    drill_id: "team-build",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "pr_cycle_time",
-    section: "code_quality",
-    label: "Pull request cycle time",
-    description: "Hours from PR open to merge",
-    unit: "h",
-    drill_id: "team-pr-cycle",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "bugs_fixed",
-    section: "code_quality",
-    label: "Bugs fixed",
-    description: "Bug-type issues closed",
-    unit: "count",
-    drill_id: "team-bugs",
-    higher_is_better: true,
-  },
-
-  {
-    metric_key: "active_ai_members",
-    section: "ai_adoption",
-    label: "Active AI members",
-    description: "Members using any AI tool",
-    unit: "",
-    drill_id: "",
-    higher_is_better: true,
-    isMemberScale: true,
-  },
-  {
-    metric_key: "cursor_active",
-    section: "ai_adoption",
-    label: "Cursor — active members",
-    description: "Members using Cursor",
-    unit: "",
-    drill_id: "",
-    higher_is_better: true,
-    isMemberScale: true,
-  },
-  {
-    metric_key: "cc_active",
-    section: "ai_adoption",
-    label: "Claude Code — active members",
-    description: "Members using Claude Code",
-    unit: "",
-    drill_id: "",
-    higher_is_better: true,
-    isMemberScale: true,
-  },
-  {
-    metric_key: "team_ai_loc",
-    section: "ai_adoption",
-    label: "Team AI accepted lines",
-    description: "Lines accepted across AI tools",
-    unit: "lines",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "cursor_acceptance",
-    section: "ai_adoption",
-    label: "Cursor acceptance rate",
-    description: "Cursor suggestions accepted vs shown",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "cc_tool_acceptance",
-    section: "ai_adoption",
-    label: "Claude Code tool acceptance",
-    description: "Claude Code calls accepted vs proposed",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "cursor_lines",
-    section: "ai_adoption",
-    label: "Cursor accepted lines",
-    description: "Lines accepted from Cursor",
-    unit: "lines",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "cc_lines",
-    section: "ai_adoption",
-    label: "Claude Code accepted lines",
-    description: "Lines accepted from Claude Code",
-    unit: "lines",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "ai_loc_share2",
-    section: "ai_adoption",
-    label: "AI code acceptance",
-    description: "AI-assisted lines vs clean LOC",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "cc_cost",
-    section: "ai_adoption",
-    label: "Claude Code Cost",
-    description: "Per-user cost from Claude Team plan in cents",
-    unit: "¢",
-    drill_id: "",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "prs_with_cc",
-    section: "ai_adoption",
-    label: "PRs with Claude Code",
-    description: "PRs where Claude Code was active (requires Anthropic GitHub-app)",
-    unit: "PRs",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "prs_total",
-    section: "ai_adoption",
-    label: "Total PRs (CC window)",
-    description: "Total PRs in measurement window — denominator for CC attribution rate",
-    unit: "PRs",
-    drill_id: "",
-    higher_is_better: true,
-  },
-
-  {
-    metric_key: "slack_messages_sent",
-    section: "collaboration",
-    label: "Messages sent",
-    description: "Chat messages authored",
-    unit: "messages",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "slack_active_days",
-    section: "collaboration",
-    label: "Active days",
-    description: "Days with a chat message",
-    unit: "days",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "slack_dm_ratio",
-    section: "collaboration",
-    label: "DM ratio",
-    description: "Direct messages as a share of all",
-    unit: "%",
-    drill_id: "",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "m365_emails_sent",
-    section: "collaboration",
-    label: "Emails sent",
-    description: "Emails sent",
-    unit: "emails",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "m365_emails_received",
-    section: "collaboration",
-    label: "Emails received",
-    description: "Inbox email volume",
-    unit: "emails",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "m365_teams_chats",
-    section: "collaboration",
-    label: "Chats",
-    description: "Direct and group chats sent",
-    unit: "messages",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "meeting_hours",
-    section: "collaboration",
-    label: "Meeting hours",
-    description: "Hours in scheduled meetings",
-    unit: "h",
-    drill_id: "",
-    higher_is_better: false,
-  },
-  {
-    metric_key: "meetings_count",
-    section: "collaboration",
-    label: "Meetings attended",
-    description: "Distinct meetings attended",
-    unit: "meetings",
-    drill_id: "",
-    higher_is_better: true,
-  },
-  {
-    metric_key: "meeting_free",
-    section: "collaboration",
-    label: "Meeting-free days",
-    description: "Working days with no meetings",
-    unit: "days",
-    drill_id: "",
-    higher_is_better: true,
-  },
-];
-
-export const BULLET_DEFS_BY_KEY: Record<string, BulletDef> = Object.fromEntries(
-  BULLET_DEFS.map((d) => [d.metric_key, d]),
-);
-
-export function bulletDefsForSection(section: IcSectionId): BulletDef[] {
-  return BULLET_DEFS.filter((d) => d.section === section);
-}
+  slack_messages_sent: "Chat messages authored",
+  slack_active_days: "Days with a chat message",
+  slack_dm_ratio: "Direct messages as a share of all",
+  m365_emails_sent: "Emails sent",
+  m365_emails_received: "Inbox email volume",
+  m365_teams_chats: "Direct and group chats sent",
+  meeting_hours: "Hours in scheduled meetings",
+  meetings_count: "Distinct meetings attended",
+  meeting_free: "Working days with no meetings",
+}));

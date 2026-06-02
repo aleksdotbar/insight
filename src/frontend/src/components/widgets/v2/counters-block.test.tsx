@@ -1,0 +1,129 @@
+/**
+ * Component-render coverage for `<CountersBlock>` (Refs #80, wave 3).
+ *
+ * Verifies the wave-1 DESIGN §3.3 rendering rules through the catalog
+ * hook:
+ *   - `ok` rows render with peer coloring driven by `higher_is_better`
+ *     (top-quartile value surfaces as the "Top win" hero).
+ *   - `schema_status='error'` rows (surfaced as `row.schema_error: true`
+ *     by transforms.ts) collapse to neutral — never the hero callout.
+ *   - Missing-id rows (no catalog entry for the row's metric_key)
+ *     collapse to neutral.
+ */
+
+import { screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { authStore } from "@/auth/auth-store";
+
+vi.mock("@/api/catalog-client", async () => {
+  const actual = await vi.importActual<typeof import("@/api/catalog-client")>(
+    "@/api/catalog-client",
+  );
+  return { ...actual, fetchCatalog: vi.fn() };
+});
+
+import * as catalogClient from "@/api/catalog-client";
+import {
+  buildCatalogResponse,
+  renderWithCatalogClient,
+} from "@/test/catalog-test-utils";
+import { CountersBlock } from "./counters-block";
+import type { PeerStats } from "@/lib/peers";
+import type { BulletMetric, PeriodValue } from "@/types/insight";
+
+const fetchCatalog = catalogClient.fetchCatalog as ReturnType<typeof vi.fn>;
+
+function makeBullet(overrides: Partial<BulletMetric> = {}): BulletMetric {
+  return {
+    period: "month" as PeriodValue,
+    section: "task_delivery",
+    metric_key: "tasks_completed",
+    label: "Tasks Closed",
+    value: "12",
+    unit: "tasks",
+    range_min: "0",
+    range_max: "20",
+    median: "5",
+    median_label: "Median: 5 tasks",
+    bar_left_pct: 0,
+    bar_width_pct: 60,
+    median_left_pct: 25,
+    status: "good",
+    drill_id: "",
+    ...overrides,
+  };
+}
+
+const STATS: PeerStats = { p25: 3, p50: 5, p75: 10, min: 1, max: 15, n: 12 };
+
+describe("<CountersBlock>", () => {
+  beforeEach(() => {
+    authStore.reset();
+    authStore.setTenantId("t-1");
+    fetchCatalog.mockReset();
+  });
+  afterEach(() => {
+    authStore.reset();
+  });
+
+  it("renders the 'Top win' hero for an ok-row with value above p75", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "task_delivery_bullet_rows.tasks_completed",
+          higher_is_better: true,
+          schema_status: "ok",
+        },
+      ]),
+    );
+    const cohortStats = new Map([["tasks_completed", STATS]]);
+    renderWithCatalogClient(
+      <CountersBlock rows={[makeBullet({ value: "12" })]} cohortStats={cohortStats} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Top win")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Tasks Closed")).toBeInTheDocument();
+  });
+
+  it("collapses a schema_error row to neutral — no hero callout", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "task_delivery_bullet_rows.tasks_completed",
+          higher_is_better: true,
+          schema_status: "error",
+          schema_error_code: "table_not_found",
+        },
+      ]),
+    );
+    const cohortStats = new Map([["tasks_completed", STATS]]);
+    renderWithCatalogClient(
+      <CountersBlock
+        rows={[makeBullet({ value: "12", schema_error: true })]}
+        cohortStats={cohortStats}
+      />,
+    );
+    // `waitFor` retries until the post-fetch render commits — without
+    // it, the assertion can run against the initial loading-state
+    // render (sourced from the compile-in fallback, which DOES contain
+    // the metric_key).
+    await waitFor(() => {
+      expect(screen.queryByText("Top win")).not.toBeInTheDocument();
+      expect(screen.queryByText("Top issue")).not.toBeInTheDocument();
+    });
+  });
+
+  it("missing-id row collapses to neutral (no peer coloring)", async () => {
+    fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
+    const cohortStats = new Map([["tasks_completed", STATS]]);
+    renderWithCatalogClient(
+      <CountersBlock rows={[makeBullet({ value: "12" })]} cohortStats={cohortStats} />,
+    );
+    await waitFor(() => {
+      expect(screen.queryByText("Top win")).not.toBeInTheDocument();
+      expect(screen.queryByText("Top issue")).not.toBeInTheDocument();
+    });
+  });
+});

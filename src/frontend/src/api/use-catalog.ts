@@ -38,7 +38,7 @@
  * compile-in defaults.
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -46,30 +46,10 @@ import {
   type CatalogRequest,
   type CatalogResponse,
   fetchCatalog,
+  prefixForBulletSection,
 } from '@/api/catalog-client';
-import { BULLET_DEFS, IC_KPI_DEFS } from '@/api/threshold-config';
+import { BULLET_DEFS, IC_KPI_DEFS, VIEW_CONFIG_DEFS } from '@/api/threshold-config';
 import { useAuth } from '@/auth/use-auth';
-
-/**
- * Storage-table prefix for each FE-known `metric_key` so the fallback
- * catalog emits wire-shape-identical `metric_key` strings (e.g.
- * `task_delivery_bullet_rows.tasks_completed` rather than the bare
- * `tasks_completed`). Mirrors the prefixes the backend seed migration
- * writes; if the seed list ever changes, this map MUST stay in sync —
- * the byte-for-byte parity gate (PRD §12) is the regression detector.
- *
- * Sections that aren't covered (defensive) default to
- * `task_delivery_bullet_rows`, matching the backend's most-common bucket.
- */
-function prefixForBulletKey(metricKey: string, section: string): string {
-  if (section === 'git_output') return 'git_bullet_rows';
-  if (section === 'code_quality') return 'code_quality_bullet_rows';
-  if (section === 'ai_adoption') return 'ai_bullet_rows';
-  if (section === 'collaboration') return 'collab_bullet_rows';
-  // task_delivery + estimation share storage in v1 seed.
-  void metricKey;
-  return 'task_delivery_bullet_rows';
-}
 
 /** 5-minute TTL per DESIGN §3.3 Catalog Consumer Contract. */
 export const CATALOG_TTL_MS = 5 * 60_000;
@@ -111,7 +91,7 @@ export type UseCatalogResult = {
 function buildFallbackCatalog(tenantId: string | null): CatalogResponse {
   const now = new Date().toISOString();
   const bulletMetrics: CatalogMetric[] = BULLET_DEFS.map((d) => {
-    const wireKey = `${prefixForBulletKey(d.metric_key, d.section)}.${d.metric_key}`;
+    const wireKey = `${prefixForBulletSection(d.section)}.${d.metric_key}`;
     return {
       // Fallback ids are `fallback:<wire-key>` so they're recognizably
       // distinct from real UUIDv7s in the QueryClient cache but byId
@@ -156,14 +136,45 @@ function buildFallbackCatalog(tenantId: string | null): CatalogResponse {
       },
     };
   });
-  // Bullets first, KPIs second. A duplicate `metric_key` (some metrics
-  // appear in both lists — e.g. `bugs_fixed` is both a code-quality bullet
-  // and an IC KPI) keeps the bullet row in `byMetricKey` because
-  // `byMetricKey` walks the array and the first match wins.
+  // Per-person / per-team policy thresholds consumed by Exec View columns,
+  // Team View columns, and AttentionNeeded alerts. Wire prefix
+  // `view_configs.` keeps them disjoint from bullet / IC-KPI rows so a
+  // duplicate bare key (`bugs_fixed`) doesn't shadow either bucket.
+  const viewConfigMetrics: CatalogMetric[] = VIEW_CONFIG_DEFS.map((d) => {
+    const wireKey = `view_configs.${d.metric_key}`;
+    return {
+      id: `fallback:${wireKey}`,
+      metric_key: wireKey,
+      label: d.metric_key,
+      unit: d.unit || undefined,
+      higher_is_better: d.higher_is_better,
+      is_member_scale: false,
+      source_tags: [],
+      schema_status: 'unchecked' as const,
+      thresholds: {
+        good: d.good,
+        warn: d.warn,
+        ...(d.alert
+          ? {
+              alert_trigger: d.alert.trigger,
+              alert_bad: d.alert.bad,
+              alert_reason: d.alert.reason,
+            }
+          : {}),
+        resolved_from: 'product-default' as const,
+        bounded_by_lock: false,
+      },
+    };
+  });
+  // Bullets first, KPIs second, view-config thresholds last. A duplicate
+  // `metric_key` (some metrics appear in both lists — e.g. `bugs_fixed` is
+  // both a code-quality bullet and an IC KPI) keeps the bullet row in
+  // `byMetricKey` because `byMetricKey` walks the array and the first
+  // match wins.
   return {
     tenant_id: tenantId ?? 'fallback',
     generated_at: now,
-    metrics: [...bulletMetrics, ...kpiMetrics],
+    metrics: [...bulletMetrics, ...kpiMetrics, ...viewConfigMetrics],
     links: [],
   };
 }
@@ -241,12 +252,22 @@ export function useCatalog(args: CatalogRequest = {}): UseCatalogResult {
     return { byId, byKey };
   }, [data]);
 
+  // Keep the lookup closures reference-stable across renders so consumers
+  // can include them in useMemo / useEffect dep arrays without
+  // re-running every render. The closures key off `indexes`, which is
+  // itself memoized on the response identity.
+  const byId = useCallback((id: string) => indexes.byId.get(id), [indexes]);
+  const byMetricKey = useCallback(
+    (key: string) => indexes.byKey.get(key),
+    [indexes],
+  );
+
   return {
     data,
     isLoading: query.isLoading,
     isError: query.isError,
     isFallback,
-    byId: (id) => indexes.byId.get(id),
-    byMetricKey: (key) => indexes.byKey.get(key),
+    byId,
+    byMetricKey,
   };
 }

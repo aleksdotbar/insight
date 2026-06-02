@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { useCatalog } from "@/api/use-catalog";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { DashboardEmptyState } from "@/components/widgets/v2/dashboard-empty-state";
 import { DashboardHeader } from "@/components/widgets/v2/dashboard-header";
@@ -22,12 +23,14 @@ import {
   IC_SECTIONS,
   type IcSectionId,
 } from "@/lib/insight/v2/sections";
-import { IC_KPI_DEFS, IC_KPI_DEFS_BY_KEY } from "@/lib/insight/v2/kpi-defs";
+import { IC_KPI_SECTION_BY_KEY } from "@/lib/insight/v2/kpi-defs";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
 import { cn } from "@/lib/utils";
 import { useIcDashboardData } from "@/queries/ic-dashboard";
 import type { BulletMetric, IdentityPerson } from "@/types/insight";
+
+const IC_KPI_PREFIX = "ic_kpis.";
 
 export interface EngineeringDashboardV2Props {
   personId: string;
@@ -39,11 +42,34 @@ export function EngineeringDashboardV2({
   person,
 }: EngineeringDashboardV2Props) {
   const { period, dateRange, setPeriod } = usePeriod();
+  const catalog = useCatalog();
   const dashQ = useIcDashboardData(personId, period, dateRange, {
     keepPrevious: true,
   });
   const [openSection, setOpenSection] = useState<IcSectionId | null>(null);
   const data = dashQ.data;
+
+  // KPI placeholder list driven by the catalog when the live KPIs error
+  // out — mirrors what `IC_KPI_DEFS.map(...)` used to surface
+  // pre-wave-3. Sourced from `ic_kpis.*` catalog rows; the wave-1
+  // contract says `schema_status='error'` rows still render their label
+  // (the placeholder IS the broken-metric indicator here).
+  //
+  // Ordering is wire-response order: the fallback path
+  // (`buildFallbackCatalog`) and the mock factory both emit KPIs in
+  // `IC_KPI_DEFS` order (deterministic). A live backend with a
+  // different emission order would change the placeholder ordering
+  // here; tracked under #82 along with consts removal.
+  const kpiPlaceholders = useMemo(
+    () =>
+      catalog.data.metrics
+        .filter((m) => m.metric_key?.startsWith(IC_KPI_PREFIX))
+        .map((m) => ({
+          metric_key: (m.metric_key ?? "").slice(IC_KPI_PREFIX.length),
+          label: m.label,
+        })),
+    [catalog.data],
+  );
 
   const rowsBySection: Record<IcSectionId, BulletMetric[]> = {
     task_delivery: orderRowsForSection("task_delivery", data?.taskDelivery ?? []),
@@ -106,7 +132,7 @@ export function EngineeringDashboardV2({
   }, [personId]);
 
   const openSectionForMetric = (metricKey: string) => {
-    const kpiSection = IC_KPI_DEFS_BY_KEY[metricKey]?.section;
+    const kpiSection = IC_KPI_SECTION_BY_KEY.get(metricKey);
     if (kpiSection) {
       setOpenSection(kpiSection);
       return;
@@ -156,7 +182,7 @@ export function EngineeringDashboardV2({
               </p>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
                 {data?.errors.kpis
-                  ? IC_KPI_DEFS.map((d) => (
+                  ? kpiPlaceholders.map((d) => (
                       <KpiTilePlaceholder key={d.metric_key} label={d.label} />
                     ))
                   : (data?.kpis ?? []).map((kpi) => (

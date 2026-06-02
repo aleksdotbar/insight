@@ -1,83 +1,34 @@
+/**
+ * FE-only IC KPI → section mapping (Refs #80).
+ *
+ * Wave-3 of catalog hydration (#66) moved IC-KPI `label / sublabel /
+ * description / unit / higher_is_better / format` onto the wire response
+ * surfaced by `useCatalog()`. The single field the catalog doesn't carry
+ * is `section`: the IC-dashboard owns the IC↔section grouping
+ * (`task_delivery`, `git_output`, …), and it's a navigation rule, not a
+ * metric property — used by `EngineeringDashboardV2.openSectionForMetric`
+ * to land the drilldown sheet on the right section when a KPI tile is
+ * clicked. When/if that mapping moves to the wire (e.g. an `ic_section`
+ * tag on each catalog row) this map can go away.
+ *
+ * Lookup is by bare KPI `metric_key` (e.g. `bugs_fixed`) — the form
+ * `IcKpi.metric_key` carries after `transforms.ts::transformIcKpis`
+ * strips the `ic_kpis.` wire prefix.
+ *
+ * Exposed as a `Map` (not a `Record`) so an attacker-controlled key
+ * like `"__proto__"` returns `undefined` instead of leaking
+ * `Object.prototype` members.
+ */
+
 import type { IcSectionId } from "./sections";
 
-export type IcKpiFormat = "integer" | "decimal1" | "percent" | "hours";
-
-export interface IcKpiDef {
-  metric_key: string;
-  label: string;
-  unit: string;
-  description: string;
-  higher_is_better: boolean;
-  format: IcKpiFormat;
-  section: IcSectionId;
-}
-
-export const IC_KPI_DEFS: IcKpiDef[] = [
-  {
-    metric_key: "bugs_fixed",
-    label: "Bugs fixed",
-    unit: "",
-    description: "Bug-type issues closed",
-    higher_is_better: true,
-    format: "integer",
-    section: "code_quality",
-  },
-  {
-    metric_key: "ai_loc_share",
-    label: "AI code acceptance",
-    unit: "%",
-    description: "Authored lines accepted from AI",
-    higher_is_better: true,
-    format: "percent",
-    section: "ai_adoption",
-  },
-  {
-    metric_key: "focus_time_pct",
-    label: "Focus time",
-    unit: "%",
-    description: "Time in uninterrupted 60-min blocks",
-    higher_is_better: true,
-    format: "percent",
-    section: "collaboration",
-  },
-  {
-    metric_key: "tasks_closed",
-    label: "Tasks closed",
-    unit: "",
-    description: "Tasks moved to Done",
-    higher_is_better: true,
-    format: "integer",
-    section: "task_delivery",
-  },
-  {
-    metric_key: "prs_merged",
-    label: "PRs merged",
-    unit: "",
-    description: "PRs authored and merged",
-    higher_is_better: true,
-    format: "integer",
-    section: "git_output",
-  },
-  {
-    metric_key: "pr_cycle_time_h",
-    label: "PR cycle time",
-    unit: "h",
-    description: "Avg hours from PR open to merge",
-    higher_is_better: false,
-    format: "hours",
-    section: "git_output",
-  },
-  {
-    metric_key: "ai_sessions",
-    label: "AI sessions",
-    unit: "",
-    description: "Distinct AI coding sessions",
-    higher_is_better: true,
-    format: "integer",
-    section: "ai_adoption",
-  },
-];
-
-export const IC_KPI_DEFS_BY_KEY: Record<string, IcKpiDef> = Object.fromEntries(
-  IC_KPI_DEFS.map((d) => [d.metric_key, d]),
-);
+export const IC_KPI_SECTION_BY_KEY: ReadonlyMap<string, IcSectionId> =
+  new Map<string, IcSectionId>([
+    ["bugs_fixed", "code_quality"],
+    ["ai_loc_share", "ai_adoption"],
+    ["focus_time_pct", "collaboration"],
+    ["tasks_closed", "task_delivery"],
+    ["prs_merged", "git_output"],
+    ["pr_cycle_time_h", "git_output"],
+    ["ai_sessions", "ai_adoption"],
+  ]);

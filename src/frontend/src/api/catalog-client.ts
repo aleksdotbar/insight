@@ -46,6 +46,12 @@ export type ResolvedThresholds = {
   warn: number;
   alert_trigger?: number;
   alert_bad?: number;
+  /**
+   * Human-readable reason surfaced in AttentionNeeded callouts (Team View).
+   * Optional on the wire — older backends will omit it; FE consumers MUST
+   * tolerate `undefined` and fall through to a generic message.
+   */
+  alert_reason?: string;
   resolved_from: ResolvedFrom;
   bounded_by_lock: boolean;
 };
@@ -98,6 +104,25 @@ export type CatalogRequest = {
   role_slug?: string;
   team_id?: string;
 };
+
+/**
+ * Storage-table prefix for each bullet section so consumers can derive the
+ * wire-shape `metric_key` (e.g. `task_delivery_bullet_rows.tasks_completed`)
+ * from the FE-level section id. Mirrors the prefixes the backend seed
+ * migration writes; if the seed list ever changes, this map MUST stay in
+ * sync — the byte-for-byte parity gate (PRD §12) is the regression
+ * detector.
+ *
+ * Sections that aren't covered (defensive) default to
+ * `task_delivery_bullet_rows`, matching the backend's most-common bucket.
+ */
+export function prefixForBulletSection(section: string): string {
+  if (section === 'git_output') return 'git_bullet_rows';
+  if (section === 'code_quality') return 'code_quality_bullet_rows';
+  if (section === 'ai_adoption') return 'ai_bullet_rows';
+  if (section === 'collaboration') return 'collab_bullet_rows';
+  return 'task_delivery_bullet_rows';
+}
 
 export class CatalogApiError extends Error {
   status: number;

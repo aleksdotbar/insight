@@ -1,5 +1,6 @@
 import { Sparkles } from "lucide-react";
 
+import { useCatalog } from "@/api/use-catalog";
 import {
   Card,
   CardContent,
@@ -66,6 +67,7 @@ export function SectionCard({
   unavailable,
 }: SectionCardProps) {
   const { focusMode } = useSettings();
+  const { byMetricKey } = useCatalog();
 
   if (unavailable) {
     return (
@@ -86,7 +88,7 @@ export function SectionCard({
 
   const scored: ScoredMetric<BulletMetric>[] = rows.map((r) => ({
     row: r,
-    status: rowStatus(r, cohortStats),
+    status: rowStatus(r, cohortStats, byMetricKey),
   }));
   const rawStatus = aggregateSectionStatus(scored);
   const status = applyFocusStatus(rawStatus, focusMode);
@@ -152,7 +154,7 @@ export function SectionCard({
               <ul className="flex flex-col gap-1.5">
                 {preview.map((r) => {
                   const previewStatus = applyFocusStatus(
-                    rowStatus(r, cohortStats),
+                    rowStatus(r, cohortStats, byMetricKey),
                     focusMode,
                   );
                   return (

@@ -127,6 +127,14 @@ export interface BulletMetric {
   median_left_pct: number;
   status: "good" | "warn" | "bad" | "unavailable";
   drill_id: string;
+  /**
+   * Set when the catalog row for this metric reported
+   * `schema_status='error'` (ClickHouse table/column missing or query
+   * failed). Consumers should suppress threshold-based coloring and show
+   * the "Metric source unavailable" indicator; label remains visible.
+   * Absent / false ⇒ render normally.
+   */
+  schema_error?: boolean;
 }
 export interface BulletSection {
   id: string;

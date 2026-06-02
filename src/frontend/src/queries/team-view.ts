@@ -19,6 +19,7 @@ import {
   transformDrill,
   transformTeamMembers,
 } from "@/api/transforms";
+import { useCatalog } from "@/api/use-catalog";
 import type { RosterEntry } from "@/lib/insight/identity-tree";
 import type {
   BulletMetric,
@@ -134,6 +135,7 @@ export function useTeamBulletSection(
 ): UseQueryResult<BulletMetric[]> {
   const metricId = TEAM_BULLET_SECTIONS[sectionId];
   const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
+  const { data: catalog } = useCatalog();
   return useQuery({
     queryKey: [
       "team",
@@ -157,6 +159,7 @@ export function useTeamBulletSection(
         period,
         teamSize,
         "team",
+        catalog,
       );
     },
   });
@@ -176,6 +179,7 @@ export function useTeamBulletSections(
   options?: { keepPrevious?: boolean },
 ): UseQueryResult<TeamBulletSectionsData> {
   const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
+  const { data: catalog } = useCatalog();
   return useQuery({
     queryKey: [
       "team",
@@ -215,6 +219,7 @@ export function useTeamBulletSections(
             period,
             teamSize,
             "team",
+            catalog,
           );
         } else {
           errors[id] = true;

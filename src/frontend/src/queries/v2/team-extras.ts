@@ -4,6 +4,7 @@ import {
   queryBatchWithRange,
   type BatchQueryResult,
 } from "@/api/analytics-client";
+import type { CatalogResponse } from "@/api/catalog-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/api/period-to-date-range";
 import type { RawBulletAggregateRow } from "@/api/raw-types";
 import { transformBulletMetrics } from "@/api/transforms";
+import { useCatalog } from "@/api/use-catalog";
 import type { BulletMetric, PeriodValue } from "@/types/insight";
 
 const SECTION_METRIC_IDS = [
@@ -24,6 +26,7 @@ async function fetchMemberBullets(
   memberIds: string[],
   range: DateRange,
   period: PeriodValue,
+  catalog: CatalogResponse,
 ): Promise<Map<string, BulletMetric[]>> {
   const items = memberIds.flatMap((id) =>
     SECTION_METRIC_IDS.map((s) => ({
@@ -38,7 +41,14 @@ async function fetchMemberBullets(
     if (r.status !== "ok" || !r.id) continue;
     const [personId, sectionId] = r.id.split("|");
     if (!personId || !sectionId) continue;
-    const transformed = transformBulletMetrics(r.items, sectionId, period);
+    const transformed = transformBulletMetrics(
+      r.items,
+      sectionId,
+      period,
+      undefined,
+      "ic",
+      catalog,
+    );
     const existing = byMember.get(personId) ?? [];
     existing.push(...transformed);
     byMember.set(personId, existing);
@@ -51,6 +61,7 @@ export function useTeamMemberBullets(
   period: PeriodValue,
   range: DateRange,
 ): UseQueryResult<Map<string, BulletMetric[]>> {
+  const { data: catalog } = useCatalog();
   return useQuery({
     queryKey: [
       "v2",
@@ -62,7 +73,7 @@ export function useTeamMemberBullets(
     ],
     enabled: memberIds.length > 0,
     placeholderData: keepPreviousData,
-    queryFn: () => fetchMemberBullets(memberIds, range, period),
+    queryFn: () => fetchMemberBullets(memberIds, range, period, catalog),
   });
 }
 
@@ -72,6 +83,7 @@ export function useTeamMemberBulletsPrevious(
   range: DateRange,
 ): UseQueryResult<Map<string, BulletMetric[]>> {
   const prev = previousPeriodRange(range, period);
+  const { data: catalog } = useCatalog();
   return useQuery({
     queryKey: [
       "v2",
@@ -83,6 +95,6 @@ export function useTeamMemberBulletsPrevious(
     ],
     enabled: memberIds.length > 0,
     placeholderData: keepPreviousData,
-    queryFn: () => fetchMemberBullets(memberIds, prev, period),
+    queryFn: () => fetchMemberBullets(memberIds, prev, period, catalog),
   });
 }

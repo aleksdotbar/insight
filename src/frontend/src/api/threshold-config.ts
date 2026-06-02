@@ -252,6 +252,79 @@ export type IcKpiDef = {
   format: 'integer' | 'decimal1' | 'percent' | 'hours';
 };
 
+/**
+ * Threshold definitions for the per-person / per-team policy layer consumed
+ * by Exec View columns, Team View columns, and the AttentionNeeded alerts —
+ * the metrics whose `good` / `warn` / `alert` values previously lived in
+ * `METRIC_SEMANTICS`. Thresholds here are intentionally scaled differently
+ * from `BULLET_DEFS` (team-section bullets aggregate across people; these
+ * thresholds compare individual values).
+ *
+ * Source of truth for the fallback `view_configs.*` rows the catalog
+ * surfaces when the API is unavailable (per #82 the wire backend grows
+ * matching rows in a later wave and these compile-in values become
+ * historical fallback).
+ */
+export type ViewConfigThresholdDef = {
+  metric_key: string;
+  unit: string;
+  higher_is_better: boolean;
+  /** Status threshold — from here onwards is "good". */
+  good: number;
+  /** Below "good" but not yet "bad". */
+  warn: number;
+  /** Team-view AttentionNeeded alert config (only metrics with one). */
+  alert?: { trigger: number; bad: number; reason: string };
+};
+
+export const VIEW_CONFIG_DEFS: ViewConfigThresholdDef[] = [
+  {
+    metric_key: 'build_success_pct',
+    unit: '%',
+    higher_is_better: true,
+    good: 90,
+    warn: 80,
+    alert: { trigger: 90, bad: 80, reason: 'Build success rate below 90% target' },
+  },
+  {
+    metric_key: 'focus_time_pct',
+    unit: '%',
+    higher_is_better: true,
+    good: 60,
+    warn: 50,
+    alert: { trigger: 60, bad: 48, reason: 'Focus time below 60% target' },
+  },
+  {
+    metric_key: 'ai_adoption_pct',
+    unit: '%',
+    higher_is_better: true,
+    good: 60,
+    warn: 40,
+  },
+  {
+    metric_key: 'ai_loc_share_pct',
+    unit: '%',
+    higher_is_better: true,
+    good: 20,
+    warn: 10,
+    alert: { trigger: 10, bad: 8, reason: 'Low AI tool adoption' },
+  },
+  {
+    metric_key: 'dev_time_h',
+    unit: 'h',
+    higher_is_better: false,
+    good: 14,
+    warn: 20,
+  },
+  {
+    metric_key: 'bugs_fixed',
+    unit: '',
+    higher_is_better: true,
+    good: 15,
+    warn: 8,
+  },
+];
+
 // Backend null on a not-yet-ingested source → transform emits `value:null` →
 // KpiStrip renders ComingSoon for that cell.
 export const IC_KPI_DEFS: IcKpiDef[] = [

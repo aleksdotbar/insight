@@ -7,6 +7,8 @@ import {
   YAxis,
 } from "recharts";
 
+import { useCatalog } from "@/api/use-catalog";
+import type { CatalogMetric } from "@/api/catalog-client";
 import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
 import {
   Card,
@@ -22,7 +24,10 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { useSettings } from "@/hooks/use-settings";
-import { BULLET_DEFS_BY_KEY } from "@/lib/insight/v2/bullet-defs";
+import {
+  BULLET_DESCRIPTION_BY_KEY,
+} from "@/lib/insight/v2/bullet-defs";
+import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_FILL,
@@ -65,9 +70,14 @@ export function DistributionStrip({
   cohortLabel = "team",
 }: DistributionStripProps) {
   const { focusMode } = useSettings();
-  const def = BULLET_DEFS_BY_KEY[row.metric_key];
-  const title = def?.label ?? row.label;
-  const unit = row.unit || def?.unit || "";
+  const { byMetricKey } = useCatalog();
+  const catalogRow = byMetricKey(bulletCatalogKey(row));
+  // Title prefers the transformed row's label (already catalog-sourced by
+  // wave-1 transforms). Fall back to the catalog row directly for parity
+  // when the row label was empty.
+  const title = row.label || catalogRow?.label || row.metric_key;
+  const unit = row.unit || catalogRow?.unit || "";
+  const description = BULLET_DESCRIPTION_BY_KEY.get(row.metric_key);
   const medianRaw = Number(row.median);
   const median = Number.isFinite(medianRaw) ? medianRaw : undefined;
 
@@ -81,7 +91,7 @@ export function DistributionStrip({
             {unit}
           </CardDescription>
         ) : null}
-        <MetricSublabel description={def?.description} className="text-xs" />
+        <MetricSublabel description={description} className="text-xs" />
       </CardHeader>
       <CardContent>
         {bins && bins.length > 0 ? (
@@ -93,6 +103,7 @@ export function DistributionStrip({
             cohortStats={cohortStats}
             cohortLabel={cohortLabel}
             focusMode={focusMode}
+            catalogRow={catalogRow}
           />
         )}
       </CardContent>
@@ -145,19 +156,23 @@ function PeerBody({
   cohortStats,
   cohortLabel,
   focusMode,
+  catalogRow,
 }: {
   row: BulletMetric;
   unit: string;
   cohortStats?: PeerStats | null;
   cohortLabel: PeerCohortLabel;
   focusMode: ReturnType<typeof useSettings>["focusMode"];
+  catalogRow: CatalogMetric | undefined;
 }) {
-  const def = BULLET_DEFS_BY_KEY[row.metric_key];
-  const higherIsBetter = def?.higher_is_better ?? true;
+  const isSchemaError = row.schema_error === true;
+  const higherIsBetter = catalogRow?.higher_is_better ?? true;
   const numericValue = Number(row.value);
   const hasNumericValue = Number.isFinite(numericValue);
+  // schema_status='error' and missing-id rows collapse peer coloring to
+  // 'neutral' per the wave-1 DESIGN §3.3 contract.
   const rawStatus: PeerStatusWithNeutral =
-    cohortStats && hasNumericValue
+    !isSchemaError && catalogRow && cohortStats && hasNumericValue
       ? peerStatusVsQuartiles(numericValue, cohortStats, higherIsBetter)
       : "neutral";
   const status = applyFocus(rawStatus, focusMode);

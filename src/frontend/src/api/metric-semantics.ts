@@ -1,68 +1,12 @@
-export type MetricSemantics = {
-  metric_key: string;
-  unit: string;
-  higher_is_better: boolean;
-  /** Status threshold — values from here onwards are "good". */
-  good: number;
-  /** Status threshold — below "good" but not yet "bad". */
-  warn: number;
-  /** Team-view AttentionNeeded alert config, when applicable. */
-  alert?: {
-    trigger: number;
-    bad: number;
-    reason: string;
-  };
-};
-
-export const METRIC_SEMANTICS = {
-  build_success_pct: {
-    metric_key: 'build_success_pct',
-    unit: '%',
-    higher_is_better: true,
-    good: 90,
-    warn: 80,
-    alert: { trigger: 90, bad: 80, reason: 'Build success rate below 90% target' },
-  },
-  focus_time_pct: {
-    metric_key: 'focus_time_pct',
-    unit: '%',
-    higher_is_better: true,
-    good: 60,
-    warn: 50,
-    alert: { trigger: 60, bad: 48, reason: 'Focus time below 60% target' },
-  },
-  ai_adoption_pct: {
-    metric_key: 'ai_adoption_pct',
-    unit: '%',
-    higher_is_better: true,
-    good: 60,
-    warn: 40,
-  },
-  ai_loc_share_pct: {
-    metric_key: 'ai_loc_share_pct',
-    unit: '%',
-    higher_is_better: true,
-    good: 20,
-    warn: 10,
-    alert: { trigger: 10, bad: 8, reason: 'Low AI tool adoption' },
-  },
-  dev_time_h: {
-    metric_key: 'dev_time_h',
-    unit: 'h',
-    higher_is_better: false,
-    good: 14,
-    warn: 20,
-  },
-  bugs_fixed: {
-    metric_key: 'bugs_fixed',
-    unit: '',
-    higher_is_better: true,
-    good: 15,
-    warn: 8,
-  },
-} as const satisfies Record<string, MetricSemantics>;
-
-export type MetricSemanticsKey = keyof typeof METRIC_SEMANTICS;
+/**
+ * Pure status / health helpers (Refs #79).
+ *
+ * Per-metric threshold values now flow through `useCatalog()` (see
+ * `view-configs.ts`); this module no longer owns the metric → threshold
+ * table. The compile-in defaults previously held here moved to
+ * `VIEW_CONFIG_DEFS` in `threshold-config.ts` where they survive as the
+ * fallback source for the catalog hook.
+ */
 
 // Fractions of headcount — chip status scales with team size instead of
 // using a fixed absolute rule that collapses for teams larger than a few
@@ -90,17 +34,23 @@ export function teamHealthStatus(
   return 'good';
 }
 
-/** Shared status evaluator — same rule on every screen. */
+/**
+ * Shared status evaluator — same rule on every screen. `thresholds.good`
+ * and `thresholds.warn` come from the catalog (`ResolvedThresholds`) or
+ * from a synthesized object built by FE callers; the function is pure and
+ * has no knowledge of the catalog.
+ */
 export function evaluateStatus(
   value: number,
-  sem: Pick<MetricSemantics, 'good' | 'warn' | 'higher_is_better'>,
+  thresholds: { good: number; warn: number },
+  higher_is_better: boolean,
 ): 'good' | 'warn' | 'bad' {
-  if (sem.higher_is_better) {
-    if (value >= sem.good) return 'good';
-    if (value >= sem.warn) return 'warn';
+  if (higher_is_better) {
+    if (value >= thresholds.good) return 'good';
+    if (value >= thresholds.warn) return 'warn';
     return 'bad';
   }
-  if (value <= sem.good) return 'good';
-  if (value <= sem.warn) return 'warn';
+  if (value <= thresholds.good) return 'good';
+  if (value <= thresholds.warn) return 'warn';
   return 'bad';
 }

@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
+import { useCatalog } from "@/api/use-catalog";
 import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
 import { Card } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
-import { BULLET_DEFS_BY_KEY } from "@/lib/insight/v2/bullet-defs";
+import { BULLET_DESCRIPTION_BY_KEY } from "@/lib/insight/v2/bullet-defs";
+import { bulletCatalogKey, type CatalogByKey } from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_FILL,
@@ -29,19 +31,29 @@ interface StoryEntry {
 function buildEntries(
   rows: BulletMetric[],
   cohortStats: Map<string, PeerStats> | undefined,
+  byMetricKey: CatalogByKey,
 ): StoryEntry[] {
   return rows.map((row) => {
     const stats = cohortStats?.get(row.metric_key) ?? null;
-    const def = BULLET_DEFS_BY_KEY[row.metric_key];
-    const higherIsBetter = def?.higher_is_better ?? true;
+    const catalogRow = byMetricKey(bulletCatalogKey(row));
+    // Match the wave-1 contract: schema_status='error' rows and rows the
+    // catalog has no entry for collapse to 'neutral' (no peer coloring).
+    const isSchemaError = row.schema_error === true;
+    const higherIsBetter = catalogRow?.higher_is_better ?? true;
     const numericValue = Number(row.value);
     const hasValue = Number.isFinite(numericValue);
     const status: PeerStatusWithNeutral =
-      stats && hasValue
+      !isSchemaError && catalogRow && stats && hasValue
         ? peerStatusVsQuartiles(numericValue, stats, higherIsBetter)
         : "neutral";
     let gap = 0;
-    if (stats && hasValue && Math.abs(stats.p50) > 1e-9) {
+    if (
+      !isSchemaError &&
+      catalogRow &&
+      stats &&
+      hasValue &&
+      Math.abs(stats.p50) > 1e-9
+    ) {
       const raw = (numericValue - stats.p50) / Math.abs(stats.p50);
       gap = higherIsBetter ? raw : -raw;
     }
@@ -66,7 +78,8 @@ export function CountersBlock({
   cohortLabel = "team",
 }: CountersBlockProps) {
   const { focusMode } = useSettings();
-  const entries = buildEntries(rows, cohortStats);
+  const { byMetricKey } = useCatalog();
+  const entries = buildEntries(rows, cohortStats, byMetricKey);
 
   const bottoms = entries
     .filter((e) => e.status === "bottom")
@@ -214,7 +227,7 @@ function HeroTile({
         {entry.row.label}
       </h3>
       <MetricSublabel
-        description={BULLET_DEFS_BY_KEY[entry.row.metric_key]?.description}
+        description={BULLET_DESCRIPTION_BY_KEY.get(entry.row.metric_key)}
         className="text-xs text-muted-foreground"
       />
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
@@ -266,7 +279,7 @@ function OutlierTile({
           {entry.row.label}
         </span>
         <MetricSublabel
-          description={BULLET_DEFS_BY_KEY[entry.row.metric_key]?.description}
+          description={BULLET_DESCRIPTION_BY_KEY.get(entry.row.metric_key)}
         />
         {dense ? null : (
           <span className={cn("text-[11px]", PEER_TEXT[focused])}>
