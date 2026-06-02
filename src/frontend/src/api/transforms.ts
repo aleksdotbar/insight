@@ -557,28 +557,6 @@ export function transformCrmFlow(rows: RawCrmFlowRow[]): CrmFlowPoint[] {
     }));
 }
 
-export interface CrmBulletDef {
-  metric_key: string;
-  label: string;
-  sublabel: string;
-  unit: string;
-  higher_is_better: boolean;
-}
-
-export const CRM_QUALITY_BULLETS: CrmBulletDef[] = [
-  { metric_key: 'win_rate',      label: 'Win Rate',       sublabel: 'Won ÷ closed in period',                       unit: '%', higher_is_better: true  },
-  { metric_key: 'avg_deal_size', label: 'Avg Deal Size',  sublabel: 'Won deals · mean of properties_amount',        unit: '$', higher_is_better: true  },
-  { metric_key: 'cycle_days',    label: 'Avg Cycle Time', sublabel: 'Created → won · mean days · lower = better',   unit: 'd', higher_is_better: false },
-  { metric_key: 'deals_opened',  label: 'Deals Opened',   sublabel: 'Volume · deals created in period',             unit: '',  higher_is_better: true  },
-];
-
-export const CRM_ACTIVITY_BULLETS: CrmBulletDef[] = [
-  { metric_key: 'calls',         label: 'Calls',            sublabel: 'HubSpot · engagements_calls in period',                  unit: '',  higher_is_better: true  },
-  { metric_key: 'emails',        label: 'Emails',           sublabel: 'HubSpot · engagements_emails in period',                 unit: '',  higher_is_better: true  },
-  { metric_key: 'meetings',      label: 'Meetings',         sublabel: 'HubSpot · engagements_meetings in period',               unit: '',  higher_is_better: true  },
-  { metric_key: 'comms_per_won', label: 'Comms / Won Deal', sublabel: 'Total comms ÷ deals won · efficiency · lower = better', unit: '',  higher_is_better: false },
-];
-
 function fmtCrm(v: number | null, unit: string): string {
   if (v === null || !Number.isFinite(v)) return '—';
   if (unit === '%') return `${v.toFixed(1)}%`;
@@ -592,15 +570,49 @@ function fmtCrm(v: number | null, unit: string): string {
   return new Intl.NumberFormat('en-US').format(Math.round(v));
 }
 
+/** Wire prefix for all CRM bullet rows — matches the BE seed migration. */
+const CRM_BULLET_PREFIX = 'crm_bullet_rows.';
+
+/**
+ * `bareKeys` is the per-section emission order — Quality and Activity
+ * share the `crm_bullet_rows.*` storage table but each query emits a
+ * disjoint subset, and UI layout pins the column order. The CH query
+ * order is unconstrained, so the FE replays the canonical ordering
+ * here.
+ */
 export function transformCrmBullets(
   rows: RawBulletAggregateRow[],
   period: PeriodValue,
   section: string,
-  defs: CrmBulletDef[],
+  bareKeys: readonly string[],
+  catalog: CatalogResponse | undefined,
 ): BulletMetric[] {
+  // No catalog → no labels → consumers render skeletons. Mirrors
+  // `transformBulletMetrics`'s contract (post-#82).
+  if (!catalog) return [];
+
+  const catalogByBareKey = new Map<string, CatalogMetric>();
+  for (const m of catalog.metrics) {
+    if (!m.metric_key || !m.metric_key.startsWith(CRM_BULLET_PREFIX)) continue;
+    const bare = m.metric_key.slice(CRM_BULLET_PREFIX.length);
+    if (!catalogByBareKey.has(bare)) catalogByBareKey.set(bare, m);
+  }
+
   const byKey = keyBy(rows, 'metric_key');
-  return defs.map((def) => {
-    const r = byKey[def.metric_key] as RawBulletAggregateRow | undefined;
+  const out: BulletMetric[] = [];
+  for (const bareKey of bareKeys) {
+    const catalogRow = catalogByBareKey.get(bareKey);
+    // Missing-id (catalog row absent for this bare key) → silently
+    // omit per DESIGN §3.3. Shouldn't happen once the seed migration
+    // is in production; defensive against pre-deploy / stale catalog.
+    if (!catalogRow) continue;
+
+    const label = catalogRow.label;
+    const sublabel = catalogRow.sublabel ?? '';
+    const unit = catalogRow.unit ?? '';
+    const higherIsBetter = catalogRow.higher_is_better;
+
+    const r = byKey[bareKey] as RawBulletAggregateRow | undefined;
     const value = r?.value ?? null;
     const median = r?.median ?? null;
     const rMin = r?.range_min ?? null;
@@ -609,14 +621,14 @@ export function transformCrmBullets(
     const distAvailable =
       value !== null && rMin !== null && rMax !== null && rMin !== rMax;
     if (!distAvailable) {
-      return {
+      out.push({
         period,
         section,
-        metric_key: def.metric_key,
-        label: def.label,
-        sublabel: def.sublabel,
-        value: fmtCrm(value, def.unit),
-        unit: def.unit,
+        metric_key: bareKey,
+        label,
+        sublabel,
+        value: fmtCrm(value, unit),
+        unit,
         range_min: '—',
         range_max: '—',
         median: '—',
@@ -626,7 +638,8 @@ export function transformCrmBullets(
         median_left_pct: 0,
         status: 'unavailable',
         drill_id: '',
-      };
+      });
+      continue;
     }
 
     const safeValue = value as number;
@@ -642,28 +655,29 @@ export function transformCrmBullets(
       const diff = safeValue - safeMedian;
       const tolerance = Math.abs(safeMedian) * 0.1;
       if (Math.abs(diff) <= tolerance) status = 'warn';
-      else if ((diff > 0) === def.higher_is_better) status = 'good';
+      else if ((diff > 0) === higherIsBetter) status = 'good';
       else status = 'bad';
     }
 
-    return {
+    out.push({
       period,
       section,
-      metric_key: def.metric_key,
-      label: def.label,
-      sublabel: def.sublabel,
-      value: fmtCrm(safeValue, def.unit),
-      unit: def.unit,
-      range_min: fmtCrm(safeMin, def.unit),
-      range_max: fmtCrm(safeMax, def.unit),
-      median: fmtCrm(safeMedian, def.unit),
+      metric_key: bareKey,
+      label,
+      sublabel,
+      value: fmtCrm(safeValue, unit),
+      unit,
+      range_min: fmtCrm(safeMin, unit),
+      range_max: fmtCrm(safeMax, unit),
+      median: fmtCrm(safeMedian, unit),
       median_label:
-        safeMedian !== null ? `Median: ${fmtCrm(safeMedian, def.unit)}` : '',
+        safeMedian !== null ? `Median: ${fmtCrm(safeMedian, unit)}` : '',
       bar_left_pct: 0,
       bar_width_pct: barWidthPct,
       median_left_pct: medianLeftPct,
       status,
       drill_id: '',
-    };
-  });
+    });
+  }
+  return out;
 }

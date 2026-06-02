@@ -5,12 +5,11 @@ import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import { type DateRange, toISODate } from "@/api/period-to-date-range";
 import {
-  CRM_ACTIVITY_BULLETS,
-  CRM_QUALITY_BULLETS,
   transformCrmFlow,
   transformCrmBullets,
   transformCrmKpis,
 } from "@/api/transforms";
+import { useCatalog } from "@/api/use-catalog";
 import type {
   RawBulletAggregateRow,
   RawCrmFlowRow,
@@ -22,6 +21,28 @@ import type {
   CrmKpis,
   PeriodValue,
 } from "@/types/insight";
+
+/**
+ * Per-section CRM bullet emission order. Bare metric_keys without the
+ * `crm_bullet_rows.` wire prefix — `transformCrmBullets` reattaches it
+ * when looking up the catalog row. Pinning order here keeps the UI
+ * column layout deterministic regardless of CH GROUP BY ordering, and
+ * keeps the per-query disjoint-subset rule explicit (Quality keys MUST
+ * NOT overlap Activity keys).
+ */
+const CRM_QUALITY_BARE_KEYS = [
+  "win_rate",
+  "avg_deal_size",
+  "cycle_days",
+  "deals_opened",
+] as const;
+
+const CRM_ACTIVITY_BARE_KEYS = [
+  "calls",
+  "emails",
+  "meetings",
+  "comms_per_won",
+] as const;
 
 function personScope(personId: string): string {
   return `person_id eq '${odataEscapeValue(personId.toLowerCase())}'`;
@@ -112,10 +133,16 @@ export function useSalesBulletSection(
     kind === "quality"
       ? METRIC_REGISTRY.CRM_BULLET_QUALITY
       : METRIC_REGISTRY.CRM_BULLET_ACTIVITY;
-  const defs =
-    kind === "quality" ? CRM_QUALITY_BULLETS : CRM_ACTIVITY_BULLETS;
+  const bareKeys =
+    kind === "quality" ? CRM_QUALITY_BARE_KEYS : CRM_ACTIVITY_BARE_KEYS;
   const sectionId =
     kind === "quality" ? "velocity_quality" : "outreach_activity";
+  const { data: catalog } = useCatalog();
+  // Catalog identity in the query key so a late-arriving hydration
+  // re-runs the transform — the queryFn closes over `catalog` and
+  // would otherwise cache an empty result built against an undefined
+  // catalog (same pattern as the engineering queries post-#82).
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
     queryKey: [
       "crm",
@@ -125,12 +152,13 @@ export function useSalesBulletSection(
       period,
       range.from,
       range.to,
+      catalogKey,
     ],
     queryFn: async () => {
       const resp = await queryMetric<RawBulletAggregateRow>(uuid, range, {
         $filter: personScope(personId),
       });
-      return transformCrmBullets(resp.items, period, sectionId, defs);
+      return transformCrmBullets(resp.items, period, sectionId, bareKeys, catalog);
     },
   });
 }
@@ -148,6 +176,8 @@ export function useSalesDashboardQueries(
 } {
   const prevRange = priorYearRange(range);
   const filter = personScope(personId);
+  const { data: catalog } = useCatalog();
+  const catalogKey = catalog?.generated_at ?? null;
   const results = useQueries({
     queries: [
       {
@@ -184,7 +214,7 @@ export function useSalesDashboardQueries(
         },
       },
       {
-        queryKey: ["crm", "bullet", "quality", personId, period, range.from, range.to],
+        queryKey: ["crm", "bullet", "quality", personId, period, range.from, range.to, catalogKey],
         queryFn: async () => {
           const resp = await queryMetric<RawBulletAggregateRow>(
             METRIC_REGISTRY.CRM_BULLET_QUALITY,
@@ -195,12 +225,13 @@ export function useSalesDashboardQueries(
             resp.items,
             period,
             "velocity_quality",
-            CRM_QUALITY_BULLETS,
+            CRM_QUALITY_BARE_KEYS,
+            catalog,
           );
         },
       },
       {
-        queryKey: ["crm", "bullet", "activity", personId, period, range.from, range.to],
+        queryKey: ["crm", "bullet", "activity", personId, period, range.from, range.to, catalogKey],
         queryFn: async () => {
           const resp = await queryMetric<RawBulletAggregateRow>(
             METRIC_REGISTRY.CRM_BULLET_ACTIVITY,
@@ -211,7 +242,8 @@ export function useSalesDashboardQueries(
             resp.items,
             period,
             "outreach_activity",
-            CRM_ACTIVITY_BULLETS,
+            CRM_ACTIVITY_BARE_KEYS,
+            catalog,
           );
         },
       },
