@@ -300,7 +300,7 @@ export const BULLET_DEFS: BulletDef[] = [
   {
     metric_key: "cc_cost",
     section: "ai_adoption",
-    label: "Claude Code cost",
+    label: "Claude Code Cost",
     description: "Per-user cost from Claude Team plan in cents",
     unit: "¢",
     drill_id: "",
