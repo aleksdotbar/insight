@@ -136,6 +136,7 @@ export function useTeamBulletSection(
   const metricId = TEAM_BULLET_SECTIONS[sectionId];
   const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
   const { data: catalog } = useCatalog();
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
     queryKey: [
       "team",
@@ -146,6 +147,7 @@ export function useTeamBulletSection(
       period,
       range.from,
       range.to,
+      catalogKey,
     ],
     enabled: Boolean(teamId),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
@@ -180,6 +182,7 @@ export function useTeamBulletSections(
 ): UseQueryResult<TeamBulletSectionsData> {
   const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
   const { data: catalog } = useCatalog();
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
     queryKey: [
       "team",
@@ -190,6 +193,7 @@ export function useTeamBulletSections(
       period,
       range.from,
       range.to,
+      catalogKey,
     ],
     enabled: Boolean(teamId),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,

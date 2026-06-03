@@ -8,7 +8,33 @@ import type {
   RawLocTrendRow,
   RawTeamMemberRow,
 } from "@/api/raw-types";
-import { BULLET_DEFS } from "@/api/threshold-config";
+import { prefixForBulletSection } from "@/api/catalog-client";
+import catalogSnapshot from "./catalog-snapshot.json";
+
+type SnapshotMetric = { metric_key?: string; unit?: string };
+
+// Bare metric keys per bullet section, sourced from the frozen wire
+// catalog snapshot (`catalog-snapshot.json`) — keeps mocks aligned with
+// the live wire shape without re-introducing compile-in metric metadata
+// (Refs #82).
+const BULLET_KEYS_BY_SECTION: Map<string, Array<{ metric_key: string; unit: string }>> = (() => {
+  const out = new Map<string, Array<{ metric_key: string; unit: string }>>();
+  const metrics = (catalogSnapshot as { metrics?: SnapshotMetric[] }).metrics ?? [];
+  for (const section of ["task_delivery", "git_output", "code_quality", "ai_adoption", "collaboration"]) {
+    const prefixDot = `${prefixForBulletSection(section)}.`;
+    const rows: Array<{ metric_key: string; unit: string }> = [];
+    for (const m of metrics) {
+      if (m.metric_key && m.metric_key.startsWith(prefixDot)) {
+        rows.push({
+          metric_key: m.metric_key.slice(prefixDot.length),
+          unit: m.unit ?? "",
+        });
+      }
+    }
+    out.set(section, rows);
+  }
+  return out;
+})();
 
 function vary(base: number, index: number, spread: number): number {
   const hash = Math.sin(index * 9301 + 49297) * 49297;
@@ -50,7 +76,7 @@ type IcBulletDef = {
   defaultValue: number;
 };
 
-const IC_BULLET_DEFS: IcBulletDef[] = [
+const IC_BULLET_MOCKS: IcBulletDef[] = [
   // task_delivery
   { metric_key: 'tasks_completed', section: 'task_delivery', label: 'Tasks Completed', sublabel: 'Jira \u00b7 closed issues in sprint', unit: 'count', range_min: '0', range_max: '15', median: 7, median_label: 'Median: 7', bar_width_pct: 80, median_left_pct: 47, status: 'good', drill_id: 'tasks-completed', defaultValue: 12 },
   { metric_key: 'task_dev_time', section: 'task_delivery', label: 'Task Development Time', sublabel: 'Jira \u00b7 time in In Progress state \u00b7 lower = better', unit: 'h', range_min: '8h', range_max: '31h', median: 15, median_label: 'Median: 15h', bar_width_pct: 43, median_left_pct: 48, status: 'good', drill_id: 'cycle-time', defaultValue: 14 },
@@ -353,31 +379,30 @@ export function mockTeamBulletSection(
   periodDays = 30,
 ): RawBulletAggregateRow[] {
   const scale = periodDays / 30;
-  return BULLET_DEFS
-    .filter((d) => d.section === section)
-    .map((d, i) => {
-      const dist = MOCK_BULLET_DIST[d.metric_key];
-      if (!dist && import.meta.env.DEV) {
-        console.warn(
-          `[insight/mocks] MOCK_BULLET_DIST missing entry for "${d.metric_key}" ` +
-          `(section=${section}) — falling back to zero distribution. ` +
-          `Add the key to MOCK_BULLET_DIST in factories.ts.`,
-        );
-      }
-      const d0 = dist ?? { median: 0, range_min: 0, range_max: 100 };
-      const baseValue =
-        Math.round(vary(d0.median, i + seed, Math.max(1, d0.median * 0.3)) * 10) / 10;
-      const value = shouldScaleMetric(d.metric_key, d.unit)
-        ? Math.round(baseValue * scale * 10) / 10
-        : baseValue;
-      return {
-        metric_key: d.metric_key,
-        value,
-        median: d0.median,
-        range_min: d0.range_min,
-        range_max: d0.range_max,
-      };
-    });
+  const keys = BULLET_KEYS_BY_SECTION.get(section) ?? [];
+  return keys.map((d, i) => {
+    const dist = MOCK_BULLET_DIST[d.metric_key];
+    if (!dist && import.meta.env.DEV) {
+      console.warn(
+        `[insight/mocks] MOCK_BULLET_DIST missing entry for "${d.metric_key}" ` +
+        `(section=${section}) — falling back to zero distribution. ` +
+        `Add the key to MOCK_BULLET_DIST in factories.ts.`,
+      );
+    }
+    const d0 = dist ?? { median: 0, range_min: 0, range_max: 100 };
+    const baseValue =
+      Math.round(vary(d0.median, i + seed, Math.max(1, d0.median * 0.3)) * 10) / 10;
+    const value = shouldScaleMetric(d.metric_key, d.unit)
+      ? Math.round(baseValue * scale * 10) / 10
+      : baseValue;
+    return {
+      metric_key: d.metric_key,
+      value,
+      median: d0.median,
+      range_min: d0.range_min,
+      range_max: d0.range_max,
+    };
+  });
 }
 
 // Returns rows with passthrough display fields that transforms.ts reads
@@ -416,7 +441,7 @@ export function mockIcBulletSection(
   const scale = periodDays / 30;
 
   return keys.map((key, i) => {
-    const def = IC_BULLET_DEFS.find((d) => d.metric_key === key);
+    const def = IC_BULLET_MOCKS.find((d) => d.metric_key === key);
     if (!def) {
       return {
         metric_key: key,
@@ -442,8 +467,8 @@ export function mockIcBulletSection(
     };
 
     // Attach passthrough display fields that transforms.ts reads
-    // when no BULLET_DEFS match is found (the IC-level path).
-    // range_min/range_max in IC_BULLET_DEFS are human-friendly strings like
+    // when no team-bullet entry is found (the IC-level path).
+    // range_min/range_max in IC_BULLET_MOCKS are human-friendly strings like
     // '0%' / '15%' / '1k' / '18k' / '500h'. transforms.ts later runs them
     // through formatRangeStr which appends the unit again, so we have to
     // strip the unit characters here. But magnitude suffixes (`k`, `m`)

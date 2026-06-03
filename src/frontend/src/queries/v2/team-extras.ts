@@ -26,7 +26,7 @@ async function fetchMemberBullets(
   memberIds: string[],
   range: DateRange,
   period: PeriodValue,
-  catalog: CatalogResponse,
+  catalog: CatalogResponse | undefined,
 ): Promise<Map<string, BulletMetric[]>> {
   const items = memberIds.flatMap((id) =>
     SECTION_METRIC_IDS.map((s) => ({
@@ -62,6 +62,7 @@ export function useTeamMemberBullets(
   range: DateRange,
 ): UseQueryResult<Map<string, BulletMetric[]>> {
   const { data: catalog } = useCatalog();
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
     queryKey: [
       "v2",
@@ -70,6 +71,7 @@ export function useTeamMemberBullets(
       period,
       range.from,
       range.to,
+      catalogKey,
     ],
     enabled: memberIds.length > 0,
     placeholderData: keepPreviousData,
@@ -84,6 +86,7 @@ export function useTeamMemberBulletsPrevious(
 ): UseQueryResult<Map<string, BulletMetric[]>> {
   const prev = previousPeriodRange(range, period);
   const { data: catalog } = useCatalog();
+  const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
     queryKey: [
       "v2",
@@ -92,6 +95,7 @@ export function useTeamMemberBulletsPrevious(
       period,
       prev.from,
       prev.to,
+      catalogKey,
     ],
     enabled: memberIds.length > 0,
     placeholderData: keepPreviousData,

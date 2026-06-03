@@ -49,20 +49,13 @@ export function EngineeringDashboardV2({
   const [openSection, setOpenSection] = useState<IcSectionId | null>(null);
   const data = dashQ.data;
 
-  // KPI placeholder list driven by the catalog when the live KPIs error
-  // out — mirrors what `IC_KPI_DEFS.map(...)` used to surface
-  // pre-wave-3. Sourced from `ic_kpis.*` catalog rows; the wave-1
-  // contract says `schema_status='error'` rows still render their label
-  // (the placeholder IS the broken-metric indicator here).
-  //
-  // Ordering is wire-response order: the fallback path
-  // (`buildFallbackCatalog`) and the mock factory both emit KPIs in
-  // `IC_KPI_DEFS` order (deterministic). A live backend with a
-  // different emission order would change the placeholder ordering
-  // here; tracked under #82 along with consts removal.
+  // KPI placeholder list driven by the wire catalog. Ordering is
+  // wire-response order; the backend's seed migration emits the rows
+  // deterministically. When the catalog is unavailable the placeholder
+  // list is empty and consumers render the empty/error state.
   const kpiPlaceholders = useMemo(
     () =>
-      catalog.data.metrics
+      (catalog.data?.metrics ?? [])
         .filter((m) => m.metric_key?.startsWith(IC_KPI_PREFIX))
         .map((m) => ({
           metric_key: (m.metric_key ?? "").slice(IC_KPI_PREFIX.length),

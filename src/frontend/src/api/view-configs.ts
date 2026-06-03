@@ -39,7 +39,7 @@ const TEAM_COLUMN_KEYS = [
 export function useExecViewConfig(): ExecViewConfig {
   const { data } = useCatalog();
   return useMemo(() => {
-    const byKey = indexByMetricKey(data.metrics);
+    const byKey = indexByMetricKey(data?.metrics ?? []);
     return {
       column_thresholds: EXEC_COLUMN_KEYS.flatMap((key) => {
         const m = byKey.get(`${VIEW_CONFIG_PREFIX}${key}`);
@@ -53,7 +53,7 @@ export function useExecViewConfig(): ExecViewConfig {
 export function useTeamViewConfig(): TeamViewConfig {
   const { data } = useCatalog();
   return useMemo(() => {
-    const byKey = indexByMetricKey(data.metrics);
+    const byKey = indexByMetricKey(data?.metrics ?? []);
     return {
       alert_thresholds: TEAM_ALERT_KEYS.flatMap((key) => {
         const m = byKey.get(`${VIEW_CONFIG_PREFIX}${key}`);

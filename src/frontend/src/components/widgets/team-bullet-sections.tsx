@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 
-import { filterBulletsByLayoutGroup } from "@/api/threshold-config";
+import { filterBulletsByLayoutGroup } from "@/lib/insight/bullet-layout-groups";
 import { Card, CardContent } from "@/components/ui/card";
 import type { BulletMetric } from "@/types/insight";
 

@@ -207,23 +207,20 @@ describe("useExecViewConfig", () => {
     ).toBe(true);
   });
 
-  it("falls back to compile-in defaults when the catalog API fails", async () => {
+  it("returns an empty threshold list when the catalog API fails (post-#82)", async () => {
     fetchCatalog.mockRejectedValue(
       new catalogClient.CatalogApiError(500, { type: "internal" }),
     );
-    // Compile-in defaults (from VIEW_CONFIG_DEFS) are emitted as
-    // schema_status='unchecked' fallback rows — useExecViewConfig still
-    // produces the 3-column threshold list. Wait for `isError` so the
-    // fallback path (not just initial render) is what we're asserting.
+    // No compile-in fallback after #82 — `data` is undefined and
+    // `useExecViewConfig` surfaces an empty list. Consumers gate on
+    // `useCatalog().isError` / `isLoading` to render the error / skeleton.
     const wrapper = withClient();
     const { result } = renderHook(
       () => ({ view: useExecViewConfig(), catalog: useCatalog() }),
       { wrapper },
     );
     await waitFor(() => expect(result.current.catalog.isError).toBe(true));
-    expect(
-      result.current.view.column_thresholds.map((t) => t.metric_key),
-    ).toEqual(["build_success_pct", "focus_time_pct", "ai_adoption_pct"]);
+    expect(result.current.view.column_thresholds).toEqual([]);
   });
 });
 

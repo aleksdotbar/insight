@@ -2,8 +2,10 @@
  * Design rules:
  * - Explicit field mapping only (no generic snake->camel converter).
  * - Every function is stateless and side-effect free.
- * - Threshold defaults come from thresholdConfig.ts; backend-provided
- *   values override them when present.
+ * - All metric metadata (labels / sublabels / thresholds) comes from the
+ *   wire catalog (`useCatalog()`). No compile-in metric defaults — when
+ *   the catalog is unavailable the transforms emit empty arrays and
+ *   consumers render skeletons or empty states (Refs #82).
  */
 
 import type {
@@ -32,8 +34,6 @@ import type {
   RawTimeOffRow,
   RawDrillRow,
 } from './raw-types';
-import { BULLET_DEFS, IC_KPI_DEFS } from './threshold-config';
-import type { BulletThresholdDef, IcKpiDef } from './threshold-config';
 import {
   type CatalogMetric,
   type CatalogResponse,
@@ -41,15 +41,15 @@ import {
 } from './catalog-client';
 import { evaluateStatus } from './metric-semantics';
 
-/** Format strings the catalog may surface; map to `IcKpiDef['format']`. */
-type IcKpiFormat = IcKpiDef['format'];
+/** Format strings the IC KPI catalog rows surface. */
+type IcKpiFormat = 'integer' | 'decimal1' | 'percent' | 'hours';
 
 function asIcKpiFormat(v: string | undefined): IcKpiFormat {
   if (v === 'integer' || v === 'decimal1' || v === 'percent' || v === 'hours') {
     return v;
   }
-  // Fallback when catalog row predates a `format` value — keep parity with
-  // the old compile-in default for IC KPIs.
+  // Wire row predates the `format` field — keep IC KPI rendering safe by
+  // defaulting to whole-number display.
   return 'integer';
 }
 
@@ -71,7 +71,7 @@ function pctInRange(value: number, rangeMin: number, rangeMax: number): number {
   return Math.round(clamp(((value - rangeMin) / span) * 100, 0, 100));
 }
 
-function formatValue(raw: number, fmt: IcKpiDef['format']): string {
+function formatValue(raw: number, fmt: IcKpiFormat): string {
   // Whole-number display across the board. Fractional precision was noisy on
   // a dashboard that re-aggregates per period — "78.4%" jitters to "78.6%"
   // when the period nudges by a day. Integers stay readable and stable.
@@ -83,12 +83,9 @@ function formatValue(raw: number, fmt: IcKpiDef['format']): string {
   }
 }
 
-function formatDelta(
-  delta: number,
-  def: IcKpiDef,
-): string {
+function formatDelta(delta: number, fmt: IcKpiFormat): string {
   const sign = delta > 0 ? '+' : '';
-  switch (def.format) {
+  switch (fmt) {
     case 'integer': return `${sign}${Math.round(delta)}`;
     case 'decimal1': return `${sign}${Math.round(delta)}`;
     case 'percent': return `${sign}${Math.round(delta)}%`;
@@ -231,49 +228,46 @@ export function transformIcKpis(
   current: RawIcAggregateRow | null,
   previous: RawIcAggregateRow | null,
   period: PeriodValue,
-  catalog: CatalogResponse,
+  catalog: CatalogResponse | undefined,
 ): IcKpi[] {
-  // Data-driven: no current row means the backend has nothing for this person
-  // in the selected period — return empty so composites render ComingSoon
-  // uniformly instead of forcing zeros onto the UI.
+  // No catalog → no labels → consumers render skeletons / empty states.
+  if (!catalog) return [];
+  // No current row → backend has nothing for this person in the period.
   if (current === null) return [];
 
-  // `raw_field` is FE-only (the catalog wire shape doesn't carry it). Look it
-  // up from the compile-in defs keyed by the bare metric_key (after the
-  // `ic_kpis.` prefix). Catalog rows whose bare key has no FE raw_field
-  // mapping are silently omitted — the FE doesn't know how to source their
-  // value from the raw aggregate row.
-  const rawFieldByBareKey = new Map<string, IcKpiDef['raw_field']>();
-  for (const d of IC_KPI_DEFS) {
-    rawFieldByBareKey.set(d.metric_key, d.raw_field);
-  }
+  // The bare `metric_key` (post-`ic_kpis.` prefix) is the column name on
+  // `RawIcAggregateRow` — wire seed migration `m20260527_000001` keeps
+  // the catalog key in sync with the gold table column. Catalog rows
+  // whose bare key isn't an own property of the raw aggregate are
+  // silently omitted (the FE doesn't know how to source their value).
+  // `hasOwnProperty` (not `in`) so a malformed wire key like `__proto__`
+  // or `toString` can't reach `Object.prototype` members.
+  type IcRow = RawIcAggregateRow;
 
   const out: IcKpi[] = [];
   for (const m of catalog.metrics) {
     if (!m.metric_key || !m.metric_key.startsWith(IC_KPI_PREFIX)) continue;
     const bareKey = m.metric_key.slice(IC_KPI_PREFIX.length);
-    const rawField = rawFieldByBareKey.get(bareKey);
-    if (!rawField) continue;
+    if (!Object.prototype.hasOwnProperty.call(current, bareKey)) continue;
+    const rawField = bareKey as keyof IcRow;
 
     // Distinguish "raw value missing" (NULL from backend → source not
     // ingested) from "raw value is zero" (real measurement).
     const rawCur = current[rawField];
     const rawPrev = previous?.[rawField];
-    const curVal = rawCur == null ? null : (rawCur as number);
-    const prevVal = rawPrev == null ? null : (rawPrev as number);
+    const curVal =
+      rawCur == null || typeof rawCur !== 'number' ? null : rawCur;
+    const prevVal =
+      rawPrev == null || typeof rawPrev !== 'number' ? null : rawPrev;
 
     const format = asIcKpiFormat(m.format);
-    // Synthesize an IcKpiDef-shaped object for shared formatters; cheap and
-    // keeps `formatDelta` unchanged.
-    const fmtDef: Pick<IcKpiDef, 'format'> = { format };
-
     const value = curVal === null ? null : formatValue(curVal, format);
     let delta = '';
     let dt: 'good' | 'warn' | 'bad' | 'neutral' = 'neutral';
 
     if (curVal !== null && prevVal !== null) {
       const diff = curVal - prevVal;
-      delta = formatDelta(diff, fmtDef as IcKpiDef);
+      delta = formatDelta(diff, format);
       dt = deltaType(diff, m.higher_is_better);
     }
 
@@ -306,9 +300,14 @@ export function transformBulletMetrics(
   section: string,
   period: PeriodValue,
   teamSize: number | undefined,
-  viewKind: 'ic' | 'team',
-  catalog: CatalogResponse,
+  _viewKind: 'ic' | 'team',
+  catalog: CatalogResponse | undefined,
 ): BulletMetric[] {
+  // No catalog → no labels → consumers render skeletons. The screen
+  // surfaces `isError` / `isLoading` directly from `useCatalog()` so
+  // returning empty here is the right "no data" shape.
+  if (!catalog) return [];
+
   const wirePrefixDot = prefixForBulletSection(section) + '.';
 
   // Section catalog rows, keyed by bare metric_key (the form raw aggregate
@@ -320,17 +319,6 @@ export function transformBulletMetrics(
     const bare = m.metric_key.slice(wirePrefixDot.length);
     if (!catalogByBareKey.has(bare)) catalogByBareKey.set(bare, m);
   }
-
-  // FE-only fields the catalog doesn't carry yet (drill_id, teamSublabel).
-  // Looked up by bare metric_key.
-  const defsByKey: Record<string, BulletThresholdDef> = {};
-  for (const d of BULLET_DEFS) defsByKey[d.metric_key] = d;
-
-  const pickSublabel = (
-    catalogSublabel: string,
-    teamSublabel: string | undefined,
-  ): string =>
-    viewKind === 'team' && teamSublabel ? teamSublabel : catalogSublabel;
 
   // Synthesize honest-zero rows for every metric_key the catalog knows about
   // for this section but the backend didn't return. Without this, an
@@ -357,12 +345,8 @@ export function transformBulletMetrics(
     // DESIGN §3.3 Catalog Consumer Contract.
     if (!catalogRow) continue;
 
-    const fbDef = defsByKey[r.metric_key];
-    const drillId = fbDef?.drill_id ?? '';
-    const teamSublabel = fbDef?.teamSublabel;
-
     const label = catalogRow.label;
-    const sublabel = pickSublabel(catalogRow.sublabel ?? '', teamSublabel);
+    const sublabel = catalogRow.sublabel ?? '';
     const baseUnit = catalogRow.unit ?? '';
     const isMemberScale = catalogRow.is_member_scale;
     const higherIsBetter = catalogRow.higher_is_better;
@@ -409,7 +393,7 @@ export function transformBulletMetrics(
         bar_width_pct: 0,
         median_left_pct: 0,
         status: 'unavailable',
-        drill_id: drillId,
+        drill_id: '',
         ...(isSchemaError ? { schema_error: true } : {}),
       });
       continue;
@@ -459,7 +443,7 @@ export function transformBulletMetrics(
             { good: goodThr, warn: warnThr },
             higherIsBetter,
           ),
-      drill_id: drillId,
+      drill_id: '',
       ...(isSchemaError ? { schema_error: true } : {}),
     });
   }
@@ -573,28 +557,6 @@ export function transformCrmFlow(rows: RawCrmFlowRow[]): CrmFlowPoint[] {
     }));
 }
 
-export interface CrmBulletDef {
-  metric_key: string;
-  label: string;
-  sublabel: string;
-  unit: string;
-  higher_is_better: boolean;
-}
-
-export const CRM_BULLET_DEFS_QUALITY: CrmBulletDef[] = [
-  { metric_key: 'win_rate',      label: 'Win Rate',       sublabel: 'Won ÷ closed in period',                       unit: '%', higher_is_better: true  },
-  { metric_key: 'avg_deal_size', label: 'Avg Deal Size',  sublabel: 'Won deals · mean of properties_amount',        unit: '$', higher_is_better: true  },
-  { metric_key: 'cycle_days',    label: 'Avg Cycle Time', sublabel: 'Created → won · mean days · lower = better',   unit: 'd', higher_is_better: false },
-  { metric_key: 'deals_opened',  label: 'Deals Opened',   sublabel: 'Volume · deals created in period',             unit: '',  higher_is_better: true  },
-];
-
-export const CRM_BULLET_DEFS_ACTIVITY: CrmBulletDef[] = [
-  { metric_key: 'calls',         label: 'Calls',            sublabel: 'HubSpot · engagements_calls in period',                  unit: '',  higher_is_better: true  },
-  { metric_key: 'emails',        label: 'Emails',           sublabel: 'HubSpot · engagements_emails in period',                 unit: '',  higher_is_better: true  },
-  { metric_key: 'meetings',      label: 'Meetings',         sublabel: 'HubSpot · engagements_meetings in period',               unit: '',  higher_is_better: true  },
-  { metric_key: 'comms_per_won', label: 'Comms / Won Deal', sublabel: 'Total comms ÷ deals won · efficiency · lower = better', unit: '',  higher_is_better: false },
-];
-
 function fmtCrm(v: number | null, unit: string): string {
   if (v === null || !Number.isFinite(v)) return '—';
   if (unit === '%') return `${v.toFixed(1)}%`;
@@ -608,15 +570,49 @@ function fmtCrm(v: number | null, unit: string): string {
   return new Intl.NumberFormat('en-US').format(Math.round(v));
 }
 
+/** Wire prefix for all CRM bullet rows — matches the BE seed migration. */
+const CRM_BULLET_PREFIX = 'crm_bullet_rows.';
+
+/**
+ * `bareKeys` is the per-section emission order — Quality and Activity
+ * share the `crm_bullet_rows.*` storage table but each query emits a
+ * disjoint subset, and UI layout pins the column order. The CH query
+ * order is unconstrained, so the FE replays the canonical ordering
+ * here.
+ */
 export function transformCrmBullets(
   rows: RawBulletAggregateRow[],
   period: PeriodValue,
   section: string,
-  defs: CrmBulletDef[],
+  bareKeys: readonly string[],
+  catalog: CatalogResponse | undefined,
 ): BulletMetric[] {
+  // No catalog → no labels → consumers render skeletons. Mirrors
+  // `transformBulletMetrics`'s contract (post-#82).
+  if (!catalog) return [];
+
+  const catalogByBareKey = new Map<string, CatalogMetric>();
+  for (const m of catalog.metrics) {
+    if (!m.metric_key || !m.metric_key.startsWith(CRM_BULLET_PREFIX)) continue;
+    const bare = m.metric_key.slice(CRM_BULLET_PREFIX.length);
+    if (!catalogByBareKey.has(bare)) catalogByBareKey.set(bare, m);
+  }
+
   const byKey = keyBy(rows, 'metric_key');
-  return defs.map((def) => {
-    const r = byKey[def.metric_key] as RawBulletAggregateRow | undefined;
+  const out: BulletMetric[] = [];
+  for (const bareKey of bareKeys) {
+    const catalogRow = catalogByBareKey.get(bareKey);
+    // Missing-id (catalog row absent for this bare key) → silently
+    // omit per DESIGN §3.3. Shouldn't happen once the seed migration
+    // is in production; defensive against pre-deploy / stale catalog.
+    if (!catalogRow) continue;
+
+    const label = catalogRow.label;
+    const sublabel = catalogRow.sublabel ?? '';
+    const unit = catalogRow.unit ?? '';
+    const higherIsBetter = catalogRow.higher_is_better;
+
+    const r = byKey[bareKey] as RawBulletAggregateRow | undefined;
     const value = r?.value ?? null;
     const median = r?.median ?? null;
     const rMin = r?.range_min ?? null;
@@ -625,14 +621,14 @@ export function transformCrmBullets(
     const distAvailable =
       value !== null && rMin !== null && rMax !== null && rMin !== rMax;
     if (!distAvailable) {
-      return {
+      out.push({
         period,
         section,
-        metric_key: def.metric_key,
-        label: def.label,
-        sublabel: def.sublabel,
-        value: fmtCrm(value, def.unit),
-        unit: def.unit,
+        metric_key: bareKey,
+        label,
+        sublabel,
+        value: fmtCrm(value, unit),
+        unit,
         range_min: '—',
         range_max: '—',
         median: '—',
@@ -642,7 +638,8 @@ export function transformCrmBullets(
         median_left_pct: 0,
         status: 'unavailable',
         drill_id: '',
-      };
+      });
+      continue;
     }
 
     const safeValue = value as number;
@@ -658,28 +655,29 @@ export function transformCrmBullets(
       const diff = safeValue - safeMedian;
       const tolerance = Math.abs(safeMedian) * 0.1;
       if (Math.abs(diff) <= tolerance) status = 'warn';
-      else if ((diff > 0) === def.higher_is_better) status = 'good';
+      else if ((diff > 0) === higherIsBetter) status = 'good';
       else status = 'bad';
     }
 
-    return {
+    out.push({
       period,
       section,
-      metric_key: def.metric_key,
-      label: def.label,
-      sublabel: def.sublabel,
-      value: fmtCrm(safeValue, def.unit),
-      unit: def.unit,
-      range_min: fmtCrm(safeMin, def.unit),
-      range_max: fmtCrm(safeMax, def.unit),
-      median: fmtCrm(safeMedian, def.unit),
+      metric_key: bareKey,
+      label,
+      sublabel,
+      value: fmtCrm(safeValue, unit),
+      unit,
+      range_min: fmtCrm(safeMin, unit),
+      range_max: fmtCrm(safeMax, unit),
+      median: fmtCrm(safeMedian, unit),
       median_label:
-        safeMedian !== null ? `Median: ${fmtCrm(safeMedian, def.unit)}` : '',
+        safeMedian !== null ? `Median: ${fmtCrm(safeMedian, unit)}` : '',
       bar_left_pct: 0,
       bar_width_pct: barWidthPct,
       median_left_pct: medianLeftPct,
       status,
       drill_id: '',
-    };
-  });
+    });
+  }
+  return out;
 }
