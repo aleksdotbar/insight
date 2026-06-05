@@ -3,7 +3,6 @@ import type {
   RawCrmFlowRow,
   RawCrmKpisRow,
   RawDeliveryTrendRow,
-  RawExecSummaryRow,
   RawIcAggregateRow,
   RawLocTrendRow,
   RawTeamMemberRow,
@@ -56,8 +55,8 @@ function hashStr(s: string): number {
   return Math.abs(h);
 }
 
-import { PEOPLE, teamMembers, teamHeadcount, topLevelManagers } from "./registry";
-export { PEOPLE, teamMembers, teamHeadcount, topLevelManagers };
+import { PEOPLE, teamMembers } from "./registry";
+export { PEOPLE, teamMembers };
 
 type IcBulletDef = {
   metric_key: string;
@@ -151,22 +150,6 @@ const IC_SECTIONS: Record<string, string[]> = {
   collab: ['slack_messages_sent', 'slack_channel_posts', 'slack_active_days', 'slack_msgs_per_active_day', 'slack_dm_ratio', 'm365_active_days', 'm365_emails_sent', 'm365_emails_received', 'm365_emails_read', 'm365_teams_chats', 'm365_files_engaged', 'm365_files_shared_internal', 'm365_files_shared_external', 'meeting_free', 'meeting_hours', 'meetings_count', 'teams_meeting_hours', 'zoom_meeting_hours', 'teams_meetings', 'zoom_meetings'],
 };
 
-export function mockExecRow(overrides?: Partial<RawExecSummaryRow>): RawExecSummaryRow {
-  return {
-    org_unit_id: 'carol.chen@example.com',
-    org_unit_name: "Carol Chen's org",
-    headcount: 12,
-    tasks_closed: 48,
-    bugs_fixed: 18,
-    build_success_pct: 94,
-    focus_time_pct: 72,
-    ai_adoption_pct: 68,
-    ai_loc_share_pct: 22,
-    pr_cycle_time_h: 18,
-    ...overrides,
-  };
-}
-
 export function mockTeamMemberRow(overrides?: Partial<RawTeamMemberRow>): RawTeamMemberRow {
   return {
     person_id: 'p1',
@@ -198,6 +181,16 @@ export function mockIcAggregateRow(overrides?: Partial<RawIcAggregateRow>): RawI
     bugs_fixed: 23,
     build_success_pct: 96,
     ai_sessions: 42,
+    loc_median: 9000,
+    ai_loc_share_pct_median: 20,
+    prs_merged_median: 6,
+    pr_cycle_time_h_median: 24,
+    focus_time_pct_median: 65,
+    tasks_closed_median: 8,
+    bugs_fixed_median: 14,
+    build_success_pct_median: 90,
+    ai_sessions_median: 30,
+    peer_n: 8,
     ...overrides,
   };
 }
@@ -231,24 +224,6 @@ export function mockBulletRow(overrides?: Partial<RawBulletAggregateRow>): RawBu
     range_max: null,
     ...overrides,
   };
-}
-
-export function mockExecRows(): RawExecSummaryRow[] {
-  const managers = topLevelManagers();
-  return managers.map((m, i) =>
-    mockExecRow({
-      org_unit_id: m.person_id,
-      org_unit_name: `${m.name}'s org`,
-      headcount: teamHeadcount(m.person_id),
-      tasks_closed: Math.round(vary(35, i, 15)),
-      bugs_fixed: Math.round(vary(12, i, 7)),
-      build_success_pct: Math.min(100, Math.max(70, Math.round(vary(90, i, 8)))),
-      focus_time_pct: Math.min(100, Math.max(30, Math.round(vary(63, i, 15)))),
-      ai_adoption_pct: Math.min(100, Math.max(10, Math.round(vary(58, i, 20)))),
-      ai_loc_share_pct: Math.min(50, Math.max(0, Math.round(vary(20, i, 12)))),
-      pr_cycle_time_h: Math.max(5, Math.round(vary(22, i, 8))),
-    }),
-  );
 }
 
 export function mockTeamMemberRows(count = PEOPLE.length): RawTeamMemberRow[] {
@@ -401,6 +376,9 @@ export function mockTeamBulletSection(
       median: d0.median,
       range_min: d0.range_min,
       range_max: d0.range_max,
+      p25: d0.range_min + (d0.median - d0.range_min) * 0.5,
+      p75: d0.median + (d0.range_max - d0.median) * 0.5,
+      n: 10,
     };
   });
 }
@@ -499,10 +477,6 @@ export function mockIcBulletSection(
 
     return row;
   });
-}
-
-export function mockExecScenario(): { teams: RawExecSummaryRow[] } {
-  return { teams: mockExecRows() };
 }
 
 export function mockTeamScenario(teamId = 'bob.park@example.com'): {

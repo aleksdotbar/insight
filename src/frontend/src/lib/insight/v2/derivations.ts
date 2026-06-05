@@ -12,6 +12,8 @@ export interface CollabActivityRow {
   value: number;
   unit: string;
   higher_is_better: boolean;
+  /** Raw catalog source tags of the constituent metrics, e.g. ["m365","zoom"]. */
+  sources: string[];
 }
 
 const AI_TOOL_KEYS: ReadonlyArray<readonly [string, string]> = [
@@ -33,6 +35,20 @@ function sumKeys(rows: BulletMetric[], keys: ReadonlyArray<string>): number {
     if (keys.includes(r.metric_key)) total += rawValue(r);
   }
   return total;
+}
+
+/** Union of catalog source_tags across the rows matching `keys`. */
+function collectSources(
+  rows: BulletMetric[],
+  keys: ReadonlyArray<string>,
+): string[] {
+  const set = new Set<string>();
+  for (const r of rows) {
+    if (keys.includes(r.metric_key)) {
+      for (const t of r.source_tags ?? []) set.add(t);
+    }
+  }
+  return [...set];
 }
 
 export function deriveAiToolComposition(
@@ -74,24 +90,38 @@ const COLLAB_META: Record<
   },
 };
 
+const MEETING_KEYS = ["meeting_hours"] as const;
+const MESSAGE_KEYS = [
+  "slack_messages_sent",
+  "m365_emails_sent",
+  "m365_teams_chats",
+] as const;
+const FILE_KEYS = ["m365_files_engaged"] as const;
+
 export function deriveCollabActivities(
   collabRows: BulletMetric[],
 ): CollabActivityRow[] {
-  const meetings = sumKeys(collabRows, ["meeting_hours"]);
-  const messages = sumKeys(collabRows, [
-    "slack_messages_sent",
-    "m365_emails_sent",
-    "m365_teams_chats",
-  ]);
-  const files = sumKeys(collabRows, ["m365_files_engaged"]);
   return [
-    { category: "meetings", value: meetings, unit: "h", ...COLLAB_META.meetings },
+    {
+      category: "meetings",
+      value: sumKeys(collabRows, MEETING_KEYS),
+      unit: "h",
+      sources: collectSources(collabRows, MEETING_KEYS),
+      ...COLLAB_META.meetings,
+    },
     {
       category: "messages",
-      value: messages,
+      value: sumKeys(collabRows, MESSAGE_KEYS),
       unit: "count",
+      sources: collectSources(collabRows, MESSAGE_KEYS),
       ...COLLAB_META.messages,
     },
-    { category: "files", value: files, unit: "count", ...COLLAB_META.files },
+    {
+      category: "files",
+      value: sumKeys(collabRows, FILE_KEYS),
+      unit: "count",
+      sources: collectSources(collabRows, FILE_KEYS),
+      ...COLLAB_META.files,
+    },
   ];
 }

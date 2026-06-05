@@ -28,6 +28,9 @@ import type {
   TeamMember,
 } from "@/types/insight";
 
+/** Per-person row from the V2_MEMBER_PRS metric. */
+type RawMemberPrsRow = { person_id: string; prs_merged: number | null };
+
 function buildSyntheticMember(
   entry: RosterEntry,
   period: PeriodValue,
@@ -67,50 +70,57 @@ export function useTeamMembers(
       range.from,
       range.to,
     ],
-    enabled: Boolean(teamId),
+    enabled: Boolean(teamId) && Boolean(roster),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
-      if (roster) {
-        const resp = await queryBatchWithRange<RawTeamMemberRow>(
-          range,
-          roster.map((r) => ({
-            id: r.email.toLowerCase(),
-            metric_id: METRIC_REGISTRY.TEAM_MEMBER,
-            $filter: `person_id eq '${odataEscapeValue(r.email.toLowerCase())}'`,
-            $top: 1,
-          })),
-        );
-        const okResults = resp.results.filter(
-          (r): r is Extract<typeof r, { status: "ok" }> => r.status === "ok",
-        );
-        if (resp.results.length > 0 && okResults.length === 0) {
-          throw new Error("TEAM_MEMBER batch returned no successful items");
-        }
-        const byEmail = new Map<string, RawTeamMemberRow>();
-        for (const r of okResults) {
-          for (const row of r.items) {
-            byEmail.set(row.person_id.toLowerCase(), row);
-          }
-        }
-        return roster.map((entry) => {
-          const row = byEmail.get(entry.email.toLowerCase());
-          return row
-            ? transformTeamMembers([row], period)[0]!
-            : buildSyntheticMember(entry, period);
-        });
-      }
-      const resp = await queryMetric<RawTeamMemberRow>(
-        METRIC_REGISTRY.TEAM_MEMBER,
-        range,
+      if (!roster) return [];
+      const ids = roster
+        .map((r) => `'${odataEscapeValue(r.email.toLowerCase())}'`)
+        .join(", ");
+      const filter = `person_id in (${ids})`;
+      // PRs merged isn't on the team_member row (it's a NULL placeholder there);
+      // fetch it from the period-bounded weekly git silver and merge it in.
+      const items: BatchQueryItem[] = [
         {
-          $filter: `org_unit_id eq '${odataEscapeValue(teamId)}'`,
-          $orderby: "display_name asc",
+          id: "members",
+          metric_id: METRIC_REGISTRY.TEAM_MEMBER,
+          $filter: filter,
           $top: 200,
         },
-      );
-      const members = transformTeamMembers(resp.items, period);
-      members.sort((a, b) => a.name.localeCompare(b.name));
-      return members;
+        {
+          id: "prs",
+          metric_id: METRIC_REGISTRY.V2_MEMBER_PRS,
+          $filter: filter,
+          $top: 200,
+        },
+      ];
+      const resp = await queryBatchWithRange<
+        RawTeamMemberRow | RawMemberPrsRow
+      >(range, items);
+      const byEmail = new Map<string, RawTeamMemberRow>();
+      const prsByEmail = new Map<string, number>();
+      for (const r of resp.results) {
+        if (r.status !== "ok") continue;
+        if (r.id === "members") {
+          for (const row of r.items as RawTeamMemberRow[]) {
+            byEmail.set(row.person_id.toLowerCase(), row);
+          }
+        } else if (r.id === "prs") {
+          for (const row of r.items as RawMemberPrsRow[]) {
+            const v = Number(row.prs_merged);
+            if (Number.isFinite(v)) prsByEmail.set(row.person_id.toLowerCase(), v);
+          }
+        }
+      }
+      return roster.map((entry) => {
+        const key = entry.email.toLowerCase();
+        const row = byEmail.get(key);
+        const member = row
+          ? transformTeamMembers([row], period)[0]!
+          : buildSyntheticMember(entry, period);
+        const prs = prsByEmail.get(key);
+        return prs != null ? { ...member, prs_merged: prs } : member;
+      });
     },
   });
 }
@@ -125,16 +135,39 @@ const TEAM_BULLET_SECTIONS = {
 
 export type TeamBulletSectionId = keyof typeof TEAM_BULLET_SECTIONS;
 
+/**
+ * Scope a team bullet aggregate to the members actually shown — the
+ * identity-tree subtree the screen renders (transitive + active) — by
+ * `person_id in (...)`, so the section aggregates over exactly the same
+ * people as the heatmap. Callers must gate the query on a non-empty roster.
+ */
+function teamScopeFilter(roster: readonly RosterEntry[]): string {
+  const ids = roster
+    .map((r) => `'${odataEscapeValue(r.email.toLowerCase())}'`)
+    .join(", ");
+  return `person_id in (${ids})`;
+}
+
+function teamScopeKey(
+  teamId: string,
+  roster: readonly RosterEntry[] | null | undefined,
+): string {
+  if (roster && roster.length > 0) {
+    return roster.map((r) => r.email.toLowerCase()).join(",");
+  }
+  return teamId.includes("@") ? teamId.toLowerCase() : teamId;
+}
+
 export function useTeamBulletSection(
   sectionId: TeamBulletSectionId,
   teamId: string,
   teamSize: number | undefined,
   period: PeriodValue,
   range: DateRange,
-  options?: { keepPrevious?: boolean },
+  options?: { keepPrevious?: boolean; roster?: readonly RosterEntry[] | null },
 ): UseQueryResult<BulletMetric[]> {
   const metricId = TEAM_BULLET_SECTIONS[sectionId];
-  const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
+  const scopeKey = teamScopeKey(teamId, options?.roster);
   const { data: catalog } = useCatalog();
   const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
@@ -142,18 +175,20 @@ export function useTeamBulletSection(
       "team",
       "bullet",
       sectionId,
-      scopeId,
+      scopeKey,
       teamSize,
       period,
       range.from,
       range.to,
       catalogKey,
     ],
-    enabled: Boolean(teamId),
+    enabled: Boolean(teamId) && Boolean(options?.roster?.length) && Boolean(catalog),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
+      const roster = options?.roster;
+      if (!roster?.length) return [];
       const resp = await queryMetric<RawBulletAggregateRow>(metricId, range, {
-        $filter: `org_unit_id eq '${odataEscapeValue(scopeId)}'`,
+        $filter: teamScopeFilter(roster),
       });
       return transformBulletMetrics(
         resp.items,
@@ -178,9 +213,9 @@ export function useTeamBulletSections(
   teamSize: number | undefined,
   period: PeriodValue,
   range: DateRange,
-  options?: { keepPrevious?: boolean },
+  options?: { keepPrevious?: boolean; roster?: readonly RosterEntry[] | null },
 ): UseQueryResult<TeamBulletSectionsData> {
-  const scopeId = teamId.includes("@") ? teamId.toLowerCase() : teamId;
+  const scopeKey = teamScopeKey(teamId, options?.roster);
   const { data: catalog } = useCatalog();
   const catalogKey = catalog?.generated_at ?? null;
   return useQuery({
@@ -188,20 +223,23 @@ export function useTeamBulletSections(
       "team",
       "bullet-batch",
       sectionIds.join(","),
-      scopeId,
+      scopeKey,
       teamSize,
       period,
       range.from,
       range.to,
       catalogKey,
     ],
-    enabled: Boolean(teamId),
+    enabled: Boolean(teamId) && Boolean(options?.roster?.length) && Boolean(catalog),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
+      const roster = options?.roster;
+      if (!roster?.length) return { bySection: {}, errors: {} };
+      const filter = teamScopeFilter(roster);
       const items: BatchQueryItem[] = sectionIds.map((id) => ({
         id,
         metric_id: TEAM_BULLET_SECTIONS[id],
-        $filter: `org_unit_id eq '${odataEscapeValue(scopeId)}'`,
+        $filter: filter,
       }));
       const resp = await queryBatchWithRange<RawBulletAggregateRow>(
         range,
@@ -235,29 +273,24 @@ export function useTeamBulletSections(
   });
 }
 
-export type TeamDrillTarget =
-  | { kind: "team"; teamId: string; drillId: string }
-  | { kind: "cell"; personId: string; drillId: string };
+export type TeamDrillTarget = {
+  kind: "cell";
+  personId: string;
+  drillId: string;
+};
 
 export function useTeamDrill(
   target: TeamDrillTarget | null,
   range: DateRange,
 ): UseQueryResult<DrillData | null> {
   const key =
-    target == null
-      ? null
-      : target.kind === "team"
-        ? `team:${target.teamId}:${target.drillId}`
-        : `cell:${target.personId}:${target.drillId}`;
+    target == null ? null : `cell:${target.personId}:${target.drillId}`;
   return useQuery({
     queryKey: ["team", "drill", key, range.from, range.to],
     enabled: Boolean(target),
     queryFn: async () => {
       if (!target) return null;
-      const filter =
-        target.kind === "team"
-          ? `org_unit_id eq '${odataEscapeValue(target.teamId)}' and drill_id eq '${odataEscapeValue(target.drillId)}'`
-          : `person_id eq '${odataEscapeValue(target.personId.toLowerCase())}' and drill_id eq '${odataEscapeValue(target.drillId)}'`;
+      const filter = `person_id eq '${odataEscapeValue(target.personId.toLowerCase())}' and drill_id eq '${odataEscapeValue(target.drillId)}'`;
       const resp = await queryMetric<RawDrillRow>(
         METRIC_REGISTRY.IC_DRILL,
         range,

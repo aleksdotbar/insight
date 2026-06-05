@@ -128,6 +128,7 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
     teamSize,
     period,
     dateRange,
+    { roster },
   );
   const qualityQ = useTeamBulletSection(
     "code_quality",
@@ -135,6 +136,7 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
     teamSize,
     period,
     dateRange,
+    { roster },
   );
   const estimationQ = useTeamBulletSection(
     "estimation",
@@ -142,6 +144,7 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
     teamSize,
     period,
     dateRange,
+    { roster },
   );
   const collabQ = useTeamBulletSection(
     "collaboration",
@@ -149,6 +152,7 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
     teamSize,
     period,
     dateRange,
+    { roster },
   );
   const aiQ = useTeamBulletSection(
     "ai_adoption",
@@ -156,6 +160,7 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
     teamSize,
     period,
     dateRange,
+    { roster },
   );
 
   const drillQ = useTeamDrill(drillTarget, dateRange);
@@ -174,10 +179,6 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
   const scopedBulletNote = scopingActive
     ? `AI Adoption is scoped to direct reports (${members.length} of ${allMembers.length} members). Other sections still reflect the whole team.`
     : null;
-
-  const handleDrillClick = (drillId: string): void => {
-    setDrillTarget({ kind: "team", teamId, drillId });
-  };
 
   const handleCellDrill = (personId: string, drillId: string): void => {
     setDrillTarget({ kind: "cell", personId, drillId });
@@ -277,7 +278,6 @@ export function TeamViewScreen({ teamId, viewerEmail }: TeamViewScreenProps) {
           collaboration: bulletStatus(collabQ),
         }}
         viewMode={viewMode}
-        onDrillClick={handleDrillClick}
         onRetry={retrySection}
       />
 

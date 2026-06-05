@@ -143,14 +143,34 @@ describe("transformBulletMetrics", () => {
     expect(out[0]!.metric_key).toBe("tasks_completed");
   });
 
-  it("synthesizes honest-zero rows using the catalog's label", () => {
+  it("backfills honest-zero rows for catalog gaps when the section responded", () => {
     // Override the label so we can confirm the transform sources from the
     // catalog row (no compile-in fallback exists post-#82).
     const catalog = catalogWith([
-      bulletCatalogRow("tasks_completed", { label: "Catalog Override Label" }),
+      bulletCatalogRow("tasks_completed", { label: "Tasks Closed" }),
+      bulletCatalogRow("task_dev_time", { label: "Catalog Override Label" }),
     ]);
-    // Backend returns no rows → transform must synthesize one for the
-    // catalog-known metric_key.
+    // Backend answered the section with one metric; the catalog-known gap is
+    // backfilled as an honest zero.
+    const out = transformBulletMetrics(
+      [rawBullet("tasks_completed", { value: 7 })],
+      "task_delivery",
+      "week",
+      undefined,
+      "ic",
+      catalog,
+    );
+    expect(out).toHaveLength(2);
+    const synth = out.find((r) => r.metric_key === "task_dev_time")!;
+    expect(synth.label).toBe("Catalog Override Label");
+    // Honest-zero rows have no distribution → 'unavailable'.
+    expect(synth.status).toBe("unavailable");
+  });
+
+  it("returns no rows when the backend answered the section with nothing", () => {
+    // An entirely absent section is "no data for this period" — the transform
+    // must not fabricate a grid of zeros that masks the empty state.
+    const catalog = catalogWith([bulletCatalogRow("tasks_completed")]);
     const out = transformBulletMetrics(
       [],
       "task_delivery",
@@ -159,11 +179,7 @@ describe("transformBulletMetrics", () => {
       "ic",
       catalog,
     );
-    expect(out).toHaveLength(1);
-    expect(out[0]!.metric_key).toBe("tasks_completed");
-    expect(out[0]!.label).toBe("Catalog Override Label");
-    // Honest-zero rows have no distribution → 'unavailable'.
-    expect(out[0]!.status).toBe("unavailable");
+    expect(out).toHaveLength(0);
   });
 
   it("filters catalog rows by section prefix (mismatched prefix is omitted)", () => {

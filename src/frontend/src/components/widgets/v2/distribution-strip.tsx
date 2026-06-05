@@ -37,7 +37,7 @@ import {
   type PeerStats,
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
-import { STATUS_SURFACE } from "@/lib/status";
+import { STATUS_SURFACE_CLASS } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { HistogramBin } from "@/queries/v2/ic-extras";
 import type { BulletMetric } from "@/types/insight";
@@ -50,23 +50,21 @@ function positionText(
   status: PeerStatusWithNeutral,
   cohortLabel: PeerCohortLabel,
 ): string {
-  if (status === "top") return `top 25% in ${cohortLabel}`;
-  if (status === "bottom") return `bottom 25% in ${cohortLabel}`;
-  if (status === "in_pack") return `middle 50% in ${cohortLabel}`;
-  return "no peer data";
+  if (status === "top") return `Top 25% in ${cohortLabel}`;
+  if (status === "bottom") return `Bottom 25% in ${cohortLabel}`;
+  if (status === "in_pack") return `Middle 50% in ${cohortLabel}`;
+  return "No peer data";
 }
 
 export interface DistributionStripProps {
   row: BulletMetric;
   bins?: HistogramBin[] | null;
-  cohortStats?: PeerStats | null;
   cohortLabel?: PeerCohortLabel;
 }
 
 export function DistributionStrip({
   row,
   bins,
-  cohortStats,
   cohortLabel = "team",
 }: DistributionStripProps) {
   const { focusMode } = useSettings();
@@ -100,7 +98,6 @@ export function DistributionStrip({
           <PeerBody
             row={row}
             unit={unit}
-            cohortStats={cohortStats}
             cohortLabel={cohortLabel}
             focusMode={focusMode}
             catalogRow={catalogRow}
@@ -153,18 +150,17 @@ function HistogramBody({
 function PeerBody({
   row,
   unit,
-  cohortStats,
   cohortLabel,
   focusMode,
   catalogRow,
 }: {
   row: BulletMetric;
   unit: string;
-  cohortStats?: PeerStats | null;
   cohortLabel: PeerCohortLabel;
   focusMode: ReturnType<typeof useSettings>["focusMode"];
   catalogRow: CatalogMetric | undefined;
 }) {
+  const cohortStats = row.peer ?? null;
   const isSchemaError = row.schema_error === true;
   const higherIsBetter = catalogRow?.higher_is_better ?? true;
   const numericValue = Number(row.value);
@@ -198,7 +194,7 @@ function PeerBody({
           </p>
         </div>
       ) : (
-        <p className="text-[11px] text-muted-foreground">no peer data</p>
+        <p className="text-[11px] text-muted-foreground">No peer data</p>
       )}
     </div>
   );
@@ -224,11 +220,11 @@ function PeerStrip({
   const p75Left = pct(stats.p75);
 
   const bottomZoneClass = higherIsBetter
-    ? STATUS_SURFACE.bad
-    : STATUS_SURFACE.good;
+    ? STATUS_SURFACE_CLASS.bad
+    : STATUS_SURFACE_CLASS.good;
   const topZoneClass = higherIsBetter
-    ? STATUS_SURFACE.good
-    : STATUS_SURFACE.bad;
+    ? STATUS_SURFACE_CLASS.good
+    : STATUS_SURFACE_CLASS.bad;
 
   return (
     <div

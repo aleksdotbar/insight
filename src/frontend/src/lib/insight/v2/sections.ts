@@ -16,7 +16,6 @@ export type TeamSectionId =
 export const IC_SECTIONS: ReadonlyArray<{ id: IcSectionId; label: string }> = [
   { id: "task_delivery", label: "Task delivery" },
   { id: "git_output", label: "Git output" },
-  { id: "code_quality", label: "Code quality" },
   { id: "collaboration", label: "Collaboration" },
   { id: "ai_adoption", label: "AI dev tools" },
 ] as const;

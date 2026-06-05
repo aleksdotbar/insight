@@ -1,3 +1,5 @@
+import type { PeerStats } from "@/lib/peers";
+
 export type PeriodValue = "week" | "month" | "quarter" | "year";
 export type CustomRange = { from: string; to: string };
 export type ViewMode = "chart" | "tile";
@@ -53,37 +55,6 @@ export type DataAvailability = {
   ai: ConnectorAvailability;
 };
 
-export interface ExecColumnThreshold {
-  metric_key: string;
-  threshold: number;
-}
-export interface ExecViewConfig {
-  column_thresholds: ExecColumnThreshold[];
-}
-export interface ExecTeamRow {
-  team_id: string;
-  team_name: string;
-  headcount: number;
-  tasks_closed: number | null;
-  bugs_fixed: number | null;
-  build_success_pct: number | null;
-  focus_time_pct: number | null;
-  ai_adoption_pct: number | null;
-  ai_loc_share_pct: number | null;
-  pr_cycle_time_h: number | null;
-  status: "good" | "warn" | "bad";
-}
-export interface OrgKpis {
-  avgBuildSuccess: number | null;
-  avgAiAdoption: number | null;
-  avgFocus: number | null;
-}
-export interface ExecViewData {
-  teams: ExecTeamRow[];
-  orgKpis: OrgKpis;
-  config: ExecViewConfig;
-}
-
 export interface TeamKpi {
   metric_key: string;
   label: string;
@@ -126,6 +97,14 @@ export interface BulletMetric {
   bar_width_pct: number;
   median_left_pct: number;
   status: "good" | "warn" | "bad" | "unavailable";
+  /**
+   * Peer cohort distribution for this metric (p25/p50/p75/min/max/n),
+   * carried on the row by the bullet query_ref — same cohort that draws the
+   * bar (department for IC, company for team). Drives quartile coloring +
+   * the drilldown distribution strip. Absent when the backend returned no
+   * cohort (e.g. honest-zero / unavailable rows).
+   */
+  peer?: PeerStats;
   drill_id: string;
   /**
    * Set when the catalog row for this metric reported
@@ -135,6 +114,12 @@ export interface BulletMetric {
    * Absent / false ⇒ render normally.
    */
   schema_error?: boolean;
+  /**
+   * Data-source tags from the catalog (`source_tags`), e.g. `["m365","zoom"]`,
+   * `["jira"]`, `["bitbucket"]`. Used to show provenance ("M365 · Zoom") in
+   * place of a peer-status line for metrics with no cohort.
+   */
+  source_tags?: string[];
 }
 export interface BulletSection {
   id: string;
@@ -182,6 +167,13 @@ export interface IcKpi {
   description?: string;
   delta: string;
   delta_type: "good" | "warn" | "bad" | "neutral";
+  /**
+   * Department peer median for this KPI + cohort size, folded into the
+   * IC_KPIS query_ref. Raw numeric (consumers format). NULL when the person
+   * has no department cohort. Replaces the standalone ic_kpi_peer_median.
+   */
+  peer_median?: number | null;
+  peer_n?: number | null;
 }
 export interface TimeOffNotice {
   days: number;

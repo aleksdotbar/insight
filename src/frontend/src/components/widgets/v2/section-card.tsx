@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
 import { hasBulletValue, rowStatus } from "@/lib/insight/v2/peer-status";
-import { type PeerStats } from "@/lib/peers";
 import {
   aggregateSectionStatus,
   pickSectionHeadline,
@@ -19,8 +18,8 @@ import {
   type ScoredMetric,
 } from "@/lib/scoring";
 import {
-  STATUS_BG,
-  STATUS_TEXT,
+  STATUS_BG_CLASS,
+  STATUS_TEXT_CLASS,
   applyFocusStatus,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
@@ -52,7 +51,6 @@ export interface SectionCardProps {
   onHover?: () => void;
   sectionId?: string;
   subtitle?: string;
-  cohortStats?: Map<string, PeerStats>;
   unavailable?: boolean;
 }
 
@@ -63,7 +61,6 @@ export function SectionCard({
   onHover,
   sectionId,
   subtitle,
-  cohortStats,
   unavailable,
 }: SectionCardProps) {
   const { focusMode } = useSettings();
@@ -88,7 +85,7 @@ export function SectionCard({
 
   const scored: ScoredMetric<BulletMetric>[] = rows.map((r) => ({
     row: r,
-    status: rowStatus(r, cohortStats, byMetricKey),
+    status: rowStatus(r, byMetricKey),
   }));
   const rawStatus = aggregateSectionStatus(scored);
   const status = applyFocusStatus(rawStatus, focusMode);
@@ -97,7 +94,7 @@ export function SectionCard({
   const topCount = counts.good;
   const badgeText =
     evaluated === 0
-      ? "no peer data"
+      ? "No peer data"
       : `${topCount} of ${evaluated} in top`;
 
   const headline = pickSectionHeadline(scored);
@@ -123,7 +120,7 @@ export function SectionCard({
         />
       }
       className={cn(
-        "border-l-2 text-left transition-colors hover:bg-accent",
+        "border-l-2 text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >
@@ -135,7 +132,7 @@ export function SectionCard({
           ) : null}
           <span className="flex items-center gap-1.5">
             <span
-              className={cn("size-1.5 shrink-0 rounded-full", STATUS_BG[status])}
+              className={cn("size-1.5 shrink-0 rounded-full", STATUS_BG_CLASS[status])}
               aria-hidden
             />
             <span className="tabular-nums">{badgeText}</span>
@@ -154,7 +151,7 @@ export function SectionCard({
               <ul className="flex flex-col gap-1.5">
                 {preview.map((r) => {
                   const previewStatus = applyFocusStatus(
-                    rowStatus(r, cohortStats, byMetricKey),
+                    rowStatus(r, byMetricKey),
                     focusMode,
                   );
                   return (
@@ -165,7 +162,7 @@ export function SectionCard({
                       <span
                         className={cn(
                           "size-2 shrink-0 rounded-full",
-                          STATUS_BG[previewStatus],
+                          STATUS_BG_CLASS[previewStatus],
                         )}
                         aria-hidden
                       />
@@ -175,7 +172,7 @@ export function SectionCard({
                       <span
                         className={cn(
                           "shrink-0 font-medium tabular-nums",
-                          STATUS_TEXT[previewStatus],
+                          STATUS_TEXT_CLASS[previewStatus],
                         )}
                       >
                         {r.value}

@@ -77,9 +77,8 @@ describe("<CountersBlock>", () => {
         },
       ]),
     );
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
-      <CountersBlock rows={[makeBullet({ value: "12" })]} cohortStats={cohortStats} />,
+      <CountersBlock rows={[makeBullet({ value: "12", peer: STATS })]} />,
     );
     await waitFor(() => {
       expect(screen.getByText("Top win")).toBeInTheDocument();
@@ -98,11 +97,9 @@ describe("<CountersBlock>", () => {
         },
       ]),
     );
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
       <CountersBlock
-        rows={[makeBullet({ value: "12", schema_error: true })]}
-        cohortStats={cohortStats}
+        rows={[makeBullet({ value: "12", schema_error: true, peer: STATS })]}
       />,
     );
     // `waitFor` retries until the post-fetch render commits — without
@@ -117,9 +114,8 @@ describe("<CountersBlock>", () => {
 
   it("missing-id row collapses to neutral (no peer coloring)", async () => {
     fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
-      <CountersBlock rows={[makeBullet({ value: "12" })]} cohortStats={cohortStats} />,
+      <CountersBlock rows={[makeBullet({ value: "12", peer: STATS })]} />,
     );
     await waitFor(() => {
       expect(screen.queryByText("Top win")).not.toBeInTheDocument();

@@ -27,7 +27,6 @@ import {
   renderWithCatalogClient,
 } from "@/test/catalog-test-utils";
 import { MembersHeatmap } from "./index";
-import type { PeerStats } from "@/lib/peers";
 import type {
   BulletMetric,
   PeriodValue,
@@ -76,15 +75,6 @@ function makeBullet(overrides: Partial<BulletMetric> = {}): BulletMetric {
   };
 }
 
-const MTTR_STATS: PeerStats = {
-  p25: 5,
-  p50: 10,
-  p75: 20,
-  min: 1,
-  max: 40,
-  n: 12,
-};
-
 describe("<MembersHeatmap>", () => {
   beforeEach(() => {
     authStore.reset();
@@ -105,18 +95,29 @@ describe("<MembersHeatmap>", () => {
         },
       ]),
     );
+    // Cohort is computed client-side from the displayed members. Alice's
+    // MTTR (30, higher = worse) sits well above her teammates (5), so she
+    // is the only member in the bottom quartile.
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       ["alice@example.com", [makeBullet({ value: "30" })]],
+      ["bob@example.com", [makeBullet({ value: "5" })]],
+      ["carol@example.com", [makeBullet({ value: "5" })]],
+      ["dave@example.com", [makeBullet({ value: "5" })]],
+      ["eve@example.com", [makeBullet({ value: "5" })]],
     ]);
-    const cohortStats = new Map([["mean_time_to_resolution", MTTR_STATS]]);
     renderWithCatalogClient(
       <MembersHeatmap
-        members={[makeMember()]}
+        members={[
+          makeMember({ person_id: "alice@example.com", name: "Alice" }),
+          makeMember({ person_id: "bob@example.com", name: "Bob" }),
+          makeMember({ person_id: "carol@example.com", name: "Carol" }),
+          makeMember({ person_id: "dave@example.com", name: "Dave" }),
+          makeMember({ person_id: "eve@example.com", name: "Eve" }),
+        ]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
       />,
     );
-    // higher_is_better=false + value=30 vs p75=20 ⇒ 'bottom' ⇒ 1 issue.
+    // higher_is_better=false + value=30 above the teammates' p75 ⇒ 'bottom' ⇒ 1 issue.
     // The string "1 issue" is unique to the chip (the legend uses
     // "bottom 25%" not a count), so a single getByText pins down the
     // assertion to the right surface.
@@ -143,12 +144,10 @@ describe("<MembersHeatmap>", () => {
         [makeBullet({ value: "30", schema_error: true })],
       ],
     ]);
-    const cohortStats = new Map([["mean_time_to_resolution", MTTR_STATS]]);
     renderWithCatalogClient(
       <MembersHeatmap
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
       />,
     );
     // belowCount=0 ⇒ chip shows "on par" (no "N issues" string anywhere
@@ -161,15 +160,26 @@ describe("<MembersHeatmap>", () => {
 
   it("missing-id bullet (no catalog row) does NOT contribute to the 'issues' count", async () => {
     fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
+    // Multi-member so the client-side cohort has spread: Alice's MTTR (30)
+    // is bottom-quartile vs teammates (5). Missing-id cells still classify
+    // from the local COLUMNS higher_is_better, so the chip still appears.
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       ["alice@example.com", [makeBullet({ value: "30" })]],
+      ["bob@example.com", [makeBullet({ value: "5" })]],
+      ["carol@example.com", [makeBullet({ value: "5" })]],
+      ["dave@example.com", [makeBullet({ value: "5" })]],
+      ["eve@example.com", [makeBullet({ value: "5" })]],
     ]);
-    const cohortStats = new Map([["mean_time_to_resolution", MTTR_STATS]]);
     renderWithCatalogClient(
       <MembersHeatmap
-        members={[makeMember()]}
+        members={[
+          makeMember({ person_id: "alice@example.com", name: "Alice" }),
+          makeMember({ person_id: "bob@example.com", name: "Bob" }),
+          makeMember({ person_id: "carol@example.com", name: "Carol" }),
+          makeMember({ person_id: "dave@example.com", name: "Dave" }),
+          makeMember({ person_id: "eve@example.com", name: "Eve" }),
+        ]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
       />,
     );
     // For the COLUMNS-driven cell scoring the missing-id case is

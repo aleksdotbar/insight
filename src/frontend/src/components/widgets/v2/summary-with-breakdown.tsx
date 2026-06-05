@@ -6,7 +6,7 @@ import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSettings } from "@/hooks/use-settings";
-import { STATUS_TEXT, applyFocusStatus, type Status } from "@/lib/status";
+import { STATUS_TEXT_CLASS, applyFocusStatus, type Status } from "@/lib/status";
 import { SECTION_STRIPE } from "@/lib/scoring";
 import { cn } from "@/lib/utils";
 
@@ -22,12 +22,36 @@ export interface SummaryWithBreakdownProps {
   value: number;
   unit?: string;
   status?: Status;
+  /** Catalog source tags (e.g. ["m365","zoom"]). Shown as provenance instead
+   * of a peer-status line when present. */
+  sources?: string[];
   breakdown: BreakdownItem[];
   breakdownLabel?: string;
   defaultOpen?: boolean;
   isPending?: boolean;
   isError?: boolean;
   onRetry?: () => void;
+}
+
+/** Display labels for catalog source tags. */
+const SOURCE_LABELS: Record<string, string> = {
+  m365: "M365",
+  teams: "Teams",
+  zoom: "Zoom",
+  slack: "Slack",
+  jira: "Jira",
+  bitbucket: "Bitbucket",
+  github: "GitHub",
+  gitlab: "GitLab",
+  cursor: "Cursor",
+  claude_code: "Claude Code",
+  codex: "Codex",
+  copilot: "Copilot",
+  bamboohr: "BambooHR",
+};
+
+function formatSources(sources: string[]): string {
+  return sources.map((s) => SOURCE_LABELS[s] ?? s).join(" · ");
 }
 
 const SEGMENT_CLASSES = [
@@ -52,6 +76,7 @@ export function SummaryWithBreakdown({
   value,
   unit,
   status: statusProp = "neutral",
+  sources,
   breakdown,
   breakdownLabel = "Breakdown",
   defaultOpen = false,
@@ -86,14 +111,20 @@ export function SummaryWithBreakdown({
           <div className="flex min-w-0 flex-col gap-1">
             <span className="truncate text-sm font-semibold">{label}</span>
             <MetricSublabel description={description} />
-            <span
-              className={cn(
-                "text-xs uppercase tracking-wider",
-                STATUS_TEXT[status],
-              )}
-            >
-              {status === "neutral" ? "no data" : status}
-            </span>
+            {sources && sources.length > 0 ? (
+              <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                {formatSources(sources)}
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  "text-xs uppercase tracking-wider",
+                  STATUS_TEXT_CLASS[status],
+                )}
+              >
+                {status === "neutral" ? "no data" : status}
+              </span>
+            )}
           </div>
           <span className="flex items-baseline gap-1 tabular-nums">
             <span className="text-3xl font-semibold sm:text-4xl">

@@ -12,7 +12,6 @@ import {
 import { useSettings } from "@/hooks/use-settings";
 import {
   bulletCatalogKey,
-  peerStatusForRow,
   type CatalogByKey,
 } from "@/lib/insight/v2/peer-status";
 import {
@@ -21,6 +20,7 @@ import {
   PEER_FILL,
   PEER_LABEL,
   PEER_TEXT,
+  peerStatsFor,
   peerStatusVsQuartiles,
   type FocusMode,
   type PeerStats,
@@ -50,7 +50,6 @@ function computeWowPct(
 type TeamRowKey =
   | "tasks_closed"
   | "prs_merged"
-  | "build_success_pct"
   | "bugs_fixed"
   | "focus_time_pct"
   | "ai_loc_share_pct";
@@ -115,26 +114,6 @@ const COLUMNS: ColumnDef[] = [
     mobile: true,
     source: "team_row",
     teamRowField: "prs_merged",
-  },
-  {
-    key: "pr_cycle_time_h",
-    label: "PR cycle time",
-    short: "Cycle",
-    unit: "h",
-    higher_is_better: false,
-    mobile: true,
-    source: "bullet",
-    metricKey: "pr_cycle_time_h",
-  },
-  {
-    key: "build_success_pct",
-    label: "Build success",
-    short: "Build %",
-    unit: "%",
-    higher_is_better: true,
-    mobile: false,
-    source: "team_row",
-    teamRowField: "build_success_pct",
   },
   {
     key: "bugs_fixed",
@@ -204,6 +183,27 @@ function valueForColumn(
   return getNumericBullet(bullets, col.metricKey);
 }
 
+/**
+ * Peer status of a bullet against the team cohort (computed client-side
+ * from the displayed members), oriented by the catalog's `higher_is_better`.
+ * Mirrors `peerStatusForRow` but reads the team cohort map instead of the
+ * row's own (department) `peer` — so the whole heatmap uses one cohort.
+ */
+function teamPeerStatus(
+  b: BulletMetric,
+  cohortByMetric: Map<string, PeerStats>,
+  byMetricKey: CatalogByKey,
+): PeerStatusWithNeutral {
+  if (b.schema_error) return "neutral";
+  const value = Number(b.value);
+  if (!Number.isFinite(value)) return "neutral";
+  const stats = cohortByMetric.get(b.metric_key);
+  if (!stats) return "neutral";
+  const m = byMetricKey(bulletCatalogKey(b));
+  if (!m) return "neutral";
+  return peerStatusVsQuartiles(value, stats, m.higher_is_better);
+}
+
 type SortKey = "name" | "issues" | string;
 
 export interface MembersHeatmapProps {
@@ -211,12 +211,7 @@ export interface MembersHeatmapProps {
   bulletsByPerson?: Map<string, BulletMetric[]>;
   previousBulletsByPerson?: Map<string, BulletMetric[]>;
   previousMembers?: Map<string, TeamMember>;
-  cohortStats?: Map<string, PeerStats>;
   onMemberClick?: (m: TeamMember) => void;
-}
-
-function lookupCohortKey(col: ColumnDef): string {
-  return col.source === "team_row" ? col.key : col.metricKey;
 }
 
 export function MembersHeatmap({
@@ -224,7 +219,6 @@ export function MembersHeatmap({
   bulletsByPerson,
   previousBulletsByPerson,
   previousMembers,
-  cohortStats,
   onMemberClick,
 }: MembersHeatmapProps) {
   const { focusMode } = useSettings();
@@ -233,13 +227,51 @@ export function MembersHeatmap({
   const [sheetMember, setSheetMember] = useState<TeamMember | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Cohort = the displayed team. Each column's quartiles are computed
+  // client-side from the members shown (team_row + bullet columns alike via
+  // valueForColumn), so cell colour = position vs this team — no separate
+  // cohort query.
   const statsByColumn = useMemo(() => {
+    const valuesByCol = new Map<ColumnDef["key"], number[]>();
+    for (const m of members) {
+      const bullets = bulletsByPerson?.get(m.person_id.toLowerCase());
+      for (const col of COLUMNS) {
+        const v = valueForColumn(col, m, bullets);
+        if (v == null) continue;
+        const arr = valuesByCol.get(col.key);
+        if (arr) arr.push(v);
+        else valuesByCol.set(col.key, [v]);
+      }
+    }
     const map = new Map<ColumnDef["key"], PeerStats | null>();
     for (const col of COLUMNS) {
-      map.set(col.key, cohortStats?.get(lookupCohortKey(col)) ?? null);
+      map.set(col.key, peerStatsFor(valuesByCol.get(col.key) ?? []));
     }
     return map;
-  }, [cohortStats]);
+  }, [members, bulletsByPerson]);
+
+  // Team cohort per bullet metric_key (covers every bullet a member has,
+  // not just the column set) — used for the worst-metric pick and the
+  // expanded all-metrics list so they match the cell colouring.
+  const cohortByMetric = useMemo(() => {
+    const valuesByMetric = new Map<string, number[]>();
+    for (const m of members) {
+      for (const b of bulletsByPerson?.get(m.person_id.toLowerCase()) ?? []) {
+        if (b.schema_error) continue;
+        const v = Number(b.value);
+        if (!Number.isFinite(v)) continue;
+        const arr = valuesByMetric.get(b.metric_key);
+        if (arr) arr.push(v);
+        else valuesByMetric.set(b.metric_key, [v]);
+      }
+    }
+    const map = new Map<string, PeerStats>();
+    for (const [k, vals] of valuesByMetric) {
+      const s = peerStatsFor(vals);
+      if (s) map.set(k, s);
+    }
+    return map;
+  }, [members, bulletsByPerson]);
 
   const rows = useMemo(() => {
     const built = members.map((m) => {
@@ -282,7 +314,7 @@ export function MembersHeatmap({
         (bullets ?? [])
           .map((b) => {
             const value = Number(b.value);
-            const stats = cohortStats?.get(b.metric_key);
+            const stats = cohortByMetric.get(b.metric_key);
             const catalogRow = byMetricKey(bulletCatalogKey(b));
             const higherIsBetter = catalogRow?.higher_is_better ?? true;
             let gap = 0;
@@ -298,7 +330,7 @@ export function MembersHeatmap({
             }
             return {
               bullet: b,
-              ps: peerStatusForRow(b, cohortStats, byMetricKey),
+              ps: teamPeerStatus(b, cohortByMetric, byMetricKey),
               gap,
             };
           })
@@ -314,7 +346,7 @@ export function MembersHeatmap({
       };
     });
     return built;
-  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, statsByColumn, cohortStats, byMetricKey]);
+  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, statsByColumn, cohortByMetric, byMetricKey]);
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -420,7 +452,7 @@ export function MembersHeatmap({
                 key={row.member.person_id}
                 row={row}
                 focusMode={focusMode}
-                cohortStats={cohortStats}
+                cohortByMetric={cohortByMetric}
                 byMetricKey={byMetricKey}
                 expanded={expandedId === row.member.person_id}
                 onToggleExpand={() =>
@@ -520,7 +552,7 @@ function HeatmapCell({
           <p className="text-xs text-muted-foreground">
             {median != null
               ? `Team median: ${Math.round(median * 10) / 10}${col.unit ?? ""}`
-              : "no peer data"}
+              : "No peer data"}
           </p>
           <p className={cn("mt-1 text-xs font-medium", PEER_TEXT[focused])}>
             {PEER_LABEL[focused]}
@@ -545,7 +577,7 @@ function HeatmapCell({
 function MemberRow({
   row,
   focusMode,
-  cohortStats,
+  cohortByMetric,
   byMetricKey,
   expanded,
   onToggleExpand,
@@ -553,7 +585,7 @@ function MemberRow({
 }: {
   row: RowShape;
   focusMode: FocusMode;
-  cohortStats?: Map<string, PeerStats>;
+  cohortByMetric: Map<string, PeerStats>;
   byMetricKey: CatalogByKey;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -630,7 +662,7 @@ function MemberRow({
           bullets={bullets}
           columnCount={cells.length}
           focusMode={focusMode}
-          cohortStats={cohortStats}
+          cohortByMetric={cohortByMetric}
           byMetricKey={byMetricKey}
         />
       ) : null}
@@ -642,13 +674,13 @@ function ExpandedBullets({
   bullets,
   columnCount,
   focusMode,
-  cohortStats,
+  cohortByMetric,
   byMetricKey,
 }: {
   bullets: BulletMetric[];
   columnCount: number;
   focusMode: FocusMode;
-  cohortStats?: Map<string, PeerStats>;
+  cohortByMetric: Map<string, PeerStats>;
   byMetricKey: CatalogByKey;
 }) {
   const RANK: Record<PeerStatusWithNeutral, number> = {
@@ -659,7 +691,7 @@ function ExpandedBullets({
   };
   const annotated = bullets.map((b) => ({
     bullet: b,
-    status: peerStatusForRow(b, cohortStats, byMetricKey),
+    status: teamPeerStatus(b, cohortByMetric, byMetricKey),
   }));
   annotated.sort((a, b) => RANK[a.status] - RANK[b.status]);
   return (
@@ -737,10 +769,10 @@ function ColumnHeader({
 function Legend() {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-      <LegendSwatch className={PEER_FILL.top}>top 25%</LegendSwatch>
-      <LegendSwatch className={PEER_FILL.in_pack}>on par</LegendSwatch>
-      <LegendSwatch className={PEER_FILL.bottom}>bottom 25%</LegendSwatch>
-      <LegendSwatch className={PEER_FILL.neutral}>no peer data</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.top}>Top 25%</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.in_pack}>On par</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.bottom}>Bottom 25%</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.neutral}>No peer data</LegendSwatch>
     </div>
   );
 }

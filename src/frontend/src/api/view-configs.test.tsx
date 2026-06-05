@@ -1,6 +1,5 @@
 /**
- * Hook tests for `useExecViewConfig`, `useTeamViewConfig`, and
- * `useTeamKpisByPeriod` (Refs #79).
+ * Hook tests for `useTeamViewConfig` and `useTeamKpisByPeriod` (Refs #79).
  *
  * Stubs `fetchCatalog` directly (vi.mock) — the same pattern
  * `use-catalog.test.tsx` uses — so the assertions exercise the catalog →
@@ -8,14 +7,14 @@
  * QueryClient.
  *
  * Coverage:
- *  - parity with the pre-#79 shape of `EXEC_VIEW_CONFIG.column_thresholds`
- *    and `TEAM_VIEW_CONFIG.{alert_thresholds, column_thresholds}` when the
+ *  - parity with the pre-#79 shape of
+ *    `TEAM_VIEW_CONFIG.{alert_thresholds, column_thresholds}` when the
  *    catalog returns matching `view_configs.*` rows.
  *  - `schema_status='error'` rows are omitted — downstream renderers
- *    (`OrgKpiCards`, `MembersTable`, `AttentionNeeded`) then fall through
- *    to their neutral-coloring path.
+ *    (`MembersTable`, `AttentionNeeded`) then fall through to their
+ *    neutral-coloring path.
  *  - alert_thresholds are skipped when the catalog doesn't carry
- *    `alert_trigger` / `alert_bad` (e.g. an exec-only metric).
+ *    `alert_trigger` / `alert_bad`.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -35,7 +34,6 @@ vi.mock("./catalog-client", async () => {
 import * as catalogClient from "./catalog-client";
 import { useCatalog } from "./use-catalog";
 import {
-  useExecViewConfig,
   useTeamKpisByPeriod,
   useTeamViewConfig,
 } from "./view-configs";
@@ -101,128 +99,6 @@ async function renderWithFetched<T>(
   await waitFor(() => expect(result.current.catalog.isLoading).toBe(false));
   return { get current() { return result.current.view; } };
 }
-
-describe("useExecViewConfig", () => {
-  beforeEach(() => {
-    authStore.reset();
-    authStore.setTenantId("t-1");
-    fetchCatalog.mockReset();
-  });
-  afterEach(() => {
-    authStore.reset();
-  });
-
-  it("builds column_thresholds in the same shape EXEC_VIEW_CONFIG used to expose", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildResponse([
-        {
-          metric_key: "view_configs.build_success_pct",
-          higher_is_better: true,
-          thresholds: {
-            good: 90,
-            warn: 80,
-            resolved_from: "product-default",
-            bounded_by_lock: false,
-          },
-        },
-        {
-          metric_key: "view_configs.focus_time_pct",
-          higher_is_better: true,
-          thresholds: {
-            good: 60,
-            warn: 50,
-            resolved_from: "product-default",
-            bounded_by_lock: false,
-          },
-        },
-        {
-          metric_key: "view_configs.ai_adoption_pct",
-          higher_is_better: true,
-          thresholds: {
-            good: 60,
-            warn: 40,
-            resolved_from: "product-default",
-            bounded_by_lock: false,
-          },
-        },
-      ]),
-    );
-    const result = await renderWithFetched(() => useExecViewConfig());
-    expect(result.current.column_thresholds).toEqual([
-      { metric_key: "build_success_pct", threshold: 90 },
-      { metric_key: "focus_time_pct", threshold: 60 },
-      { metric_key: "ai_adoption_pct", threshold: 60 },
-    ]);
-  });
-
-  it("omits schema_status='error' columns so consumers render neutral", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildResponse([
-        {
-          metric_key: "view_configs.build_success_pct",
-          schema_status: "error",
-          schema_error_code: "table_not_found",
-          thresholds: {
-            good: 90,
-            warn: 80,
-            resolved_from: "product-default",
-            bounded_by_lock: false,
-          },
-        },
-        {
-          metric_key: "view_configs.focus_time_pct",
-          higher_is_better: true,
-          thresholds: {
-            good: 60,
-            warn: 50,
-            resolved_from: "product-default",
-            bounded_by_lock: false,
-          },
-        },
-        {
-          metric_key: "view_configs.ai_adoption_pct",
-          higher_is_better: true,
-          thresholds: {
-            good: 60,
-            warn: 40,
-            resolved_from: "product-default",
-            bounded_by_lock: false,
-          },
-        },
-      ]),
-    );
-    const result = await renderWithFetched(() => useExecViewConfig());
-    // The build_success column is omitted entirely — `OrgKpiCards` /
-    // `TeamsTable` look up by `metric_key` and fall through to neutral
-    // coloring when the rule is absent.
-    expect(
-      result.current.column_thresholds.find(
-        (t) => t.metric_key === "build_success_pct",
-      ),
-    ).toBeUndefined();
-    expect(
-      result.current.column_thresholds.some(
-        (t) => t.metric_key === "focus_time_pct",
-      ),
-    ).toBe(true);
-  });
-
-  it("returns an empty threshold list when the catalog API fails (post-#82)", async () => {
-    fetchCatalog.mockRejectedValue(
-      new catalogClient.CatalogApiError(500, { type: "internal" }),
-    );
-    // No compile-in fallback after #82 — `data` is undefined and
-    // `useExecViewConfig` surfaces an empty list. Consumers gate on
-    // `useCatalog().isError` / `isLoading` to render the error / skeleton.
-    const wrapper = withClient();
-    const { result } = renderHook(
-      () => ({ view: useExecViewConfig(), catalog: useCatalog() }),
-      { wrapper },
-    );
-    await waitFor(() => expect(result.current.catalog.isError).toBe(true));
-    expect(result.current.view.column_thresholds).toEqual([]);
-  });
-});
 
 describe("useTeamViewConfig", () => {
   beforeEach(() => {

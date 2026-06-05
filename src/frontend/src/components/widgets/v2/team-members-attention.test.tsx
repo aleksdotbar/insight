@@ -30,7 +30,6 @@ import {
   renderWithCatalogClient,
 } from "@/test/catalog-test-utils";
 import { TeamMembersAttention } from "./team-members-attention";
-import type { PeerStats } from "@/lib/peers";
 import type {
   BulletMetric,
   PeriodValue,
@@ -79,8 +78,6 @@ function makeBullet(overrides: Partial<BulletMetric> = {}): BulletMetric {
   };
 }
 
-const STATS: PeerStats = { p25: 3, p50: 5, p75: 10, min: 1, max: 15, n: 12 };
-
 describe("<TeamMembersAttention>", () => {
   beforeEach(() => {
     authStore.reset();
@@ -101,15 +98,26 @@ describe("<TeamMembersAttention>", () => {
         },
       ]),
     );
+    // Cohort is computed client-side from the displayed members. Alice's
+    // value (1) sits below a tight cluster of teammates (10), so she is the
+    // only member in the bottom quartile.
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       ["alice@example.com", [makeBullet({ value: "1" })]],
+      ["bob@example.com", [makeBullet({ value: "10" })]],
+      ["carol@example.com", [makeBullet({ value: "10" })]],
+      ["dave@example.com", [makeBullet({ value: "10" })]],
+      ["eve@example.com", [makeBullet({ value: "10" })]],
     ]);
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
       <TeamMembersAttention
-        members={[makeMember()]}
+        members={[
+          makeMember({ person_id: "alice@example.com", name: "Alice" }),
+          makeMember({ person_id: "bob@example.com", name: "Bob" }),
+          makeMember({ person_id: "carol@example.com", name: "Carol" }),
+          makeMember({ person_id: "dave@example.com", name: "Dave" }),
+          makeMember({ person_id: "eve@example.com", name: "Eve" }),
+        ]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
         onMemberClick={() => {}}
       />,
     );
@@ -135,12 +143,10 @@ describe("<TeamMembersAttention>", () => {
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       ["alice@example.com", [makeBullet({ value: "1", schema_error: true })]],
     ]);
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
       <TeamMembersAttention
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
         onMemberClick={() => {}}
       />,
     );
@@ -160,12 +166,10 @@ describe("<TeamMembersAttention>", () => {
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       ["alice@example.com", [makeBullet({ value: "1" })]],
     ]);
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
       <TeamMembersAttention
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
         onMemberClick={() => {}}
       />,
     );

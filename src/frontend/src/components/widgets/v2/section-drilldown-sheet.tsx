@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Maximize2, Minimize2, XIcon } from "lucide-react";
 
 import { CountersBlock } from "@/components/widgets/v2/counters-block";
@@ -37,7 +37,7 @@ import {
   deriveAiToolComposition,
   deriveCollabActivities,
 } from "@/lib/insight/v2/derivations";
-import type { PeerCohortLabel, PeerStats } from "@/lib/peers";
+import type { PeerCohortLabel } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 import type { BulletMetric, PeriodValue } from "@/types/insight";
 
@@ -50,7 +50,6 @@ export interface SectionDrilldownSheetProps {
   personId?: string | null;
   range?: DateRange;
   period?: PeriodValue;
-  cohortStats?: Map<string, PeerStats>;
   cohortLabel?: PeerCohortLabel;
 }
 
@@ -67,40 +66,19 @@ export function SectionDrilldownSheet({
   personId,
   range,
   period,
-  cohortStats,
   cohortLabel = "team",
 }: SectionDrilldownSheetProps) {
-  const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    if (!open) setExpanded(false);
-  }, [open]);
-
-  const expandButton = (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      onClick={() => setExpanded((v) => !v)}
-      aria-label={expanded ? "Shrink" : "Expand"}
-    >
-      {expanded ? <Minimize2 /> : <Maximize2 />}
-    </Button>
-  );
-
-  const body = (
-    <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-      {open ? (
-        <DrilldownBody
-          rows={rows}
-          sectionId={sectionId}
-          personId={personId}
-          range={range}
-          period={period}
-          cohortStats={cohortStats}
-          cohortLabel={cohortLabel}
-        />
-      ) : null}
-    </div>
+  const panel = (
+    <DrilldownPanel
+      variant={DRILL_AS_DIALOG ? "dialog" : "sheet"}
+      title={title}
+      rows={rows}
+      sectionId={sectionId}
+      personId={personId}
+      range={range}
+      period={period}
+      cohortLabel={cohortLabel}
+    />
   );
 
   if (DRILL_AS_DIALOG) {
@@ -108,25 +86,9 @@ export function SectionDrilldownSheet({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className={cn(
-            "flex max-w-none! flex-col gap-0 overflow-hidden p-0",
-            expanded ? "h-[95vh] w-[95vw]" : "h-[70vh] w-[80vw]",
-          )}
+          className="flex w-fit max-w-none! flex-col gap-0 overflow-hidden p-0"
         >
-          <DialogHeader className="shrink-0 flex-row items-center justify-between gap-2 border-b p-4">
-            <DialogTitle>{title}</DialogTitle>
-            <div className="flex items-center gap-0.5">
-              {expandButton}
-              <DialogClose
-                render={
-                  <Button variant="ghost" size="icon-sm" aria-label="Close" />
-                }
-              >
-                <XIcon />
-              </DialogClose>
-            </div>
-          </DialogHeader>
-          {body}
+          {panel}
         </DialogContent>
       </Dialog>
     );
@@ -137,15 +99,71 @@ export function SectionDrilldownSheet({
       <SheetContent
         side="bottom"
         showCloseButton={false}
-        className={cn(
-          "flex flex-col gap-0 overflow-hidden rounded-t-lg",
-          expanded ? "h-[95vh]!" : "h-[60vh]!",
-        )}
+        className="flex flex-col gap-0 overflow-hidden rounded-t-lg"
       >
-        <SheetHeader className="shrink-0 flex-row items-center justify-between gap-2 border-b">
+        {panel}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function DrilldownPanel({
+  variant,
+  title,
+  rows,
+  sectionId,
+  personId,
+  range,
+  period,
+  cohortLabel,
+}: {
+  variant: "dialog" | "sheet";
+  title: string;
+  rows: BulletMetric[];
+  sectionId?: string | null;
+  personId?: string | null;
+  range?: DateRange;
+  period?: PeriodValue;
+  cohortLabel: PeerCohortLabel;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const Header = variant === "dialog" ? DialogHeader : SheetHeader;
+  const expandedClass =
+    variant === "dialog" ? "h-[95vh] w-[95vw]" : "h-[95vh] w-full";
+  const compactClass =
+    variant === "dialog" ? "h-[70vh] w-[80vw]" : "h-[60vh] w-full";
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-0 flex-col overflow-hidden",
+        expanded ? expandedClass : compactClass
+      )}
+    >
+      <Header className="flex shrink-0 flex-row items-center justify-between gap-2 border-b p-4">
+        {variant === "dialog" ? (
+          <DialogTitle>{title}</DialogTitle>
+        ) : (
           <SheetTitle>{title}</SheetTitle>
-          <div className="flex items-center gap-0.5">
-            {expandButton}
+        )}
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? "Shrink" : "Expand"}
+          >
+            {expanded ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+          {variant === "dialog" ? (
+            <DialogClose
+              render={
+                <Button variant="ghost" size="icon-sm" aria-label="Close" />
+              }
+            >
+              <XIcon />
+            </DialogClose>
+          ) : (
             <SheetClose
               render={
                 <Button variant="ghost" size="icon-sm" aria-label="Close" />
@@ -153,11 +171,20 @@ export function SectionDrilldownSheet({
             >
               <XIcon />
             </SheetClose>
-          </div>
-        </SheetHeader>
-        {body}
-      </SheetContent>
-    </Sheet>
+          )}
+        </div>
+      </Header>
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+        <DrilldownBody
+          rows={rows}
+          sectionId={sectionId}
+          personId={personId}
+          range={range}
+          period={period}
+          cohortLabel={cohortLabel}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -167,7 +194,6 @@ function DrilldownBody({
   personId,
   range,
   period,
-  cohortStats,
   cohortLabel,
 }: {
   rows: BulletMetric[];
@@ -175,7 +201,6 @@ function DrilldownBody({
   personId?: string | null;
   range?: DateRange;
   period?: PeriodValue;
-  cohortStats?: Map<string, PeerStats>;
   cohortLabel: PeerCohortLabel;
 }) {
   const { counters, distributions } = partitionBullets(rows);
@@ -218,11 +243,7 @@ function DrilldownBody({
         <DrilldownExtras sectionId={sectionId} batch={batch} rows={rows} />
       ) : null}
       {counters.length > 0 ? (
-        <CountersBlock
-          rows={counters}
-          cohortStats={cohortStats}
-          cohortLabel={cohortLabel}
-        />
+        <CountersBlock rows={counters} cohortLabel={cohortLabel} />
       ) : null}
       {distributions.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -231,7 +252,6 @@ function DrilldownBody({
               key={r.metric_key}
               row={r}
               bins={batch?.histograms.get(r.metric_key) ?? null}
-              cohortStats={cohortStats?.get(r.metric_key) ?? null}
               cohortLabel={cohortLabel}
             />
           ))}
@@ -352,6 +372,7 @@ function DrilldownExtras({
             description={a.description}
             value={a.value}
             unit={a.unit}
+            sources={a.sources}
             breakdown={[]}
           />
         ))}

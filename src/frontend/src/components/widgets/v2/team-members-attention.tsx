@@ -7,6 +7,7 @@ import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_TEXT,
+  peerStatsFor,
   peerStatusVsQuartiles,
   type PeerStats,
 } from "@/lib/peers";
@@ -16,20 +17,38 @@ import type { BulletMetric, TeamMember } from "@/types/insight";
 export interface TeamMembersAttentionProps {
   members: TeamMember[];
   bulletsByPerson?: Map<string, BulletMetric[]>;
-  cohortStats?: Map<string, PeerStats>;
-  cohortSize?: number;
   onMemberClick: (member: TeamMember) => void;
 }
 
 export function TeamMembersAttention({
   members,
   bulletsByPerson,
-  cohortStats,
-  cohortSize,
   onMemberClick,
 }: TeamMembersAttentionProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
+
+  // Cohort = the displayed team (the manager's reports). Each metric's
+  // quartiles are computed client-side from the members shown, so this
+  // surface uses the same team cohort as the heatmap — no separate query.
+  const cohortByMetric = new Map<string, PeerStats>();
+  {
+    const valuesByMetric = new Map<string, number[]>();
+    for (const m of members) {
+      for (const b of bulletsByPerson?.get(m.person_id.toLowerCase()) ?? []) {
+        if (b.schema_error) continue;
+        const v = Number(b.value);
+        if (!Number.isFinite(v)) continue;
+        const arr = valuesByMetric.get(b.metric_key);
+        if (arr) arr.push(v);
+        else valuesByMetric.set(b.metric_key, [v]);
+      }
+    }
+    for (const [k, vals] of valuesByMetric) {
+      const stats = peerStatsFor(vals);
+      if (stats) cohortByMetric.set(k, stats);
+    }
+  }
 
   const attention = members
     .map((m) => {
@@ -39,7 +58,7 @@ export function TeamMembersAttention({
         // schema_error / missing-id rows can't contribute to the "below
         // peers" count — they collapse to neutral per DESIGN §3.3.
         if (b.schema_error) continue;
-        const stats = cohortStats?.get(b.metric_key);
+        const stats = cohortByMetric.get(b.metric_key);
         const value = Number(b.value);
         if (!stats || !Number.isFinite(value)) continue;
         const catalogRow = byMetricKey(bulletCatalogKey(b));
@@ -60,9 +79,9 @@ export function TeamMembersAttention({
   if (attention.length === 0) return null;
 
   const subtitle =
-    cohortSize && cohortSize > 0
-      ? `vs ${cohortSize} peers under the same supervisor`
-      : "vs peers under the same supervisor";
+    members.length > 0
+      ? `${members.length} peers under the same supervisor`
+      : "Peers under the same supervisor";
   const badStatus = applyFocus("bottom", focusMode);
 
   return (

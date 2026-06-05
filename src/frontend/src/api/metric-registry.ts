@@ -1,7 +1,5 @@
 /** Stable UUIDs seeded in the Analytics API catalog (MariaDB `metrics` table). */
 export const METRIC_REGISTRY = {
-  EXEC_SUMMARY: "00000000-0000-0000-0001-000000000001",
-
   TEAM_MEMBER: "00000000-0000-0000-0001-000000000002",
   TEAM_BULLET_DELIVERY: "00000000-0000-0000-0001-000000000003",
   TEAM_BULLET_QUALITY: "00000000-0000-0000-0001-000000000004",
@@ -24,9 +22,17 @@ export const METRIC_REGISTRY = {
   CRM_BULLET_ACTIVITY: "00000000-0000-0000-0001-000000000023",
 
   V2_IC_HISTOGRAM: "00000000-0000-0000-0001-000000000030",
-  V2_PEER_COHORT_STATS: "00000000-0000-0000-0001-000000000034",
   V2_IC_SECTION_TREND: "00000000-0000-0000-0001-000000000036",
-  V2_IC_KPI_PEER_MEDIAN: "00000000-0000-0000-0001-000000000037",
+
+  // Per-person "member values" for the team heatmap + needs-attention widgets:
+  // long rows (person_id, metric_key, value) for a roster, no cohort.
+  V2_MEMBER_VALUES_DELIVERY: "00000000-0000-0000-0001-000000000040",
+  V2_MEMBER_VALUES_COLLAB: "00000000-0000-0000-0001-000000000041",
+  V2_MEMBER_VALUES_GIT: "00000000-0000-0000-0001-000000000042",
+
+  // Per-person PRs merged for a roster (period-bounded, from the weekly git
+  // silver). Merged into the team_member rows for the heatmap PRs column.
+  V2_MEMBER_PRS: "00000000-0000-0000-0001-000000000043",
 } as const satisfies Record<string, string>;
 
 export type MetricRegistryKey = keyof typeof METRIC_REGISTRY;
