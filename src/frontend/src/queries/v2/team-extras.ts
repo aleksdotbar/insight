@@ -57,7 +57,10 @@ async function fetchMemberBullets(
   const resp = await queryBatchWithRange<RawMemberValueRow>(range, items);
   const byMember = new Map<string, BulletMetric[]>();
   for (const r of resp.results as BatchQueryResult<RawMemberValueRow>[]) {
-    if (r.status !== "ok" || !r.id) continue;
+    if (!r.id) continue;
+    if (r.status !== "ok") {
+      throw new Error(`Failed to load ${r.id} member values`);
+    }
     const sectionId = r.id;
     const rangeByKey = new Map<string, { min: number; max: number }>();
     for (const row of r.items) {

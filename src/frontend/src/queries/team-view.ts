@@ -70,10 +70,10 @@ export function useTeamMembers(
       range.from,
       range.to,
     ],
-    enabled: Boolean(teamId) && Boolean(roster),
+    enabled: Boolean(teamId) && Boolean(roster?.length),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
-      if (!roster) return [];
+      if (!roster?.length) return [];
       const ids = roster
         .map((r) => `'${odataEscapeValue(r.email.toLowerCase())}'`)
         .join(", ");
@@ -85,18 +85,22 @@ export function useTeamMembers(
           id: "members",
           metric_id: METRIC_REGISTRY.TEAM_MEMBER,
           $filter: filter,
-          $top: 200,
+          $top: roster.length,
         },
         {
           id: "prs",
           metric_id: METRIC_REGISTRY.V2_MEMBER_PRS,
           $filter: filter,
-          $top: 200,
+          $top: roster.length,
         },
       ];
       const resp = await queryBatchWithRange<
         RawTeamMemberRow | RawMemberPrsRow
       >(range, items);
+      const membersResult = resp.results.find((r) => r.id === "members");
+      if (!membersResult || membersResult.status !== "ok") {
+        throw new Error("Failed to load team members");
+      }
       const byEmail = new Map<string, RawTeamMemberRow>();
       const prsByEmail = new Map<string, number>();
       for (const r of resp.results) {

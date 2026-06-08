@@ -112,7 +112,7 @@ export function SummaryWithBreakdown({
             <span className="truncate text-sm font-semibold">{label}</span>
             <MetricSublabel description={description} />
             {sources && sources.length > 0 ? (
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs tracking-wider text-muted-foreground">
                 {formatSources(sources)}
               </span>
             ) : (

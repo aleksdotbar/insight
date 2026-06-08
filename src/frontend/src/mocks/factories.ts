@@ -367,17 +367,22 @@ export function mockTeamBulletSection(
     const d0 = dist ?? { median: 0, range_min: 0, range_max: 100 };
     const baseValue =
       Math.round(vary(d0.median, i + seed, Math.max(1, d0.median * 0.3)) * 10) / 10;
+    const distScale = shouldScaleMetric(d.metric_key, d.unit) ? scale : 1;
     const value = shouldScaleMetric(d.metric_key, d.unit)
       ? Math.round(baseValue * scale * 10) / 10
       : baseValue;
+    const scaleDist = (n: number) => Math.round(n * distScale * 10) / 10;
+    const median = scaleDist(d0.median);
+    const rangeMin = scaleDist(d0.range_min);
+    const rangeMax = scaleDist(d0.range_max);
     return {
       metric_key: d.metric_key,
       value,
-      median: d0.median,
-      range_min: d0.range_min,
-      range_max: d0.range_max,
-      p25: d0.range_min + (d0.median - d0.range_min) * 0.5,
-      p75: d0.median + (d0.range_max - d0.median) * 0.5,
+      median,
+      range_min: rangeMin,
+      range_max: rangeMax,
+      p25: rangeMin + (median - rangeMin) * 0.5,
+      p75: median + (rangeMax - median) * 0.5,
       n: 10,
     };
   });

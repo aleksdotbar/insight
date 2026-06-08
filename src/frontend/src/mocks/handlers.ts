@@ -117,7 +117,7 @@ const metricHandlers: Record<string, Handler> = {
         tasks_closed: Math.max(1, Math.round((3 + (s % 17)) * scale)),
         bugs_fixed: Math.max(0, Math.round(((s % 11) >> 1) * scale)),
         dev_time_h: Math.max(8, Math.round((10 + ((s >> 3) % 18)) * scale)),
-        prs_merged: Math.max(1, Math.round((2 + ((s >> 5) % 11)) * scale)),
+        prs_merged: null,
         build_success_pct: 72 + ((s >> 7) % 26),
         focus_time_pct: 30 + ((s >> 11) % 55),
         ai_loc_share_pct: p.ai_tools.length > 0 ? 5 + ((s >> 13) % 35) : 0,
@@ -178,6 +178,11 @@ const metricHandlers: Record<string, Handler> = {
         focus_time_pct: ratio(65, 24),
         build_success_pct: ratio(92, 10),
         pr_cycle_time_h: Math.max(4, Math.round(18 + ((jitter / 1000) - 0.5) * 16)),
+        loc_median: Math.round(9000 * scale),
+        prs_merged_median: Math.max(1, Math.round(6 * scale)),
+        tasks_closed_median: Math.max(1, Math.round(8 * scale)),
+        bugs_fixed_median: Math.max(0, Math.round(14 * scale)),
+        ai_sessions_median: Math.max(1, Math.round(30 * scale)),
       }),
     ]);
   },
@@ -208,12 +213,13 @@ const metricHandlers: Record<string, Handler> = {
   [METRIC_REGISTRY.V2_MEMBER_VALUES_GIT]: (body) =>
     wrap(memberValueRows("git_output", body)),
   [METRIC_REGISTRY.V2_MEMBER_PRS]: (body) => {
-    const { personIds, personId } = parseFilter(body);
+    const { personIds, personId, periodDays } = parseFilter(body);
+    const scale = periodScale(periodDays);
     const ids = personIds ?? (personId ? [personId] : []);
     return wrap(
       ids.map((id) => ({
         person_id: id.toLowerCase(),
-        prs_merged: seedOf(id) % 20,
+        prs_merged: Math.max(0, Math.round((seedOf(id) % 20) * scale)),
       })),
     );
   },
