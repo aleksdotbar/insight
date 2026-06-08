@@ -30,7 +30,7 @@ jobs:
 
       # Compute the build tag once and pass it to both the image tag and
       # the cross-repo dispatch step below. Format mirrors
-      # cyberfabric/cyber-insight's build-images.yml exactly so that
+      # constructorfabric/insight's build-images.yml exactly so that
       # `sort -V` over mixed subchart appVersions on the umbrella side
       # stays consistent.
       - name: Compute build tag
@@ -52,7 +52,7 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Two tags on default-branch pushes — matches cyberfabric/cyber-insight
+          # Two tags on default-branch pushes — matches constructorfabric/insight
           # backend scheme. The date-based tag already embeds the sha, so
           # a separate short-sha tag is redundant.
           tags: |
@@ -74,7 +74,7 @@ jobs:
 
   # ─── Umbrella chart dispatch ───────────────────────────────────────────────
   # After a successful main-branch image build, trigger the umbrella chart
-  # workflow in cyberfabric/cyber-insight so it bumps the frontend subchart
+  # workflow in constructorfabric/insight so it bumps the frontend subchart
   # appVersion to the just-published tag and cuts a new umbrella chart
   # release. PR builds and non-main dispatches don't promote (no image
   # was pushed in those cases either — metadata-action's
@@ -82,8 +82,8 @@ jobs:
   #
   # Auth: mints a short-lived installation token from the
   # `insight-chart-release-bot` GitHub App, scoped to the umbrella repo.
-  # The App is installed on cyberfabric/cyber-insight-front (this repo)
-  # and on cyberfabric/cyber-insight, with Actions: read & write on the
+  # The App is installed on constructorfabric/insight-front (this repo)
+  # and on constructorfabric/insight, with Actions: read & write on the
   # umbrella repo. We use the App over a PAT so dispatches aren't tied
   # to a single human.
   dispatch-umbrella:
@@ -98,8 +98,8 @@ jobs:
         with:
           app-id: ${{ secrets.INSIGHT_RELEASE_APP_ID }}
           private-key: ${{ secrets.INSIGHT_RELEASE_APP_PRIVATE_KEY }}
-          owner: cyberfabric
-          repositories: cyber-insight
+          owner: constructorfabric
+          repositories: insight
 
       - name: Dispatch umbrella build-images workflow
         env:
@@ -109,6 +109,6 @@ jobs:
           set -euo pipefail
           echo "Dispatching umbrella build-images.yml with frontend_tag=${FRONTEND_TAG}"
           gh workflow run build-images.yml \
-            --repo cyberfabric/cyber-insight \
+            --repo constructorfabric/insight \
             --ref main \
             -f frontend_tag="${FRONTEND_TAG}"
