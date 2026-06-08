@@ -98,8 +98,8 @@ jobs:
         with:
           app-id: ${{ vars.AUTOMATION_APP_ID }}
           private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
-          owner: constructorfabric
-          repositories: insight
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ vars.AUTOMATION_INSIGHT_UMBRELLA_REPO }}
 
       - name: Dispatch umbrella build-images workflow
         env:
