@@ -7,6 +7,10 @@ Single-page application built on React 19 + TanStack Router + TanStack Query + s
 - [Insight monorepo](https://github.com/constructorfabric/insight) (backend, infra, Helm charts)
 - [Insight spec](https://github.com/constructorfabric/insight-spec) (connector specs, API contracts)
 
+<!-- CI rebuild marker — bumped to retrigger the frontend image build on
+the constructorfabric/* namespace flip (2026-06-09). -->
+
+
 ## Tech Stack
 
 | Layer | Technology |
