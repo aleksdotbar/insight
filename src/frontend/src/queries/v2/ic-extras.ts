@@ -99,6 +99,10 @@ export function useIcKpiPeerMedians(
         range,
         {
           $filter: `cohort_seed eq '${odataEscapeValue(seed)}'`,
+          // Same fix as `useIcCohortStats` above — one row per kpi_key
+          // and the server's 25-row default page truncated downstream
+          // peer comparisons. Bump above the catalog count.
+          $top: 1000,
         },
       );
       return resp.items;
@@ -128,6 +132,13 @@ export function useIcCohortStats(
         range,
         {
           $filter: `kind eq '${kind}' and cohort_seed eq '${odataEscapeValue(cohortSeed.toLowerCase())}'`,
+          // peer_cohort_stats has one row per (cohort_seed, kind, metric_key)
+          // — currently ~45 distinct keys. The server's default page size of
+          // 25 silently truncated the result, so any metric_key beyond the
+          // first page resolved to "no peer data" in the section badges.
+          // Bump well above the catalog's metric count; we don't actually
+          // need pagination at this cardinality.
+          $top: 1000,
         },
       );
       return resp.items;
