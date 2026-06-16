@@ -158,6 +158,12 @@ const metricHandlers: Record<string, Handler> = {
       mockTeamBulletSection("code_quality", seedOf((personIds ?? []).join(",")), periodDays),
     );
   },
+  [METRIC_REGISTRY.TEAM_BULLET_GIT]: (body) => {
+    const { personIds, periodDays } = parseFilter(body);
+    return wrap(
+      mockTeamBulletSection("git_output", seedOf((personIds ?? []).join(",")), periodDays),
+    );
+  },
   [METRIC_REGISTRY.TEAM_BULLET_COLLAB]: (body) => {
     const { personIds, periodDays } = parseFilter(body);
     return wrap(

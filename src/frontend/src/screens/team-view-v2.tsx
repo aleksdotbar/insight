@@ -104,9 +104,9 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
       "task_delivery",
       sectionData?.bySection.task_delivery ?? [],
     ),
-    code_quality: orderRowsForSection(
-      "code_quality",
-      sectionData?.bySection.code_quality ?? [],
+    git_output: orderRowsForSection(
+      "git_output",
+      sectionData?.bySection.git_output ?? [],
     ),
     collaboration: orderRowsForSection(
       "collaboration",

@@ -9,7 +9,7 @@ export type IcHeroSectionId = IcSectionId;
 
 export type TeamSectionId =
   | "task_delivery"
-  | "code_quality"
+  | "git_output"
   | "collaboration"
   | "ai_adoption";
 
@@ -17,7 +17,7 @@ export const IC_SECTIONS: ReadonlyArray<{ id: IcSectionId; label: string }> = [
   { id: "task_delivery", label: "Task delivery" },
   { id: "git_output", label: "Git output" },
   { id: "collaboration", label: "Collaboration" },
-  { id: "ai_adoption", label: "AI dev tools" },
+  { id: "ai_adoption", label: "AI adoption" },
 ] as const;
 
 export const IC_HERO_SECTIONS: ReadonlyArray<{
@@ -30,7 +30,7 @@ export const TEAM_SECTIONS: ReadonlyArray<{
   label: string;
 }> = [
   { id: "task_delivery", label: "Task delivery" },
-  { id: "code_quality", label: "Code quality" },
+  { id: "git_output", label: "Git output" },
   { id: "collaboration", label: "Collaboration" },
   { id: "ai_adoption", label: "AI adoption" },
 ] as const;
