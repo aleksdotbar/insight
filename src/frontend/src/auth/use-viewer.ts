@@ -63,10 +63,25 @@ export function getViewerEmail(): string | null {
   return resolve().email;
 }
 
+// Email to use for the unsigned dev-mode bearer token in fetch-with-auth.
+// Returns null unless the active viewer source is dev-style (`dev` for
+// MOCKS/runtime/build-time dev email, `override` for sessionStorage
+// impersonation). This prevents a mid-bootstrap OIDC session — where
+// authStore.token is null but a build-time dev email is also configured —
+// from accidentally minting an unsigned JWT bearing the OIDC user's
+// identity. The function is the source of truth for "is this request
+// authenticated via dev impersonation?" and intentionally does NOT
+// resolve to an OIDC viewer's email.
+export function getDevBearerEmail(): string | null {
+  const v = resolve();
+  return v.source === "dev" || v.source === "override" ? v.email : null;
+}
+
 export function isDevImpersonating(): boolean {
-  // True whenever a dev-mode viewer is the source of identity. Used by the
-  // banner / hint components to surface "you're impersonating" UI. Safe in
-  // any build: `resolveDevEmail()` returns "" in a production bundle that
-  // hasn't been opted in via window.__DEV_CONFIG__.
-  return MOCKS_ENABLED || Boolean(resolveDevEmail());
+  // True only when the ACTIVE viewer source is dev-style — not when a
+  // dev email is merely configured. Without this check an OIDC session
+  // running alongside a build-time dev email would falsely show the
+  // impersonation banner / hint.
+  const { source } = resolve();
+  return source === "dev" || source === "override";
 }

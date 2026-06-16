@@ -73,7 +73,9 @@ if [ -n "$OIDC_ISSUER" ] && [ -n "$OIDC_CLIENT_ID" ]; then
 elif [ -n "${DEV_USER_EMAIL:-}" ]; then
   dev_email_js=$(escape_js "$DEV_USER_EMAIL")
   printf 'window.__DEV_CONFIG__={devUserEmail:"%s"};\n' "$dev_email_js" >> "$OIDC_CONFIG_FILE"
-  echo "DEV config written to $OIDC_CONFIG_FILE: devUserEmail=$DEV_USER_EMAIL (auth bypassed)"
+  # Don't log DEV_USER_EMAIL — it can contain real PII if a deployer points
+  # this at an actual mailbox. The "wrote DEV config" signal is what matters.
+  echo "DEV config written to $OIDC_CONFIG_FILE (auth bypassed via runtime dev impersonation)"
 else
   echo "No OIDC or DEV config set — $OIDC_CONFIG_FILE left empty (Vite-dev fallback only)"
 fi

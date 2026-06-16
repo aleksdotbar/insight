@@ -1,13 +1,14 @@
 import { authStore } from "@/auth/auth-store";
 import { OidcManager } from "@/auth/oidc-manager";
-import { getViewerEmail } from "@/auth/use-viewer";
+import { getDevBearerEmail } from "@/auth/use-viewer";
 
 function devBearer(): string | null {
-  // No build-mode gate: getViewerEmail() returns null in any production
-  // bundle that hasn't been opted into dev impersonation at runtime via
-  // window.__DEV_CONFIG__. Vite dev still works because the viewer
-  // resolver falls back to import.meta.env.VITE_DEV_USER_EMAIL.
-  const email = getViewerEmail();
+  // getDevBearerEmail() returns null unless the active viewer source is
+  // dev-style (dev / override). It will never resolve to an OIDC user's
+  // email, even when a build-time dev fallback is configured — that
+  // would risk a mid-bootstrap OIDC session (token still null) leaking
+  // an unsigned JWT bearing the real user's identity.
+  const email = getDevBearerEmail();
   if (!email) return null;
   const b64url = (o: object): string =>
     btoa(JSON.stringify(o))
