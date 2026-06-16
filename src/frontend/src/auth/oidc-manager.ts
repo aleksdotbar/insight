@@ -2,6 +2,7 @@ import { UserManager, WebStorageStateStore, type User } from "oidc-client-ts";
 
 import { authStore } from "./auth-store";
 import { readOidcConfig } from "./config";
+import { readDevUserEmail } from "./dev-config";
 import type { AuthUser, OidcConfig, OidcSigninState } from "./types";
 
 let userManager: UserManager | null = null;
@@ -79,9 +80,16 @@ async function doInit(): Promise<void> {
   const config = readOidcConfig();
 
   if (!config) {
-    if (import.meta.env.DEV) {
+    // Bypass auth when running with no OIDC AND either:
+    //   - we're in Vite dev (developer convenience), or
+    //   - the runtime explicitly injected a dev user email via
+    //     window.__DEV_CONFIG__ (compose dev stack with the published
+    //     ghcr image; entrypoint refuses to emit __DEV_CONFIG__ when
+    //     real OIDC is also configured, so prod fails closed).
+    const runtimeDevEmail = readDevUserEmail();
+    if (import.meta.env.DEV || runtimeDevEmail) {
       console.warn(
-        "[OidcManager] Dev mode: no window.__OIDC_CONFIG__. Auth bypassed."
+        "[OidcManager] No window.__OIDC_CONFIG__ — auth bypassed (dev impersonation).",
       );
       authStore.setStatus("authenticated");
       authReadyResolve(null);

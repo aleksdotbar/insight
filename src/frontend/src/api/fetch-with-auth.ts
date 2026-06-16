@@ -3,7 +3,10 @@ import { OidcManager } from "@/auth/oidc-manager";
 import { getViewerEmail } from "@/auth/use-viewer";
 
 function devBearer(): string | null {
-  if (!import.meta.env.DEV) return null;
+  // No build-mode gate: getViewerEmail() returns null in any production
+  // bundle that hasn't been opted into dev impersonation at runtime via
+  // window.__DEV_CONFIG__. Vite dev still works because the viewer
+  // resolver falls back to import.meta.env.VITE_DEV_USER_EMAIL.
   const email = getViewerEmail();
   if (!email) return null;
   const b64url = (o: object): string =>
