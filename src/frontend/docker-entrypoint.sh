@@ -24,6 +24,23 @@ if contains_unsafe_chars "${OIDC_ISSUER:-}" || contains_unsafe_chars "${OIDC_CLI
   exit 1
 fi
 
+# DEV_USER_EMAIL is the docker-compose dev stack's escape hatch — it
+# turns on impersonation in production builds when no OIDC is configured.
+# It's mutually exclusive with real OIDC: shipping both means a
+# misconfigured prod deploy where everyone gets silently impersonated as
+# DEV_USER_EMAIL. Fail loud here rather than serving a broken-but-up app.
+if [ -n "${DEV_USER_EMAIL:-}" ]; then
+  if contains_unsafe_chars "$DEV_USER_EMAIL"; then
+    echo "ERROR: DEV_USER_EMAIL contains whitespace or control characters; refusing to start." >&2
+    exit 1
+  fi
+  if [ -n "${OIDC_ISSUER:-}" ] || [ -n "${OIDC_CLIENT_ID:-}" ]; then
+    echo "ERROR: DEV_USER_EMAIL is set together with OIDC config — these are mutually exclusive." >&2
+    echo "       Either remove DEV_USER_EMAIL (real OIDC flow), or clear OIDC_ISSUER/OIDC_CLIENT_ID (dev impersonation)." >&2
+    exit 1
+  fi
+fi
+
 # OIDC_SCOPES is space-separated, so internal whitespace is expected. Validate
 # each token has no control chars (still a JS-string-injection concern).
 if [ -n "${OIDC_SCOPES:-}" ]; then
@@ -35,11 +52,13 @@ if [ -n "${OIDC_SCOPES:-}" ]; then
   done
 fi
 
-# Write runtime OIDC config to an external JS file. We can't inline the script
+# Write runtime config to an external JS file. We can't inline the script
 # in index.html — strict CSP (`script-src 'self'`) would reject it. Always
-# write the file so index.html's <script src> tag never 404s; an empty config
-# leaves window.__OIDC_CONFIG__ undefined and the SPA falls back to dev mode.
+# write the file so index.html's <script src> tag never 404s. The file
+# may contain __OIDC_CONFIG__ (real OIDC), __DEV_CONFIG__ (compose dev
+# impersonation), or be empty (Vite dev fallback / undefined deploy).
 OIDC_CONFIG_FILE=/usr/share/nginx/html/oidc-config.js
+: > "$OIDC_CONFIG_FILE"
 if [ -n "$OIDC_ISSUER" ] && [ -n "$OIDC_CLIENT_ID" ]; then
   if [ -z "${OIDC_SCOPES:-}" ]; then
     echo "ERROR: OIDC_SCOPES must be set when OIDC_ISSUER and OIDC_CLIENT_ID are set." >&2
@@ -49,11 +68,16 @@ if [ -n "$OIDC_ISSUER" ] && [ -n "$OIDC_CLIENT_ID" ]; then
   client_id_js=$(escape_js "$OIDC_CLIENT_ID")
   scopes_js=$(escape_js "$OIDC_SCOPES")
   printf 'window.__OIDC_CONFIG__={issuer_url:"%s",client_id:"%s",scopes:"%s"};\n' \
-    "$issuer_js" "$client_id_js" "$scopes_js" > "$OIDC_CONFIG_FILE"
+    "$issuer_js" "$client_id_js" "$scopes_js" >> "$OIDC_CONFIG_FILE"
   echo "OIDC config written to $OIDC_CONFIG_FILE: issuer=$OIDC_ISSUER client_id=$OIDC_CLIENT_ID scopes=$OIDC_SCOPES"
+elif [ -n "${DEV_USER_EMAIL:-}" ]; then
+  dev_email_js=$(escape_js "$DEV_USER_EMAIL")
+  printf 'window.__DEV_CONFIG__={devUserEmail:"%s"};\n' "$dev_email_js" >> "$OIDC_CONFIG_FILE"
+  # Don't log DEV_USER_EMAIL — it can contain real PII if a deployer points
+  # this at an actual mailbox. The "wrote DEV config" signal is what matters.
+  echo "DEV config written to $OIDC_CONFIG_FILE (auth bypassed via runtime dev impersonation)"
 else
-  : > "$OIDC_CONFIG_FILE"
-  echo "OIDC config not set — $OIDC_CONFIG_FILE left empty (dev fallback)"
+  echo "No OIDC or DEV config set — $OIDC_CONFIG_FILE left empty (Vite-dev fallback only)"
 fi
 
 # Inject <script src="/oidc-config.js?v=<ts>"> into index.html.

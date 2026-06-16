@@ -36,5 +36,12 @@ declare global {
       client_id?: string;
       scopes?: string;
     };
+    // Runtime dev-impersonation config. Populated by the FE container's
+    // entrypoint only when DEV_USER_EMAIL is set AND no OIDC config is
+    // provided. Production deploys with real OIDC must NOT set this — the
+    // entrypoint refuses to emit both at once.
+    __DEV_CONFIG__?: {
+      devUserEmail?: string;
+    };
   }
 }

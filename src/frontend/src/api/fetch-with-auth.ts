@@ -1,10 +1,14 @@
 import { authStore } from "@/auth/auth-store";
 import { OidcManager } from "@/auth/oidc-manager";
-import { getViewerEmail } from "@/auth/use-viewer";
+import { getDevBearerEmail } from "@/auth/use-viewer";
 
 function devBearer(): string | null {
-  if (!import.meta.env.DEV) return null;
-  const email = getViewerEmail();
+  // getDevBearerEmail() returns null unless the active viewer source is
+  // dev-style (dev / override). It will never resolve to an OIDC user's
+  // email, even when a build-time dev fallback is configured — that
+  // would risk a mid-bootstrap OIDC session (token still null) leaking
+  // an unsigned JWT bearing the real user's identity.
+  const email = getDevBearerEmail();
   if (!email) return null;
   const b64url = (o: object): string =>
     btoa(JSON.stringify(o))
