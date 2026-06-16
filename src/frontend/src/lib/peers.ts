@@ -39,9 +39,13 @@ export function applyFocus(
   return "neutral"
 }
 
+// Heatmap cell fills. Soft tints of the semantic accents (not the solid
+// button/alert fills) so a dense grid reads as a calm data view rather than a
+// wall of alarms; the hue still signals top/bottom, the number stays crisp in
+// the neutral foreground. Tune the /alpha to taste.
 export const PEER_CELL: Record<PeerStatusWithNeutral, string> = {
-  top: "bg-success text-success-foreground",
-  bottom: "bg-destructive text-destructive-foreground",
+  top: "bg-success/30 text-foreground",
+  bottom: "bg-destructive/20 text-foreground",
   in_pack: "bg-secondary text-secondary-foreground",
   neutral: "bg-muted text-muted-foreground",
 }

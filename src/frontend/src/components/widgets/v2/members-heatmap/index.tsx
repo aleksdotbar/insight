@@ -9,6 +9,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useSettings } from "@/hooks/use-settings";
 import {
   bulletCatalogKey,
@@ -772,14 +777,14 @@ function ColumnHeader({
   onClick: () => void;
 }) {
   return (
-    <Popover>
-      <PopoverTrigger
+    <Tooltip>
+      <TooltipTrigger
         render={
           <button
             type="button"
             onClick={onClick}
             className={cn(
-              "flex h-9 cursor-help items-center justify-center text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground",
+              "flex h-9 cursor-pointer items-center justify-center text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground",
               active && "text-foreground underline underline-offset-4",
             )}
             aria-label={`${col.label} — sort by this column`}
@@ -788,15 +793,17 @@ function ColumnHeader({
           </button>
         }
       />
-      <PopoverContent className="w-64 p-3">
-        <p className="text-sm font-semibold">{col.label}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Unit: {col.unit || "—"} ·{" "}
-          {col.higher_is_better ? "higher is better" : "lower is better"}
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">Click to sort.</p>
-      </PopoverContent>
-    </Popover>
+      <TooltipContent side="top" className="max-w-56">
+        <span className="flex flex-col gap-0.5 leading-snug">
+          <span className="font-medium">{col.label}</span>
+          <span className="text-background/70">
+            {col.unit ? `${col.unit} · ` : ""}
+            {col.higher_is_better ? "higher is better" : "lower is better"} ·
+            click to sort
+          </span>
+        </span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
