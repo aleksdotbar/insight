@@ -257,7 +257,6 @@ export interface MembersHeatmapProps {
    * renders neutral.
    */
   deptCohorts?: DeptCohorts;
-  onMemberClick?: (m: TeamMember) => void;
 }
 
 export function MembersHeatmap({
@@ -266,7 +265,6 @@ export function MembersHeatmap({
   previousBulletsByPerson,
   previousMembers,
   deptCohorts,
-  onMemberClick,
 }: MembersHeatmapProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
@@ -437,7 +435,6 @@ export function MembersHeatmap({
 
   const handleMemberClick = (m: TeamMember) => {
     setSheetMember(m);
-    onMemberClick?.(m);
   };
 
   return (

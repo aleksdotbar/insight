@@ -14,6 +14,8 @@
 import { screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ReactNode } from "react";
+
 import { authStore } from "@/auth/auth-store";
 
 vi.mock("@/api/catalog-client", async () => {
@@ -21,6 +23,25 @@ vi.mock("@/api/catalog-client", async () => {
     "@/api/catalog-client",
   );
   return { ...actual, fetchCatalog: vi.fn() };
+});
+
+// `<TeamMembersAttention>` renders each member as a router `<Link>`; these
+// render-rule tests don't exercise navigation, so stub Link to a plain anchor
+// rather than standing up a full router context.
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    Link: ({
+      to,
+      children,
+    }: {
+      to?: string;
+      params?: unknown;
+      children?: ReactNode;
+    }) => <a href={to}>{children}</a>,
+  };
 });
 
 import * as catalogClient from "@/api/catalog-client";
@@ -134,7 +155,6 @@ describe("<TeamMembersAttention>", () => {
         members={[makeMember({ person_id: "alice@example.com", name: "Alice" })]}
         bulletsByPerson={bulletsByPerson}
         deptCohorts={deptCohorts}
-        onMemberClick={() => {}}
       />,
     );
     await waitFor(() => {
@@ -189,7 +209,6 @@ describe("<TeamMembersAttention>", () => {
         members={[makeMember({ person_id: "alice@example.com", name: "Alice" })]}
         bulletsByPerson={bulletsByPerson}
         deptCohorts={deptCohorts}
-        onMemberClick={() => {}}
       />,
     );
     await waitFor(() => {
@@ -219,7 +238,6 @@ describe("<TeamMembersAttention>", () => {
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
         deptCohorts={deptCohorts}
-        onMemberClick={() => {}}
       />,
     );
     await waitFor(() => {
@@ -242,7 +260,6 @@ describe("<TeamMembersAttention>", () => {
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
         deptCohorts={deptCohorts}
-        onMemberClick={() => {}}
       />,
     );
     await waitFor(() => {
@@ -275,7 +292,6 @@ describe("<TeamMembersAttention>", () => {
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
         deptCohorts={deptCohorts}
-        onMemberClick={() => {}}
       />,
     );
     await waitFor(() => {

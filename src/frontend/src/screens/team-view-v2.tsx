@@ -30,7 +30,7 @@ import {
   useTeamMemberBullets,
   useTeamMemberBulletsPrevious,
 } from "@/queries/v2/team-extras";
-import type { BulletMetric, TeamMember } from "@/types/insight";
+import type { BulletMetric } from "@/types/insight";
 
 const SECTION_KEYS = TEAM_SECTIONS.map((s) => s.id);
 
@@ -42,7 +42,6 @@ export interface TeamViewV2ScreenProps {
 export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps) {
   const { period, dateRange, setPeriod } = usePeriod();
   const [openSection, setOpenSection] = useState<TeamSectionId | null>(null);
-  const [, setFocusedMember] = useState<TeamMember | null>(null);
 
   // Close any open drilldown when the viewed team changes. Render-phase
   // reset against the previous id rather than an effect (no cascading commit).
@@ -164,7 +163,6 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
               members={members}
               bulletsByPerson={bulletsQ.data}
               deptCohorts={deptDistQ.data}
-              onMemberClick={setFocusedMember}
             />
 
             {membersQ.isError ? (
@@ -179,7 +177,6 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                 bulletsByPerson={bulletsQ.data}
                 previousBulletsByPerson={prevBulletsQ.data}
                 deptCohorts={deptDistQ.data}
-                onMemberClick={setFocusedMember}
               />
             )}
 

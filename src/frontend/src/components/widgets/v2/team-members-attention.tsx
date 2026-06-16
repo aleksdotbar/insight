@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 import { useCatalog } from "@/api/use-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -28,14 +29,12 @@ export interface TeamMembersAttentionProps {
    * cohort (`n < MIN_DEPT_COHORT_N`) is not counted.
    */
   deptCohorts?: DeptCohorts;
-  onMemberClick: (member: TeamMember) => void;
 }
 
 export function TeamMembersAttention({
   members,
   bulletsByPerson,
   deptCohorts,
-  onMemberClick,
 }: TeamMembersAttentionProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
@@ -93,10 +92,10 @@ export function TeamMembersAttention({
           <ul className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
             {attention.map(({ member, belowCount }) => (
               <li key={member.person_id}>
-                <button
-                  type="button"
-                  onClick={() => onMemberClick(member)}
-                  className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
+                <Link
+                  to="/ic/$person/personal"
+                  params={{ person: member.person_id }}
+                  className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1 text-left text-sm no-underline! transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0 truncate text-foreground">
                     {member.name}
@@ -112,7 +111,7 @@ export function TeamMembersAttention({
                   <span className="shrink-0 whitespace-nowrap text-muted-foreground">
                     below peers
                   </span>
-                </button>
+                </Link>
               </li>
             ))}
           </ul>
