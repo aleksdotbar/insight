@@ -34,6 +34,9 @@ export type RawTeamMemberRow = {
   display_name: string;
   seniority: string;
   supervisor_email: string | null;
+  // Department the member belongs to (`org_unit_id`), scoping their peer
+  // distribution. NULL when identity has no department for the person.
+  org_unit_id: string | null;
   tasks_closed: number;
   bugs_fixed: number;
   // dev_time_h/focus_time_pct/ai_loc_share_pct: upstream source may be

@@ -7,62 +7,58 @@ import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
   PEER_TEXT,
-  peerStatsFor,
   peerStatusVsQuartiles,
-  type PeerStats,
+  statsToDisplayUnit,
+  type DeptCohorts,
 } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 import type { BulletMetric, TeamMember } from "@/types/insight";
 
+// A department cohort must hold at least this many people before a member
+// is counted against it. Kept in sync with the heatmap's threshold.
+const MIN_DEPT_COHORT_N = 5;
+
 export interface TeamMembersAttentionProps {
   members: TeamMember[];
   bulletsByPerson?: Map<string, BulletMetric[]>;
+  /**
+   * Per-department metric distributions split by source family; bullets are
+   * counted against the `bullet` family. Each member is counted "below"
+   * against THEIR OWN department; a member with an absent or degenerate
+   * cohort (`n < MIN_DEPT_COHORT_N`) is not counted.
+   */
+  deptCohorts?: DeptCohorts;
   onMemberClick: (member: TeamMember) => void;
 }
 
 export function TeamMembersAttention({
   members,
   bulletsByPerson,
+  deptCohorts,
   onMemberClick,
 }: TeamMembersAttentionProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
 
-  // Cohort = the displayed team (the manager's reports). Each metric's
-  // quartiles are computed client-side from the members shown, so this
-  // surface uses the same team cohort as the heatmap — no separate query.
-  const cohortByMetric = new Map<string, PeerStats>();
-  {
-    const valuesByMetric = new Map<string, number[]>();
-    for (const m of members) {
-      for (const b of bulletsByPerson?.get(m.person_id.toLowerCase()) ?? []) {
-        if (b.schema_error) continue;
-        const v = Number(b.value);
-        if (!Number.isFinite(v)) continue;
-        const arr = valuesByMetric.get(b.metric_key);
-        if (arr) arr.push(v);
-        else valuesByMetric.set(b.metric_key, [v]);
-      }
-    }
-    for (const [k, vals] of valuesByMetric) {
-      const stats = peerStatsFor(vals);
-      if (stats) cohortByMetric.set(k, stats);
-    }
-  }
-
   const attention = members
     .map((m) => {
       const bullets = bulletsByPerson?.get(m.person_id.toLowerCase()) ?? [];
+      const byMetric = m.org_unit_id
+        ? deptCohorts?.bullet.get(m.org_unit_id)
+        : undefined;
       let belowCount = 0;
       for (const b of bullets) {
         // schema_error / missing-id rows can't contribute to the "below
         // peers" count — they collapse to neutral per DESIGN §3.3.
         if (b.schema_error) continue;
-        const stats = cohortByMetric.get(b.metric_key);
+        const raw = byMetric?.get(b.metric_key);
+        // Degenerate department cohort (thin or absent) → not counted.
+        if (!raw || raw.n < MIN_DEPT_COHORT_N) continue;
         const value = Number(b.value);
-        if (!stats || !Number.isFinite(value)) continue;
+        if (!Number.isFinite(value)) continue;
         const catalogRow = byMetricKey(bulletCatalogKey(b));
         if (!catalogRow) continue;
+        const stats = statsToDisplayUnit(raw, catalogRow.unit, b.unit);
         const ps = peerStatusVsQuartiles(
           value,
           stats,
@@ -80,8 +76,8 @@ export function TeamMembersAttention({
 
   const subtitle =
     members.length > 0
-      ? `${members.length} peers under the same supervisor`
-      : "Peers under the same supervisor";
+      ? `${members.length} members · vs department peers`
+      : "vs department peers";
   const badStatus = applyFocus("bottom", focusMode);
 
   return (

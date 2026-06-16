@@ -72,6 +72,7 @@ export interface TeamMember {
   name: string;
   seniority: string;
   supervisor_email: string | null;
+  org_unit_id: string | null;
   tasks_closed: number;
   bugs_fixed: number;
   dev_time_h: number | null;
@@ -100,9 +101,12 @@ export interface BulletMetric {
   /**
    * Peer cohort distribution for this metric (p25/p50/p75/min/max/n),
    * carried on the row by the bullet query_ref — same cohort that draws the
-   * bar (department for IC, company for team). Drives quartile coloring +
-   * the drilldown distribution strip. Absent when the backend returned no
-   * cohort (e.g. honest-zero / unavailable rows).
+   * bar. For IC rows this is the person's department; for team-bullet
+   * (TEAM_BULLET_*) rows the backend folds a blended department expectation
+   * (the roster's per-department distributions combined) onto each row, so
+   * team section cards color "vs department expectation" with no FE math.
+   * Drives quartile coloring + the drilldown distribution strip. Absent when
+   * the backend returned no cohort (e.g. honest-zero / unavailable rows).
    */
   peer?: PeerStats;
   drill_id: string;

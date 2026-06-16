@@ -10,7 +10,22 @@ export type PeerStats = {
 export type PeerStatus = "top" | "in_pack" | "bottom"
 export type PeerStatusWithNeutral = PeerStatus | "neutral"
 
-export type PeerCohortLabel = "team" | "org"
+export type PeerCohortLabel = "team" | "org" | "department"
+
+/** Per-department metric distributions: `org_unit_id → metric_key → stats`. */
+export type DeptStatsMap = Map<string, Map<string, PeerStats>>
+
+/**
+ * Department cohorts split by source family. `kpi` (ic_kpis-derived) backs
+ * the heatmap's team_row columns; `bullet` (bullet-rows-derived) backs member
+ * bullet comparisons. Kept separate because both families emit `prs_merged`
+ * from different attribution sources — a flat map would compare a bullet
+ * value against the other family's distribution.
+ */
+export type DeptCohorts = {
+  kpi: DeptStatsMap
+  bullet: DeptStatsMap
+}
 
 export type FocusMode = "all" | "critical" | "rewards" | "neutral"
 
@@ -80,6 +95,30 @@ export function peerStatsFor(values: number[]): PeerStats | null {
     min: sorted[0],
     max: sorted[sorted.length - 1],
     n: sorted.length,
+  }
+}
+
+/**
+ * Convert raw-unit dept stats to the unit a bullet displays in.
+ * `transformBulletMetrics` auto-scales hour bullets to days (÷24, 1dp) when
+ * the range crosses 48h, so a bullet's `value`/`unit` can be in days while
+ * the dept distribution stays in the catalog's raw hours — comparing those
+ * directly would misclassify every hour-scaled metric.
+ */
+export function statsToDisplayUnit(
+  stats: PeerStats,
+  rawUnit: string | null | undefined,
+  displayUnit: string | null | undefined
+): PeerStats {
+  if (rawUnit !== "h" || displayUnit !== "d") return stats
+  const s = (v: number) => Math.round((v / 24) * 10) / 10
+  return {
+    p25: s(stats.p25),
+    p50: s(stats.p50),
+    p75: s(stats.p75),
+    min: s(stats.min),
+    max: s(stats.max),
+    n: stats.n,
   }
 }
 

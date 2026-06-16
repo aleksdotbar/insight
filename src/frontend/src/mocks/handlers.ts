@@ -8,6 +8,7 @@ import {
   mockCrmFlowSeries,
   mockCrmKpis,
   mockDeliveryTrendSeries,
+  mockDeptDistRows,
   mockIcAggregateRow,
   mockIcBulletSection,
   mockLocTrendSeries,
@@ -33,6 +34,7 @@ type ODataBody = { $filter?: string };
 function parseFilter(body: unknown): {
   personId?: string;
   personIds?: string[];
+  orgUnitIds?: string[];
   metricKey?: string;
   sectionId?: string;
   periodDays: number;
@@ -44,6 +46,13 @@ function parseFilter(body: unknown): {
   const personInMatch = /\bperson_id\s+in\s+\(([^)]+)\)/i.exec(f);
   const personIds = personInMatch
     ? personInMatch[1]
+        .split(",")
+        .map((s) => s.trim().replace(/^'|'$/g, ""))
+        .filter(Boolean)
+    : undefined;
+  const orgUnitInMatch = /\borg_unit_id\s+in\s+\(([^)]+)\)/i.exec(f);
+  const orgUnitIds = orgUnitInMatch
+    ? orgUnitInMatch[1]
         .split(",")
         .map((s) => s.trim().replace(/^'|'$/g, ""))
         .filter(Boolean)
@@ -69,6 +78,7 @@ function parseFilter(body: unknown): {
   return {
     personId: personMatch?.[1],
     personIds,
+    orgUnitIds,
     metricKey: metricMatch?.[1],
     sectionId: sectionMatch?.[1],
     periodDays,
@@ -113,6 +123,7 @@ const metricHandlers: Record<string, Handler> = {
         person_id: p.person_id,
         display_name: p.name,
         seniority: p.seniority,
+        org_unit_id: p.department,
         ai_tools: p.ai_tools,
         tasks_closed: Math.max(1, Math.round((3 + (s % 17)) * scale)),
         bugs_fixed: Math.max(0, Math.round(((s % 11) >> 1) * scale)),
@@ -222,6 +233,22 @@ const metricHandlers: Record<string, Handler> = {
         prs_merged: Math.max(0, Math.round((seedOf(id) % 20) * scale)),
       })),
     );
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("delivery", orgUnitIds ?? [], periodDays));
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_COLLAB]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("collab", orgUnitIds ?? [], periodDays));
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_GIT]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("git", orgUnitIds ?? [], periodDays));
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_KPIS]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("kpis", orgUnitIds ?? [], periodDays));
   },
   [METRIC_REGISTRY.IC_CHART_LOC]: (body) => {
     const { periodDays } = parseFilter(body);

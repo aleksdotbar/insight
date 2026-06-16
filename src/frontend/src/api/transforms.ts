@@ -516,6 +516,7 @@ export function transformTeamMembers(
     name: r.display_name,
     seniority: r.seniority,
     supervisor_email: r.supervisor_email,
+    org_unit_id: r.org_unit_id ?? null,
     tasks_closed: Math.round(r.tasks_closed),
     bugs_fixed: Math.round(r.bugs_fixed),
     dev_time_h: r.dev_time_h,

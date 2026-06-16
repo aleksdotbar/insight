@@ -14,6 +14,7 @@ import {
 import type { RawBulletAggregateRow } from "@/api/raw-types";
 import { transformBulletMetrics } from "@/api/transforms";
 import { useCatalog } from "@/api/use-catalog";
+import type { DeptCohorts, DeptStatsMap, PeerStats } from "@/lib/peers";
 import type { BulletMetric, PeriodValue } from "@/types/insight";
 
 const SECTION_METRIC_IDS = [
@@ -129,6 +130,118 @@ export function useTeamMemberBullets(
     enabled: memberIds.length > 0,
     placeholderData: keepPreviousData,
     queryFn: () => fetchMemberBullets(memberIds, range, period, catalog),
+  });
+}
+
+const DEPT_DIST_BULLET_IDS = [
+  METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY,
+  METRIC_REGISTRY.V2_DEPT_DIST_COLLAB,
+  METRIC_REGISTRY.V2_DEPT_DIST_GIT,
+] as const;
+
+const DEPT_DIST_METRIC_IDS = [
+  ...DEPT_DIST_BULLET_IDS,
+  METRIC_REGISTRY.V2_DEPT_DIST_KPIS,
+] as const;
+
+/** Per-(department, metric) distribution long row from a `V2_DEPT_DIST_*` metric. */
+type RawDeptDistRow = {
+  org_unit_id: string;
+  metric_key: string;
+  p25: number | null;
+  median: number | null;
+  p75: number | null;
+  range_min: number | null;
+  range_max: number | null;
+  n: number | null;
+};
+
+function foldDeptDistRows(target: DeptStatsMap, rows: RawDeptDistRow[]): void {
+  for (const row of rows) {
+    const n = Number(row.n);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    const p25 = Number(row.p25);
+    const p50 = Number(row.median);
+    const p75 = Number(row.p75);
+    if (
+      !Number.isFinite(p25) ||
+      !Number.isFinite(p50) ||
+      !Number.isFinite(p75)
+    ) {
+      continue;
+    }
+    const stats: PeerStats = {
+      p25,
+      p50,
+      p75,
+      min: Number.isFinite(Number(row.range_min)) ? Number(row.range_min) : p25,
+      max: Number.isFinite(Number(row.range_max)) ? Number(row.range_max) : p75,
+      n,
+    };
+    let byMetric = target.get(row.org_unit_id);
+    if (!byMetric) {
+      byMetric = new Map();
+      target.set(row.org_unit_id, byMetric);
+    }
+    byMetric.set(row.metric_key, stats);
+  }
+}
+
+/**
+ * Fetch every roster department's per-metric distribution in one request per
+ * `V2_DEPT_DIST_*` family (`org_unit_id in (depts)`), folded into the two
+ * source-family maps of [`DeptCohorts`]: `kpi` from the ic_kpis distribution
+ * (team_row heatmap columns) and `bullet` from the three bullet-rows
+ * distributions (member bullet comparisons). Rows without a usable cohort
+ * (`n`/quartiles missing) are skipped. `median→p50`, `range_min→min`,
+ * `range_max→max`.
+ */
+async function fetchDeptDistributions(
+  orgUnitIds: string[],
+  range: DateRange,
+): Promise<DeptCohorts> {
+  const empty: DeptCohorts = { kpi: new Map(), bullet: new Map() };
+  if (orgUnitIds.length === 0) return empty;
+  const ids = orgUnitIds
+    .map((id) => `'${odataEscapeValue(id)}'`)
+    .join(", ");
+  const items = DEPT_DIST_METRIC_IDS.map((metricId) => ({
+    id: metricId,
+    metric_id: metricId,
+    $filter: `org_unit_id in (${ids})`,
+    $top: 5000,
+  }));
+  const resp = await queryBatchWithRange<RawDeptDistRow>(range, items);
+  const out = empty;
+  const bulletIds = new Set<string>(DEPT_DIST_BULLET_IDS);
+  for (const r of resp.results as BatchQueryResult<RawDeptDistRow>[]) {
+    if (r.status !== "ok") {
+      throw new Error(`Failed to load ${r.metric_id} department distribution`);
+    }
+    if (!r.id) continue;
+    foldDeptDistRows(bulletIds.has(r.id) ? out.bullet : out.kpi, r.items);
+  }
+  return out;
+}
+
+export function useDeptDistributions(
+  orgUnitIds: string[],
+  period: PeriodValue,
+  range: DateRange,
+  opts?: { enabled?: boolean },
+): UseQueryResult<DeptCohorts> {
+  return useQuery({
+    queryKey: [
+      "v2",
+      "dept-distributions",
+      [...orgUnitIds].sort().join(","),
+      period,
+      range.from,
+      range.to,
+    ],
+    enabled: orgUnitIds.length > 0 && (opts?.enabled ?? true),
+    placeholderData: keepPreviousData,
+    queryFn: () => fetchDeptDistributions(orgUnitIds, range),
   });
 }
 

@@ -15,8 +15,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { CatalogMetric, CatalogResponse } from "./catalog-client";
-import type { RawBulletAggregateRow, RawIcAggregateRow } from "./raw-types";
-import { transformBulletMetrics, transformIcKpis } from "./transforms";
+import type {
+  RawBulletAggregateRow,
+  RawIcAggregateRow,
+  RawTeamMemberRow,
+} from "./raw-types";
+import {
+  transformBulletMetrics,
+  transformIcKpis,
+  transformTeamMembers,
+} from "./transforms";
 
 const TENANT = "t-test";
 
@@ -308,5 +316,44 @@ describe("transformBulletMetrics undefined-catalog handling", () => {
         undefined,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("transformTeamMembers", () => {
+  function rawMember(
+    overrides: Partial<RawTeamMemberRow> = {},
+  ): RawTeamMemberRow {
+    return {
+      person_id: "alice@example.com",
+      display_name: "Alice Kim",
+      seniority: "Senior",
+      supervisor_email: "bob@example.com",
+      org_unit_id: "Engineering",
+      tasks_closed: 8,
+      bugs_fixed: 2,
+      dev_time_h: 14,
+      prs_merged: 3,
+      build_success_pct: 96,
+      focus_time_pct: 72,
+      ai_tools: ["Cursor"],
+      ai_loc_share_pct: 27,
+      ...overrides,
+    };
+  }
+
+  it("extracts org_unit_id onto the member", () => {
+    const [member] = transformTeamMembers(
+      [rawMember({ org_unit_id: "Engineering" })],
+      "month",
+    );
+    expect(member.org_unit_id).toBe("Engineering");
+  });
+
+  it("maps a missing org_unit_id to null", () => {
+    const [member] = transformTeamMembers(
+      [rawMember({ org_unit_id: null })],
+      "month",
+    );
+    expect(member.org_unit_id).toBeNull();
   });
 });

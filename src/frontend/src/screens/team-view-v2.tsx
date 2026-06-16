@@ -26,6 +26,7 @@ import {
   useTeamMembers,
 } from "@/queries/team-view";
 import {
+  useDeptDistributions,
   useTeamMemberBullets,
   useTeamMemberBulletsPrevious,
 } from "@/queries/v2/team-extras";
@@ -78,6 +79,15 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
     period,
     dateRange,
   );
+
+  const orgUnitIds = [
+    ...new Set(
+      members
+        .map((m) => m.org_unit_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const deptDistQ = useDeptDistributions(orgUnitIds, period, dateRange);
 
   const sectionsQ = useTeamBulletSections(
     SECTION_KEYS,
@@ -153,6 +163,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
             <TeamMembersAttention
               members={members}
               bulletsByPerson={bulletsQ.data}
+              deptCohorts={deptDistQ.data}
               onMemberClick={setFocusedMember}
             />
 
@@ -167,6 +178,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                 members={members}
                 bulletsByPerson={bulletsQ.data}
                 previousBulletsByPerson={prevBulletsQ.data}
+                deptCohorts={deptDistQ.data}
                 onMemberClick={setFocusedMember}
               />
             )}
@@ -196,7 +208,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                       sectionId={s.id}
                       rows={rowsBySection[s.id]}
                       onOpen={() => setOpenSection(s.id)}
-                      subtitle="Team aggregate"
+                      subtitle="vs department expectation"
                     />
                   );
                 })}
@@ -213,7 +225,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
           onOpenChange={(o) => setOpenSection(o ? s.id : null)}
           title={s.label}
           rows={rowsBySection[s.id]}
-          cohortLabel="team"
+          cohortLabel="department"
         />
       ))}
     </div>
