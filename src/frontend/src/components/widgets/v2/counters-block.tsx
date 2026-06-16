@@ -199,15 +199,35 @@ function HeroRangeBar({
 export interface CountersBlockProps {
   rows: BulletMetric[];
   cohortLabel?: PeerCohortLabel;
+  layout?: "story" | "list";
 }
 
 export function CountersBlock({
   rows,
   cohortLabel = "team",
+  layout = "story",
 }: CountersBlockProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
   const entries = buildEntries(rows, byMetricKey);
+
+  // List layout: a flat value-vs-cohort row per metric (no hero/outlier
+  // partitioning). Used for team-aggregate distributions, which have no
+  // per-person histogram to chart.
+  if (layout === "list") {
+    const visible = entries.filter(
+      (e) => e.row.value !== "—" && e.row.value !== "",
+    );
+    if (visible.length === 0) return null;
+    return (
+      <InPackRows
+        entries={visible}
+        focusMode={focusMode}
+        cohortLabel={cohortLabel}
+        colorValue
+      />
+    );
+  }
 
   const bottoms = entries
     .filter((e) => e.status === "bottom")
@@ -509,15 +529,24 @@ function InPackRows({
   entries,
   focusMode,
   cohortLabel,
+  colorValue = false,
 }: {
   entries: StoryEntry[];
   focusMode: ReturnType<typeof useSettings>["focusMode"];
   cohortLabel: PeerCohortLabel;
+  colorValue?: boolean;
 }) {
   const items = entries.map((e) => {
     const status = applyFocus(e.status, focusMode);
     const unit = e.row.unit ?? "";
-    const positionText = e.status === "in_pack" ? "on par" : "—";
+    const positionText =
+      e.status === "top"
+        ? "top 25%"
+        : e.status === "bottom"
+          ? "bottom 25%"
+          : e.status === "in_pack"
+            ? "on par"
+            : "—";
     const medianText =
       e.stats != null
         ? `${cohortLabel} median: ${fmtStat(e.stats.p50, unit)}`
@@ -525,9 +554,22 @@ function InPackRows({
     return { e, status, positionText, medianText };
   });
 
-  const ValueCell = ({ e }: { e: StoryEntry }) => (
+  const ValueCell = ({
+    e,
+    status,
+  }: {
+    e: StoryEntry;
+    status: PeerStatusWithNeutral;
+  }) => (
     <span className="flex items-baseline gap-1 tabular-nums">
-      <span className="font-mono text-lg font-semibold">{e.row.value}</span>
+      <span
+        className={cn(
+          "font-mono text-lg font-semibold",
+          colorValue && PEER_TEXT[status],
+        )}
+      >
+        {e.row.value}
+      </span>
       {e.row.unit ? (
         <span className="text-sm text-muted-foreground">{e.row.unit}</span>
       ) : null}
@@ -567,7 +609,7 @@ function InPackRows({
           <div key={e.row.metric_key}>
             <div className="flex items-baseline justify-between gap-3">
               <Heading e={e} />
-              <ValueCell e={e} />
+              <ValueCell e={e} status={status} />
             </div>
             <div className="mt-0.5">
               <PeerCell
@@ -584,7 +626,7 @@ function InPackRows({
         {items.map(({ e, status, positionText, medianText }) => (
           <Fragment key={e.row.metric_key}>
             <Heading e={e} />
-            <ValueCell e={e} />
+            <ValueCell e={e} status={status} />
             <PeerCell
               status={status}
               positionText={positionText}

@@ -245,17 +245,28 @@ function DrilldownBody({
       {counters.length > 0 ? (
         <CountersBlock rows={counters} cohortLabel={cohortLabel} />
       ) : null}
+      {/* Histograms (ic_histogram) are per-person; a team aggregate has no
+          single person, so the team renders distributions as a compact
+          value-vs-expectation list (matches the sandbox's list layout). */}
       {distributions.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {distributions.map((r) => (
-            <DistributionStrip
-              key={r.metric_key}
-              row={r}
-              bins={batch?.histograms.get(r.metric_key) ?? null}
-              cohortLabel={cohortLabel}
-            />
-          ))}
-        </div>
+        personId != null ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {distributions.map((r) => (
+              <DistributionStrip
+                key={r.metric_key}
+                row={r}
+                bins={batch?.histograms.get(r.metric_key) ?? null}
+                cohortLabel={cohortLabel}
+              />
+            ))}
+          </div>
+        ) : (
+          <CountersBlock
+            rows={distributions}
+            cohortLabel={cohortLabel}
+            layout="list"
+          />
+        )
       ) : null}
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
