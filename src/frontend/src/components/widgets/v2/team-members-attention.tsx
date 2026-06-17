@@ -4,20 +4,10 @@ import { Link } from "@tanstack/react-router";
 import { useCatalog } from "@/api/use-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSettings } from "@/hooks/use-settings";
-import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
-import {
-  applyFocus,
-  PEER_TEXT,
-  peerStatusVsQuartiles,
-  statsToDisplayUnit,
-  type DeptCohorts,
-} from "@/lib/peers";
+import { memberMetricPeerStatus } from "@/lib/insight/v2/team-member-status";
+import { applyFocus, PEER_TEXT, type DeptCohorts } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 import type { BulletMetric, TeamMember } from "@/types/insight";
-
-// A department cohort must hold at least this many people before a member
-// is counted against it. Kept in sync with the heatmap's threshold.
-const MIN_DEPT_COHORT_N = 5;
 
 export interface TeamMembersAttentionProps {
   members: TeamMember[];
@@ -42,28 +32,13 @@ export function TeamMembersAttention({
   const attention = members
     .map((m) => {
       const bullets = bulletsByPerson?.get(m.person_id.toLowerCase()) ?? [];
-      const byMetric = m.org_unit_id
-        ? deptCohorts?.bullet.get(m.org_unit_id)
-        : undefined;
       let belowCount = 0;
       for (const b of bullets) {
-        // schema_error / missing-id rows can't contribute to the "below
-        // peers" count — they collapse to neutral per DESIGN §3.3.
-        if (b.schema_error) continue;
-        const raw = byMetric?.get(b.metric_key);
-        // Degenerate department cohort (thin or absent) → not counted.
-        if (!raw || raw.n < MIN_DEPT_COHORT_N) continue;
-        const value = Number(b.value);
-        if (!Number.isFinite(value)) continue;
-        const catalogRow = byMetricKey(bulletCatalogKey(b));
-        if (!catalogRow) continue;
-        const stats = statsToDisplayUnit(raw, catalogRow.unit, b.unit);
-        const ps = peerStatusVsQuartiles(
-          value,
-          stats,
-          catalogRow.higher_is_better,
-        );
-        if (ps === "bottom") belowCount += 1;
+        if (
+          memberMetricPeerStatus(m, b, deptCohorts, byMetricKey) === "bottom"
+        ) {
+          belowCount += 1;
+        }
       }
       return { member: m, belowCount };
     })

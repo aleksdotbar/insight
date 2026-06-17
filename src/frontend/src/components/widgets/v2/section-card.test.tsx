@@ -1,13 +1,14 @@
 /**
- * Component-render coverage for `<SectionCard>` peer-driven coloring.
+ * Component-render coverage for `<SectionCard>` status coloring.
  *
- * The team view folds a blended department expectation onto each
- * team-bullet row's `peer` (p25/p50/p75). `rowStatus` colors the card off
- * that `peer` + the catalog's `higher_is_better` — no FE math. This pins:
- *   - a team-bullet row whose `peer` puts the value in the top quartile
- *     drives a 'good' badge stripe + "1 of 1 in top".
- *   - the headline still reflects the team aggregate (the row's label/value),
- *     independent of which cohort drew the color.
+ * Two status sources:
+ *   - IC view (no override): `rowStatus` colors each row off its own `peer`
+ *     (p25/p50/p75) + the catalog's `higher_is_better` — no FE math.
+ *   - Team view: a `statusByMetricKey` override replaces that per-row scoring,
+ *     so the card rolls up per-member-vs-own-department standings instead of
+ *     comparing a team aggregate against an individual band.
+ * The headline always reflects the row's own label/value (the aggregate),
+ * independent of which source drove the color.
  */
 
 import { screen, waitFor } from "@testing-library/react";
@@ -95,6 +96,37 @@ describe("<SectionCard> peer-driven coloring", () => {
     expect(
       screen.getByText("vs department expectation"),
     ).toBeInTheDocument();
+  });
+
+  it("statusByMetricKey override drives the badge, overriding the row's own peer", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "task_delivery_bullet_rows.tasks_completed",
+          higher_is_better: true,
+          schema_status: "ok",
+        },
+      ]),
+    );
+    // No peer on the row ⇒ rowStatus would be neutral ("No peer data"). The
+    // team override says 'good' ⇒ badge becomes "1 of 1 in top".
+    const row = makeBullet({ value: "12", peer: undefined });
+    renderWithCatalogClient(
+      <SectionCard
+        title="Task delivery"
+        sectionId="task_delivery"
+        rows={[row]}
+        onOpen={() => {}}
+        subtitle="vs department peers"
+        statusByMetricKey={new Map([["tasks_completed", "good"]])}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("1 of 1 in top")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("No peer data")).not.toBeInTheDocument();
+    // Headline still the aggregate row.
+    expect(screen.getByText("Tasks Closed: 12 tasks")).toBeInTheDocument();
   });
 
   it("a row with no peer scores neutral — 'No peer data' badge", async () => {

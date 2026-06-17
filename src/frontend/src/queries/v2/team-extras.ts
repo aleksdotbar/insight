@@ -21,6 +21,7 @@ const SECTION_METRIC_IDS = [
   { sectionId: "task_delivery", metricId: METRIC_REGISTRY.V2_MEMBER_VALUES_DELIVERY },
   { sectionId: "git_output", metricId: METRIC_REGISTRY.V2_MEMBER_VALUES_GIT },
   { sectionId: "collaboration", metricId: METRIC_REGISTRY.V2_MEMBER_VALUES_COLLAB },
+  { sectionId: "ai_adoption", metricId: METRIC_REGISTRY.V2_MEMBER_VALUES_AI },
 ] as const;
 
 /** Per-person long row from a `V2_MEMBER_VALUES_*` metric. */
@@ -137,6 +138,7 @@ const DEPT_DIST_BULLET_IDS = [
   METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY,
   METRIC_REGISTRY.V2_DEPT_DIST_COLLAB,
   METRIC_REGISTRY.V2_DEPT_DIST_GIT,
+  METRIC_REGISTRY.V2_DEPT_DIST_AI,
 ] as const;
 
 const DEPT_DIST_METRIC_IDS = [

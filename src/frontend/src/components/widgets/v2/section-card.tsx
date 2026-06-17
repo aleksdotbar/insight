@@ -21,6 +21,7 @@ import {
   STATUS_BG_CLASS,
   STATUS_TEXT_CLASS,
   applyFocusStatus,
+  type Status,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { BulletMetric } from "@/types/insight";
@@ -52,6 +53,13 @@ export interface SectionCardProps {
   sectionId?: string;
   subtitle?: string;
   unavailable?: boolean;
+  /**
+   * Per-metric status override. When supplied (team view), it replaces the
+   * single-row `rowStatus` scoring — the team card rolls up each metric from
+   * per-member-vs-own-department standings instead of comparing a team
+   * aggregate against an individual band. Absent (IC view) → `rowStatus`.
+   */
+  statusByMetricKey?: Map<string, Status>;
 }
 
 export function SectionCard({
@@ -62,9 +70,12 @@ export function SectionCard({
   sectionId,
   subtitle,
   unavailable,
+  statusByMetricKey,
 }: SectionCardProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
+  const metricStatus = (r: BulletMetric): Status =>
+    statusByMetricKey?.get(r.metric_key) ?? rowStatus(r, byMetricKey);
 
   if (unavailable) {
     return (
@@ -85,7 +96,7 @@ export function SectionCard({
 
   const scored: ScoredMetric<BulletMetric>[] = rows.map((r) => ({
     row: r,
-    status: rowStatus(r, byMetricKey),
+    status: metricStatus(r),
   }));
   const rawStatus = aggregateSectionStatus(scored);
   const status = applyFocusStatus(rawStatus, focusMode);
@@ -151,7 +162,7 @@ export function SectionCard({
               <ul className="flex flex-col gap-1.5">
                 {preview.map((r) => {
                   const previewStatus = applyFocusStatus(
-                    rowStatus(r, byMetricKey),
+                    metricStatus(r),
                     focusMode,
                   );
                   return (

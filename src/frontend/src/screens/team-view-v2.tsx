@@ -9,6 +9,7 @@ import { MembersHeatmap } from "@/components/widgets/v2/members-heatmap";
 import { TeamMembersAttention } from "@/components/widgets/v2/team-members-attention";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { useCatalog } from "@/api/use-catalog";
 import { usePeriod } from "@/hooks/use-period";
 import {
   flattenSubordinates,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/insight/v2/sections";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
+import { teamSectionStatusByMetric } from "@/lib/insight/v2/team-member-status";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import {
   useTeamBulletSections,
@@ -41,6 +43,7 @@ export interface TeamViewV2ScreenProps {
 
 export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps) {
   const { period, dateRange, setPeriod } = usePeriod();
+  const { byMetricKey } = useCatalog();
   const [openSection, setOpenSection] = useState<TeamSectionId | null>(null);
 
   // Close any open drilldown when the viewed team changes. Render-phase
@@ -204,8 +207,15 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                       title={s.label}
                       sectionId={s.id}
                       rows={rowsBySection[s.id]}
+                      statusByMetricKey={teamSectionStatusByMetric(
+                        rowsBySection[s.id],
+                        members,
+                        bulletsQ.data,
+                        deptDistQ.data,
+                        byMetricKey,
+                      )}
                       onOpen={() => setOpenSection(s.id)}
-                      subtitle="vs department expectation"
+                      subtitle="vs department peers"
                     />
                   );
                 })}

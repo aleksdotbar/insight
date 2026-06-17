@@ -19,6 +19,7 @@ import {
   bulletCatalogKey,
   type CatalogByKey,
 } from "@/lib/insight/v2/peer-status";
+import { MIN_DEPT_COHORT_N } from "@/lib/insight/v2/team-member-status";
 import {
   applyFocus,
   PEER_CELL,
@@ -43,11 +44,6 @@ import {
 import { TriageList, type TriageRow } from "./triage-list";
 
 const WOW_THRESHOLD = 0.05;
-
-// A department cohort must hold at least this many people before we color
-// a member against it — below this its quartiles are too thin to be
-// meaningful, so the cell falls back to neutral ("No peer data").
-const MIN_DEPT_COHORT_N = 5;
 
 /**
  * Per-member-department lookup of a metric's distribution. Returns null when
