@@ -62,6 +62,7 @@ export const BULLET_DESCRIPTION_BY_KEY: ReadonlyMap<string, string> = new Map<
   cc_lines: "Lines accepted from Claude Code",
   ai_loc_share2: "AI-assisted lines vs clean LOC",
   cc_cost: "Per-user cost from Claude Team plan in cents",
+  cc_overage: "Per-user spend above the monthly Claude Team limit, in cents",
   prs_with_cc: "PRs where Claude Code was active (requires Anthropic GitHub-app)",
   prs_total: "Total PRs in measurement window — denominator for CC attribution rate",
 

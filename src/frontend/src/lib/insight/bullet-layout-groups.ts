@@ -137,6 +137,7 @@ const BULLET_DISPLAY_ORDER: readonly string[] = [
   'claude_web',
   'ai_loc_share2',
   'cc_cost',
+  'cc_overage',
   'prs_with_cc',
   'prs_total',
 
