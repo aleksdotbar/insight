@@ -14,31 +14,118 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
-    name: Build & Push
+  # Compute the canonical build tag once so both per-arch legs and the
+  # merge step tag with the SAME string. metadata-action's {{date}}
+  # would otherwise drift by up to a minute across parallel matrix legs
+  # and the umbrella subchart appVersion would point at a tag that
+  # doesn't exist.
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      build_tag: ${{ steps.tag.outputs.build_tag }}
+    steps:
+      - name: Compute build tag
+        id: tag
+        # Format mirrors constructorfabric/insight's build-images.yml
+        # exactly so that `sort -V` over mixed subchart appVersions on
+        # the umbrella side stays consistent.
+        run: |
+          BUILD_TAG="$(date -u +%Y.%m.%d.%H.%M)-$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          echo "build_tag=${BUILD_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Build tag for this run: ${BUILD_TAG}"
+
+  # Per-arch builds run in parallel on native runners (amd64 on
+  # ubuntu-latest, arm64 on ubuntu-24.04-arm). Each leg pushes by
+  # digest only — the tagged multi-arch manifest is assembled by the
+  # merge job below once both legs finish. This avoids QEMU emulation
+  # entirely: `pnpm install`, `pnpm build`, and the nginx base image
+  # all resolve to native binaries on each runner.
+  build-and-push:
+    name: Build & Push (${{ matrix.arch }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
-    outputs:
-      build_tag: ${{ steps.tag.outputs.build_tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      # Compute the build tag once and pass it to both the image tag and
-      # the cross-repo dispatch step below. Format mirrors
-      # constructorfabric/insight's build-images.yml exactly so that
-      # `sort -V` over mixed subchart appVersions on the umbrella side
-      # stays consistent.
-      - name: Compute build tag
-        id: tag
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3
+
+      - name: Build and push (by digest)
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          # push-by-digest=true emits one untagged manifest per arch into
+          # GHCR; the merge job below joins them into the final tagged
+          # multi-arch manifest.
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          # Scope cache per arch so amd64 and arm64 don't evict each other.
+          cache-from: type=gha,scope=frontend-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=frontend-${{ matrix.arch }}
+
+      - name: Export digest
         run: |
-          BUILD_TAG="$(date -u +%Y.%m.%d.%H.%M)-$(echo "${GITHUB_SHA}" | cut -c1-7)"
-          echo "build_tag=${BUILD_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Build tag for this run: ${BUILD_TAG}"
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-frontend-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Assemble the multi-arch manifest from the per-arch digests at the
+  # canonical <build_tag>+latest tags. `dispatch-umbrella` then pins the
+  # subchart appVersion to <build_tag> and that tag must resolve to a
+  # multi-arch image for both amd64 and arm64 cluster nodes.
+  merge:
+    name: Merge multi-arch manifest
+    needs: [prepare, build-and-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      # Forward build_tag so dispatch-umbrella has a single upstream to
+      # read from (the merge that actually produced the tagged manifest).
+      build_tag: ${{ needs.prepare.outputs.build_tag }}
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-frontend-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -52,25 +139,20 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Two tags on default-branch pushes — matches constructorfabric/insight
-          # backend scheme. The date-based tag already embeds the sha, so
-          # a separate short-sha tag is redundant.
+          # Two tags on default-branch pushes — matches
+          # constructorfabric/insight backend scheme. The date-based tag
+          # already embeds the sha, so a separate short-sha tag is
+          # redundant.
           tags: |
-            type=raw,value=${{ steps.tag.outputs.build_tag }},enable={{is_default_branch}}
+            type=raw,value=${{ needs.prepare.outputs.build_tag }},enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3
-
-      - name: Build and push
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create multi-arch manifest and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
   # ─── Umbrella chart dispatch ───────────────────────────────────────────────
   # After a successful main-branch image build, trigger the umbrella chart
@@ -88,7 +170,7 @@ jobs:
   # to a single human.
   dispatch-umbrella:
     name: Dispatch umbrella chart publish
-    needs: build-and-push
+    needs: merge
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
@@ -104,7 +186,7 @@ jobs:
       - name: Dispatch umbrella build-images workflow
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          FRONTEND_TAG: ${{ needs.build-and-push.outputs.build_tag }}
+          FRONTEND_TAG: ${{ needs.merge.outputs.build_tag }}
         run: |
           set -euo pipefail
           echo "Dispatching umbrella build-images.yml with frontend_tag=${FRONTEND_TAG}"
