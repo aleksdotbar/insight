@@ -11,7 +11,8 @@ export type TeamSectionId =
   | "task_delivery"
   | "git_output"
   | "collaboration"
-  | "ai_adoption";
+  | "ai_adoption"
+  | "wiki";
 
 export const IC_SECTIONS: ReadonlyArray<{ id: IcSectionId; label: string }> = [
   { id: "task_delivery", label: "Task delivery" },
@@ -33,4 +34,5 @@ export const TEAM_SECTIONS: ReadonlyArray<{
   { id: "git_output", label: "Git output" },
   { id: "collaboration", label: "Collaboration" },
   { id: "ai_adoption", label: "AI adoption" },
+  { id: "wiki", label: "Wiki" },
 ] as const;

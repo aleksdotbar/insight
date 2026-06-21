@@ -136,6 +136,7 @@ const TEAM_BULLET_SECTIONS = {
   estimation: METRIC_REGISTRY.TEAM_BULLET_DELIVERY,
   collaboration: METRIC_REGISTRY.TEAM_BULLET_COLLAB,
   ai_adoption: METRIC_REGISTRY.TEAM_BULLET_AI,
+  wiki: METRIC_REGISTRY.TEAM_BULLET_WIKI,
 } as const;
 
 export type TeamBulletSectionId = keyof typeof TEAM_BULLET_SECTIONS;

@@ -118,6 +118,10 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
       "ai_adoption",
       sectionData?.bySection.ai_adoption ?? [],
     ),
+    wiki: orderRowsForSection(
+      "wiki",
+      sectionData?.bySection.wiki ?? [],
+    ),
   };
 
   const sectionsPending = sectionsQ.isPending;
