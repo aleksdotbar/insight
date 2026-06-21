@@ -70,6 +70,7 @@ export function EngineeringDashboardV2({
       data?.collaboration ?? []
     ),
     ai_adoption: orderRowsForSection("ai_adoption", data?.aiAdoption ?? []),
+    wiki: orderRowsForSection("wiki", data?.wiki ?? []),
   };
 
   const heroSections = IC_HERO_SECTIONS.map((s) => ({
