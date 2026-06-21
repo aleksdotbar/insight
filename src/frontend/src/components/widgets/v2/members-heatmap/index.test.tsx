@@ -1,12 +1,16 @@
 /**
- * Component-render coverage for `<MembersHeatmap>` (Refs #80, wave 3).
+ * Component-render coverage for `<MembersHeatmap>`.
  *
- * Verifies the catalog-driven heatmap respects the wave-1 DESIGN §3.3
- * rules on its bullet-derived cells:
- *   - `ok` row that lands in bottom-quartile drives the "N issues" chip.
+ * Verifies the catalog-driven heatmap colors each member against THAT
+ * member's own department distribution (`deptCohorts` keyed by
+ * `org_unit_id → metric_key → PeerStats`) and respects the wave-1
+ * DESIGN §3.3 rules on its bullet-derived cells:
+ *   - bullet that lands in the bottom quartile of the member's dept drives
+ *     the "N issues" chip.
  *   - `schema_error` rows are filtered from the "below peers" count.
- *   - Missing-id rows are also filtered out — without a higher_is_better
- *     signal we can't classify the cell.
+ *   - Missing-id rows (no catalog row) are filtered out — without a
+ *     `higher_is_better` signal the bullet-based worst-pick can't classify.
+ *   - A degenerate department cohort (`n < MIN_DEPT_COHORT_N`) → neutral.
  */
 
 import { screen, waitFor } from "@testing-library/react";
@@ -26,8 +30,8 @@ import {
   buildCatalogResponse,
   renderWithCatalogClient,
 } from "@/test/catalog-test-utils";
+import type { DeptCohorts, PeerStats } from "@/lib/peers";
 import { MembersHeatmap } from "./index";
-import type { PeerStats } from "@/lib/peers";
 import type {
   BulletMetric,
   PeriodValue,
@@ -43,6 +47,7 @@ function makeMember(overrides: Partial<TeamMember> = {}): TeamMember {
     name: "Alice",
     seniority: "Senior",
     supervisor_email: null,
+    org_unit_id: "Engineering",
     tasks_closed: 8,
     bugs_fixed: 2,
     dev_time_h: null,
@@ -76,14 +81,36 @@ function makeBullet(overrides: Partial<BulletMetric> = {}): BulletMetric {
   };
 }
 
-const MTTR_STATS: PeerStats = {
-  p25: 5,
-  p50: 10,
-  p75: 20,
-  min: 1,
-  max: 40,
-  n: 12,
-};
+/** PeerStats with a healthy cohort size (above MIN_DEPT_COHORT_N). */
+function stats(overrides: Partial<PeerStats> = {}): PeerStats {
+  return { p25: 4, p50: 5, p75: 6, min: 2, max: 10, n: 10, ...overrides };
+}
+
+// Mirrors the production family routing in `fetchDeptDistributions`: the
+// team_row heatmap keys live in the `kpi` family, everything else in `bullet`.
+const KPI_FAMILY_KEYS = new Set([
+  "tasks_closed",
+  "bugs_fixed",
+  "prs_merged",
+  "focus_time_pct",
+  "ai_loc_share_pct",
+]);
+
+function deptMap(
+  rows: Array<[orgUnit: string, metricKey: string, s: PeerStats]>,
+): DeptCohorts {
+  const out: DeptCohorts = { kpi: new Map(), bullet: new Map() };
+  for (const [orgUnit, metricKey, s] of rows) {
+    const target = KPI_FAMILY_KEYS.has(metricKey) ? out.kpi : out.bullet;
+    let byMetric = target.get(orgUnit);
+    if (!byMetric) {
+      byMetric = new Map();
+      target.set(orgUnit, byMetric);
+    }
+    byMetric.set(metricKey, s);
+  }
+  return out;
+}
 
 describe("<MembersHeatmap>", () => {
   beforeEach(() => {
@@ -95,7 +122,7 @@ describe("<MembersHeatmap>", () => {
     authStore.reset();
   });
 
-  it("counts a bottom-quartile bullet toward the member's 'N issues' chip", async () => {
+  it("counts a bottom-quartile bullet vs the member's department toward the 'N issues' chip", async () => {
     fetchCatalog.mockResolvedValue(
       buildCatalogResponse([
         {
@@ -105,21 +132,22 @@ describe("<MembersHeatmap>", () => {
         },
       ]),
     );
+    // Alice's MTTR (30, higher = worse) sits above her department's p75 (6),
+    // so her cell is 'bottom' ⇒ 1 issue. Coloring is per-department, not vs
+    // the displayed roster.
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       ["alice@example.com", [makeBullet({ value: "30" })]],
     ]);
-    const cohortStats = new Map([["mean_time_to_resolution", MTTR_STATS]]);
+    const deptCohorts = deptMap([
+      ["Engineering", "mean_time_to_resolution", stats({ p25: 4, p50: 5, p75: 6 })],
+    ]);
     renderWithCatalogClient(
       <MembersHeatmap
-        members={[makeMember()]}
+        members={[makeMember({ person_id: "alice@example.com", name: "Alice" })]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
+        deptCohorts={deptCohorts}
       />,
     );
-    // higher_is_better=false + value=30 vs p75=20 ⇒ 'bottom' ⇒ 1 issue.
-    // The string "1 issue" is unique to the chip (the legend uses
-    // "bottom 25%" not a count), so a single getByText pins down the
-    // assertion to the right surface.
     await waitFor(() => {
       // The chip is rendered twice — once in the mobile triage list,
       // once in the desktop grid. Both should agree.
@@ -143,50 +171,79 @@ describe("<MembersHeatmap>", () => {
         [makeBullet({ value: "30", schema_error: true })],
       ],
     ]);
-    const cohortStats = new Map([["mean_time_to_resolution", MTTR_STATS]]);
+    const deptCohorts = deptMap([
+      ["Engineering", "mean_time_to_resolution", stats()],
+    ]);
     renderWithCatalogClient(
       <MembersHeatmap
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
+        deptCohorts={deptCohorts}
       />,
     );
-    // belowCount=0 ⇒ chip shows "on par" (no "N issues" string anywhere
-    // outside the legend, which uses "bottom 25%"). Wait until the
-    // post-fetch render commits and no "issue" / "issues" chip exists.
     await waitFor(() => {
       expect(screen.queryByText(/^\d+ issues?$/)).not.toBeInTheDocument();
     });
   });
 
-  it("missing-id bullet (no catalog row) does NOT contribute to the 'issues' count", async () => {
-    fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
+  it("a degenerate department cohort (n < 5) renders neutral — no 'issues' chip", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "task_delivery_bullet_rows.mean_time_to_resolution",
+          higher_is_better: false,
+          schema_status: "ok",
+        },
+      ]),
+    );
+    // Alice's MTTR (30) would be bottom-quartile, but her department's
+    // cohort holds only 3 people (< MIN_DEPT_COHORT_N) ⇒ neutral, not counted.
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       ["alice@example.com", [makeBullet({ value: "30" })]],
     ]);
-    const cohortStats = new Map([["mean_time_to_resolution", MTTR_STATS]]);
+    const deptCohorts = deptMap([
+      ["Engineering", "mean_time_to_resolution", stats({ n: 3 })],
+    ]);
     renderWithCatalogClient(
       <MembersHeatmap
         members={[makeMember()]}
         bulletsByPerson={bulletsByPerson}
-        cohortStats={cohortStats}
+        deptCohorts={deptCohorts}
       />,
     );
-    // For the COLUMNS-driven cell scoring the missing-id case is
-    // distinct from schema_error: the bullet row IS in the data, just
-    // lacking a catalog match. The cell loop still classifies it from
-    // the local `COLUMNS` table's hardcoded `higher_is_better` —
-    // wave-3 deliberately leaves COLUMNS' policy table in place (out
-    // of scope; the cell's value still renders, with peer coloring).
-    // We therefore only assert that the chip surface settles — the
-    // exact count depends on whether the local COLUMNS table classes
-    // value=30 as bottom for `mean_time_to_resolution` (it does:
-    // higher_is_better=false, p75=20, value=30 → bottom). Without a
-    // catalog row, schema_error stays false, the cell stays 'bottom'.
     await waitFor(() => {
-      // The chip is rendered twice — once in the mobile triage list,
-      // once in the desktop grid. Both should agree.
-      expect(screen.getAllByText("1 issue").length).toBeGreaterThan(0);
+      expect(fetchCatalog).toHaveBeenCalled();
     });
+    expect(screen.queryByText(/^\d+ issues?$/)).not.toBeInTheDocument();
+  });
+
+  it("a member whose department is absent from the cohort map renders neutral", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "task_delivery_bullet_rows.mean_time_to_resolution",
+          higher_is_better: false,
+          schema_status: "ok",
+        },
+      ]),
+    );
+    const bulletsByPerson = new Map<string, BulletMetric[]>([
+      ["alice@example.com", [makeBullet({ value: "30" })]],
+    ]);
+    // Map keyed for a different department than Alice's ⇒ no peer data.
+    const deptCohorts = deptMap([
+      ["Sales", "mean_time_to_resolution", stats()],
+    ]);
+    renderWithCatalogClient(
+      <MembersHeatmap
+        members={[makeMember({ org_unit_id: "Engineering" })]}
+        bulletsByPerson={bulletsByPerson}
+        deptCohorts={deptCohorts}
+      />,
+    );
+    await waitFor(() => {
+      expect(fetchCatalog).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(/^\d+ issues?$/)).not.toBeInTheDocument();
   });
 });

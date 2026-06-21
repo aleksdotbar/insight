@@ -1,33 +1,32 @@
-import { Sparkles } from "lucide-react";
+import { Sparkles, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
+import { formatKpiValue } from "@/api/transforms";
 import { useCatalog } from "@/api/use-catalog";
-import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
-import { Card } from "@/components/ui/card";
-import { useSettings } from "@/hooks/use-settings";
+import { Badge } from "@/components/ui/badge";
 import {
-  STATUS_BG,
-  STATUS_TEXT,
-  applyFocusStatus,
-  type Status,
-} from "@/lib/status";
+  Card,
+  CardAction,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { useSettings } from "@/hooks/use-settings";
+import { STATUS_TEXT_CLASS, applyFocusStatus, type Status } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { IcKpi } from "@/types/insight";
 
-export interface KpiPeerMedian {
-  p50: number;
-  n: number;
-}
-
 export interface KpiTileProps {
   kpi: IcKpi;
-  median?: KpiPeerMedian | null;
   onClick?: (metricKey: string) => void;
 }
+
+const CARD_SURFACE = "@container/card";
 
 function peerStatusVsMedian(
   value: number,
   median: number,
-  higherIsBetter: boolean,
+  higherIsBetter: boolean
 ): Status {
   if (!Number.isFinite(value) || !Number.isFinite(median) || median === 0) {
     return "neutral";
@@ -36,43 +35,65 @@ function peerStatusVsMedian(
   return meetsTarget ? "good" : "bad";
 }
 
-export function KpiTile({ kpi, median, onClick }: KpiTileProps) {
-  const { focusMode } = useSettings();
+export function KpiTile({ kpi, onClick }: KpiTileProps) {
+  const { focusMode, showExplanations } = useSettings();
   const { byMetricKey } = useCatalog();
   // Wire key is `ic_kpis.<bare>`; `kpi.metric_key` here is the bare form
   // because `transformIcKpis` strips the `ic_kpis.` prefix.
   const catalogRow = byMetricKey(`ic_kpis.${kpi.metric_key}`);
+  const sourceTags = catalogRow?.source_tags.length
+    ? catalogRow.source_tags.join(", ")
+    : null;
   const isSchemaError = catalogRow?.schema_status === "error";
   const hasValue = kpi.raw_value !== null;
+  // Department peer median folded onto the KPI row by the IC_KPIS query_ref.
+  const peerMedian = kpi.peer_median ?? null;
   const hasMedian =
-    median != null && Number.isFinite(median.p50) && median.p50 > 0;
+    peerMedian != null && Number.isFinite(peerMedian) && peerMedian > 0;
+  const value = kpi.value ?? "—";
+  // Units are implied by the card label, so we drop them — except `%`, which
+  // reads as part of the number and renders at the value's size.
+  const isPercent = kpi.unit === "%";
 
-  // schema_status='error' rows: render the tile label/value but suppress
-  // peer coloring per the wave-1 DESIGN §3.3 contract.
-  const rawStatus: Status =
-    !isSchemaError && catalogRow && hasValue && hasMedian
+  // Value coloring: how the result sits against the peer median. Suppressed
+  // (neutral) for schema_status='error' / missing-id / no-median rows.
+  const valueStatus = applyFocusStatus(
+    !isSchemaError && catalogRow && hasValue && hasMedian && peerMedian != null
       ? peerStatusVsMedian(
           kpi.raw_value as number,
-          median.p50,
-          catalogRow.higher_is_better,
+          peerMedian,
+          catalogRow.higher_is_better
         )
-      : "neutral";
-  const status = applyFocusStatus(rawStatus, focusMode);
-  const value = kpi.value ?? "—";
+      : "neutral",
+    focusMode
+  );
 
-  const showMedian =
-    hasMedian && hasValue && catalogRow !== undefined && !isSchemaError;
-  const fillPct = showMedian
-    ? Math.max(0, Math.min(1, (kpi.raw_value as number) / median.p50))
-    : 0;
+  // Trend coloring: whether the period-over-period move is favorable
+  // (`delta_type` already folds in `higher_is_better`).
+  const trendStatus = applyFocusStatus(kpi.delta_type, focusMode);
+  const showDelta = kpi.delta !== "" && kpi.delta_type !== "neutral";
+  const trendDown = kpi.delta.trim().startsWith("-");
+  // For percent-valued metrics the delta is in percentage points, not a
+  // relative %; drop the `%` so "+5" doesn't read as "5% of 86%".
+  const deltaText = isPercent ? kpi.delta.replace(/%$/, "") : kpi.delta;
+
+  const medianLabel =
+    hasMedian &&
+    hasValue &&
+    catalogRow !== undefined &&
+    !isSchemaError &&
+    peerMedian != null
+      ? `Median ${formatKpiValue(peerMedian, catalogRow.format)}${isPercent ? "%" : ""}`
+      : null;
+
   const interactive = Boolean(onClick);
-  const medianLabel = showMedian
-    ? `vs median ${median.p50}${kpi.unit ? ` ${kpi.unit}` : ""} · ${median.n} peer${median.n === 1 ? "" : "s"}`
-    : null;
 
   return (
     <Card
-      data-size="sm"
+      className={cn(
+        CARD_SURFACE,
+        interactive && "text-left transition-colors hover:bg-accent/50"
+      )}
       render={
         interactive ? (
           <button
@@ -82,57 +103,52 @@ export function KpiTile({ kpi, median, onClick }: KpiTileProps) {
           />
         ) : undefined
       }
-      className={cn(
-        "flex flex-col items-start gap-2 px-4 py-4 text-left",
-        interactive && "transition-colors hover:bg-accent",
-      )}
     >
-      <div className="flex w-full min-w-0 flex-col gap-0.5">
-        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {kpi.label}
-        </span>
-        <MetricSublabel description={catalogRow?.description} />
-      </div>
-      <div className="flex items-baseline gap-1">
-        <span
+      <CardHeader>
+        <CardDescription className="flex flex-col gap-0.5">
+          <span className="truncate">{kpi.label}</span>
+          {showExplanations && sourceTags ? (
+            <span className="truncate font-normal text-muted-foreground/70">
+              {sourceTags}
+            </span>
+          ) : null}
+        </CardDescription>
+        <CardTitle
           className={cn(
-            "text-2xl font-semibold tabular-nums",
-            STATUS_TEXT[status],
+            "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl",
+            valueStatus !== "neutral" && STATUS_TEXT_CLASS[valueStatus]
           )}
         >
           {value}
-        </span>
-        {kpi.unit && value !== "—" ? (
-          <span className="text-sm text-muted-foreground">{kpi.unit}</span>
+          {isPercent && value !== "—" ? "%" : null}
+        </CardTitle>
+        {showDelta ? (
+          <CardAction>
+            <Badge variant="outline" className={STATUS_TEXT_CLASS[trendStatus]}>
+              {trendDown ? <TrendingDownIcon /> : <TrendingUpIcon />}
+              {deltaText}
+            </Badge>
+          </CardAction>
         ) : null}
-      </div>
-      {showMedian && medianLabel ? (
-        <div className="mt-auto flex w-full flex-col gap-1.5 pt-1">
-          <div className="h-[3px] w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn("h-full", STATUS_BG[status])}
-              style={{ width: `${fillPct * 100}%` }}
-            />
-          </div>
-          <p className="text-[11px] tabular-nums text-muted-foreground">
-            {medianLabel}
-          </p>
-        </div>
-      ) : null}
+      </CardHeader>
+      <CardFooter className="text-sm text-muted-foreground">
+        {medianLabel ?? "No peer data"}
+      </CardFooter>
     </Card>
   );
 }
 
 export function KpiTilePlaceholder({ label }: { label: string }) {
   return (
-    <Card data-size="sm" className="flex flex-col items-start gap-2 px-4 py-4">
-      <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
-      <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+    <Card className={CARD_SURFACE}>
+      <CardHeader>
+        <CardDescription className="truncate">{label}</CardDescription>
+        <CardTitle className="text-2xl font-semibold tabular-nums">—</CardTitle>
+      </CardHeader>
+      <CardFooter className="gap-1.5 text-sm text-muted-foreground">
         <Sparkles className="size-3.5 shrink-0" aria-hidden />
         Coming soon
-      </span>
+      </CardFooter>
     </Card>
   );
 }

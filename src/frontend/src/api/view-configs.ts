@@ -9,16 +9,15 @@
  *
  * Catalog rows with `schema_status='error'` are omitted from the returned
  * threshold lists so the rule never fires for a broken column — the
- * downstream consumers (`MembersTable`, `TeamsTable`, `OrgKpiCards`,
- * `AttentionNeeded`) read the policy lookup as "no threshold => neutral
- * coloring, no alert", which is the intended render per the wave-1 contract.
+ * downstream consumers (`MembersTable`, `AttentionNeeded`) read the policy
+ * lookup as "no threshold => neutral coloring, no alert", which is the
+ * intended render per the wave-1 contract.
  */
 
 import { useMemo } from 'react';
 
 import { useCatalog } from '@/api/use-catalog';
 import type {
-  ExecViewConfig,
   TeamViewConfig,
   TeamKpi,
   PeriodValue,
@@ -26,7 +25,6 @@ import type {
 
 const VIEW_CONFIG_PREFIX = 'view_configs.';
 
-const EXEC_COLUMN_KEYS = ['build_success_pct', 'focus_time_pct', 'ai_adoption_pct'] as const;
 const TEAM_ALERT_KEYS = ['build_success_pct', 'focus_time_pct', 'ai_loc_share_pct'] as const;
 const TEAM_COLUMN_KEYS = [
   'bugs_fixed',
@@ -35,20 +33,6 @@ const TEAM_COLUMN_KEYS = [
   'focus_time_pct',
   'ai_loc_share_pct',
 ] as const;
-
-export function useExecViewConfig(): ExecViewConfig {
-  const { data } = useCatalog();
-  return useMemo(() => {
-    const byKey = indexByMetricKey(data?.metrics ?? []);
-    return {
-      column_thresholds: EXEC_COLUMN_KEYS.flatMap((key) => {
-        const m = byKey.get(`${VIEW_CONFIG_PREFIX}${key}`);
-        if (!m || m.schema_status === 'error') return [];
-        return [{ metric_key: key, threshold: m.thresholds.good }];
-      }),
-    };
-  }, [data]);
-}
 
 export function useTeamViewConfig(): TeamViewConfig {
   const { data } = useCatalog();

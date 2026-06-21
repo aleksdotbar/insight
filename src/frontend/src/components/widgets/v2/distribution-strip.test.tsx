@@ -78,13 +78,12 @@ describe("<DistributionStrip>", () => {
     );
     renderWithCatalogClient(
       <DistributionStrip
-        row={makeBullet({ value: "12" })}
-        cohortStats={STATS}
+        row={makeBullet({ value: "12", peer: STATS })}
         cohortLabel="team"
       />,
     );
     await waitFor(() => {
-      expect(screen.getByText(/top 25% in team/)).toBeInTheDocument();
+      expect(screen.getByText(/top 25% in team/i)).toBeInTheDocument();
     });
   });
 
@@ -100,16 +99,15 @@ describe("<DistributionStrip>", () => {
     );
     renderWithCatalogClient(
       <DistributionStrip
-        row={makeBullet({ value: "12", schema_error: true })}
-        cohortStats={STATS}
+        row={makeBullet({ value: "12", schema_error: true, peer: STATS })}
         cohortLabel="team"
       />,
     );
     // schema_error rows: peer chip is 'neutral' which renders as "no
     // peer data" per `positionText` in distribution-strip.
     await waitFor(() => {
-      expect(screen.getByText(/no peer data/)).toBeInTheDocument();
-      expect(screen.queryByText(/top 25% in team/)).not.toBeInTheDocument();
+      expect(screen.getByText(/no peer data/i)).toBeInTheDocument();
+      expect(screen.queryByText(/top 25% in team/i)).not.toBeInTheDocument();
     });
   });
 
@@ -117,14 +115,13 @@ describe("<DistributionStrip>", () => {
     fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
     renderWithCatalogClient(
       <DistributionStrip
-        row={makeBullet({ value: "12" })}
-        cohortStats={STATS}
+        row={makeBullet({ value: "12", peer: STATS })}
         cohortLabel="team"
       />,
     );
     await waitFor(() => {
-      expect(screen.getByText(/no peer data/)).toBeInTheDocument();
-      expect(screen.queryByText(/top 25% in team/)).not.toBeInTheDocument();
+      expect(screen.getByText(/no peer data/i)).toBeInTheDocument();
+      expect(screen.queryByText(/top 25% in team/i)).not.toBeInTheDocument();
     });
   });
 });

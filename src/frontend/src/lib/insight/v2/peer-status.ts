@@ -23,7 +23,6 @@ import { prefixForBulletSection } from "@/api/catalog-client";
 import type { CatalogMetric } from "@/api/catalog-client";
 import {
   peerStatusVsQuartiles,
-  type PeerStats,
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
 import type { Status } from "@/lib/status";
@@ -47,18 +46,15 @@ export function hasBulletValue(row: BulletMetric): boolean {
 
 export function peerStatusForRow(
   row: BulletMetric,
-  cohortStats: Map<string, PeerStats> | undefined,
   byMetricKey: CatalogByKey,
 ): PeerStatusWithNeutral {
   if (row.schema_error) return "neutral";
-  if (!cohortStats) return "neutral";
   const value = Number(row.value);
   if (!Number.isFinite(value)) return "neutral";
-  const stats = cohortStats.get(row.metric_key);
-  if (!stats) return "neutral";
+  if (!row.peer) return "neutral";
   const m = byMetricKey(bulletCatalogKey(row));
   if (!m) return "neutral";
-  return peerStatusVsQuartiles(value, stats, m.higher_is_better);
+  return peerStatusVsQuartiles(value, row.peer, m.higher_is_better);
 }
 
 export function peerStatusToStatus(p: PeerStatusWithNeutral): Status {
@@ -70,8 +66,7 @@ export function peerStatusToStatus(p: PeerStatusWithNeutral): Status {
 
 export function rowStatus(
   row: BulletMetric,
-  cohortStats: Map<string, PeerStats> | undefined,
   byMetricKey: CatalogByKey,
 ): Status {
-  return peerStatusToStatus(peerStatusForRow(row, cohortStats, byMetricKey));
+  return peerStatusToStatus(peerStatusForRow(row, byMetricKey));
 }

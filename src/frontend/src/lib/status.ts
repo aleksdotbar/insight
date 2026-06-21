@@ -31,21 +31,21 @@ export function applyFocusStatus(status: Status, mode: FocusMode): Status {
   return "neutral"
 }
 
-export const STATUS_BG: Record<Status, string> = {
+export const STATUS_BG_CLASS: Record<Status, string> = {
   good: "bg-success",
   warn: "bg-warning",
   bad: "bg-destructive",
   neutral: "bg-muted-foreground/40",
 }
 
-export const STATUS_TEXT: Record<Status, string> = {
+export const STATUS_TEXT_CLASS: Record<Status, string> = {
   good: "text-success",
   warn: "text-warning",
   bad: "text-destructive",
   neutral: "text-muted-foreground",
 }
 
-export const STATUS_SURFACE: Record<Status, string> = {
+export const STATUS_SURFACE_CLASS: Record<Status, string> = {
   good: "bg-success/15 text-success",
   warn: "bg-warning/15 text-warning",
   bad: "bg-destructive/15 text-destructive",

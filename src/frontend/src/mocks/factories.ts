@@ -3,7 +3,6 @@ import type {
   RawCrmFlowRow,
   RawCrmKpisRow,
   RawDeliveryTrendRow,
-  RawExecSummaryRow,
   RawIcAggregateRow,
   RawLocTrendRow,
   RawTeamMemberRow,
@@ -56,8 +55,8 @@ function hashStr(s: string): number {
   return Math.abs(h);
 }
 
-import { PEOPLE, teamMembers, teamHeadcount, topLevelManagers } from "./registry";
-export { PEOPLE, teamMembers, teamHeadcount, topLevelManagers };
+import { PEOPLE, teamMembers } from "./registry";
+export { PEOPLE, teamMembers };
 
 type IcBulletDef = {
   metric_key: string;
@@ -151,28 +150,13 @@ const IC_SECTIONS: Record<string, string[]> = {
   collab: ['slack_messages_sent', 'slack_channel_posts', 'slack_active_days', 'slack_msgs_per_active_day', 'slack_dm_ratio', 'm365_active_days', 'm365_emails_sent', 'm365_emails_received', 'm365_emails_read', 'm365_teams_chats', 'm365_files_engaged', 'm365_files_shared_internal', 'm365_files_shared_external', 'meeting_free', 'meeting_hours', 'meetings_count', 'teams_meeting_hours', 'zoom_meeting_hours', 'teams_meetings', 'zoom_meetings'],
 };
 
-export function mockExecRow(overrides?: Partial<RawExecSummaryRow>): RawExecSummaryRow {
-  return {
-    org_unit_id: 'carol.chen@example.com',
-    org_unit_name: "Carol Chen's org",
-    headcount: 12,
-    tasks_closed: 48,
-    bugs_fixed: 18,
-    build_success_pct: 94,
-    focus_time_pct: 72,
-    ai_adoption_pct: 68,
-    ai_loc_share_pct: 22,
-    pr_cycle_time_h: 18,
-    ...overrides,
-  };
-}
-
 export function mockTeamMemberRow(overrides?: Partial<RawTeamMemberRow>): RawTeamMemberRow {
   return {
     person_id: 'p1',
     display_name: 'Alice Kim',
     seniority: 'Senior',
     supervisor_email: null,
+    org_unit_id: 'Engineering',
     tasks_closed: 12,
     bugs_fixed: 5,
     dev_time_h: 14,
@@ -198,6 +182,16 @@ export function mockIcAggregateRow(overrides?: Partial<RawIcAggregateRow>): RawI
     bugs_fixed: 23,
     build_success_pct: 96,
     ai_sessions: 42,
+    loc_median: 9000,
+    ai_loc_share_pct_median: 20,
+    prs_merged_median: 6,
+    pr_cycle_time_h_median: 24,
+    focus_time_pct_median: 65,
+    tasks_closed_median: 8,
+    bugs_fixed_median: 14,
+    build_success_pct_median: 90,
+    ai_sessions_median: 30,
+    peer_n: 8,
     ...overrides,
   };
 }
@@ -233,24 +227,6 @@ export function mockBulletRow(overrides?: Partial<RawBulletAggregateRow>): RawBu
   };
 }
 
-export function mockExecRows(): RawExecSummaryRow[] {
-  const managers = topLevelManagers();
-  return managers.map((m, i) =>
-    mockExecRow({
-      org_unit_id: m.person_id,
-      org_unit_name: `${m.name}'s org`,
-      headcount: teamHeadcount(m.person_id),
-      tasks_closed: Math.round(vary(35, i, 15)),
-      bugs_fixed: Math.round(vary(12, i, 7)),
-      build_success_pct: Math.min(100, Math.max(70, Math.round(vary(90, i, 8)))),
-      focus_time_pct: Math.min(100, Math.max(30, Math.round(vary(63, i, 15)))),
-      ai_adoption_pct: Math.min(100, Math.max(10, Math.round(vary(58, i, 20)))),
-      ai_loc_share_pct: Math.min(50, Math.max(0, Math.round(vary(20, i, 12)))),
-      pr_cycle_time_h: Math.max(5, Math.round(vary(22, i, 8))),
-    }),
-  );
-}
-
 export function mockTeamMemberRows(count = PEOPLE.length): RawTeamMemberRow[] {
   return PEOPLE.slice(0, count).map((p, i) => {
     const hasAi = p.ai_tools.length > 0;
@@ -258,6 +234,7 @@ export function mockTeamMemberRows(count = PEOPLE.length): RawTeamMemberRow[] {
       person_id: p.person_id,
       display_name: p.name,
       seniority: p.seniority,
+      org_unit_id: p.department,
       ai_tools: p.ai_tools,
       tasks_closed: Math.max(1, Math.round(vary(7, i, 5))),
       bugs_fixed: Math.max(0, Math.round(vary(3, i, 2))),
@@ -278,6 +255,7 @@ export function mockTeamMemberRowsForTeam(teamId: string): RawTeamMemberRow[] {
       person_id: p.person_id,
       display_name: p.name,
       seniority: p.seniority,
+      org_unit_id: p.department,
       ai_tools: p.ai_tools,
       tasks_closed: Math.max(1, Math.round(vary(7, i, 5))),
       bugs_fixed: Math.max(0, Math.round(vary(3, i, 2))),
@@ -392,15 +370,23 @@ export function mockTeamBulletSection(
     const d0 = dist ?? { median: 0, range_min: 0, range_max: 100 };
     const baseValue =
       Math.round(vary(d0.median, i + seed, Math.max(1, d0.median * 0.3)) * 10) / 10;
+    const distScale = shouldScaleMetric(d.metric_key, d.unit) ? scale : 1;
     const value = shouldScaleMetric(d.metric_key, d.unit)
       ? Math.round(baseValue * scale * 10) / 10
       : baseValue;
+    const scaleDist = (n: number) => Math.round(n * distScale * 10) / 10;
+    const median = scaleDist(d0.median);
+    const rangeMin = scaleDist(d0.range_min);
+    const rangeMax = scaleDist(d0.range_max);
     return {
       metric_key: d.metric_key,
       value,
-      median: d0.median,
-      range_min: d0.range_min,
-      range_max: d0.range_max,
+      median,
+      range_min: rangeMin,
+      range_max: rangeMax,
+      p25: rangeMin + (median - rangeMin) * 0.5,
+      p75: median + (rangeMax - median) * 0.5,
+      n: 10,
     };
   });
 }
@@ -501,8 +487,82 @@ export function mockIcBulletSection(
   });
 }
 
-export function mockExecScenario(): { teams: RawExecSummaryRow[] } {
-  return { teams: mockExecRows() };
+/** Long row from a `V2_DEPT_DIST_*` metric (one per (org_unit_id, metric_key)). */
+export interface DeptDistRow {
+  org_unit_id: string;
+  metric_key: string;
+  p25: number | null;
+  median: number | null;
+  p75: number | null;
+  range_min: number | null;
+  range_max: number | null;
+  n: number | null;
+}
+
+// Which bare metric keys each dept-dist family carries. Mirrors the FE
+// metric→dept-dist mapping: KPIS holds the team_row heatmap columns,
+// DELIVERY holds MTTR, COLLAB holds meeting hours, GIT is future-use.
+export const DEPT_DIST_KEYS: Record<
+  "delivery" | "collab" | "git" | "kpis",
+  string[]
+> = {
+  kpis: ["tasks_closed", "bugs_fixed", "prs_merged", "focus_time_pct", "ai_loc_share_pct"],
+  delivery: ["mean_time_to_resolution"],
+  collab: ["meeting_hours"],
+  git: ["commits", "prs_merged", "clean_loc"],
+};
+
+const DEPT_DIST_BASE: Partial<Record<string, { median: number; spread: number }>> = {
+  tasks_closed: { median: 8, spread: 4 },
+  bugs_fixed: { median: 3, spread: 2 },
+  prs_merged: { median: 6, spread: 3 },
+  focus_time_pct: { median: 60, spread: 20 },
+  ai_loc_share_pct: { median: 18, spread: 12 },
+  mean_time_to_resolution: { median: 12, spread: 6 },
+  meeting_hours: { median: 20, spread: 10 },
+  commits: { median: 50, spread: 25 },
+  clean_loc: { median: 7000, spread: 3000 },
+};
+
+/**
+ * Per-(org_unit_id, metric_key) distribution rows for one dept-dist family.
+ * Deterministic from `(org_unit_id, metric_key)` so the same department gets
+ * a stable cohort. `n` defaults to 10 (above MIN_DEPT_COHORT_N); callers can
+ * force a degenerate cohort via `nOverride`.
+ */
+export function mockDeptDistRows(
+  family: "delivery" | "collab" | "git" | "kpis",
+  orgUnitIds: string[],
+  periodDays = 30,
+  nOverride?: number | null,
+): DeptDistRow[] {
+  const scale = periodDays / 30;
+  const out: DeptDistRow[] = [];
+  for (const orgUnitId of orgUnitIds) {
+    for (const metricKey of DEPT_DIST_KEYS[family]) {
+      const base = DEPT_DIST_BASE[metricKey] ?? { median: 10, spread: 5 };
+      const seed = hashStr(`${orgUnitId}|${metricKey}|dept-dist`);
+      const doScale = shouldScaleMetric(metricKey, "");
+      const sc = doScale ? scale : 1;
+      const rawMedian = vary(base.median, seed, base.spread * 0.3);
+      const median = Math.round(rawMedian * sc * 10) / 10;
+      const p25 = Math.round((rawMedian - base.spread * 0.5) * sc * 10) / 10;
+      const p75 = Math.round((rawMedian + base.spread * 0.5) * sc * 10) / 10;
+      const rangeMin = Math.round((rawMedian - base.spread) * sc * 10) / 10;
+      const rangeMax = Math.round((rawMedian + base.spread) * sc * 10) / 10;
+      out.push({
+        org_unit_id: orgUnitId,
+        metric_key: metricKey,
+        p25: Math.max(0, p25),
+        median: Math.max(0, median),
+        p75: Math.max(0, p75),
+        range_min: Math.max(0, rangeMin),
+        range_max: Math.max(0, rangeMax),
+        n: nOverride === undefined ? 10 : nOverride,
+      });
+    }
+  }
+  return out;
 }
 
 export function mockTeamScenario(teamId = 'bob.park@example.com'): {

@@ -9,12 +9,17 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useSettings } from "@/hooks/use-settings";
 import {
   bulletCatalogKey,
-  peerStatusForRow,
   type CatalogByKey,
 } from "@/lib/insight/v2/peer-status";
+import { MIN_DEPT_COHORT_N } from "@/lib/insight/v2/team-member-status";
 import {
   applyFocus,
   PEER_CELL,
@@ -22,6 +27,9 @@ import {
   PEER_LABEL,
   PEER_TEXT,
   peerStatusVsQuartiles,
+  statsToDisplayUnit,
+  type DeptCohorts,
+  type DeptStatsMap,
   type FocusMode,
   type PeerStats,
   type PeerStatusWithNeutral,
@@ -37,6 +45,25 @@ import { TriageList, type TriageRow } from "./triage-list";
 
 const WOW_THRESHOLD = 0.05;
 
+/**
+ * Per-member-department lookup of a metric's distribution. Returns null when
+ * the member has no department, the department has no row for the metric, or
+ * the cohort is degenerate (`n < MIN_DEPT_COHORT_N`) — all of which collapse
+ * the cell to a neutral "No peer data" status.
+ */
+function deptStatsFor(
+  statsMap: DeptStatsMap,
+  orgUnitId: string | null,
+  metricKey: string,
+): PeerStats | null {
+  if (!orgUnitId) return null;
+  const stats = statsMap.get(orgUnitId)?.get(metricKey);
+  if (!stats || stats.n < MIN_DEPT_COHORT_N) return null;
+  return stats;
+}
+
+const EMPTY_DEPT_COHORTS: DeptCohorts = { kpi: new Map(), bullet: new Map() };
+
 function computeWowPct(
   current: number | null,
   previous: number | null,
@@ -50,7 +77,6 @@ function computeWowPct(
 type TeamRowKey =
   | "tasks_closed"
   | "prs_merged"
-  | "build_success_pct"
   | "bugs_fixed"
   | "focus_time_pct"
   | "ai_loc_share_pct";
@@ -115,26 +141,6 @@ const COLUMNS: ColumnDef[] = [
     mobile: true,
     source: "team_row",
     teamRowField: "prs_merged",
-  },
-  {
-    key: "pr_cycle_time_h",
-    label: "PR cycle time",
-    short: "Cycle",
-    unit: "h",
-    higher_is_better: false,
-    mobile: true,
-    source: "bullet",
-    metricKey: "pr_cycle_time_h",
-  },
-  {
-    key: "build_success_pct",
-    label: "Build success",
-    short: "Build %",
-    unit: "%",
-    higher_is_better: true,
-    mobile: false,
-    source: "team_row",
-    teamRowField: "build_success_pct",
   },
   {
     key: "bugs_fixed",
@@ -204,6 +210,34 @@ function valueForColumn(
   return getNumericBullet(bullets, col.metricKey);
 }
 
+/** The dept-distribution `metric_key` a heatmap column is colored against. */
+function metricKeyForColumn(col: ColumnDef): string {
+  return col.source === "team_row" ? col.teamRowField : col.metricKey;
+}
+
+/**
+ * Peer status of a bullet against the member's OWN department distribution,
+ * oriented by the catalog's `higher_is_better`. Mirrors `peerStatusForRow`
+ * but reads the member-department cohort map instead of the row's own `peer`,
+ * so each member is judged against department peers (not the displayed roster).
+ */
+function deptBulletStatus(
+  b: BulletMetric,
+  bulletStats: DeptStatsMap,
+  orgUnitId: string | null,
+  byMetricKey: CatalogByKey,
+): PeerStatusWithNeutral {
+  if (b.schema_error) return "neutral";
+  const value = Number(b.value);
+  if (!Number.isFinite(value)) return "neutral";
+  const raw = deptStatsFor(bulletStats, orgUnitId, b.metric_key);
+  if (!raw) return "neutral";
+  const m = byMetricKey(bulletCatalogKey(b));
+  if (!m) return "neutral";
+  const stats = statsToDisplayUnit(raw, m.unit, b.unit);
+  return peerStatusVsQuartiles(value, stats, m.higher_is_better);
+}
+
 type SortKey = "name" | "issues" | string;
 
 export interface MembersHeatmapProps {
@@ -211,12 +245,14 @@ export interface MembersHeatmapProps {
   bulletsByPerson?: Map<string, BulletMetric[]>;
   previousBulletsByPerson?: Map<string, BulletMetric[]>;
   previousMembers?: Map<string, TeamMember>;
-  cohortStats?: Map<string, PeerStats>;
-  onMemberClick?: (m: TeamMember) => void;
-}
-
-function lookupCohortKey(col: ColumnDef): string {
-  return col.source === "team_row" ? col.key : col.metricKey;
+  /**
+   * Per-department metric distributions, split by source family (`kpi` for
+   * the team_row columns, `bullet` for member bullet comparisons). Each
+   * member is colored against THEIR OWN department's distribution; a member
+   * whose department is absent or degenerate (`n < MIN_DEPT_COHORT_N`)
+   * renders neutral.
+   */
+  deptCohorts?: DeptCohorts;
 }
 
 export function MembersHeatmap({
@@ -224,8 +260,7 @@ export function MembersHeatmap({
   bulletsByPerson,
   previousBulletsByPerson,
   previousMembers,
-  cohortStats,
-  onMemberClick,
+  deptCohorts,
 }: MembersHeatmapProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
@@ -233,13 +268,10 @@ export function MembersHeatmap({
   const [sheetMember, setSheetMember] = useState<TeamMember | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const statsByColumn = useMemo(() => {
-    const map = new Map<ColumnDef["key"], PeerStats | null>();
-    for (const col of COLUMNS) {
-      map.set(col.key, cohortStats?.get(lookupCohortKey(col)) ?? null);
-    }
-    return map;
-  }, [cohortStats]);
+  // Cohort = each member's OWN department distribution (per-(org_unit_id,
+  // metric_key) quartiles fetched by the screen). A member's cell colour =
+  // their position vs department peers, not vs the displayed roster.
+  const cohorts: DeptCohorts = deptCohorts ?? EMPTY_DEPT_COHORTS;
 
   const rows = useMemo(() => {
     const built = members.map((m) => {
@@ -252,7 +284,6 @@ export function MembersHeatmap({
         const previous = prevMember
           ? valueForColumn(col, prevMember, prevBullets)
           : null;
-        const stats = statsByColumn.get(col.key);
         // Bullet-source columns honor the wave-1 schema_status='error'
         // contract: a broken-catalog bullet's heatmap cell renders the
         // value but suppresses peer coloring (status → 'neutral'). The
@@ -263,6 +294,19 @@ export function MembersHeatmap({
           col.source === "bullet"
             ? (bullets ?? []).find((b) => b.metric_key === col.metricKey)
             : null;
+        const rawStats = deptStatsFor(
+          col.source === "team_row" ? cohorts.kpi : cohorts.bullet,
+          m.org_unit_id,
+          metricKeyForColumn(col),
+        );
+        const stats =
+          rawStats && sourceBullet
+            ? statsToDisplayUnit(
+                rawStats,
+                byMetricKey(bulletCatalogKey(sourceBullet))?.unit,
+                sourceBullet.unit,
+              )
+            : rawStats;
         const colSchemaError = sourceBullet?.schema_error === true;
         const status: PeerStatusWithNeutral =
           !colSchemaError && value !== null && stats
@@ -274,6 +318,7 @@ export function MembersHeatmap({
           previous,
           status,
           median: stats?.p50 ?? null,
+          unit: sourceBullet?.unit ?? col.unit,
         };
       });
       const belowCount = cells.filter((c) => c.status === "bottom").length;
@@ -282,9 +327,17 @@ export function MembersHeatmap({
         (bullets ?? [])
           .map((b) => {
             const value = Number(b.value);
-            const stats = cohortStats?.get(b.metric_key);
+            const rawStats = deptStatsFor(
+              cohorts.bullet,
+              m.org_unit_id,
+              b.metric_key,
+            );
             const catalogRow = byMetricKey(bulletCatalogKey(b));
             const higherIsBetter = catalogRow?.higher_is_better ?? true;
+            const stats =
+              rawStats && catalogRow
+                ? statsToDisplayUnit(rawStats, catalogRow.unit, b.unit)
+                : rawStats;
             let gap = 0;
             if (
               !b.schema_error &&
@@ -298,7 +351,12 @@ export function MembersHeatmap({
             }
             return {
               bullet: b,
-              ps: peerStatusForRow(b, cohortStats, byMetricKey),
+              ps: deptBulletStatus(
+                b,
+                cohorts.bullet,
+                m.org_unit_id,
+                byMetricKey,
+              ),
               gap,
             };
           })
@@ -307,6 +365,7 @@ export function MembersHeatmap({
       return {
         member: m,
         bullets: bullets ?? [],
+        orgUnitId: m.org_unit_id,
         cells,
         belowCount,
         topCount,
@@ -314,7 +373,7 @@ export function MembersHeatmap({
       };
     });
     return built;
-  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, statsByColumn, cohortStats, byMetricKey]);
+  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, cohorts, byMetricKey]);
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -364,7 +423,7 @@ export function MembersHeatmap({
       label: c.col.label,
       short: c.col.short,
       value: c.value,
-      unit: c.col.unit,
+      unit: c.unit,
       status: c.status,
       median: c.median,
     }));
@@ -372,7 +431,6 @@ export function MembersHeatmap({
 
   const handleMemberClick = (m: TeamMember) => {
     setSheetMember(m);
-    onMemberClick?.(m);
   };
 
   return (
@@ -380,7 +438,7 @@ export function MembersHeatmap({
       <CardHeader className="gap-1">
         <CardTitle>Members × metrics</CardTitle>
         <p className="text-xs text-muted-foreground">
-          {members.length} members · cell colour = position vs team
+          {members.length} members · cell colour = position vs department peers
         </p>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -420,7 +478,7 @@ export function MembersHeatmap({
                 key={row.member.person_id}
                 row={row}
                 focusMode={focusMode}
-                cohortStats={cohortStats}
+                bulletStats={cohorts.bullet}
                 byMetricKey={byMetricKey}
                 expanded={expandedId === row.member.person_id}
                 onToggleExpand={() =>
@@ -452,11 +510,13 @@ interface CellShape {
   previous: number | null;
   status: PeerStatusWithNeutral;
   median: number | null;
+  unit: string;
 }
 
 interface RowShape {
   member: TeamMember;
   bullets: BulletMetric[];
+  orgUnitId: string | null;
   cells: CellShape[];
   belowCount: number;
   topCount: number;
@@ -473,7 +533,7 @@ function HeatmapCell({
   focusMode: FocusMode;
 }) {
   const focused = applyFocus(cell.status, focusMode);
-  const { col, value, previous, median } = cell;
+  const { col, value, previous, median, unit } = cell;
   const wowPct = computeWowPct(value, previous);
   const showWow = wowPct != null && Math.abs(wowPct) >= WOW_THRESHOLD;
   const wowUp = wowPct != null && wowPct > 0;
@@ -485,7 +545,7 @@ function HeatmapCell({
   const display =
     value == null
       ? "—"
-      : `${Math.round(value)}${col.unit ?? ""}`;
+      : `${Math.round(value)}${unit ?? ""}`;
   return (
     <Popover>
       <PopoverTrigger
@@ -519,8 +579,8 @@ function HeatmapCell({
           </p>
           <p className="text-xs text-muted-foreground">
             {median != null
-              ? `Team median: ${Math.round(median * 10) / 10}${col.unit ?? ""}`
-              : "no peer data"}
+              ? `Dept median: ${Math.round(median * 10) / 10}${unit ?? ""}`
+              : "No peer data"}
           </p>
           <p className={cn("mt-1 text-xs font-medium", PEER_TEXT[focused])}>
             {PEER_LABEL[focused]}
@@ -533,7 +593,7 @@ function HeatmapCell({
                 {Math.round((wowPct ?? 0) * 100)}%
               </span>{" "}
               (was {Math.round(previous)}
-              {col.unit ?? ""})
+              {unit ?? ""})
             </p>
           ) : null}
         </div>
@@ -545,7 +605,7 @@ function HeatmapCell({
 function MemberRow({
   row,
   focusMode,
-  cohortStats,
+  bulletStats,
   byMetricKey,
   expanded,
   onToggleExpand,
@@ -553,13 +613,14 @@ function MemberRow({
 }: {
   row: RowShape;
   focusMode: FocusMode;
-  cohortStats?: Map<string, PeerStats>;
+  bulletStats: DeptStatsMap;
   byMetricKey: CatalogByKey;
   expanded: boolean;
   onToggleExpand: () => void;
   onOpenSheet: () => void;
 }) {
-  const { member, cells, belowCount, topCount, worstMetricLabel, bullets } = row;
+  const { member, cells, belowCount, topCount, worstMetricLabel, bullets, orgUnitId } =
+    row;
   const issueText =
     belowCount > 0
       ? `${belowCount} issue${belowCount === 1 ? "" : "s"}`
@@ -588,7 +649,7 @@ function MemberRow({
                 </p>
               ) : null}
               <p className="mt-2 text-xs text-muted-foreground">
-                {belowCount} below peers · {topCount} in top
+                {belowCount} below department peers · {topCount} in top
               </p>
               <div className="mt-3 flex flex-col gap-1.5">
                 <Button size="sm" onClick={onOpenSheet}>
@@ -630,7 +691,8 @@ function MemberRow({
           bullets={bullets}
           columnCount={cells.length}
           focusMode={focusMode}
-          cohortStats={cohortStats}
+          bulletStats={bulletStats}
+          orgUnitId={orgUnitId}
           byMetricKey={byMetricKey}
         />
       ) : null}
@@ -642,13 +704,15 @@ function ExpandedBullets({
   bullets,
   columnCount,
   focusMode,
-  cohortStats,
+  bulletStats,
+  orgUnitId,
   byMetricKey,
 }: {
   bullets: BulletMetric[];
   columnCount: number;
   focusMode: FocusMode;
-  cohortStats?: Map<string, PeerStats>;
+  bulletStats: DeptStatsMap;
+  orgUnitId: string | null;
   byMetricKey: CatalogByKey;
 }) {
   const RANK: Record<PeerStatusWithNeutral, number> = {
@@ -659,7 +723,7 @@ function ExpandedBullets({
   };
   const annotated = bullets.map((b) => ({
     bullet: b,
-    status: peerStatusForRow(b, cohortStats, byMetricKey),
+    status: deptBulletStatus(b, bulletStats, orgUnitId, byMetricKey),
   }));
   annotated.sort((a, b) => RANK[a.status] - RANK[b.status]);
   return (
@@ -706,14 +770,14 @@ function ColumnHeader({
   onClick: () => void;
 }) {
   return (
-    <Popover>
-      <PopoverTrigger
+    <Tooltip>
+      <TooltipTrigger
         render={
           <button
             type="button"
             onClick={onClick}
             className={cn(
-              "flex h-9 cursor-help items-center justify-center text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground",
+              "flex h-9 cursor-pointer items-center justify-center text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground",
               active && "text-foreground underline underline-offset-4",
             )}
             aria-label={`${col.label} — sort by this column`}
@@ -722,25 +786,27 @@ function ColumnHeader({
           </button>
         }
       />
-      <PopoverContent className="w-64 p-3">
-        <p className="text-sm font-semibold">{col.label}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Unit: {col.unit || "—"} ·{" "}
-          {col.higher_is_better ? "higher is better" : "lower is better"}
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">Click to sort.</p>
-      </PopoverContent>
-    </Popover>
+      <TooltipContent side="top" className="max-w-56">
+        <span className="flex flex-col gap-0.5 leading-snug">
+          <span className="font-medium">{col.label}</span>
+          <span className="text-background/70">
+            {col.unit ? `${col.unit} · ` : ""}
+            {col.higher_is_better ? "higher is better" : "lower is better"} ·
+            click to sort
+          </span>
+        </span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
 function Legend() {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-      <LegendSwatch className={PEER_FILL.top}>top 25%</LegendSwatch>
-      <LegendSwatch className={PEER_FILL.in_pack}>on par</LegendSwatch>
-      <LegendSwatch className={PEER_FILL.bottom}>bottom 25%</LegendSwatch>
-      <LegendSwatch className={PEER_FILL.neutral}>no peer data</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.top}>Top 25%</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.in_pack}>On par</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.bottom}>Bottom 25%</LegendSwatch>
+      <LegendSwatch className={PEER_FILL.neutral}>No peer data</LegendSwatch>
     </div>
   );
 }

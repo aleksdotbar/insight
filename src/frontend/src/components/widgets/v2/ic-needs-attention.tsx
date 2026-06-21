@@ -9,7 +9,6 @@ import {
   applyFocus,
   PEER_TEXT,
   peerStatusVsQuartiles,
-  type PeerStats,
 } from "@/lib/peers";
 import type { IcSectionId } from "@/lib/insight/v2/sections";
 import { cn } from "@/lib/utils";
@@ -33,13 +32,11 @@ export interface IcNeedsAttentionSection {
 
 export interface IcNeedsAttentionProps {
   sections: IcNeedsAttentionSection[];
-  cohortStats?: Map<string, PeerStats>;
   onSectionClick: (id: IcSectionId) => void;
 }
 
 export function IcNeedsAttention({
   sections,
-  cohortStats,
   onSectionClick,
 }: IcNeedsAttentionProps) {
   const { focusMode } = useSettings();
@@ -55,7 +52,7 @@ export function IcNeedsAttention({
       if (r.schema_error) continue;
       const value = Number(r.value);
       if (!Number.isFinite(value)) continue;
-      const stats = cohortStats?.get(r.metric_key);
+      const stats = r.peer;
       if (!stats) continue;
       const m = byMetricKey(bulletCatalogKey(r));
       if (!m) continue;
@@ -112,7 +109,7 @@ export function IcNeedsAttention({
                   </span>
                   {median != null ? (
                     <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
-                      vs median {Math.round(median * 10) / 10}
+                      Median {Math.round(median * 10) / 10}
                       {row.unit ? ` ${row.unit}` : ""}
                     </span>
                   ) : null}

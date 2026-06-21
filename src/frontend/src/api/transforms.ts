@@ -10,8 +10,6 @@
 
 import type {
   PeriodValue,
-  ExecTeamRow,
-  ExecViewConfig,
   IcKpi,
   BulletMetric,
   CrmFlowPoint,
@@ -23,7 +21,6 @@ import type {
   DrillData,
 } from '@/types/insight';
 import type {
-  RawExecSummaryRow,
   RawIcAggregateRow,
   RawBulletAggregateRow,
   RawCrmFlowRow,
@@ -40,6 +37,7 @@ import {
   prefixForBulletSection,
 } from './catalog-client';
 import { evaluateStatus } from './metric-semantics';
+import type { PeerStats } from '@/lib/peers';
 
 /** Format strings the IC KPI catalog rows surface. */
 type IcKpiFormat = 'integer' | 'decimal1' | 'percent' | 'hours';
@@ -77,10 +75,18 @@ function formatValue(raw: number, fmt: IcKpiFormat): string {
   // when the period nudges by a day. Integers stay readable and stable.
   switch (fmt) {
     case 'integer': return String(Math.round(raw));
-    case 'decimal1': return String(Math.round(raw));
+    case 'decimal1': return String(Math.round(raw * 10) / 10);
     case 'percent': return String(Math.round(raw));
     case 'hours': return `${Math.round(raw)}h`;
   }
+}
+
+/**
+ * Format a raw metric value with the catalog's display format — used for peer
+ * medians so they round exactly like the tile value does.
+ */
+export function formatKpiValue(raw: number, fmt: string | undefined): string {
+  return formatValue(raw, asIcKpiFormat(fmt));
 }
 
 function formatDelta(delta: number, fmt: IcKpiFormat): string {
@@ -136,7 +142,7 @@ function formatRangeStr(value: number, unit: string): string {
   // Range edges (min/max for the bullet scale) come from CH as raw floats \u2014
   // round here so '783637.2667' doesn't leak to the screen. Matches the
   // whole-number policy applied to the value/median in formatBulletValue.
-  const v = Math.round(value);
+  const v = unit === 'd' ? Math.round(value * 10) / 10 : Math.round(value);
   if (unit === '%') return `${v}%`;
   if (unit === 'h' || unit === 'h/mo') return `${v}h`;
   if (unit === 'd') return `${v}d`;
@@ -144,9 +150,11 @@ function formatRangeStr(value: number, unit: string): string {
   return String(v);
 }
 
-function formatBulletValue(raw: number | null | undefined, _unit: string): string {
+function formatBulletValue(raw: number | null | undefined, unit: string): string {
   if (raw === null || raw === undefined || !Number.isFinite(raw)) return '—';
-  // Whole-number display — see formatValue() rationale.
+  // Day metrics keep one decimal — rounding 1.6d → 2d hides a meaningful gap.
+  // Other units stay whole (see formatValue() rationale).
+  if (unit === 'd') return String(Math.round(raw * 10) / 10);
   return String(Math.round(raw));
 }
 
@@ -175,7 +183,7 @@ function scaleHoursToDays(
   if (unit !== 'h') return null;
   if (rangeMax == null || !Number.isFinite(rangeMax) || rangeMax < 48) return null;
   const toDays = (n: number | null | undefined): number | null | undefined =>
-    n == null || !Number.isFinite(n) ? n : Math.round(n / 24);
+    n == null || !Number.isFinite(n) ? n : Math.round((n / 24) * 10) / 10;
   return {
     unit: 'd',
     value:    toDays(value),
@@ -183,43 +191,6 @@ function scaleHoursToDays(
     rangeMin: toDays(rangeMin),
     rangeMax: toDays(rangeMax),
   };
-}
-
-export function transformExecRows(
-  rows: RawExecSummaryRow[],
-  thresholds?: ExecViewConfig['column_thresholds'],
-): ExecTeamRow[] {
-  // Round so UInt64/Float64 from backend render cleanly. Preserve null —
-  // previously `toInt(null) === 0` silently turned "source absent" into "0".
-  const roundOrNull = (v: number | null | undefined): number | null =>
-    v == null || !Number.isFinite(v) ? null : Math.round(v);
-
-  return rows.map((r) => {
-    let status: 'good' | 'warn' | 'bad' = 'good';
-
-    if (thresholds) {
-      const warnings = thresholds.filter((t) => {
-        const val = r[t.metric_key as keyof RawExecSummaryRow] as number | null;
-        return val !== null && val < t.threshold;
-      });
-      if (warnings.length >= 2) status = 'bad';
-      else if (warnings.length === 1) status = 'warn';
-    }
-
-    return {
-      team_id: r.org_unit_id,
-      team_name: r.org_unit_name,
-      headcount: r.headcount,
-      tasks_closed: roundOrNull(r.tasks_closed),
-      bugs_fixed: roundOrNull(r.bugs_fixed),
-      build_success_pct: r.build_success_pct,
-      focus_time_pct: r.focus_time_pct,
-      ai_adoption_pct: r.ai_adoption_pct,
-      ai_loc_share_pct: r.ai_loc_share_pct,
-      pr_cycle_time_h: r.pr_cycle_time_h,
-      status,
-    };
-  });
 }
 
 const IC_KPI_PREFIX = 'ic_kpis.';
@@ -271,6 +242,19 @@ export function transformIcKpis(
       dt = deltaType(diff, m.higher_is_better);
     }
 
+    // Department peer median for this KPI, folded onto the same row by the
+    // IC_KPIS query_ref (`<bareKey>_median` + shared `peer_n`). Raw numeric
+    // — the tile formats it. NULL when the person has no department cohort.
+    const medianField = `${bareKey}_median` as keyof IcRow;
+    const rawMedian = Object.prototype.hasOwnProperty.call(current, medianField)
+      ? current[medianField]
+      : null;
+    const peerMedian =
+      rawMedian == null || typeof rawMedian !== 'number' ? null : rawMedian;
+    const rawPeerN = current.peer_n;
+    const peerN =
+      rawPeerN == null || typeof rawPeerN !== 'number' ? null : rawPeerN;
+
     out.push({
       period,
       metric_key: bareKey,
@@ -282,6 +266,8 @@ export function transformIcKpis(
       description: m.description,
       delta,
       delta_type: dt,
+      peer_median: peerMedian,
+      peer_n: peerN,
     });
   }
   return out;
@@ -320,20 +306,26 @@ export function transformBulletMetrics(
     if (!catalogByBareKey.has(bare)) catalogByBareKey.set(bare, m);
   }
 
-  // Synthesize honest-zero rows for every metric_key the catalog knows about
-  // for this section but the backend didn't return. Without this, an
-  // unanswered metric makes the whole bullet disappear from the screen.
+  // Backfill honest-zero rows for catalog metrics the backend omitted, but
+  // only when the section actually responded with at least one row. A section
+  // the backend returned nothing for means "no data for this period" — never
+  // fabricate a full grid of zeros that masks the empty state.
   const seenKeys = new Set(rows.map((r) => r.metric_key));
   const synthetic: RawBulletAggregateRow[] = [];
-  for (const bareKey of catalogByBareKey.keys()) {
-    if (!seenKeys.has(bareKey)) {
-      synthetic.push({
-        metric_key: bareKey,
-        value: 0,
-        median: null,
-        range_min: null,
-        range_max: null,
-      });
+  if (rows.length > 0) {
+    for (const bareKey of catalogByBareKey.keys()) {
+      if (!seenKeys.has(bareKey)) {
+        synthetic.push({
+          metric_key: bareKey,
+          value: 0,
+          median: null,
+          range_min: null,
+          range_max: null,
+          p25: null,
+          p75: null,
+          n: null,
+        });
+      }
     }
   }
   const allRows = [...rows, ...synthetic];
@@ -394,6 +386,7 @@ export function transformBulletMetrics(
         median_left_pct: 0,
         status: 'unavailable',
         drill_id: '',
+        source_tags: catalogRow.source_tags,
         ...(isSchemaError ? { schema_error: true } : {}),
       });
       continue;
@@ -417,6 +410,36 @@ export function transformBulletMetrics(
     const medianFormatted =
       median != null ? formatRangeStr(median, dispUnit) : '—';
 
+    // Peer cohort for this row, in the SAME display units as the bar
+    // (p25/p75 scaled like the median; min/max = the bar's range). Set only
+    // when the backend returned a real cohort (n > 0 and quartiles present),
+    // so coloring + the drilldown strip read the same cohort that drew the
+    // bar. p50 = the (scaled) median; min/max = dispMin/dispMax.
+    const peerScale = (v: number | null | undefined): number | null =>
+      v == null || !Number.isFinite(v)
+        ? null
+        : scaled
+          ? Math.round((v / 24) * 10) / 10
+          : v;
+    const peerP25 = peerScale(r.p25);
+    const peerP75 = peerScale(r.p75);
+    const peer: PeerStats | undefined =
+      r.n != null &&
+      r.n > 0 &&
+      median != null &&
+      Number.isFinite(median) &&
+      peerP25 != null &&
+      peerP75 != null
+        ? {
+            p25: peerP25,
+            p50: median,
+            p75: peerP75,
+            min: dispMin,
+            max: dispMax,
+            n: r.n,
+          }
+        : undefined;
+
     out.push({
       period,
       section,
@@ -433,6 +456,7 @@ export function transformBulletMetrics(
       bar_width_pct: pctInRange(dispVal, dispMin, dispMax),
       median_left_pct:
         median != null ? pctInRange(median, dispMin, dispMax) : 0,
+      ...(peer ? { peer } : {}),
       // schema_status='error' suppresses threshold-based coloring per DESIGN
       // §3.3: bar dimensions render normally but the row is flagged so
       // consumers can show the "Metric source unavailable" indicator.
@@ -444,6 +468,7 @@ export function transformBulletMetrics(
             higherIsBetter,
           ),
       drill_id: '',
+      source_tags: catalogRow.source_tags,
       ...(isSchemaError ? { schema_error: true } : {}),
     });
   }
@@ -491,6 +516,7 @@ export function transformTeamMembers(
     name: r.display_name,
     seniority: r.seniority,
     supervisor_email: r.supervisor_email,
+    org_unit_id: r.org_unit_id ?? null,
     tasks_closed: Math.round(r.tasks_closed),
     bugs_fixed: Math.round(r.bugs_fixed),
     dev_time_h: r.dev_time_h,

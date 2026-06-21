@@ -15,8 +15,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { CatalogMetric, CatalogResponse } from "./catalog-client";
-import type { RawBulletAggregateRow, RawIcAggregateRow } from "./raw-types";
-import { transformBulletMetrics, transformIcKpis } from "./transforms";
+import type {
+  RawBulletAggregateRow,
+  RawIcAggregateRow,
+  RawTeamMemberRow,
+} from "./raw-types";
+import {
+  transformBulletMetrics,
+  transformIcKpis,
+  transformTeamMembers,
+} from "./transforms";
 
 const TENANT = "t-test";
 
@@ -143,14 +151,34 @@ describe("transformBulletMetrics", () => {
     expect(out[0]!.metric_key).toBe("tasks_completed");
   });
 
-  it("synthesizes honest-zero rows using the catalog's label", () => {
+  it("backfills honest-zero rows for catalog gaps when the section responded", () => {
     // Override the label so we can confirm the transform sources from the
     // catalog row (no compile-in fallback exists post-#82).
     const catalog = catalogWith([
-      bulletCatalogRow("tasks_completed", { label: "Catalog Override Label" }),
+      bulletCatalogRow("tasks_completed", { label: "Tasks Closed" }),
+      bulletCatalogRow("task_dev_time", { label: "Catalog Override Label" }),
     ]);
-    // Backend returns no rows → transform must synthesize one for the
-    // catalog-known metric_key.
+    // Backend answered the section with one metric; the catalog-known gap is
+    // backfilled as an honest zero.
+    const out = transformBulletMetrics(
+      [rawBullet("tasks_completed", { value: 7 })],
+      "task_delivery",
+      "week",
+      undefined,
+      "ic",
+      catalog,
+    );
+    expect(out).toHaveLength(2);
+    const synth = out.find((r) => r.metric_key === "task_dev_time")!;
+    expect(synth.label).toBe("Catalog Override Label");
+    // Honest-zero rows have no distribution → 'unavailable'.
+    expect(synth.status).toBe("unavailable");
+  });
+
+  it("returns no rows when the backend answered the section with nothing", () => {
+    // An entirely absent section is "no data for this period" — the transform
+    // must not fabricate a grid of zeros that masks the empty state.
+    const catalog = catalogWith([bulletCatalogRow("tasks_completed")]);
     const out = transformBulletMetrics(
       [],
       "task_delivery",
@@ -159,11 +187,7 @@ describe("transformBulletMetrics", () => {
       "ic",
       catalog,
     );
-    expect(out).toHaveLength(1);
-    expect(out[0]!.metric_key).toBe("tasks_completed");
-    expect(out[0]!.label).toBe("Catalog Override Label");
-    // Honest-zero rows have no distribution → 'unavailable'.
-    expect(out[0]!.status).toBe("unavailable");
+    expect(out).toHaveLength(0);
   });
 
   it("filters catalog rows by section prefix (mismatched prefix is omitted)", () => {
@@ -292,5 +316,44 @@ describe("transformBulletMetrics undefined-catalog handling", () => {
         undefined,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("transformTeamMembers", () => {
+  function rawMember(
+    overrides: Partial<RawTeamMemberRow> = {},
+  ): RawTeamMemberRow {
+    return {
+      person_id: "alice@example.com",
+      display_name: "Alice Kim",
+      seniority: "Senior",
+      supervisor_email: "bob@example.com",
+      org_unit_id: "Engineering",
+      tasks_closed: 8,
+      bugs_fixed: 2,
+      dev_time_h: 14,
+      prs_merged: 3,
+      build_success_pct: 96,
+      focus_time_pct: 72,
+      ai_tools: ["Cursor"],
+      ai_loc_share_pct: 27,
+      ...overrides,
+    };
+  }
+
+  it("extracts org_unit_id onto the member", () => {
+    const [member] = transformTeamMembers(
+      [rawMember({ org_unit_id: "Engineering" })],
+      "month",
+    );
+    expect(member.org_unit_id).toBe("Engineering");
+  });
+
+  it("maps a missing org_unit_id to null", () => {
+    const [member] = transformTeamMembers(
+      [rawMember({ org_unit_id: null })],
+      "month",
+    );
+    expect(member.org_unit_id).toBeNull();
   });
 });

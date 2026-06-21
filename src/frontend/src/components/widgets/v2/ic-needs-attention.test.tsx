@@ -76,17 +76,15 @@ describe("<IcNeedsAttention>", () => {
         },
       ]),
     );
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
       <IcNeedsAttention
         sections={[
           {
             id: "task_delivery",
             label: "Task delivery",
-            rows: [makeBullet({ value: "1" })],
+            rows: [makeBullet({ value: "1", peer: STATS })],
           },
         ]}
-        cohortStats={cohortStats}
         onSectionClick={() => {}}
       />,
     );
@@ -107,7 +105,6 @@ describe("<IcNeedsAttention>", () => {
         },
       ]),
     );
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     const { container } = (() => {
       renderWithCatalogClient(
         <IcNeedsAttention
@@ -115,10 +112,9 @@ describe("<IcNeedsAttention>", () => {
             {
               id: "task_delivery",
               label: "Task delivery",
-              rows: [makeBullet({ value: "1", schema_error: true })],
+              rows: [makeBullet({ value: "1", schema_error: true, peer: STATS })],
             },
           ]}
-          cohortStats={cohortStats}
           onSectionClick={() => {}}
         />,
       );
@@ -134,17 +130,15 @@ describe("<IcNeedsAttention>", () => {
 
   it("filters out missing-id rows (no catalog entry)", async () => {
     fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
-    const cohortStats = new Map([["tasks_completed", STATS]]);
     renderWithCatalogClient(
       <IcNeedsAttention
         sections={[
           {
             id: "task_delivery",
             label: "Task delivery",
-            rows: [makeBullet({ value: "1" })],
+            rows: [makeBullet({ value: "1", peer: STATS })],
           },
         ]}
-        cohortStats={cohortStats}
         onSectionClick={() => {}}
       />,
     );

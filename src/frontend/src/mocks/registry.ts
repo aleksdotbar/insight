@@ -56,14 +56,6 @@ export function teamMembers(supervisorEmail: string): MockPerson[] {
   return directReports(supervisorEmail);
 }
 
-export function teamHeadcount(supervisorEmail: string): number {
-  return directReports(supervisorEmail).length;
-}
-
-export function topLevelManagers(): MockPerson[] {
-  return PEOPLE.filter((p) => p.supervisor_email === null && p.is_lead);
-}
-
 export type MockIdentityRaw = {
   email: string;
   display_name: string;

@@ -70,14 +70,14 @@ describe("<KpiTile>", () => {
       ]),
     );
     renderWithCatalogClient(
-      <KpiTile kpi={makeKpi()} median={{ p50: 6, n: 4 }} />,
+      <KpiTile kpi={makeKpi({ peer_median: 6, peer_n: 4 })} />,
     );
     // `vs median 6 · 4 peers` proves the catalog row drove the median
     // bar render (showMedian gates on `catalogRow !== undefined`). Wait
     // for it directly — the label renders synchronously from the prop,
     // but the median bar only appears once the catalog query resolves.
     await waitFor(() => {
-      expect(screen.getByText(/vs median 6/)).toBeInTheDocument();
+      expect(screen.getByText(/median 6/i)).toBeInTheDocument();
     });
     expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
@@ -95,13 +95,13 @@ describe("<KpiTile>", () => {
       ]),
     );
     renderWithCatalogClient(
-      <KpiTile kpi={makeKpi()} median={{ p50: 6, n: 4 }} />,
+      <KpiTile kpi={makeKpi({ peer_median: 6, peer_n: 4 })} />,
     );
     // Tile label still renders (broken-metric indicator semantic),
     // but the median bar is suppressed so the row reads as "no peer
     // comparison available."
     await waitFor(() => {
-      expect(screen.queryByText(/vs median/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/median/i)).not.toBeInTheDocument();
     });
     expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
   });
@@ -109,14 +109,14 @@ describe("<KpiTile>", () => {
   it("renders the tile without median bar when the catalog has no row (missing-id)", async () => {
     fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
     renderWithCatalogClient(
-      <KpiTile kpi={makeKpi()} median={{ p50: 6, n: 4 }} />,
+      <KpiTile kpi={makeKpi({ peer_median: 6, peer_n: 4 })} />,
     );
     // Missing-id row: `catalogRow === undefined`, so the median bar is
     // suppressed. The tile's label / value come from the KPI prop
     // itself (already catalog-sourced by transforms), so they still
     // appear.
     await waitFor(() => {
-      expect(screen.queryByText(/vs median/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/median/i)).not.toBeInTheDocument();
     });
     expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();

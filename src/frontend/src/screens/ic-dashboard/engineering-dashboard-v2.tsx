@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useCatalog } from "@/api/use-catalog";
 import { ComingSoon } from "@/components/widgets/coming-soon";
@@ -8,22 +8,14 @@ import { IcNeedsAttention } from "@/components/widgets/v2/ic-needs-attention";
 import { KpiTile, KpiTilePlaceholder } from "@/components/widgets/v2/kpi-tile";
 import { SectionCard } from "@/components/widgets/v2/section-card";
 import { SectionDrilldownSheet } from "@/components/widgets/v2/section-drilldown-sheet";
-import { SectionStatus } from "@/components/widgets/v2/section-status";
 import { Spinner } from "@/components/ui/spinner";
 import { usePeriod } from "@/hooks/use-period";
-import {
-  icDrilldownBatchQueryOptions,
-  useIcCohortStats,
-  useIcKpiPeerMedians,
-} from "@/queries/v2/ic-extras";
-import { queryClient } from "@/query-client";
-import type { PeerStats } from "@/lib/peers";
 import {
   IC_HERO_SECTIONS,
   IC_SECTIONS,
   type IcSectionId,
 } from "@/lib/insight/v2/sections";
-import { IC_KPI_SECTION_BY_KEY } from "@/lib/insight/v2/kpi-defs";
+import { IC_KPI_SECTION_BY_KEY, orderIcKpis } from "@/lib/insight/v2/kpi-defs";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
 import { cn } from "@/lib/utils";
@@ -55,20 +47,28 @@ export function EngineeringDashboardV2({
   // list is empty and consumers render the empty/error state.
   const kpiPlaceholders = useMemo(
     () =>
-      (catalog.data?.metrics ?? [])
-        .filter((m) => m.metric_key?.startsWith(IC_KPI_PREFIX))
-        .map((m) => ({
-          metric_key: (m.metric_key ?? "").slice(IC_KPI_PREFIX.length),
-          label: m.label,
-        })),
-    [catalog.data],
+      orderIcKpis(
+        (catalog.data?.metrics ?? [])
+          .filter((m) => m.metric_key?.startsWith(IC_KPI_PREFIX))
+          .map((m) => ({
+            metric_key: (m.metric_key ?? "").slice(IC_KPI_PREFIX.length),
+            label: m.label,
+          }))
+      ),
+    [catalog.data]
   );
 
   const rowsBySection: Record<IcSectionId, BulletMetric[]> = {
-    task_delivery: orderRowsForSection("task_delivery", data?.taskDelivery ?? []),
+    task_delivery: orderRowsForSection(
+      "task_delivery",
+      data?.taskDelivery ?? []
+    ),
     git_output: orderRowsForSection("git_output", data?.gitOutput ?? []),
     code_quality: orderRowsForSection("code_quality", data?.codeQuality ?? []),
-    collaboration: orderRowsForSection("collaboration", data?.collaboration ?? []),
+    collaboration: orderRowsForSection(
+      "collaboration",
+      data?.collaboration ?? []
+    ),
     ai_adoption: orderRowsForSection("ai_adoption", data?.aiAdoption ?? []),
   };
 
@@ -81,48 +81,22 @@ export function EngineeringDashboardV2({
   const displayName = person?.display_name ?? personId;
   const role = person?.job_title;
 
-  const cohortStatsQ = useIcCohortStats(
-    "ic",
-    person?.supervisor_email ?? "",
-    dateRange,
-  );
-  const kpiMediansQ = useIcKpiPeerMedians(
-    person?.supervisor_email ?? "",
-    dateRange,
-  );
-  const kpiMediansByKey = useMemo(() => {
-    const m = new Map<string, { p50: number; n: number }>();
-    for (const row of kpiMediansQ.data ?? []) {
-      m.set(row.kpi_key, { p50: row.p50, n: row.n });
-    }
-    return m;
-  }, [kpiMediansQ.data]);
-
-  const hasKpiData = (data?.kpis ?? []).some((k) => k.raw_value !== null);
+  const kpis = orderIcKpis(data?.kpis ?? []);
+  const peerCount = Math.max(0, ...kpis.map((k) => k.peer_n ?? 0));
+  const hasKpiData = kpis.some((k) => k.raw_value !== null);
+  const kpiTileCount = data?.errors.kpis ? kpiPlaceholders.length : kpis.length;
   const hasSectionData = Object.values(rowsBySection).some((rows) =>
-    rows.some(hasBulletValue),
+    rows.some(hasBulletValue)
   );
   const isAllEmpty = Boolean(data) && !hasKpiData && !hasSectionData;
-  const showFullSpinner =
-    dashQ.isPending || (isAllEmpty && dashQ.isFetching);
-  const cohortStatsByKey = useMemo<Map<string, PeerStats>>(() => {
-    const m = new Map<string, PeerStats>();
-    for (const row of cohortStatsQ.data ?? []) {
-      m.set(row.metric_key, {
-        p25: row.p25,
-        p50: row.p50,
-        p75: row.p75,
-        min: row.min,
-        max: row.max,
-        n: row.n,
-      });
-    }
-    return m;
-  }, [cohortStatsQ.data]);
-
-  useEffect(() => {
+  const showFullSpinner = dashQ.isPending || (isAllEmpty && dashQ.isFetching);
+  // Close any open drilldown when the viewed person changes. Render-phase
+  // reset against the previous id rather than an effect (no cascading commit).
+  const [prevPersonId, setPrevPersonId] = useState(personId);
+  if (personId !== prevPersonId) {
+    setPrevPersonId(personId);
     setOpenSection(null);
-  }, [personId]);
+  }
 
   const openSectionForMetric = (metricKey: string) => {
     const kpiSection = IC_KPI_SECTION_BY_KEY.get(metricKey);
@@ -131,7 +105,7 @@ export function EngineeringDashboardV2({
       return;
     }
     const owner = IC_SECTIONS.find((s) =>
-      rowsBySection[s.id].some((r) => r.metric_key === metricKey),
+      rowsBySection[s.id].some((r) => r.metric_key === metricKey)
     );
     if (owner) setOpenSection(owner.id);
   };
@@ -157,7 +131,7 @@ export function EngineeringDashboardV2({
           <div
             className={cn(
               "transition-opacity",
-              dashQ.isFetching && "opacity-60",
+              dashQ.isFetching && "opacity-60"
             )}
           >
             <DashboardEmptyState period={period} onSetPeriod={setPeriod} />
@@ -166,47 +140,48 @@ export function EngineeringDashboardV2({
           <div
             className={cn(
               "flex flex-col gap-8 transition-opacity",
-              dashQ.isFetching && "opacity-60",
+              dashQ.isFetching && "opacity-60"
             )}
           >
-            <section className="flex flex-col gap-3">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                At a glance
-              </p>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
-                {data?.errors.kpis
-                  ? kpiPlaceholders.map((d) => (
-                      <KpiTilePlaceholder key={d.metric_key} label={d.label} />
-                    ))
-                  : (data?.kpis ?? []).map((kpi) => (
-                      <KpiTile
-                        key={kpi.metric_key}
-                        kpi={kpi}
-                        median={kpiMediansByKey.get(kpi.metric_key) ?? null}
-                        onClick={openSectionForMetric}
-                      />
-                    ))}
-              </div>
-            </section>
+            {kpiTileCount > 0 && (
+              <section className="flex flex-col gap-3">
+                <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                  At a glance
+                  {peerCount > 0 ? (
+                    <span className="font-normal normal-case">
+                      · {peerCount} peers
+                    </span>
+                  ) : null}
+                </p>
+                <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
+                  {data?.errors.kpis
+                    ? kpiPlaceholders.map((d) => (
+                        <KpiTilePlaceholder
+                          key={d.metric_key}
+                          label={d.label}
+                        />
+                      ))
+                    : kpis.map((kpi) => (
+                        <KpiTile
+                          key={kpi.metric_key}
+                          kpi={kpi}
+                          onClick={openSectionForMetric}
+                        />
+                      ))}
+                </div>
+              </section>
+            )}
 
             <IcNeedsAttention
               sections={heroSections}
-              cohortStats={cohortStatsByKey}
-              onSectionClick={setOpenSection}
-            />
-            <SectionStatus
-              sections={heroSections}
-              peerLabel="peers"
-              cols="five"
-              cohortStats={cohortStatsByKey}
               onSectionClick={setOpenSection}
             />
 
             <section className="flex flex-col gap-3">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 Sections
               </p>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(18rem,1fr))]">
                 {IC_SECTIONS.map((s) => {
                   if (data?.errors[s.id]) {
                     return (
@@ -226,18 +201,7 @@ export function EngineeringDashboardV2({
                       title={s.label}
                       sectionId={s.id}
                       rows={rowsBySection[s.id]}
-                      cohortStats={cohortStatsByKey}
                       onOpen={() => setOpenSection(s.id)}
-                      onHover={() => {
-                        void queryClient.prefetchQuery(
-                          icDrilldownBatchQueryOptions({
-                            sectionId: s.id,
-                            personId,
-                            range: dateRange,
-                            period,
-                          }),
-                        );
-                      }}
                     />
                   );
                 })}
@@ -247,24 +211,20 @@ export function EngineeringDashboardV2({
         )}
       </main>
 
-      <SectionDrilldownSheet
-        open={openSection !== null}
-        onOpenChange={(open) => {
-          if (!open) setOpenSection(null);
-        }}
-        title={
-          openSection
-            ? (IC_SECTIONS.find((s) => s.id === openSection)?.label ?? "")
-            : ""
-        }
-        rows={openSection ? rowsBySection[openSection] : []}
-        sectionId={openSection}
-        personId={personId}
-        range={dateRange}
-        period={period}
-        cohortStats={cohortStatsByKey}
-        cohortLabel="org"
-      />
+      {IC_SECTIONS.map((s) => (
+        <SectionDrilldownSheet
+          key={s.id}
+          open={openSection === s.id}
+          onOpenChange={(o) => setOpenSection(o ? s.id : null)}
+          title={s.label}
+          rows={rowsBySection[s.id]}
+          sectionId={s.id}
+          personId={personId}
+          range={dateRange}
+          period={period}
+          cohortLabel="team"
+        />
+      ))}
     </div>
   );
 }

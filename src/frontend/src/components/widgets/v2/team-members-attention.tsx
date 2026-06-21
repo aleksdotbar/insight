@@ -1,32 +1,30 @@
 import { AlertTriangle } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 import { useCatalog } from "@/api/use-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSettings } from "@/hooks/use-settings";
-import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
-import {
-  applyFocus,
-  PEER_TEXT,
-  peerStatusVsQuartiles,
-  type PeerStats,
-} from "@/lib/peers";
+import { memberMetricPeerStatus } from "@/lib/insight/v2/team-member-status";
+import { applyFocus, PEER_TEXT, type DeptCohorts } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 import type { BulletMetric, TeamMember } from "@/types/insight";
 
 export interface TeamMembersAttentionProps {
   members: TeamMember[];
   bulletsByPerson?: Map<string, BulletMetric[]>;
-  cohortStats?: Map<string, PeerStats>;
-  cohortSize?: number;
-  onMemberClick: (member: TeamMember) => void;
+  /**
+   * Per-department metric distributions split by source family; bullets are
+   * counted against the `bullet` family. Each member is counted "below"
+   * against THEIR OWN department; a member with an absent or degenerate
+   * cohort (`n < MIN_DEPT_COHORT_N`) is not counted.
+   */
+  deptCohorts?: DeptCohorts;
 }
 
 export function TeamMembersAttention({
   members,
   bulletsByPerson,
-  cohortStats,
-  cohortSize,
-  onMemberClick,
+  deptCohorts,
 }: TeamMembersAttentionProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
@@ -36,20 +34,11 @@ export function TeamMembersAttention({
       const bullets = bulletsByPerson?.get(m.person_id.toLowerCase()) ?? [];
       let belowCount = 0;
       for (const b of bullets) {
-        // schema_error / missing-id rows can't contribute to the "below
-        // peers" count — they collapse to neutral per DESIGN §3.3.
-        if (b.schema_error) continue;
-        const stats = cohortStats?.get(b.metric_key);
-        const value = Number(b.value);
-        if (!stats || !Number.isFinite(value)) continue;
-        const catalogRow = byMetricKey(bulletCatalogKey(b));
-        if (!catalogRow) continue;
-        const ps = peerStatusVsQuartiles(
-          value,
-          stats,
-          catalogRow.higher_is_better,
-        );
-        if (ps === "bottom") belowCount += 1;
+        if (
+          memberMetricPeerStatus(m, b, deptCohorts, byMetricKey) === "bottom"
+        ) {
+          belowCount += 1;
+        }
       }
       return { member: m, belowCount };
     })
@@ -60,9 +49,9 @@ export function TeamMembersAttention({
   if (attention.length === 0) return null;
 
   const subtitle =
-    cohortSize && cohortSize > 0
-      ? `vs ${cohortSize} peers under the same supervisor`
-      : "vs peers under the same supervisor";
+    members.length > 0
+      ? `${members.length} members · vs department peers`
+      : "vs department peers";
   const badStatus = applyFocus("bottom", focusMode);
 
   return (
@@ -78,10 +67,10 @@ export function TeamMembersAttention({
           <ul className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
             {attention.map(({ member, belowCount }) => (
               <li key={member.person_id}>
-                <button
-                  type="button"
-                  onClick={() => onMemberClick(member)}
-                  className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
+                <Link
+                  to="/ic/$person/personal"
+                  params={{ person: member.person_id }}
+                  className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1 text-left text-sm no-underline! transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0 truncate text-foreground">
                     {member.name}
@@ -97,7 +86,7 @@ export function TeamMembersAttention({
                   <span className="shrink-0 whitespace-nowrap text-muted-foreground">
                     below peers
                   </span>
-                </button>
+                </Link>
               </li>
             ))}
           </ul>

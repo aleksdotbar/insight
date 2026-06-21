@@ -119,7 +119,7 @@ function MetricCardImpl({
           <span className="text-muted-foreground text-xs font-bold tracking-wide uppercase">
             {title}
           </span>
-          <span className="text-muted-foreground text-xs">vs team range</span>
+          <span className="text-muted-foreground text-xs">Team range</span>
         </div>
 
         {!isEmpty ? <ChartLegend /> : null}

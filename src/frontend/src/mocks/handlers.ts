@@ -8,20 +8,17 @@ import {
   mockCrmFlowSeries,
   mockCrmKpis,
   mockDeliveryTrendSeries,
-  mockExecRows,
+  mockDeptDistRows,
   mockIcAggregateRow,
   mockIcBulletSection,
   mockLocTrendSeries,
   mockTeamBulletSection,
   mockTeamMemberRow,
   mockTeamMemberRows,
-  mockTeamMemberRowsForTeam,
 } from "./factories";
 import { buildIdentityTree, PEOPLE, PEOPLE_BY_ID } from "./registry";
 import {
   mockHistogramBins,
-  mockKpiPeerMedians,
-  mockPeerCohortStats,
   mockSectionTrend,
 } from "./v2/factories";
 
@@ -36,22 +33,32 @@ type ODataBody = { $filter?: string };
 
 function parseFilter(body: unknown): {
   personId?: string;
-  teamId?: string;
+  personIds?: string[];
+  orgUnitIds?: string[];
   metricKey?: string;
-  kind?: string;
   sectionId?: string;
-  cohortSeed?: string;
   periodDays: number;
   dateFrom?: string;
   dateTo?: string;
 } {
   const f = (body as ODataBody | undefined)?.$filter ?? "";
-  const teamMatch = /\borg_unit_id\s+eq\s+'([^']+)'/i.exec(f);
   const personMatch = /\bperson_id\s+eq\s+'([^']+)'/i.exec(f);
+  const personInMatch = /\bperson_id\s+in\s+\(([^)]+)\)/i.exec(f);
+  const personIds = personInMatch
+    ? personInMatch[1]
+        .split(",")
+        .map((s) => s.trim().replace(/^'|'$/g, ""))
+        .filter(Boolean)
+    : undefined;
+  const orgUnitInMatch = /\borg_unit_id\s+in\s+\(([^)]+)\)/i.exec(f);
+  const orgUnitIds = orgUnitInMatch
+    ? orgUnitInMatch[1]
+        .split(",")
+        .map((s) => s.trim().replace(/^'|'$/g, ""))
+        .filter(Boolean)
+    : undefined;
   const metricMatch = /\bmetric_key\s+eq\s+'([^']+)'/i.exec(f);
-  const kindMatch = /\bkind\s+eq\s+'([^']+)'/i.exec(f);
   const sectionMatch = /\bsection_id\s+eq\s+'([^']+)'/i.exec(f);
-  const cohortMatch = /\bcohort_seed\s+eq\s+'([^']+)'/i.exec(f);
   const periodDaysMatch = /\bperiod_days\s+eq\s+(\d+)/i.exec(f);
   const dateFromMatch = /\bmetric_date\s+ge\s+'(\d{4}-\d{2}-\d{2})'/i.exec(f);
   const dateToMatch = /\bmetric_date\s+l[et]\s+'(\d{4}-\d{2}-\d{2})'/i.exec(f);
@@ -69,12 +76,11 @@ function parseFilter(body: unknown): {
     );
   }
   return {
-    teamId: teamMatch?.[1],
     personId: personMatch?.[1],
+    personIds,
+    orgUnitIds,
     metricKey: metricMatch?.[1],
-    kind: kindMatch?.[1],
     sectionId: sectionMatch?.[1],
-    cohortSeed: cohortMatch?.[1],
     periodDays,
     dateFrom,
     dateTo,
@@ -94,59 +100,80 @@ function seedOf(s: string | undefined): number {
 
 type Handler = (body: unknown) => Record<string, unknown> | unknown[];
 
-const metricHandlers: Record<string, Handler> = {
-  [METRIC_REGISTRY.EXEC_SUMMARY]: () => wrap(mockExecRows()),
+/** Per-person long rows for a V2_MEMBER_VALUES_* metric (person_id IN roster). */
+function memberValueRows(section: string, body: unknown) {
+  const { personIds, personId, periodDays } = parseFilter(body);
+  const ids = personIds ?? (personId ? [personId] : []);
+  return ids.flatMap((id) =>
+    mockIcBulletSection(section, seedOf(id), periodDays).map((r) => ({
+      person_id: id.toLowerCase(),
+      metric_key: r.metric_key,
+      value: r.value,
+    })),
+  );
+}
 
+const metricHandlers: Record<string, Handler> = {
   [METRIC_REGISTRY.TEAM_MEMBER]: (body) => {
-    const { personId, teamId, periodDays } = parseFilter(body);
+    const { personId, personIds, periodDays } = parseFilter(body);
     const scale = periodScale(periodDays);
-    if (personId) {
-      const p =
-        PEOPLE_BY_ID[personId.toLowerCase()] ?? PEOPLE_BY_ID[personId];
-      if (!p) return wrap([]);
+    const rowFor = (p: (typeof PEOPLE)[number]) => {
       const s = seedOf(p.person_id);
-      return wrap([
-        mockTeamMemberRow({
-          person_id: p.person_id,
-          display_name: p.name,
-          seniority: p.seniority,
-          ai_tools: p.ai_tools,
-          tasks_closed: Math.max(1, Math.round((3 + (s % 17)) * scale)),
-          bugs_fixed: Math.max(0, Math.round(((s % 11) >> 1) * scale)),
-          dev_time_h: Math.max(8, Math.round((10 + ((s >> 3) % 18)) * scale)),
-          prs_merged: Math.max(1, Math.round((2 + ((s >> 5) % 11)) * scale)),
-          build_success_pct: 72 + ((s >> 7) % 26),
-          focus_time_pct: 30 + ((s >> 11) % 55),
-          ai_loc_share_pct: p.ai_tools.length > 0 ? 5 + ((s >> 13) % 35) : 0,
-        }),
-      ]);
+      return mockTeamMemberRow({
+        person_id: p.person_id,
+        display_name: p.name,
+        seniority: p.seniority,
+        org_unit_id: p.department,
+        ai_tools: p.ai_tools,
+        tasks_closed: Math.max(1, Math.round((3 + (s % 17)) * scale)),
+        bugs_fixed: Math.max(0, Math.round(((s % 11) >> 1) * scale)),
+        dev_time_h: Math.max(8, Math.round((10 + ((s >> 3) % 18)) * scale)),
+        prs_merged: null,
+        build_success_pct: 72 + ((s >> 7) % 26),
+        focus_time_pct: 30 + ((s >> 11) % 55),
+        ai_loc_share_pct: p.ai_tools.length > 0 ? 5 + ((s >> 13) % 35) : 0,
+      });
+    };
+    const lookup = (id: string) =>
+      PEOPLE_BY_ID[id.toLowerCase()] ?? PEOPLE_BY_ID[id];
+    if (personIds) {
+      return wrap(personIds.map(lookup).filter(Boolean).map((p) => rowFor(p!)));
     }
-    if (teamId) return wrap(mockTeamMemberRowsForTeam(teamId));
+    if (personId) {
+      const p = lookup(personId);
+      return wrap(p ? [rowFor(p)] : []);
+    }
     return wrap(mockTeamMemberRows());
   },
 
   [METRIC_REGISTRY.TEAM_BULLET_DELIVERY]: (body) => {
-    const { teamId, periodDays } = parseFilter(body);
+    const { personIds, periodDays } = parseFilter(body);
     return wrap(
-      mockTeamBulletSection("task_delivery", seedOf(teamId), periodDays),
+      mockTeamBulletSection("task_delivery", seedOf((personIds ?? []).join(",")), periodDays),
     );
   },
   [METRIC_REGISTRY.TEAM_BULLET_QUALITY]: (body) => {
-    const { teamId, periodDays } = parseFilter(body);
+    const { personIds, periodDays } = parseFilter(body);
     return wrap(
-      mockTeamBulletSection("code_quality", seedOf(teamId), periodDays),
+      mockTeamBulletSection("code_quality", seedOf((personIds ?? []).join(",")), periodDays),
+    );
+  },
+  [METRIC_REGISTRY.TEAM_BULLET_GIT]: (body) => {
+    const { personIds, periodDays } = parseFilter(body);
+    return wrap(
+      mockTeamBulletSection("git_output", seedOf((personIds ?? []).join(",")), periodDays),
     );
   },
   [METRIC_REGISTRY.TEAM_BULLET_COLLAB]: (body) => {
-    const { teamId, periodDays } = parseFilter(body);
+    const { personIds, periodDays } = parseFilter(body);
     return wrap(
-      mockTeamBulletSection("collaboration", seedOf(teamId), periodDays),
+      mockTeamBulletSection("collaboration", seedOf((personIds ?? []).join(",")), periodDays),
     );
   },
   [METRIC_REGISTRY.TEAM_BULLET_AI]: (body) => {
-    const { teamId, periodDays } = parseFilter(body);
+    const { personIds, periodDays } = parseFilter(body);
     return wrap(
-      mockTeamBulletSection("ai_adoption", seedOf(teamId), periodDays),
+      mockTeamBulletSection("ai_adoption", seedOf((personIds ?? []).join(",")), periodDays),
     );
   },
 
@@ -168,6 +195,11 @@ const metricHandlers: Record<string, Handler> = {
         focus_time_pct: ratio(65, 24),
         build_success_pct: ratio(92, 10),
         pr_cycle_time_h: Math.max(4, Math.round(18 + ((jitter / 1000) - 0.5) * 16)),
+        loc_median: Math.round(9000 * scale),
+        prs_merged_median: Math.max(1, Math.round(6 * scale)),
+        tasks_closed_median: Math.max(1, Math.round(8 * scale)),
+        bugs_fixed_median: Math.max(0, Math.round(14 * scale)),
+        ai_sessions_median: Math.max(1, Math.round(30 * scale)),
       }),
     ]);
   },
@@ -190,6 +222,39 @@ const metricHandlers: Record<string, Handler> = {
     return wrap(
       mockIcBulletSection("git_output", seedOf(personId), periodDays),
     );
+  },
+  [METRIC_REGISTRY.V2_MEMBER_VALUES_DELIVERY]: (body) =>
+    wrap(memberValueRows("task_delivery", body)),
+  [METRIC_REGISTRY.V2_MEMBER_VALUES_COLLAB]: (body) =>
+    wrap(memberValueRows("collab", body)),
+  [METRIC_REGISTRY.V2_MEMBER_VALUES_GIT]: (body) =>
+    wrap(memberValueRows("git_output", body)),
+  [METRIC_REGISTRY.V2_MEMBER_PRS]: (body) => {
+    const { personIds, personId, periodDays } = parseFilter(body);
+    const scale = periodScale(periodDays);
+    const ids = personIds ?? (personId ? [personId] : []);
+    return wrap(
+      ids.map((id) => ({
+        person_id: id.toLowerCase(),
+        prs_merged: Math.max(0, Math.round((seedOf(id) % 20) * scale)),
+      })),
+    );
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("delivery", orgUnitIds ?? [], periodDays));
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_COLLAB]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("collab", orgUnitIds ?? [], periodDays));
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_GIT]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("git", orgUnitIds ?? [], periodDays));
+  },
+  [METRIC_REGISTRY.V2_DEPT_DIST_KPIS]: (body) => {
+    const { orgUnitIds, periodDays } = parseFilter(body);
+    return wrap(mockDeptDistRows("kpis", orgUnitIds ?? [], periodDays));
   },
   [METRIC_REGISTRY.IC_CHART_LOC]: (body) => {
     const { periodDays } = parseFilter(body);
@@ -228,19 +293,10 @@ const metricHandlers: Record<string, Handler> = {
       mockHistogramBins(personId ?? defaultPersonId, metricKey, periodDays),
     );
   },
-  [METRIC_REGISTRY.V2_PEER_COHORT_STATS]: (body) => {
-    const { teamId, kind, periodDays } = parseFilter(body);
-    const seed = teamId ?? kind ?? "org";
-    return wrap(mockPeerCohortStats(seed, periodDays));
-  },
   [METRIC_REGISTRY.V2_IC_SECTION_TREND]: (body) => {
     const { personId, sectionId, periodDays } = parseFilter(body);
     if (!personId || !sectionId) return wrap([]);
     return wrap(mockSectionTrend(personId, sectionId, periodDays ?? 30));
-  },
-  [METRIC_REGISTRY.V2_IC_KPI_PEER_MEDIAN]: (body) => {
-    const { cohortSeed, periodDays } = parseFilter(body);
-    return wrap(mockKpiPeerMedians(cohortSeed ?? "supervisor", periodDays));
   },
 };
 

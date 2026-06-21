@@ -15,7 +15,6 @@ import { Route as IcPersonRouteImport } from './routes/ic.$person'
 import { Route as IcPersonIndexRouteImport } from './routes/ic.$person.index'
 import { Route as IcPersonTeamRouteImport } from './routes/ic.$person.team'
 import { Route as IcPersonPersonalRouteImport } from './routes/ic.$person.personal'
-import { Route as IcPersonExecRouteImport } from './routes/ic.$person.exec'
 
 const CallbackRoute = CallbackRouteImport.update({
   id: '/callback',
@@ -47,17 +46,11 @@ const IcPersonPersonalRoute = IcPersonPersonalRouteImport.update({
   path: '/personal',
   getParentRoute: () => IcPersonRoute,
 } as any)
-const IcPersonExecRoute = IcPersonExecRouteImport.update({
-  id: '/exec',
-  path: '/exec',
-  getParentRoute: () => IcPersonRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/ic/$person': typeof IcPersonRouteWithChildren
-  '/ic/$person/exec': typeof IcPersonExecRoute
   '/ic/$person/personal': typeof IcPersonPersonalRoute
   '/ic/$person/team': typeof IcPersonTeamRoute
   '/ic/$person/': typeof IcPersonIndexRoute
@@ -65,7 +58,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
-  '/ic/$person/exec': typeof IcPersonExecRoute
   '/ic/$person/personal': typeof IcPersonPersonalRoute
   '/ic/$person/team': typeof IcPersonTeamRoute
   '/ic/$person': typeof IcPersonIndexRoute
@@ -75,7 +67,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/ic/$person': typeof IcPersonRouteWithChildren
-  '/ic/$person/exec': typeof IcPersonExecRoute
   '/ic/$person/personal': typeof IcPersonPersonalRoute
   '/ic/$person/team': typeof IcPersonTeamRoute
   '/ic/$person/': typeof IcPersonIndexRoute
@@ -86,7 +77,6 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/ic/$person'
-    | '/ic/$person/exec'
     | '/ic/$person/personal'
     | '/ic/$person/team'
     | '/ic/$person/'
@@ -94,7 +84,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/callback'
-    | '/ic/$person/exec'
     | '/ic/$person/personal'
     | '/ic/$person/team'
     | '/ic/$person'
@@ -103,7 +92,6 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/ic/$person'
-    | '/ic/$person/exec'
     | '/ic/$person/personal'
     | '/ic/$person/team'
     | '/ic/$person/'
@@ -159,25 +147,16 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IcPersonPersonalRouteImport
       parentRoute: typeof IcPersonRoute
     }
-    '/ic/$person/exec': {
-      id: '/ic/$person/exec'
-      path: '/exec'
-      fullPath: '/ic/$person/exec'
-      preLoaderRoute: typeof IcPersonExecRouteImport
-      parentRoute: typeof IcPersonRoute
-    }
   }
 }
 
 interface IcPersonRouteChildren {
-  IcPersonExecRoute: typeof IcPersonExecRoute
   IcPersonPersonalRoute: typeof IcPersonPersonalRoute
   IcPersonTeamRoute: typeof IcPersonTeamRoute
   IcPersonIndexRoute: typeof IcPersonIndexRoute
 }
 
 const IcPersonRouteChildren: IcPersonRouteChildren = {
-  IcPersonExecRoute: IcPersonExecRoute,
   IcPersonPersonalRoute: IcPersonPersonalRoute,
   IcPersonTeamRoute: IcPersonTeamRoute,
   IcPersonIndexRoute: IcPersonIndexRoute,

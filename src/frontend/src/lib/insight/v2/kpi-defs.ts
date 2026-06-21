@@ -22,9 +22,33 @@
 
 import type { IcSectionId } from "./sections";
 
+/**
+ * Ordered allowlist of IC KPI tiles for "At a glance" (bare metric_key). The
+ * catalog may surface more `ic_kpis.*` rows than we tile; this both filters
+ * (only these render) and fixes their order. Keys missing from the catalog
+ * response are skipped.
+ */
+export const IC_KPI_ORDER: readonly string[] = [
+  "tasks_closed",
+  "focus_time_pct",
+  "prs_merged",
+  "ai_loc_share_pct",
+  "ai_sessions",
+];
+
+const IC_KPI_RANK = new Map(IC_KPI_ORDER.map((key, i) => [key, i] as const));
+
+export function orderIcKpis<T extends { metric_key: string }>(items: T[]): T[] {
+  return items
+    .filter((it) => IC_KPI_RANK.has(it.metric_key))
+    .sort(
+      (a, b) =>
+        IC_KPI_RANK.get(a.metric_key)! - IC_KPI_RANK.get(b.metric_key)!,
+    );
+}
+
 export const IC_KPI_SECTION_BY_KEY: ReadonlyMap<string, IcSectionId> =
   new Map<string, IcSectionId>([
-    ["bugs_fixed", "code_quality"],
     // Wire key is `ic_kpis.ai_loc_share_pct` (the seed migration carries the
     // `_pct` suffix). #81 parity capture flagged this rename; the entry
     // here matches the bare metric_key post-`ic_kpis.` strip.

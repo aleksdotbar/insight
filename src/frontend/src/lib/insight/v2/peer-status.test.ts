@@ -114,18 +114,19 @@ describe("peerStatusForRow — higher_is_better=true", () => {
   const byKey = makeByMetricKey([
     makeCatalogMetric({ higher_is_better: true }),
   ]);
-  const stats = new Map([["tasks_completed", STATS]]);
 
   it("top when value >= p75", () => {
-    expect(peerStatusForRow(makeRow({ value: "12" }), stats, byKey)).toBe("top");
+    expect(peerStatusForRow(makeRow({ value: "12", peer: STATS }), byKey)).toBe(
+      "top",
+    );
   });
   it("bottom when value <= p25", () => {
-    expect(peerStatusForRow(makeRow({ value: "2" }), stats, byKey)).toBe(
+    expect(peerStatusForRow(makeRow({ value: "2", peer: STATS }), byKey)).toBe(
       "bottom",
     );
   });
   it("in_pack between p25 and p75", () => {
-    expect(peerStatusForRow(makeRow({ value: "6" }), stats, byKey)).toBe(
+    expect(peerStatusForRow(makeRow({ value: "6", peer: STATS }), byKey)).toBe(
       "in_pack",
     );
   });
@@ -135,14 +136,15 @@ describe("peerStatusForRow — higher_is_better=false", () => {
   const byKey = makeByMetricKey([
     makeCatalogMetric({ higher_is_better: false }),
   ]);
-  const stats = new Map([["tasks_completed", STATS]]);
 
   it("flips: low value is 'top', high value is 'bottom'", () => {
-    expect(peerStatusForRow(makeRow({ value: "2" }), stats, byKey)).toBe("top");
-    expect(peerStatusForRow(makeRow({ value: "12" }), stats, byKey)).toBe(
+    expect(peerStatusForRow(makeRow({ value: "2", peer: STATS }), byKey)).toBe(
+      "top",
+    );
+    expect(peerStatusForRow(makeRow({ value: "12", peer: STATS }), byKey)).toBe(
       "bottom",
     );
-    expect(peerStatusForRow(makeRow({ value: "6" }), stats, byKey)).toBe(
+    expect(peerStatusForRow(makeRow({ value: "6", peer: STATS }), byKey)).toBe(
       "in_pack",
     );
   });
@@ -151,13 +153,11 @@ describe("peerStatusForRow — higher_is_better=false", () => {
 describe("peerStatusForRow — rendering rules", () => {
   const okMetric = makeCatalogMetric({ higher_is_better: true });
   const byKey = makeByMetricKey([okMetric]);
-  const stats = new Map([["tasks_completed", STATS]]);
 
   it("schema_error rows collapse to neutral even when value is clearly 'top'", () => {
     expect(
       peerStatusForRow(
-        makeRow({ value: "12", schema_error: true }),
-        stats,
+        makeRow({ value: "12", schema_error: true, peer: STATS }),
         byKey,
       ),
     ).toBe("neutral");
@@ -165,9 +165,9 @@ describe("peerStatusForRow — rendering rules", () => {
 
   it("missing-id (catalog row absent) collapses to neutral", () => {
     const emptyByKey: CatalogByKey = () => undefined;
-    expect(peerStatusForRow(makeRow({ value: "12" }), stats, emptyByKey)).toBe(
-      "neutral",
-    );
+    expect(
+      peerStatusForRow(makeRow({ value: "12", peer: STATS }), emptyByKey),
+    ).toBe("neutral");
   });
 
   it("unchecked catalog rows render the same as ok (schema_error gates the rule, not schema_status directly)", () => {
@@ -180,18 +180,17 @@ describe("peerStatusForRow — rendering rules", () => {
       makeCatalogMetric({ schema_status: "unchecked", higher_is_better: true }),
     ]);
     expect(
-      peerStatusForRow(makeRow({ value: "12" }), stats, uncheckedByKey),
+      peerStatusForRow(makeRow({ value: "12", peer: STATS }), uncheckedByKey),
     ).toBe("top");
   });
 
   it("missing cohort stats degrade to neutral", () => {
-    expect(
-      peerStatusForRow(makeRow({ value: "12" }), undefined, byKey),
-    ).toBe("neutral");
+    // No `row.peer` → neutral (no cohort to compare against).
+    expect(peerStatusForRow(makeRow({ value: "12" }), byKey)).toBe("neutral");
   });
 
   it("non-numeric value degrades to neutral", () => {
-    expect(peerStatusForRow(makeRow({ value: "—" }), stats, byKey)).toBe(
+    expect(peerStatusForRow(makeRow({ value: "—", peer: STATS }), byKey)).toBe(
       "neutral",
     );
   });
@@ -201,12 +200,13 @@ describe("rowStatus — maps peer status to display status", () => {
   const byKey = makeByMetricKey([
     makeCatalogMetric({ higher_is_better: true }),
   ]);
-  const stats = new Map([["tasks_completed", STATS]]);
 
   it("top → good, bottom → bad, in_pack → warn, neutral → neutral", () => {
-    expect(rowStatus(makeRow({ value: "12" }), stats, byKey)).toBe("good");
-    expect(rowStatus(makeRow({ value: "2" }), stats, byKey)).toBe("bad");
-    expect(rowStatus(makeRow({ value: "6" }), stats, byKey)).toBe("warn");
-    expect(rowStatus(makeRow({ value: "—" }), stats, byKey)).toBe("neutral");
+    expect(rowStatus(makeRow({ value: "12", peer: STATS }), byKey)).toBe("good");
+    expect(rowStatus(makeRow({ value: "2", peer: STATS }), byKey)).toBe("bad");
+    expect(rowStatus(makeRow({ value: "6", peer: STATS }), byKey)).toBe("warn");
+    expect(rowStatus(makeRow({ value: "—", peer: STATS }), byKey)).toBe(
+      "neutral",
+    );
   });
 });

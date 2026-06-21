@@ -1,21 +1,3 @@
-/** POST /metrics/{EXEC_SUMMARY}/query */
-export type RawExecSummaryRow = {
-  org_unit_id: string;
-  org_unit_name: string;
-  headcount: number;
-  tasks_closed: number | null;
-  bugs_fixed: number | null;
-  build_success_pct: number | null;
-  // focus_time_pct is non-null only when silver.class_focus_metrics has a row
-  // for the org; otherwise the exec_summary view emits NULL. Same for the AI
-  // columns when no cursor rows exist for the org/day (LEFT JOIN miss).
-  focus_time_pct: number | null;
-  ai_adoption_pct: number | null;
-  ai_loc_share_pct: number | null;
-  // Bitbucket PR ingestion not wired — always NULL today.
-  pr_cycle_time_h: number | null;
-};
-
 /** POST /metrics/{IC_KPIS}/query */
 export type RawIcAggregateRow = {
   person_id: string;
@@ -30,6 +12,20 @@ export type RawIcAggregateRow = {
   bugs_fixed: number;
   build_success_pct: number | null;
   ai_sessions: number;
+  // Department peer medians (one per KPI column) + cohort size, folded into
+  // the IC_KPIS query_ref (analytics-api m20260604_000006). NULL when the
+  // person has no department cohort. Replaces the standalone
+  // ic_kpi_peer_median query. Optional so mock/legacy rows still parse.
+  loc_median?: number | null;
+  ai_loc_share_pct_median?: number | null;
+  prs_merged_median?: number | null;
+  pr_cycle_time_h_median?: number | null;
+  focus_time_pct_median?: number | null;
+  tasks_closed_median?: number | null;
+  bugs_fixed_median?: number | null;
+  build_success_pct_median?: number | null;
+  ai_sessions_median?: number | null;
+  peer_n?: number | null;
 };
 
 /** POST /metrics/{TEAM_MEMBER}/query */
@@ -38,6 +34,9 @@ export type RawTeamMemberRow = {
   display_name: string;
   seniority: string;
   supervisor_email: string | null;
+  // Department the member belongs to (`org_unit_id`), scoping their peer
+  // distribution. NULL when identity has no department for the person.
+  org_unit_id: string | null;
   tasks_closed: number;
   bugs_fixed: number;
   // dev_time_h/focus_time_pct/ai_loc_share_pct: upstream source may be
@@ -76,6 +75,13 @@ export type RawBulletAggregateRow = {
   median: number | null;
   range_min: number | null;
   range_max: number | null;
+  // Cohort distribution carried on each bullet row (analytics-api
+  // *_bullet_distribution query_refs): p25/p75 quartiles + cohort size.
+  // median=p50, range_min=min, range_max=max. NULL when no cohort.
+  // Optional on the type so mock/legacy rows without them still parse.
+  p25?: number | null;
+  p75?: number | null;
+  n?: number | null;
 };
 
 /** POST /metrics/{IC_TIMEOFF}/query */

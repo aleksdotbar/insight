@@ -1,5 +1,6 @@
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { getPerson } from "@/api/identity-client";
 import { OidcManager, authStore, getViewerEmail } from "@/auth";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -35,13 +36,15 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset className="min-w-0 overflow-x-clip">
-        <ImpersonationBanner />
-        <MockBanner />
-        <Outlet />
-      </SidebarInset>
-    </SidebarProvider>
+    <TooltipProvider>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset className="min-w-0 overflow-x-clip">
+          <ImpersonationBanner />
+          <MockBanner />
+          <Outlet />
+        </SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }

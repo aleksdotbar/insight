@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { DashboardEmptyState } from "@/components/widgets/v2/dashboard-empty-state";
@@ -6,10 +6,10 @@ import { DashboardHeader } from "@/components/widgets/v2/dashboard-header";
 import { SectionCard } from "@/components/widgets/v2/section-card";
 import { SectionDrilldownSheet } from "@/components/widgets/v2/section-drilldown-sheet";
 import { MembersHeatmap } from "@/components/widgets/v2/members-heatmap";
-import { SectionStatus } from "@/components/widgets/v2/section-status";
 import { TeamMembersAttention } from "@/components/widgets/v2/team-members-attention";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { useCatalog } from "@/api/use-catalog";
 import { usePeriod } from "@/hooks/use-period";
 import {
   flattenSubordinates,
@@ -21,18 +21,18 @@ import {
 } from "@/lib/insight/v2/sections";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
+import { teamSectionStatusByMetric } from "@/lib/insight/v2/team-member-status";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import {
   useTeamBulletSections,
   useTeamMembers,
 } from "@/queries/team-view";
 import {
+  useDeptDistributions,
   useTeamMemberBullets,
   useTeamMemberBulletsPrevious,
 } from "@/queries/v2/team-extras";
-import { useIcCohortStats } from "@/queries/v2/ic-extras";
-import type { PeerStats } from "@/lib/peers";
-import type { BulletMetric, TeamMember } from "@/types/insight";
+import type { BulletMetric } from "@/types/insight";
 
 const SECTION_KEYS = TEAM_SECTIONS.map((s) => s.id);
 
@@ -43,12 +43,16 @@ export interface TeamViewV2ScreenProps {
 
 export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps) {
   const { period, dateRange, setPeriod } = usePeriod();
+  const { byMetricKey } = useCatalog();
   const [openSection, setOpenSection] = useState<TeamSectionId | null>(null);
-  const [, setFocusedMember] = useState<TeamMember | null>(null);
 
-  useEffect(() => {
+  // Close any open drilldown when the viewed team changes. Render-phase
+  // reset against the previous id rather than an effect (no cascading commit).
+  const [prevTeamId, setPrevTeamId] = useState(teamId);
+  if (teamId !== prevTeamId) {
+    setPrevTeamId(teamId);
     setOpenSection(null);
-  }, [teamId]);
+  }
 
   const viewerQ = useIcPerson(viewerEmail);
   const viewerTree = viewerQ.data ?? null;
@@ -70,10 +74,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
     keepPrevious: true,
   });
   const members = membersQ.data ?? [];
-  const memberIds = useMemo(
-    () => members.map((m) => m.person_id),
-    [members],
-  );
+  const memberIds = members.map((m) => m.person_id);
   const bulletsQ = useTeamMemberBullets(memberIds, period, dateRange);
   const prevBulletsQ = useTeamMemberBulletsPrevious(
     memberIds,
@@ -81,32 +82,23 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
     dateRange,
   );
 
+  const orgUnitIds = [
+    ...new Set(
+      members
+        .map((m) => m.org_unit_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const deptDistQ = useDeptDistributions(orgUnitIds, period, dateRange);
+
   const sectionsQ = useTeamBulletSections(
     SECTION_KEYS,
     teamId,
     teamSize,
     period,
     dateRange,
-    { keepPrevious: true },
+    { keepPrevious: true, roster },
   );
-
-  const cohortStatsQ = useIcCohortStats("team", teamId, dateRange);
-  const cohortStatsByKey = useMemo<Map<string, PeerStats>>(() => {
-    const m = new Map<string, PeerStats>();
-    for (const row of cohortStatsQ.data ?? []) {
-      m.set(row.metric_key, {
-        p25: row.p25,
-        p50: row.p50,
-        p75: row.p75,
-        min: row.min,
-        max: row.max,
-        n: row.n,
-      });
-    }
-    return m;
-  }, [cohortStatsQ.data]);
-
-  const cohortSize = cohortStatsQ.data?.[0]?.n ?? 0;
 
   const sectionData = sectionsQ.data;
   const rowsBySection: Record<TeamSectionId, BulletMetric[]> = {
@@ -114,9 +106,9 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
       "task_delivery",
       sectionData?.bySection.task_delivery ?? [],
     ),
-    code_quality: orderRowsForSection(
-      "code_quality",
-      sectionData?.bySection.code_quality ?? [],
+    git_output: orderRowsForSection(
+      "git_output",
+      sectionData?.bySection.git_output ?? [],
     ),
     collaboration: orderRowsForSection(
       "collaboration",
@@ -127,12 +119,6 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
       sectionData?.bySection.ai_adoption ?? [],
     ),
   };
-
-  const heroSections = TEAM_SECTIONS.map((s) => ({
-    id: s.id,
-    label: s.label,
-    rows: rowsBySection[s.id],
-  }));
 
   const sectionsPending = sectionsQ.isPending;
   const sectionsFetching = sectionsQ.isFetching;
@@ -179,16 +165,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
             <TeamMembersAttention
               members={members}
               bulletsByPerson={bulletsQ.data}
-              cohortStats={cohortStatsByKey}
-              cohortSize={cohortSize}
-              onMemberClick={setFocusedMember}
-            />
-            <SectionStatus
-              sections={heroSections}
-              peerLabel="other teams"
-              cols="four"
-              cohortStats={cohortStatsByKey}
-              onSectionClick={setOpenSection}
+              deptCohorts={deptDistQ.data}
             />
 
             {membersQ.isError ? (
@@ -202,8 +179,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                 members={members}
                 bulletsByPerson={bulletsQ.data}
                 previousBulletsByPerson={prevBulletsQ.data}
-                cohortStats={cohortStatsByKey}
-                onMemberClick={setFocusedMember}
+                deptCohorts={deptDistQ.data}
               />
             )}
 
@@ -231,9 +207,15 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                       title={s.label}
                       sectionId={s.id}
                       rows={rowsBySection[s.id]}
-                      cohortStats={cohortStatsByKey}
+                      statusByMetricKey={teamSectionStatusByMetric(
+                        rowsBySection[s.id],
+                        members,
+                        bulletsQ.data,
+                        deptDistQ.data,
+                        byMetricKey,
+                      )}
                       onOpen={() => setOpenSection(s.id)}
-                      subtitle="team aggregate · vs other teams"
+                      subtitle="vs department peers"
                     />
                   );
                 })}
@@ -243,20 +225,16 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
         )}
       </main>
 
-      <SectionDrilldownSheet
-        open={openSection !== null}
-        onOpenChange={(open) => {
-          if (!open) setOpenSection(null);
-        }}
-        title={
-          openSection
-            ? (TEAM_SECTIONS.find((s) => s.id === openSection)?.label ?? "")
-            : ""
-        }
-        rows={openSection ? rowsBySection[openSection] : []}
-        cohortStats={cohortStatsByKey}
-        cohortLabel="team"
-      />
+      {TEAM_SECTIONS.map((s) => (
+        <SectionDrilldownSheet
+          key={s.id}
+          open={openSection === s.id}
+          onOpenChange={(o) => setOpenSection(o ? s.id : null)}
+          title={s.label}
+          rows={rowsBySection[s.id]}
+          cohortLabel="department"
+        />
+      ))}
     </div>
   );
 }
