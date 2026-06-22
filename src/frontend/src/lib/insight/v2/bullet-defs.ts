@@ -76,7 +76,7 @@ export const BULLET_DESCRIPTION_BY_KEY: ReadonlyMap<string, string> = new Map<
   meetings_count: "Distinct meetings attended",
   meeting_free: "Working days with no meetings",
 
-  wiki_pages_created: "Wiki pages authored (Confluence)",
+  wiki_pages_created: "Wiki pages authored (Confluence/Outline)",
   wiki_edits: "Wiki page revisions authored",
   wiki_comments: "Comments received on the person's wiki pages",
   wiki_active_authors: "Members who authored or edited the wiki this period",
