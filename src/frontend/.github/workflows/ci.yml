@@ -1,16 +1,16 @@
-name: Tests
+name: CI
 
-# Runs the Vitest unit suite (jsdom + Testing Library) on every PR and on
-# pushes to main. docker.yml only fires on main and just builds the image —
-# this is the gate that actually exercises the tests and surfaces coverage
-# before code lands.
+# Quality gates that run on every PR and on pushes to main: the Vitest unit
+# suite (with coverage), ESLint, and the TypeScript type check. docker.yml
+# only fires on main and just builds the image — these are the checks that
+# actually validate the code before it lands. The three jobs run in parallel.
 on:
   pull_request:
   push:
     branches: [main]
 
 concurrency:
-  group: tests-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -79,3 +79,49 @@ jobs:
           path: coverage/
           retention-days: 7
           if-no-files-found: warn
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: tsc --noEmit
+        run: pnpm typecheck
