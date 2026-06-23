@@ -65,7 +65,7 @@ export interface DistributionStripProps {
 export function DistributionStrip({
   row,
   bins,
-  cohortLabel = "team",
+  cohortLabel = "department",
 }: DistributionStripProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
