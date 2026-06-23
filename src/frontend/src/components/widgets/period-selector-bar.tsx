@@ -11,6 +11,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { CustomRange, PeriodValue } from "@/types/insight";
 
 function formatShortDate(iso: string): string {
@@ -71,7 +77,6 @@ export function PeriodSelectorBar({
   };
 
   const groupValue = customRange ? ["custom"] : [period];
-  const customLabel = customRange ? activeRangeLabel : "Custom";
 
   return (
     <div className="flex items-center gap-2">
@@ -103,7 +108,30 @@ export function PeriodSelectorBar({
             render={
               <ToggleGroupItem value="custom" className="gap-1.5">
                 <CalendarIcon className="size-3.5" />
-                <span>{customLabel}</span>
+                <span>{activeRangeLabel}</span>
+                <TooltipProvider delay={200}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span
+                          className="rounded bg-muted px-1 py-px text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                          aria-label="Dates bucketed by UTC midnight"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          UTC
+                        </span>
+                      }
+                    />
+                    <TooltipContent
+                      side="bottom"
+                      className="max-w-xs text-xs leading-relaxed"
+                    >
+                      All dates here are bucketed by UTC midnight. An event at,
+                      say, 22:30 your local time may show up on a different
+                      calendar day than what your phone says.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </ToggleGroupItem>
             }
           />
