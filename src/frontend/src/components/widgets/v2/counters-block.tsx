@@ -204,7 +204,7 @@ export interface CountersBlockProps {
 
 export function CountersBlock({
   rows,
-  cohortLabel = "team",
+  cohortLabel = "department",
   layout = "story",
 }: CountersBlockProps) {
   const { focusMode } = useSettings();

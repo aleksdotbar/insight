@@ -223,7 +223,7 @@ export function EngineeringDashboardV2({
           personId={personId}
           range={dateRange}
           period={period}
-          cohortLabel="team"
+          cohortLabel="department"
         />
       ))}
     </div>

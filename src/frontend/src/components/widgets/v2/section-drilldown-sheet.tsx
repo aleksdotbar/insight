@@ -66,7 +66,7 @@ export function SectionDrilldownSheet({
   personId,
   range,
   period,
-  cohortLabel = "team",
+  cohortLabel = "department",
 }: SectionDrilldownSheetProps) {
   const panel = (
     <DrilldownPanel
