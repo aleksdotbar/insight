@@ -22,5 +22,19 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      reportsDirectory: "./coverage",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/test/**", // setup + test utils
+        "src/mocks/**", // MSW handlers + factories
+        "src/**/*.d.ts",
+        "src/routeTree.gen.ts", // TanStack Router generated file
+        "src/main.tsx", // entry/bootstrap
+      ],
+    },
   },
 });
