@@ -41,6 +41,7 @@ function buildSyntheticMember(
     name: entry.display_name,
     seniority: "",
     supervisor_email: entry.supervisor_email,
+    org_unit_id: null,
     tasks_closed: 0,
     bugs_fixed: 0,
     dev_time_h: null,
