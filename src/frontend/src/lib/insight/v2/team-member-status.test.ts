@@ -67,7 +67,7 @@ function bullet(metricKey: string, value: number): BulletMetric {
     bar_left_pct: 0,
     bar_width_pct: 0,
     median_left_pct: 0,
-    status: "ok",
+    status: "good",
     drill_id: "",
   };
 }
