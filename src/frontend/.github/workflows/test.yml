@@ -1,0 +1,81 @@
+name: Tests
+
+# Runs the Vitest unit suite (jsdom + Testing Library) on every PR and on
+# pushes to main. docker.yml only fires on main and just builds the image —
+# this is the gate that actually exercises the tests and surfaces coverage
+# before code lands.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests & coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # pnpm is set up before setup-node so the latter's `cache: pnpm` can
+      # resolve the store. The pnpm version comes from the `packageManager`
+      # field in package.json (pnpm@10.33.0).
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests with coverage
+        run: pnpm test:coverage
+
+      # Render the v8 coverage totals into the run's job summary so reviewers
+      # see them without opening logs or downloading artifacts. Uses the
+      # json-summary reporter output; runs even on test failure (the summary
+      # file is still written before the run exits non-zero).
+      - name: Coverage summary
+        if: always()
+        run: |
+          SUMMARY=coverage/coverage-summary.json
+          if [ ! -f "$SUMMARY" ]; then
+            echo "No coverage summary produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Coverage"
+            echo ""
+            echo "| Metric | % | Covered / Total |"
+            echo "| --- | ---: | ---: |"
+            for row in "Lines:lines" "Statements:statements" "Functions:functions" "Branches:branches"; do
+              label="${row%%:*}"; key="${row##*:}"
+              pct=$(jq -r --arg k "$key" '.total[$k].pct' "$SUMMARY")
+              cov=$(jq -r --arg k "$key" '.total[$k].covered' "$SUMMARY")
+              tot=$(jq -r --arg k "$key" '.total[$k].total' "$SUMMARY")
+              echo "| ${label} | ${pct}% | ${cov} / ${tot} |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Keep the full HTML + lcov report downloadable from the run for anyone
+      # who wants per-file detail.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+          if-no-files-found: warn
