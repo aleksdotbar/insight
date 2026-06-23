@@ -50,6 +50,12 @@ export const METRIC_ORDER_BY_SECTION: Record<string, string[]> = {
     "prs_with_cc",
     "prs_total",
   ],
+  wiki: [
+    "wiki_active_authors",
+    "wiki_pages_created",
+    "wiki_edits",
+    "wiki_comments",
+  ],
 };
 
 export function orderRowsForSection<T extends { metric_key: string }>(

@@ -121,6 +121,7 @@ export function prefixForBulletSection(section: string): string {
   if (section === 'code_quality') return 'code_quality_bullet_rows';
   if (section === 'ai_adoption') return 'ai_bullet_rows';
   if (section === 'collaboration') return 'collab_bullet_rows';
+  if (section === 'wiki') return 'wiki_bullet_rows';
   return 'task_delivery_bullet_rows';
 }
 
