@@ -24,6 +24,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        # Read-only CI: don't persist the GITHUB_TOKEN in .git/config for
+        # later steps (supply-chain hardening).
+        with:
+          persist-credentials: false
 
       # pnpm is set up before setup-node so the latter's `cache: pnpm` can
       # resolve the store. The pnpm version comes from the `packageManager`
@@ -85,6 +89,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        # Read-only CI: don't persist the GITHUB_TOKEN in .git/config for
+        # later steps (supply-chain hardening).
+        with:
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -108,6 +116,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        # Read-only CI: don't persist the GITHUB_TOKEN in .git/config for
+        # later steps (supply-chain hardening).
+        with:
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
