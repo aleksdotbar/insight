@@ -78,8 +78,11 @@ function BulletChartImpl({
       : sublabel
     : undefined;
 
-  const isUnavailable = status === "unavailable";
-  const knownStatus: KnownStatus = isUnavailable ? "warn" : status;
+  const hasMeterData =
+    median_label !== "" && range_min !== "—" && range_max !== "—";
+  const suppressMeter =
+    status === "unavailable" && (!metric.schema_error || !hasMeterData);
+  const knownStatus: KnownStatus = status === "unavailable" ? "warn" : status;
 
   if (mode === "tile") {
     return (
@@ -110,7 +113,7 @@ function BulletChartImpl({
             <span className="text-muted-foreground text-xs">{suffix}</span>
           ) : null}
         </div>
-        {isUnavailable ? (
+        {suppressMeter ? (
           <ComingSoon variant="chip" />
         ) : (
           <Badge
@@ -168,7 +171,7 @@ function BulletChartImpl({
         </div>
       </div>
 
-      {isUnavailable ? (
+      {suppressMeter ? (
         <div className="mt-1">
           <ComingSoon variant="row" />
         </div>
