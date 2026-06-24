@@ -1,0 +1,137 @@
+name: CI
+
+# Quality gates that run on every PR and on pushes to main: the Vitest unit
+# suite (with coverage), ESLint, and the TypeScript type check. docker.yml
+# only fires on main and just builds the image — these are the checks that
+# actually validate the code before it lands. The three jobs run in parallel.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests & coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        # Read-only CI: don't persist the GITHUB_TOKEN in .git/config for
+        # later steps (supply-chain hardening).
+        with:
+          persist-credentials: false
+
+      # pnpm is set up before setup-node so the latter's `cache: pnpm` can
+      # resolve the store. The pnpm version comes from the `packageManager`
+      # field in package.json (pnpm@10.33.0).
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests with coverage
+        run: pnpm test:coverage
+
+      # Cobertura -> markdown summary via the same action the insight repo
+      # uses (irongut/CodeCoverageSummary), rendered into the run's job
+      # summary. No external service and no PR comment, so it works on fork
+      # PRs with a read-only token. thresholds "60 80" colour the badge
+      # red/yellow/green; fail_below_min stays off for now because the
+      # frontend baseline (~24% lines) is well under insight's 60% bar.
+      - name: Coverage summary
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage/cobertura-coverage.xml
+          format: markdown
+          output: both
+          badge: true
+          hide_complexity: true
+          fail_below_min: false
+          thresholds: "60 80"
+
+      - name: Coverage to job summary
+        if: always()
+        run: |
+          f="$GITHUB_WORKSPACE/code-coverage-results.md"
+          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY";
+          else echo "_No coverage summary produced (tests likely failed before coverage ran)._" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      # Keep the full HTML + lcov report downloadable from the run for anyone
+      # who wants per-file detail.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+          if-no-files-found: warn
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        # Read-only CI: don't persist the GITHUB_TOKEN in .git/config for
+        # later steps (supply-chain hardening).
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        # Read-only CI: don't persist the GITHUB_TOKEN in .git/config for
+        # later steps (supply-chain hardening).
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: tsc --noEmit
+        run: pnpm typecheck
