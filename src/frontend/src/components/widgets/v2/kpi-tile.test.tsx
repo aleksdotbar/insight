@@ -121,4 +121,96 @@ describe("<KpiTile>", () => {
     expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
   });
+
+  it("count metric with a null period renders 0 (not —) and still shows the peer median", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "ic_kpis.prs_merged",
+          higher_is_better: true,
+          schema_status: "ok",
+          format: "integer",
+        },
+      ]),
+    );
+    renderWithCatalogClient(
+      <KpiTile
+        kpi={makeKpi({
+          metric_key: "prs_merged",
+          label: "Pull Requests Merged",
+          value: null,
+          raw_value: null,
+          peer_median: 36,
+          peer_n: 20,
+        })}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/median 36/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Pull Requests Merged")).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.queryByText("No peer data")).not.toBeInTheDocument();
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+  });
+
+  it("rate metric with a null period keeps — but still shows the peer median", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "ic_kpis.focus_time_pct",
+          higher_is_better: true,
+          schema_status: "ok",
+          format: "percent",
+        },
+      ]),
+    );
+    renderWithCatalogClient(
+      <KpiTile
+        kpi={makeKpi({
+          metric_key: "focus_time_pct",
+          label: "Focus Time",
+          value: null,
+          raw_value: null,
+          unit: "%",
+          peer_median: 70,
+          peer_n: 20,
+        })}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/median 70/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Focus Time")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("shows 'No peer data' only when the cohort median is absent", async () => {
+    fetchCatalog.mockResolvedValue(
+      buildCatalogResponse([
+        {
+          metric_key: "ic_kpis.prs_merged",
+          higher_is_better: true,
+          schema_status: "ok",
+          format: "integer",
+        },
+      ]),
+    );
+    renderWithCatalogClient(
+      <KpiTile
+        kpi={makeKpi({
+          metric_key: "prs_merged",
+          label: "Pull Requests Merged",
+          value: "5",
+          raw_value: 5,
+          peer_median: null,
+          peer_n: null,
+        })}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("No peer data")).toBeInTheDocument();
+    });
+    expect(screen.getByText("5")).toBeInTheDocument();
+  });
 });
