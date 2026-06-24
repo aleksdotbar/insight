@@ -21,8 +21,8 @@ import type { LocDataPoint } from "@/types/insight";
 
 const CHART_CONFIG: ChartConfig = {
   codeLoc: { label: "Clean LOC", color: "var(--chart-1)" },
-  aiLoc: { label: "AI accepted", color: "var(--chart-2)" },
-  specLines: { label: "Spec", color: "var(--chart-3)" },
+  specLines: { label: "Spec", color: "var(--chart-2)" },
+  configLoc: { label: "Config", color: "var(--chart-3)" },
 };
 
 export interface LocStackedBarProps {
@@ -36,7 +36,7 @@ export interface LocStackedBarProps {
 
 export function LocStackedBar({
   title = "LOC breakdown",
-  description = "Daily lines added · clean · spec · AI-accepted",
+  description = "Lines added · clean · spec · config",
   data,
   isPending,
   isError,
@@ -95,16 +95,16 @@ export function LocStackedBar({
               name="Clean LOC"
             />
             <Bar
-              dataKey="aiLoc"
-              stackId="a"
-              fill="var(--color-aiLoc)"
-              name="AI accepted"
-            />
-            <Bar
               dataKey="specLines"
               stackId="a"
               fill="var(--color-specLines)"
               name="Spec"
+            />
+            <Bar
+              dataKey="configLoc"
+              stackId="a"
+              fill="var(--color-configLoc)"
+              name="Config"
             />
           </BarChart>
         </ChartContainer>

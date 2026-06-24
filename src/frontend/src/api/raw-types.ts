@@ -53,10 +53,9 @@ export type RawTeamMemberRow = {
 /** POST /metrics/{IC_CHART_LOC}/query */
 export type RawLocTrendRow = {
   date_bucket: string;
-  ai_loc: number;
   code_loc: number;
-  // spec extractor not wired — insight.ic_chart_loc emits NULL.
-  spec_lines: number | null;
+  spec_lines: number;
+  config_loc: number;
 };
 
 /** POST /metrics/{IC_CHART_DELIVERY}/query */

@@ -199,9 +199,9 @@ export function mockIcAggregateRow(overrides?: Partial<RawIcAggregateRow>): RawI
 export function mockLocTrendRow(overrides?: Partial<RawLocTrendRow>): RawLocTrendRow {
   return {
     date_bucket: isoDate(1),
-    ai_loc: 920,
     code_loc: 2800,
     spec_lines: 210,
+    config_loc: 140,
     ...overrides,
   };
 }
@@ -271,9 +271,9 @@ export function mockTeamMemberRowsForTeam(teamId: string): RawTeamMemberRow[] {
 export function mockLocTrendSeries(weeks = 8): RawLocTrendRow[] {
   return Array.from({ length: weeks }, (_, i) => ({
     date_bucket: isoDate(weeks - i),
-    ai_loc: Math.max(0, Math.round(vary(850, i, 300))),
     code_loc: Math.max(0, Math.round(vary(2700, i, 800))),
     spec_lines: Math.max(0, Math.round(vary(200, i, 80))),
+    config_loc: Math.max(0, Math.round(vary(150, i, 60))),
   }));
 }
 

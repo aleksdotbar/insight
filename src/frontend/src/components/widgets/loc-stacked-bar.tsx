@@ -11,7 +11,6 @@ import {
 } from "recharts";
 
 import {
-  CHART_AI_LOC,
   CHART_BLUE,
   CHART_FONT_TICK,
   CHART_GRAY,
@@ -19,21 +18,17 @@ import {
   CHART_TRACK_BG,
 } from "./chart-colors";
 import { ComingSoon } from "./coming-soon";
+import type { LocDataPoint } from "@/types/insight";
 
 export interface LocStackedBarProps {
-  data: Array<{
-    label: string;
-    aiLoc: number;
-    codeLoc: number;
-    specLines: number | null;
-  }>;
+  data: LocDataPoint[];
 }
 
 type ChartRow = {
   label: string;
-  "AI LOC": number;
   "Code LOC": number;
   "Spec Lines": number;
+  Config: number;
 };
 
 function LocStackedBarImpl({ data }: LocStackedBarProps) {
@@ -41,9 +36,9 @@ function LocStackedBarImpl({ data }: LocStackedBarProps) {
 
   const chartData: ChartRow[] = data.map((r) => ({
     label: r.label,
-    "AI LOC": r.aiLoc,
     "Code LOC": r.codeLoc,
-    "Spec Lines": r.specLines ?? 0,
+    "Spec Lines": r.specLines,
+    Config: r.configLoc,
   }));
 
   return (
@@ -68,9 +63,9 @@ function LocStackedBarImpl({ data }: LocStackedBarProps) {
         />
         <Tooltip />
         <Legend wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
-        <Bar dataKey="AI LOC" stackId="loc" fill={CHART_AI_LOC} />
         <Bar dataKey="Code LOC" stackId="loc" fill={CHART_BLUE} />
-        <Bar dataKey="Spec Lines" stackId="loc" fill={CHART_SPEC_LINES} radius={[3, 3, 0, 0]} />
+        <Bar dataKey="Spec Lines" stackId="loc" fill={CHART_SPEC_LINES} />
+        <Bar dataKey="Config" stackId="loc" fill={CHART_GRAY} radius={[3, 3, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

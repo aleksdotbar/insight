@@ -482,9 +482,9 @@ export function transformLocTrend(
 ): LocDataPoint[] {
   return rows.map((r) => ({
     label: formatDateLabel(r.date_bucket, period),
-    aiLoc: r.ai_loc,
     codeLoc: r.code_loc,
     specLines: r.spec_lines,
+    configLoc: r.config_loc,
   }));
 }
 
