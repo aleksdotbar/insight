@@ -10,9 +10,8 @@ import type { DeptCohorts, PeerStats } from "@/lib/peers";
 import type { CatalogMetric } from "@/api/catalog-client";
 import type { BulletMetric, PeriodValue, TeamMember } from "@/types/insight";
 
-// Catalog stub: every metric resolves as higher-is-better with unit "tasks",
-// matching the bullet unit below so `statsToDisplayUnit` does no scaling. The
-// rollup logic is what's under test, not the catalog wiring.
+// Catalog stub: every metric resolves as higher-is-better with unit "tasks".
+// The rollup logic is what's under test, not the catalog wiring.
 function cat(): CatalogMetric {
   return {
     id: "id",

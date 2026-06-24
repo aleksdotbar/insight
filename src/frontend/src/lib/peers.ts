@@ -102,30 +102,6 @@ export function peerStatsFor(values: number[]): PeerStats | null {
   }
 }
 
-/**
- * Convert raw-unit dept stats to the unit a bullet displays in.
- * `transformBulletMetrics` auto-scales hour bullets to days (÷24, 1dp) when
- * the range crosses 48h, so a bullet's `value`/`unit` can be in days while
- * the dept distribution stays in the catalog's raw hours — comparing those
- * directly would misclassify every hour-scaled metric.
- */
-export function statsToDisplayUnit(
-  stats: PeerStats,
-  rawUnit: string | null | undefined,
-  displayUnit: string | null | undefined
-): PeerStats {
-  if (rawUnit !== "h" || displayUnit !== "d") return stats
-  const s = (v: number) => Math.round((v / 24) * 10) / 10
-  return {
-    p25: s(stats.p25),
-    p50: s(stats.p50),
-    p75: s(stats.p75),
-    min: s(stats.min),
-    max: s(stats.max),
-    n: stats.n,
-  }
-}
-
 export function peerStatusVsQuartiles(
   value: number,
   stats: Pick<PeerStats, "p25" | "p75">,

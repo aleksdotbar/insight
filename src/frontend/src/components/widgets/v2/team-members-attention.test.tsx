@@ -168,7 +168,7 @@ describe("<TeamMembersAttention>", () => {
     ).toBeInTheDocument();
   });
 
-  it("scales raw-hour dept stats to a day-displayed bullet before comparing", async () => {
+  it("compares an hours bullet directly against hours dept stats (no rescaling, #1475)", async () => {
     fetchCatalog.mockResolvedValue(
       buildCatalogResponse([
         {
@@ -179,11 +179,10 @@ describe("<TeamMembersAttention>", () => {
         },
       ]),
     );
-    // Alice's meeting time was auto-scaled to days by the bullet transform
-    // (8 d = 192 h). Her department's distribution is in raw hours
-    // (p75 = 150 h = 6.3 d). Compared in the same unit she is above p75
-    // (lower = better ⇒ bottom ⇒ counted); compared unscaled (8 < p25 = 50)
-    // she would wrongly read as top.
+    // meeting_hours is an hours metric — the FE never rescales it to days, so
+    // the bullet stays in hours (192 h) and the department distribution is in
+    // the same unit (p75 = 150 h). Alice sits above p75 (lower = better ⇒
+    // bottom ⇒ counted). Display unit always matches the catalog unit.
     const bulletsByPerson = new Map<string, BulletMetric[]>([
       [
         "alice@example.com",
@@ -191,8 +190,8 @@ describe("<TeamMembersAttention>", () => {
           makeBullet({
             section: "collaboration",
             metric_key: "meeting_hours",
-            value: "8",
-            unit: "d",
+            value: "192",
+            unit: "h",
           }),
         ],
       ],

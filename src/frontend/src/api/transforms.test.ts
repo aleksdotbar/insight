@@ -212,6 +212,33 @@ describe("transformBulletMetrics", () => {
     expect(out[0]!.metric_key).toBe("commits");
     expect(out[0]!.label).toBe("Commits Authored");
   });
+
+  it("keeps hour-unit bullets in hours even when the cohort range exceeds 48h (#1475)", () => {
+    // Regression: the FE used to rescale any 'h' bullet to days (÷24) once the
+    // cohort's range_max crossed 48h, diverging the displayed unit from the
+    // backend catalog (whose thresholds stay in hours). The displayed unit must
+    // always equal the catalog unit, regardless of cohort spread.
+    const catalog = catalogWith([bulletCatalogRow("task_dev_time", { unit: "h" })]);
+    const out = transformBulletMetrics(
+      [
+        rawBullet("task_dev_time", {
+          value: 60,
+          median: 50,
+          range_min: 0,
+          range_max: 96,
+        }),
+      ],
+      "task_delivery",
+      "week",
+      undefined,
+      "ic",
+      catalog,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]!.unit).toBe("h");
+    expect(out[0]!.value).toBe("60");
+    expect(out[0]!.range_max).toBe("96h");
+  });
 });
 
 function icKpiRow(

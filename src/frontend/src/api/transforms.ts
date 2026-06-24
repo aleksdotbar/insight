@@ -158,41 +158,6 @@ function formatBulletValue(raw: number | null | undefined, unit: string): string
   return String(Math.round(raw));
 }
 
-/**
- * Auto-convert hour-scale bullets to days when the chart would otherwise
- * display 3-digit hour values that read as "long opaque numbers". Industry
- * dashboards (Jellyfish, LinearB, Atlassian) flip to days at the same
- * threshold. The whole bullet (value/median/min/max) shares a unit, so we
- * decide once per row using the upper edge of the range.
- *
- * Returns null when no scaling needed; otherwise scaled numbers + new unit.
- */
-function scaleHoursToDays(
-  unit: string,
-  value: number | null | undefined,
-  median: number | null | undefined,
-  rangeMin: number | null | undefined,
-  rangeMax: number | null | undefined,
-): null | {
-  unit: string;
-  value: number | null | undefined;
-  median: number | null | undefined;
-  rangeMin: number | null | undefined;
-  rangeMax: number | null | undefined;
-} {
-  if (unit !== 'h') return null;
-  if (rangeMax == null || !Number.isFinite(rangeMax) || rangeMax < 48) return null;
-  const toDays = (n: number | null | undefined): number | null | undefined =>
-    n == null || !Number.isFinite(n) ? n : Math.round((n / 24) * 10) / 10;
-  return {
-    unit: 'd',
-    value:    toDays(value),
-    median:   toDays(median),
-    rangeMin: toDays(rangeMin),
-    rangeMax: toDays(rangeMax),
-  };
-}
-
 const IC_KPI_PREFIX = 'ic_kpis.';
 
 export function transformIcKpis(
@@ -392,37 +357,18 @@ export function transformBulletMetrics(
       continue;
     }
 
-    // Auto-scale hour-bullets to days when the upper range crosses a few
-    // days (industry default: 48h). Keeps display readable without changing
-    // the underlying metric semantics or thresholds.
-    const scaled = scaleHoursToDays(
-      effectiveUnit,
-      r.value,
-      r.median,
-      rangeMin,
-      rangeMax,
-    );
-    const dispUnit = scaled?.unit ?? effectiveUnit;
-    const dispVal = scaled?.value ?? r.value;
-    const dispMin = scaled?.rangeMin ?? rangeMin;
-    const dispMax = scaled?.rangeMax ?? rangeMax;
-    const median = scaled?.median ?? r.median;
+    const median = r.median;
     const medianFormatted =
-      median != null ? formatRangeStr(median, dispUnit) : '—';
+      median != null ? formatRangeStr(median, effectiveUnit) : '—';
 
-    // Peer cohort for this row, in the SAME display units as the bar
-    // (p25/p75 scaled like the median; min/max = the bar's range). Set only
-    // when the backend returned a real cohort (n > 0 and quartiles present),
-    // so coloring + the drilldown strip read the same cohort that drew the
-    // bar. p50 = the (scaled) median; min/max = dispMin/dispMax.
-    const peerScale = (v: number | null | undefined): number | null =>
-      v == null || !Number.isFinite(v)
-        ? null
-        : scaled
-          ? Math.round((v / 24) * 10) / 10
-          : v;
-    const peerP25 = peerScale(r.p25);
-    const peerP75 = peerScale(r.p75);
+    // Peer cohort for this row, in the catalog unit the bar is drawn in — the
+    // display unit always equals the catalog unit (the FE never rescales the
+    // metric's unit from its cohort spread; see #1475). Set only when the
+    // backend returned a real cohort (n > 0 and quartiles present), so coloring
+    // + the drilldown strip read the same cohort that drew the bar. p50 = the
+    // median; min/max = the bar's range.
+    const peerP25 = r.p25 != null && Number.isFinite(r.p25) ? r.p25 : null;
+    const peerP75 = r.p75 != null && Number.isFinite(r.p75) ? r.p75 : null;
     const peer: PeerStats | undefined =
       r.n != null &&
       r.n > 0 &&
@@ -434,8 +380,8 @@ export function transformBulletMetrics(
             p25: peerP25,
             p50: median,
             p75: peerP75,
-            min: dispMin,
-            max: dispMax,
+            min: rangeMin,
+            max: rangeMax,
             n: r.n,
           }
         : undefined;
@@ -446,16 +392,16 @@ export function transformBulletMetrics(
       metric_key: r.metric_key,
       label,
       sublabel,
-      value: formatBulletValue(dispVal, dispUnit),
-      unit: dispUnit,
-      range_min: formatRangeStr(dispMin, dispUnit),
-      range_max: formatRangeStr(dispMax, dispUnit),
-      median: median != null ? formatBulletValue(median, dispUnit) : '—',
+      value: formatBulletValue(r.value, effectiveUnit),
+      unit: effectiveUnit,
+      range_min: formatRangeStr(rangeMin, effectiveUnit),
+      range_max: formatRangeStr(rangeMax, effectiveUnit),
+      median: median != null ? formatBulletValue(median, effectiveUnit) : '—',
       median_label: median != null ? `Median: ${medianFormatted}` : '',
       bar_left_pct: 0,
-      bar_width_pct: pctInRange(dispVal, dispMin, dispMax),
+      bar_width_pct: pctInRange(r.value, rangeMin, rangeMax),
       median_left_pct:
-        median != null ? pctInRange(median, dispMin, dispMax) : 0,
+        median != null ? pctInRange(median, rangeMin, rangeMax) : 0,
       ...(peer ? { peer } : {}),
       // schema_status='error' suppresses threshold-based coloring per DESIGN
       // §3.3: bar dimensions render normally but the row is flagged so

@@ -27,7 +27,6 @@ import {
   PEER_LABEL,
   PEER_TEXT,
   peerStatusVsQuartiles,
-  statsToDisplayUnit,
   type DeptCohorts,
   type DeptStatsMap,
   type FocusMode,
@@ -234,8 +233,8 @@ function deptBulletStatus(
   if (!raw) return "neutral";
   const m = byMetricKey(bulletCatalogKey(b));
   if (!m) return "neutral";
-  const stats = statsToDisplayUnit(raw, m.unit, b.unit);
-  return peerStatusVsQuartiles(value, stats, m.higher_is_better);
+  // Cohort and bullet share the catalog unit (no FE rescaling) → compare raw.
+  return peerStatusVsQuartiles(value, raw, m.higher_is_better);
 }
 
 type SortKey = "name" | "issues" | string;
@@ -299,25 +298,17 @@ export function MembersHeatmap({
           m.org_unit_id,
           metricKeyForColumn(col),
         );
-        const stats =
-          rawStats && sourceBullet
-            ? statsToDisplayUnit(
-                rawStats,
-                byMetricKey(bulletCatalogKey(sourceBullet))?.unit,
-                sourceBullet.unit,
-              )
-            : rawStats;
         const colSchemaError = sourceBullet?.schema_error === true;
         const status: PeerStatusWithNeutral =
-          !colSchemaError && value !== null && stats
-            ? peerStatusVsQuartiles(value, stats, col.higher_is_better)
+          !colSchemaError && value !== null && rawStats
+            ? peerStatusVsQuartiles(value, rawStats, col.higher_is_better)
             : "neutral";
         return {
           col,
           value,
           previous,
           status,
-          median: stats?.p50 ?? null,
+          median: rawStats?.p50 ?? null,
           unit: sourceBullet?.unit ?? col.unit,
         };
       });
@@ -334,19 +325,15 @@ export function MembersHeatmap({
             );
             const catalogRow = byMetricKey(bulletCatalogKey(b));
             const higherIsBetter = catalogRow?.higher_is_better ?? true;
-            const stats =
-              rawStats && catalogRow
-                ? statsToDisplayUnit(rawStats, catalogRow.unit, b.unit)
-                : rawStats;
             let gap = 0;
             if (
               !b.schema_error &&
               catalogRow &&
-              stats &&
+              rawStats &&
               Number.isFinite(value) &&
-              Math.abs(stats.p50) > 1e-9
+              Math.abs(rawStats.p50) > 1e-9
             ) {
-              const raw = (value - stats.p50) / Math.abs(stats.p50);
+              const raw = (value - rawStats.p50) / Math.abs(rawStats.p50);
               gap = higherIsBetter ? raw : -raw;
             }
             return {
