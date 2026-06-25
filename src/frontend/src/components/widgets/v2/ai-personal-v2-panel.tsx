@@ -35,6 +35,7 @@ import {
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
 import { STATUS_SURFACE_CLASS } from "@/lib/status";
+import { swatchPalette } from "@/lib/swatch-palette";
 import { cn } from "@/lib/utils";
 import {
   useIcAiPeerCounters,
@@ -58,20 +59,8 @@ const TOOL_LABELS: Record<string, string> = {
   windsurf: "Windsurf",
 };
 
-const TOOL_COLORS: Record<string, string> = {
-  cursor: "hsl(214 82% 56%)",
-  claude_code: "hsl(270 70% 62%)",
-  codex: "hsl(158 64% 40%)",
-  copilot: "hsl(199 72% 42%)",
-  windsurf: "hsl(28 84% 52%)",
-};
-
 function toolLabel(tool: string): string {
   return TOOL_LABELS[tool] ?? tool;
-}
-
-function toolColor(tool: string, index: number): string {
-  return TOOL_COLORS[tool] ?? `var(--chart-${(index % 5) + 1})`;
 }
 
 function num(v: number | null | undefined): number {
@@ -188,11 +177,14 @@ function trendData(
   );
 }
 
-function chartConfig(tools: string[]): ChartConfig {
+function chartConfig(
+  tools: string[],
+  colors: Record<string, string>
+): ChartConfig {
   return Object.fromEntries(
-    tools.map((tool, index) => [
+    tools.map((tool) => [
       tool,
-      { label: toolLabel(tool), color: toolColor(tool, index) },
+      { label: toolLabel(tool), color: colors[tool] },
     ])
   );
 }
@@ -332,6 +324,7 @@ function formatStat(
 
 interface DailyAcceptedLinesChartProps {
   tools: string[];
+  colors: Record<string, string>;
   data: AiAcceptedTrendPoint[];
   grain: TrendGrain;
   isPending?: boolean;
@@ -341,6 +334,7 @@ interface DailyAcceptedLinesChartProps {
 
 function DailyAcceptedLinesChart({
   tools,
+  colors,
   data,
   grain,
   isPending,
@@ -383,7 +377,7 @@ function DailyAcceptedLinesChart({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig(tools)} className="h-56 w-full">
+        <ChartContainer config={chartConfig(tools, colors)} className="h-56 w-full">
           <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
@@ -426,6 +420,7 @@ function DailyAcceptedLinesChart({
 
 interface AcceptedLinesShareChartProps {
   rows: { label: string; value: number; tool: string }[];
+  colors: Record<string, string>;
   isPending?: boolean;
   isError?: boolean;
   onRetry?: () => void;
@@ -433,6 +428,7 @@ interface AcceptedLinesShareChartProps {
 
 function AcceptedLinesShareChart({
   rows,
+  colors,
   isPending,
   isError,
   onRetry,
@@ -469,15 +465,16 @@ function AcceptedLinesShareChart({
       </CardHeader>
       <CardContent>
         <div className="flex h-24 w-full overflow-hidden rounded-md bg-muted md:h-28">
-          {rows.map((row, index) => {
+          {rows.map((row) => {
             const pct = total > 0 ? (row.value / total) * 100 : 0;
             return (
               <div
                 key={row.tool}
-                className="min-w-0 border-r-2 border-background p-3 text-white last:border-r-0"
+                className="min-w-0 border-r-2 border-background p-3 last:border-r-0"
                 style={{
                   width: `${pct}%`,
-                  backgroundColor: toolColor(row.tool, index),
+                  backgroundColor: colors[row.tool],
+                  color: "var(--swatch-fg)",
                 }}
                 title={`${row.label}: ${row.value.toLocaleString()} lines`}
               >
@@ -874,6 +871,7 @@ export function AiPersonalV2Panel({ personId, range }: AiPersonalV2PanelProps) {
   const summary = summaryQ.data ?? [];
   const trend = trendQ.data ?? [];
   const tools = toolsByAcceptedLines(summary);
+  const colors = swatchPalette(tools);
   const acceptedShareRows = summary
     .filter((row) => num(row.accepted_lines_added) > 0)
     .sort((a, b) => num(b.accepted_lines_added) - num(a.accepted_lines_added))
@@ -887,12 +885,14 @@ export function AiPersonalV2Panel({ personId, range }: AiPersonalV2PanelProps) {
     <div className="flex flex-col gap-4">
       <AcceptedLinesShareChart
         rows={acceptedShareRows}
+        colors={colors}
         isPending={summaryQ.isPending}
         isError={summaryQ.isError}
         onRetry={() => summaryQ.refetch()}
       />
       <DailyAcceptedLinesChart
         tools={tools}
+        colors={colors}
         data={trendData(trend, fallbackRange, tools)}
         grain={trendGrain(fallbackRange)}
         isPending={trendQ.isPending}
