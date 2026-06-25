@@ -186,9 +186,9 @@ export interface TimeOffNotice {
 }
 export interface LocDataPoint {
   label: string;
-  aiLoc: number;
   codeLoc: number;
-  specLines: number | null;
+  specLines: number;
+  configLoc: number;
 }
 export interface DeliveryDataPoint {
   label: string;
