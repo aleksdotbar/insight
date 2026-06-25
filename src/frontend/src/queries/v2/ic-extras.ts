@@ -80,6 +80,35 @@ interface SectionTrendLongRow {
   value: number;
 }
 
+export interface AiToolSummaryRow {
+  person_id: string;
+  tool: string;
+  accepted_lines_added: number;
+  accepted_lines_removed: number;
+  cost_cents: number | null;
+  active_days: number;
+}
+
+export interface AiToolTrendRow {
+  person_id: string;
+  metric_date: string;
+  tool: string;
+  accepted_lines_added: number;
+}
+
+export interface AiPeerCounterRow {
+  person_id: string;
+  org_unit_id: string | null;
+  metric_key: string;
+  value: number | null;
+  median: number | null;
+  p25: number | null;
+  p75: number | null;
+  n: number | null;
+  range_min: number | null;
+  range_max: number | null;
+}
+
 function pivotLongToWide(
   rows: ReadonlyArray<SectionTrendLongRow | SectionTrendPointRow>,
 ): SectionTrendPointRow[] {
@@ -130,6 +159,63 @@ export function useIcSectionTrend(
         },
       );
       return pivotLongToWide(resp.items);
+    },
+  });
+}
+
+export function useIcAiToolSummary(
+  personId: string,
+  range: DateRange,
+): UseQueryResult<AiToolSummaryRow[]> {
+  return useQuery({
+    queryKey: ["v2", "ic-ai-tool-summary", personId, range.from, range.to],
+    enabled: Boolean(personId && range.from && range.to),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const resp = await queryMetric<AiToolSummaryRow>(
+        METRIC_REGISTRY.V2_IC_AI_TOOL_SUMMARY,
+        range,
+        { $filter: personFilter(personId) },
+      );
+      return resp.items;
+    },
+  });
+}
+
+export function useIcAiToolTrend(
+  personId: string,
+  range: DateRange,
+): UseQueryResult<AiToolTrendRow[]> {
+  return useQuery({
+    queryKey: ["v2", "ic-ai-tool-trend", personId, range.from, range.to],
+    enabled: Boolean(personId && range.from && range.to),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const resp = await queryMetric<AiToolTrendRow>(
+        METRIC_REGISTRY.V2_IC_AI_TOOL_TREND,
+        range,
+        { $filter: personFilter(personId) },
+      );
+      return resp.items;
+    },
+  });
+}
+
+export function useIcAiPeerCounters(
+  personId: string,
+  range: DateRange,
+): UseQueryResult<AiPeerCounterRow[]> {
+  return useQuery({
+    queryKey: ["v2", "ic-ai-peer-counters", personId, range.from, range.to],
+    enabled: Boolean(personId && range.from && range.to),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const resp = await queryMetric<AiPeerCounterRow>(
+        METRIC_REGISTRY.V2_IC_AI_PEER_COUNTERS,
+        range,
+        { $filter: personFilter(personId) },
+      );
+      return resp.items;
     },
   });
 }

@@ -112,7 +112,66 @@ ${colorConfig
   )
 }
 
-const ChartTooltip = RechartsPrimitive.Tooltip
+const BarChart = RechartsPrimitive.BarChart
+const LineChart = RechartsPrimitive.LineChart
+const ComposedChart = RechartsPrimitive.ComposedChart
+const CartesianGrid = RechartsPrimitive.CartesianGrid
+const XAxis = RechartsPrimitive.XAxis
+const YAxis = RechartsPrimitive.YAxis
+const ReferenceLine = RechartsPrimitive.ReferenceLine
+const ResponsiveContainer = RechartsPrimitive.ResponsiveContainer
+const Tooltip = RechartsPrimitive.Tooltip
+const Legend = RechartsPrimitive.Legend
+
+function Bar({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Bar>) {
+  return (
+    <RechartsPrimitive.Bar
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+function Line({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Line>) {
+  return (
+    <RechartsPrimitive.Line
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+function Area({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Area>) {
+  return (
+    <RechartsPrimitive.Area
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+function Treemap({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Treemap>) {
+  return (
+    <RechartsPrimitive.Treemap
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+const ChartTooltip = Tooltip
 
 function ChartTooltipContent({
   active,
@@ -268,7 +327,7 @@ function ChartTooltipContent({
   )
 }
 
-const ChartLegend = RechartsPrimitive.Legend
+const ChartLegend = Legend
 
 function ChartLegendContent({
   className,
@@ -362,10 +421,24 @@ function getPayloadConfigFromPayload(
 }
 
 export {
+  Area,
+  Bar,
+  BarChart,
+  CartesianGrid,
   ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
   ChartStyle,
+  ChartTooltip,
+  ChartTooltipContent,
+  ComposedChart,
+  Legend,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  Treemap,
+  XAxis,
+  YAxis,
 }

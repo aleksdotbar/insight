@@ -1,13 +1,3 @@
-import {
-  Area,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
-
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import {
   Card,
@@ -17,12 +7,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Area,
+  CartesianGrid,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
+  ComposedChart,
+  Line,
+  ReferenceLine,
   type ChartConfig,
+  XAxis,
+  YAxis,
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 

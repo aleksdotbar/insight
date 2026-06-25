@@ -1,5 +1,3 @@
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import {
   Card,
@@ -9,12 +7,17 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
+  XAxis,
+  YAxis,
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LocDataPoint } from "@/types/insight";

@@ -309,8 +309,10 @@ export function transformBulletMetrics(
     const baseUnit = catalogRow.unit ?? '';
     const isMemberScale = catalogRow.is_member_scale;
     const higherIsBetter = catalogRow.higher_is_better;
-    const goodThr = catalogRow.thresholds.good;
-    const warnThr = catalogRow.thresholds.warn;
+    const thresholds = catalogRow.thresholds;
+    if (!thresholds) continue;
+    const goodThr = thresholds.good;
+    const warnThr = thresholds.warn;
     const isSchemaError = catalogRow.schema_status === 'error';
 
     // Member-scale metrics use team headcount as the denominator. Unit

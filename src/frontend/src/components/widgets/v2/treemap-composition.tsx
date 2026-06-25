@@ -1,5 +1,3 @@
-import { Treemap } from "recharts";
-
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import {
   Card,
@@ -12,6 +10,7 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
+  Treemap,
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";

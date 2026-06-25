@@ -8,7 +8,7 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from "recharts";
+} from "@/components/ui/chart";
 
 import type { CrmFlowPoint } from "@/types/insight";
 

@@ -75,6 +75,7 @@ export type UseCatalogResult = {
    * prefer `byId`.
    */
   byMetricKey: (metricKey: string) => CatalogMetric | undefined;
+  refetch: () => void;
 };
 
 /**
@@ -145,5 +146,8 @@ export function useCatalog(args: CatalogRequest = {}): UseCatalogResult {
     isError: query.isError,
     byId,
     byMetricKey,
+    refetch: () => {
+      void query.refetch();
+    },
   };
 }
