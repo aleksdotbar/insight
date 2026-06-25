@@ -126,9 +126,7 @@ export function PeriodSelectorBar({
                       side="bottom"
                       className="max-w-xs text-xs leading-relaxed"
                     >
-                      All dates here are bucketed by UTC midnight. An event at,
-                      say, 22:30 your local time may show up on a different
-                      calendar day than what your phone says.
+                      All dates here are bucketed by UTC midnight.
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
