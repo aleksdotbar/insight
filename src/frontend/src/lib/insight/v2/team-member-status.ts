@@ -1,7 +1,6 @@
 import { bulletCatalogKey, type CatalogByKey } from "@/lib/insight/v2/peer-status";
 import {
   peerStatusVsQuartiles,
-  statsToDisplayUnit,
   type DeptCohorts,
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
@@ -34,8 +33,9 @@ export function memberMetricPeerStatus(
   if (!Number.isFinite(value)) return null;
   const catalogRow = byMetricKey(bulletCatalogKey(bullet));
   if (!catalogRow) return null;
-  const stats = statsToDisplayUnit(raw, catalogRow.unit, bullet.unit);
-  return peerStatusVsQuartiles(value, stats, catalogRow.higher_is_better);
+  // Dept cohort and bullet value share the catalog unit (the FE never
+  // rescales a metric's unit), so compare the raw cohort stats directly.
+  return peerStatusVsQuartiles(value, raw, catalogRow.higher_is_better);
 }
 
 /**
