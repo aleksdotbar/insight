@@ -45,12 +45,16 @@ export function KpiTile({ kpi, onClick }: KpiTileProps) {
     ? catalogRow.source_tags.join(", ")
     : null;
   const isSchemaError = catalogRow?.schema_status === "error";
-  const hasValue = kpi.raw_value !== null;
+  const fmt = catalogRow?.format;
+  const isCountMetric =
+    catalogRow !== undefined && fmt !== "percent" && fmt !== "hours";
+  const rawValue = kpi.raw_value ?? (isCountMetric ? 0 : null);
+  const hasValue = rawValue !== null;
   // Department peer median folded onto the KPI row by the IC_KPIS query_ref.
   const peerMedian = kpi.peer_median ?? null;
   const hasMedian =
     peerMedian != null && Number.isFinite(peerMedian) && peerMedian > 0;
-  const value = kpi.value ?? "—";
+  const value = kpi.value ?? (isCountMetric ? formatKpiValue(0, fmt) : "—");
   // Units are implied by the card label, so we drop them — except `%`, which
   // reads as part of the number and renders at the value's size.
   const isPercent = kpi.unit === "%";
@@ -60,7 +64,7 @@ export function KpiTile({ kpi, onClick }: KpiTileProps) {
   const valueStatus = applyFocusStatus(
     !isSchemaError && catalogRow && hasValue && hasMedian && peerMedian != null
       ? peerStatusVsMedian(
-          kpi.raw_value as number,
+          rawValue as number,
           peerMedian,
           catalogRow.higher_is_better
         )
@@ -79,7 +83,6 @@ export function KpiTile({ kpi, onClick }: KpiTileProps) {
 
   const medianLabel =
     hasMedian &&
-    hasValue &&
     catalogRow !== undefined &&
     !isSchemaError &&
     peerMedian != null

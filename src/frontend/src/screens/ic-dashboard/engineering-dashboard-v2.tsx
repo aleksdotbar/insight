@@ -20,7 +20,7 @@ import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
 import { cn } from "@/lib/utils";
 import { useIcDashboardData } from "@/queries/ic-dashboard";
-import type { BulletMetric, IdentityPerson } from "@/types/insight";
+import type { BulletMetric, IcKpi, IdentityPerson } from "@/types/insight";
 
 const IC_KPI_PREFIX = "ic_kpis.";
 
@@ -83,9 +83,27 @@ export function EngineeringDashboardV2({
   const role = person?.job_title;
 
   const kpis = orderIcKpis(data?.kpis ?? []);
+  const kpiTiles: IcKpi[] =
+    kpis.length > 0
+      ? kpis
+      : kpiPlaceholders.map((d) => ({
+          period,
+          metric_key: d.metric_key,
+          label: d.label,
+          value: null,
+          raw_value: null,
+          unit: "",
+          sublabel: "",
+          delta: "",
+          delta_type: "neutral",
+          peer_median: null,
+          peer_n: null,
+        }));
   const peerCount = Math.max(0, ...kpis.map((k) => k.peer_n ?? 0));
   const hasKpiData = kpis.some((k) => k.raw_value !== null);
-  const kpiTileCount = data?.errors.kpis ? kpiPlaceholders.length : kpis.length;
+  const kpiTileCount = data?.errors.kpis
+    ? kpiPlaceholders.length
+    : kpiTiles.length;
   const hasSectionData = Object.values(rowsBySection).some((rows) =>
     rows.some(hasBulletValue)
   );
@@ -162,7 +180,7 @@ export function EngineeringDashboardV2({
                           label={d.label}
                         />
                       ))
-                    : kpis.map((kpi) => (
+                    : kpiTiles.map((kpi) => (
                         <KpiTile
                           key={kpi.metric_key}
                           kpi={kpi}
