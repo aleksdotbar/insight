@@ -1,6 +1,6 @@
 import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
 
-import { queryMetric } from "@/api/analytics-client";
+import { queryMetric, queryMetricRaw } from "@/api/analytics-client";
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import { type DateRange, toISODate } from "@/api/period-to-date-range";
@@ -8,17 +8,20 @@ import {
   transformCrmFlow,
   transformCrmBullets,
   transformCrmKpis,
+  transformCrmPipeline,
 } from "@/api/transforms";
 import { useCatalog } from "@/api/use-catalog";
 import type {
   RawBulletAggregateRow,
   RawCrmFlowRow,
   RawCrmKpisRow,
+  RawCrmPipelineRow,
 } from "@/api/raw-types";
 import type {
   BulletMetric,
   CrmFlowPoint,
   CrmKpis,
+  CrmPipeline,
   PeriodValue,
 } from "@/types/insight";
 
@@ -121,6 +124,27 @@ export function useSalesFlow(
   });
 }
 
+/**
+ * Open-deal pipeline snapshot. `CRM_PIPELINE_NOW` is a date-less stock
+ * metric (`insight.crm_pipeline_now` has no `metric_date` column), so we
+ * query it WITHOUT a period via `queryMetricRaw` — `queryMetric` would AND
+ * in a `metric_date` filter the view can't satisfy.
+ */
+export function useSalesPipelineNow(
+  personId: string,
+): UseQueryResult<CrmPipeline | null> {
+  return useQuery({
+    queryKey: ["crm", "pipeline-now", personId],
+    queryFn: async () => {
+      const resp = await queryMetricRaw<RawCrmPipelineRow>(
+        METRIC_REGISTRY.CRM_PIPELINE_NOW,
+        { $filter: personScope(personId) },
+      );
+      return transformCrmPipeline(resp.items[0] ?? null);
+    },
+  });
+}
+
 export type SalesBulletKind = "quality" | "activity";
 
 export function useSalesBulletSection(
@@ -170,6 +194,7 @@ export function useSalesDashboardQueries(
 ): {
   kpisQ: UseQueryResult<CrmKpis | null>;
   prevKpisQ: UseQueryResult<CrmKpis | null>;
+  pipelineQ: UseQueryResult<CrmPipeline | null>;
   flowQ: UseQueryResult<CrmFlowPoint[]>;
   qualityQ: UseQueryResult<BulletMetric[]>;
   activityQ: UseQueryResult<BulletMetric[]>;
@@ -200,6 +225,18 @@ export function useSalesDashboardQueries(
             { $filter: filter },
           );
           return transformCrmKpis(resp.items[0] ?? null);
+        },
+      },
+      {
+        // Date-less stock metric — no period in the query key, no period
+        // filter on the wire (see `useSalesPipelineNow`).
+        queryKey: ["crm", "pipeline-now", personId],
+        queryFn: async () => {
+          const resp = await queryMetricRaw<RawCrmPipelineRow>(
+            METRIC_REGISTRY.CRM_PIPELINE_NOW,
+            { $filter: filter },
+          );
+          return transformCrmPipeline(resp.items[0] ?? null);
         },
       },
       {
@@ -252,8 +289,9 @@ export function useSalesDashboardQueries(
   return {
     kpisQ: results[0] as UseQueryResult<CrmKpis | null>,
     prevKpisQ: results[1] as UseQueryResult<CrmKpis | null>,
-    flowQ: results[2] as UseQueryResult<CrmFlowPoint[]>,
-    qualityQ: results[3] as UseQueryResult<BulletMetric[]>,
-    activityQ: results[4] as UseQueryResult<BulletMetric[]>,
+    pipelineQ: results[2] as UseQueryResult<CrmPipeline | null>,
+    flowQ: results[3] as UseQueryResult<CrmFlowPoint[]>,
+    qualityQ: results[4] as UseQueryResult<BulletMetric[]>,
+    activityQ: results[5] as UseQueryResult<BulletMetric[]>,
   };
 }

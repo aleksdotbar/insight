@@ -2,6 +2,7 @@ import type {
   RawBulletAggregateRow,
   RawCrmFlowRow,
   RawCrmKpisRow,
+  RawCrmPipelineRow,
   RawDeliveryTrendRow,
   RawIcAggregateRow,
   RawLocTrendRow,
@@ -655,8 +656,6 @@ export function mockCrmKpis(
   const won = Math.min(closed, Math.max(1, Math.round(closed * (0.55 + ((seed >> 4) % 30) / 100))));
   const avgDealSize = 25_000 + ((seed >> 2) % 40_000);
   const valueClosed = won * avgDealSize;
-  const pipelineCount = 14 + (seed % 18);
-  const pipelineValue = pipelineCount * (avgDealSize * 0.9);
   return {
     person_id: personId,
     deals_opened: opened,
@@ -664,6 +663,21 @@ export function mockCrmKpis(
     deals_won: won,
     deals_value_closed: valueClosed,
     comms_count: 80 + (seed % 220),
+  };
+}
+
+/**
+ * `CRM_PIPELINE_NOW` (…0028) — date-less open-deal snapshot. A separate
+ * metric from `mockCrmKpis`: matches the real wire contract where
+ * `pipeline_*` come from their own query, not the KPIs row.
+ */
+export function mockCrmPipeline(personId: string): RawCrmPipelineRow {
+  const seed = hashStr(personId);
+  const avgDealSize = 25_000 + ((seed >> 2) % 40_000);
+  const pipelineCount = 14 + (seed % 18);
+  const pipelineValue = pipelineCount * (avgDealSize * 0.9);
+  return {
+    person_id: personId,
     pipeline_count: pipelineCount,
     pipeline_value: Math.round(pipelineValue),
   };

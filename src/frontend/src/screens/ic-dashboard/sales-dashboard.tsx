@@ -17,7 +17,7 @@ import {
   formatWinRate,
 } from "@/lib/format";
 import { useSalesDashboardQueries } from "@/queries/sales-dashboard";
-import type { CrmKpis, IdentityPerson } from "@/types/insight";
+import type { CrmKpis, CrmPipeline, IdentityPerson } from "@/types/insight";
 
 export interface SalesDashboardProps {
   personId: string;
@@ -26,6 +26,7 @@ export interface SalesDashboardProps {
 
 function heroKpiRows(
   kpis: CrmKpis,
+  pipeline: CrmPipeline | null,
   t: (key: string, opts?: Record<string, unknown>) => string,
 ): KpiStripKpi[] {
   return [
@@ -56,9 +57,9 @@ function heroKpiRows(
     {
       metric_key: "pipeline_value",
       label: t("sales_dashboard.hero.pipeline_now"),
-      value: formatCurrencyCompact(kpis.pipelineValue),
+      value: formatCurrencyCompact(pipeline?.pipelineValue ?? 0),
       sublabel: t("sales_dashboard.hero.pipeline_sublabel", {
-        count: formatNumber(kpis.pipelineCount, ""),
+        count: formatNumber(pipeline?.pipelineCount ?? 0, ""),
       }),
     },
   ];
@@ -71,7 +72,7 @@ export function SalesDashboard({
   const { t } = useTranslation();
   const { period, customRange, dateRange, setPeriod, setCustomRange } =
     usePeriod();
-  const { kpisQ, prevKpisQ, flowQ, qualityQ, activityQ } =
+  const { kpisQ, prevKpisQ, pipelineQ, flowQ, qualityQ, activityQ } =
     useSalesDashboardQueries(personId, period, dateRange);
 
   // Dispatcher (`<IcDashboardScreen>`) owns the identity fetch and forwards
@@ -79,6 +80,7 @@ export function SalesDashboard({
   const person = personProp ?? null;
   const kpis = kpisQ.data ?? null;
   const prevKpis = prevKpisQ.data ?? null;
+  const pipeline = pipelineQ.data ?? null;
   const flow = flowQ.data ?? [];
   const quality = qualityQ.data ?? [];
   const activity = activityQ.data ?? [];
@@ -118,7 +120,7 @@ export function SalesDashboard({
             />
           </div>
         ) : kpis ? (
-          <KpiStrip kpis={heroKpiRows(kpis, t)} plain />
+          <KpiStrip kpis={heroKpiRows(kpis, pipeline, t)} plain />
         ) : (
           <div className="p-4">
             <ComingSoon variant="row" state="empty" />

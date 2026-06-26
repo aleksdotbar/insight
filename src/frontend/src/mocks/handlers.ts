@@ -7,6 +7,7 @@ import {
   mockCrmBulletSection,
   mockCrmFlowSeries,
   mockCrmKpis,
+  mockCrmPipeline,
   mockDeliveryTrendSeries,
   mockDeptDistRows,
   mockIcAggregateRow,
@@ -272,6 +273,10 @@ const metricHandlers: Record<string, Handler> = {
   [METRIC_REGISTRY.CRM_KPIS]: (body) => {
     const { personId } = parseFilter(body);
     return wrap([mockCrmKpis(personId ?? defaultPersonId)]);
+  },
+  [METRIC_REGISTRY.CRM_PIPELINE_NOW]: (body) => {
+    const { personId } = parseFilter(body);
+    return wrap([mockCrmPipeline(personId ?? defaultPersonId)]);
   },
   [METRIC_REGISTRY.CRM_CHART_FLOW]: (body) => {
     const { personId } = parseFilter(body);
