@@ -1,56 +1,59 @@
-import { act, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n";
 import { authStore } from "@/auth/auth-store";
 import { OidcManager } from "@/auth/oidc-manager";
 import { AuthGate } from "./auth-gate";
 
+function renderGate() {
+  return render(
+    <AuthGate>
+      <div>protected</div>
+    </AuthGate>,
+  );
+}
+
 describe("<AuthGate>", () => {
-  let signIn: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    signIn = vi.spyOn(OidcManager, "signIn").mockResolvedValue(undefined);
-    authStore.reset();
-  });
-
   afterEach(() => {
     authStore.reset();
     vi.restoreAllMocks();
   });
 
-  it("renders children while authenticated", () => {
+  it("renders children when authenticated", () => {
     act(() => authStore.setStatus("authenticated"));
-    render(
-      <AuthGate>
-        <div>protected</div>
-      </AuthGate>,
-    );
+    renderGate();
     expect(screen.getByText("protected")).toBeInTheDocument();
-    expect(signIn).not.toHaveBeenCalled();
   });
 
-  it("swaps to the redirect overlay and signs in once on terminal failure", () => {
+  it("renders children when auth is disabled", () => {
+    act(() => authStore.setStatus("disabled", "dev_bypass"));
+    renderGate();
+    expect(screen.getByText("protected")).toBeInTheDocument();
+  });
+
+  it("renders children while renewing (transient, non-terminal)", () => {
+    act(() => authStore.setStatus("renewing"));
+    renderGate();
+    expect(screen.getByText("protected")).toBeInTheDocument();
+  });
+
+  it("shows the redirect overlay instead of children when reauth is required", () => {
     act(() => authStore.setStatus("authenticated"));
-    render(
-      <AuthGate>
-        <div>protected</div>
-      </AuthGate>,
-    );
-    act(() => authStore.setStatus("unauthorized", "refresh_failed"));
+    renderGate();
+    act(() => authStore.setStatus("reauth_required", "refresh_failed"));
     expect(screen.queryByText("protected")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toBeInTheDocument();
-    expect(signIn).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores the dev / no-OIDC bypass", () => {
-    render(
-      <AuthGate>
-        <div>protected</div>
-      </AuthGate>,
-    );
-    act(() => authStore.setStatus("unauthorized", "missing_oidc_config"));
-    expect(screen.getByText("protected")).toBeInTheDocument();
-    expect(signIn).not.toHaveBeenCalled();
+  it("offers a retry that re-triggers reauth when the redirect failed", () => {
+    const requireReauth = vi
+      .spyOn(OidcManager, "requireReauth")
+      .mockResolvedValue(undefined);
+    act(() => authStore.setStatus("reauth_failed", "refresh_failed"));
+    renderGate();
+    expect(screen.queryByText("protected")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button"));
+    expect(requireReauth).toHaveBeenCalledTimes(1);
   });
 });

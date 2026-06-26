@@ -25,10 +25,14 @@ export const Route = createRootRoute({
     if (location.pathname === "/callback") return;
     await OidcManager.init();
 
-    if (authStore.getSnapshot().status === "authenticated") {
+    const { status } = authStore.getSnapshot();
+    if (status === "authenticated") {
       await prefetchViewerIdentity();
       return;
     }
+    // No interactive login to perform when OIDC is inactive — let the app
+    // render (dev bypass works; an unconfigured deploy fails closed downstream).
+    if (status === "disabled") return;
 
     await OidcManager.signIn();
   },

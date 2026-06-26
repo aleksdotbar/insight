@@ -44,7 +44,7 @@ export async function fetchWithAuth(
 
   const newToken = await OidcManager.refresh();
   if (!newToken) {
-    authStore.setStatus("unauthorized", "refresh_failed");
+    void OidcManager.requireReauth("refresh_failed");
     return res;
   }
 
@@ -52,7 +52,7 @@ export async function fetchWithAuth(
   injectAuthHeaders(retryHeaders);
   const retryRes = await fetch(input, { ...init, headers: retryHeaders });
   if (retryRes.status === 401) {
-    authStore.setStatus("unauthorized", "token_rejected");
+    void OidcManager.requireReauth("token_rejected");
   }
   return retryRes;
 }
