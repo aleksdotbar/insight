@@ -1,15 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { getDevBearerEmail } = vi.hoisted(() => ({
+  getDevBearerEmail: vi.fn<() => string | null>(),
+}));
+vi.mock("@/auth/use-viewer", () => ({ getDevBearerEmail }));
+
 import { authStore } from "@/auth/auth-store";
 import { OidcManager } from "@/auth/oidc-manager";
 import { fetchWithAuth } from "./fetch-with-auth";
 
 const fetchMock = () => globalThis.fetch as ReturnType<typeof vi.fn>;
 
+function authHeaderOfLastCall(): string | null {
+  const calls = fetchMock().mock.calls;
+  const init = calls[calls.length - 1]?.[1] as RequestInit;
+  return new Headers(init.headers).get("Authorization");
+}
+
 describe("fetchWithAuth", () => {
   beforeEach(() => {
     authStore.reset();
     authStore.setToken("tok");
+    getDevBearerEmail.mockReset();
+    getDevBearerEmail.mockReturnValue(null);
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -60,5 +73,32 @@ describe("fetchWithAuth", () => {
     const res = await fetchWithAuth("/x");
     expect(res.status).toBe(401);
     expect(requireReauth).toHaveBeenCalledWith("token_rejected");
+  });
+
+  it("mints a dev bearer only for the disabled + dev_bypass state", async () => {
+    authStore.reset();
+    authStore.setStatus("disabled", "dev_bypass");
+    getDevBearerEmail.mockReturnValue("dev@example.com");
+    fetchMock().mockResolvedValue(new Response(null, { status: 200 }));
+    await fetchWithAuth("/x");
+    expect(authHeaderOfLastCall()).toMatch(/^Bearer \S+\.\S+\./);
+  });
+
+  it("never mints an unsigned bearer while renewing under OIDC", async () => {
+    authStore.reset();
+    authStore.setStatus("renewing");
+    getDevBearerEmail.mockReturnValue("dev@example.com");
+    fetchMock().mockResolvedValue(new Response(null, { status: 200 }));
+    await fetchWithAuth("/x");
+    expect(authHeaderOfLastCall()).toBeNull();
+  });
+
+  it("fails closed on an unconfigured deploy (missing_oidc_config)", async () => {
+    authStore.reset();
+    authStore.setStatus("disabled", "missing_oidc_config");
+    getDevBearerEmail.mockReturnValue("dev@example.com");
+    fetchMock().mockResolvedValue(new Response(null, { status: 200 }));
+    await fetchWithAuth("/x");
+    expect(authHeaderOfLastCall()).toBeNull();
   });
 });

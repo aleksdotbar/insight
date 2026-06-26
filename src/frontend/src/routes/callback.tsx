@@ -65,7 +65,7 @@ function CallbackScreen() {
           ? t("auth.callback.missing_code")
           : t("auth.callback.exchange_failed")
       }
-      onRetry={() => void OidcManager.signIn()}
+      onRetry={() => void OidcManager.signIn().catch(() => undefined)}
     />
   );
 }

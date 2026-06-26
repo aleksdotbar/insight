@@ -20,7 +20,11 @@ export type OidcSigninState = { returnUrl?: string };
  *   renewing       — token gone/expired, silent renew may still recover it.
  *                    Transient and non-terminal: the app keeps rendering.
  *   reauth_required— renewal is no longer possible; an interactive redirect is
- *                    needed. Whoever sets this also kicks `signIn()`.
+ *                    needed. The setter is responsible for kicking the
+ *                    redirect: `requireReauth()` does so directly, while
+ *                    `doInit()` sets it for the first-load case where the root
+ *                    `beforeLoad` performs the redirect. Don't assume the
+ *                    component tree triggers it.
  *   reauth_failed  — the redirect itself could not start; recoverable via retry.
  */
 export type AuthStatus =

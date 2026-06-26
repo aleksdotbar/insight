@@ -1,17 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { signinRedirect, signinRedirectCallback } = vi.hoisted(() => ({
+const { signinRedirect, signinRedirectCallback, handlers } = vi.hoisted(() => ({
   signinRedirect: vi.fn(),
   signinRedirectCallback: vi.fn(),
+  handlers: {} as {
+    userUnloaded?: () => void;
+    accessTokenExpired?: () => void;
+    silentRenewError?: () => void;
+  },
 }));
 
 vi.mock("oidc-client-ts", () => {
   class UserManager {
     events = {
       addUserLoaded: vi.fn(),
-      addUserUnloaded: vi.fn(),
-      addAccessTokenExpired: vi.fn(),
-      addSilentRenewError: vi.fn(),
+      addUserUnloaded: (fn: () => void) => {
+        handlers.userUnloaded = fn;
+      },
+      addAccessTokenExpired: (fn: () => void) => {
+        handlers.accessTokenExpired = fn;
+      },
+      addSilentRenewError: (fn: () => void) => {
+        handlers.silentRenewError = fn;
+      },
     };
     getUser = vi.fn().mockResolvedValue(null);
     signinRedirect = signinRedirect;
@@ -151,5 +162,31 @@ describe("OidcManager.requireReauth", () => {
     await OidcManager.requireReauth("refresh_failed");
     expect(signinRedirect).not.toHaveBeenCalled();
     expect(authStore.getSnapshot().status).toBe("disabled");
+  });
+});
+
+describe("OidcManager renewal escalation", () => {
+  it("marks the session renewing when the access token expires", async () => {
+    const { OidcManager } = await import("./oidc-manager");
+    const { authStore } = await import("./auth-store");
+    await OidcManager.init();
+    authStore.setStatus("authenticated");
+    authStore.setToken("tok");
+    handlers.accessTokenExpired?.();
+    expect(authStore.getSnapshot().status).toBe("renewing");
+    expect(authStore.getSnapshot().token).toBeNull();
+  });
+
+  it("escalates to reauth_required when silent renew gives up", async () => {
+    const { OidcManager } = await import("./oidc-manager");
+    const { authStore } = await import("./auth-store");
+    await OidcManager.init();
+    authStore.setStatus("authenticated");
+    handlers.silentRenewError?.();
+    await vi.waitFor(() => {
+      expect(authStore.getSnapshot().reason).toBe("silent_renew_failed");
+    });
+    expect(authStore.getSnapshot().status).toBe("reauth_required");
+    expect(signinRedirect).toHaveBeenCalledTimes(1);
   });
 });

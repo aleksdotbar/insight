@@ -25,11 +25,14 @@ function devBearer(): string | null {
 }
 
 function injectAuthHeaders(headers: Headers): void {
-  const { status, token, tenantId } = authStore.getSnapshot();
-  // Only fall back to a dev/impersonation bearer when OIDC is inactive. Under
+  const { status, reason, token, tenantId } = authStore.getSnapshot();
+  // Only mint a dev/impersonation bearer for the genuine dev bypass. Under
   // real OIDC the token is briefly null while renewing — never let a URL
-  // `?override=` identity mint an unsigned `alg:none` bearer in that window.
-  const bearer = token ?? (status === "disabled" ? devBearer() : null);
+  // `?override=` identity forge an unsigned `alg:none` bearer there. An
+  // unconfigured prod deploy lands on `disabled`/`missing_oidc_config` and
+  // must fail closed too, hence the explicit `dev_bypass` reason check.
+  const devEligible = status === "disabled" && reason === "dev_bypass";
+  const bearer = token ?? (devEligible ? devBearer() : null);
   if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   if (tenantId) headers.set("X-Tenant-ID", tenantId);
 }
