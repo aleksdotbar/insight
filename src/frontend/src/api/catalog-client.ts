@@ -9,7 +9,7 @@
  *                 format?, higher_is_better, is_member_scale,
  *                 source_tags: string[],
  *                 schema_status, schema_error_code?,
- *                 thresholds?: { good, warn, alert_trigger?, alert_bad?,
+ *                 thresholds: { good, warn, alert_trigger?, alert_bad?,
  *                               resolved_from, bounded_by_lock } }],
  *     links: [{ query_id, catalog_metric_ids: Uuid[] }]
  *   }
@@ -27,11 +27,6 @@ const BASE =
   (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/analytics/v1';
 
 export type SchemaStatus = 'ok' | 'error' | 'unchecked';
-
-export type PeerAnalysisMode =
-  | 'higher_is_better'
-  | 'lower_is_better'
-  | 'reference_only';
 
 export type SchemaErrorCode =
   | 'table_not_found'
@@ -76,12 +71,11 @@ export type CatalogMetric = {
   unit?: string;
   format?: string;
   higher_is_better: boolean;
-  peer_analysis_mode?: PeerAnalysisMode;
   is_member_scale: boolean;
   source_tags: string[];
   schema_status: SchemaStatus;
   schema_error_code?: SchemaErrorCode;
-  thresholds?: ResolvedThresholds;
+  thresholds: ResolvedThresholds;
 };
 
 /**

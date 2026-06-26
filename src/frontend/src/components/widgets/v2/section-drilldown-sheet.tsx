@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Maximize2, Minimize2, XIcon } from "lucide-react";
 
 import { CountersBlock } from "@/components/widgets/v2/counters-block";
-import { AiPersonalV2Panel } from "@/components/widgets/v2/ai-personal-v2-panel";
+import { AiPersonalPanel } from "@/components/widgets/v2/ai-personal-panel";
 import { DistributionStrip } from "@/components/widgets/v2/distribution-strip";
 import { LocStackedBar } from "@/components/widgets/v2/loc-stacked-bar";
 import {
@@ -271,7 +271,7 @@ function DrilldownBody({
         )
       ) : null}
       {isAiAdoption ? (
-        <AiPersonalV2Panel personId={personId} range={range} />
+        <AiPersonalPanel personId={personId} range={range} />
       ) : null}
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
