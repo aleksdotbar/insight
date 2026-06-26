@@ -25,8 +25,11 @@ function devBearer(): string | null {
 }
 
 function injectAuthHeaders(headers: Headers): void {
-  const { token, tenantId } = authStore.getSnapshot();
-  const bearer = token ?? devBearer();
+  const { status, token, tenantId } = authStore.getSnapshot();
+  // Only fall back to a dev/impersonation bearer when OIDC is inactive. Under
+  // real OIDC the token is briefly null while renewing — never let a URL
+  // `?override=` identity mint an unsigned `alg:none` bearer in that window.
+  const bearer = token ?? (status === "disabled" ? devBearer() : null);
   if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   if (tenantId) headers.set("X-Tenant-ID", tenantId);
 }

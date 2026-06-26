@@ -29,19 +29,24 @@ function buildSettings(config: OidcConfig) {
 }
 
 /**
- * Same-origin path validation for the post-callback redirect target.
+ * Same-origin validation for the post-callback redirect target.
  *
  * `window.location.replace(raw)` honors absolute URLs, protocol-relative
- * `//host/path`, and `javascript:` / `data:` schemes — any of which would
- * pivot a freshly minted session to an attacker origin if `state.returnUrl`
- * is tampered with (XSS, malicious extension, shared device, library bug).
- * Restrict to same-origin paths.
+ * `//host/path`, backslash variants (`/\host` — browsers fold `\`→`/`), and
+ * `javascript:` / `data:` schemes — any of which would pivot a freshly minted
+ * session to an attacker origin if `state.returnUrl` is tampered with (XSS,
+ * malicious extension, shared device, library bug). Resolve against our own
+ * origin and only echo back a same-origin path + query + hash.
  */
 function safeReturnUrl(raw: unknown): string {
   if (typeof raw !== "string") return "/";
-  if (!raw.startsWith("/")) return "/";
-  if (raw.startsWith("//")) return "/";
-  return raw;
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return "/";
+  }
 }
 
 function toAuthUser(user: User): AuthUser {
@@ -174,9 +179,14 @@ export const OidcManager = {
     // every `requireReauth` caller fall through to `reauth_failed`). On
     // success the page unloads; on rejection the slot is cleared for a retry.
     if (redirectPromise) return redirectPromise;
-    const state: OidcSigninState = {
-      returnUrl: window.location.pathname + window.location.search,
-    };
+    // Never return the user to /callback — it has no `code` on a fresh visit
+    // and would loop straight back into the failure screen.
+    const path = window.location.pathname;
+    const returnUrl =
+      path === "/callback"
+        ? "/"
+        : path + window.location.search + window.location.hash;
+    const state: OidcSigninState = { returnUrl };
     redirectPromise = userManager.signinRedirect({ state }).finally(() => {
       redirectPromise = null;
     });

@@ -34,7 +34,10 @@ export const Route = createRootRoute({
     // render (dev bypass works; an unconfigured deploy fails closed downstream).
     if (status === "disabled") return;
 
-    await OidcManager.signIn();
+    // requireReauth never rejects: a redirect that can't start lands in
+    // `reauth_failed` and the route still mounts, so AuthGate shows the retry
+    // UI instead of throwing an unhandled error out of beforeLoad.
+    await OidcManager.requireReauth();
   },
   component: RootLayout,
 });

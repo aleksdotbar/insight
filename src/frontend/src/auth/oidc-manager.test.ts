@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { signinRedirect } = vi.hoisted(() => ({ signinRedirect: vi.fn() }));
+const { signinRedirect, signinRedirectCallback } = vi.hoisted(() => ({
+  signinRedirect: vi.fn(),
+  signinRedirectCallback: vi.fn(),
+}));
 
 vi.mock("oidc-client-ts", () => {
   class UserManager {
@@ -12,6 +15,7 @@ vi.mock("oidc-client-ts", () => {
     };
     getUser = vi.fn().mockResolvedValue(null);
     signinRedirect = signinRedirect;
+    signinRedirectCallback = signinRedirectCallback;
   }
   class WebStorageStateStore {}
   return { UserManager, WebStorageStateStore };
@@ -31,6 +35,8 @@ beforeEach(() => {
   vi.resetModules();
   signinRedirect.mockReset();
   signinRedirect.mockResolvedValue(undefined);
+  signinRedirectCallback.mockReset();
+  window.history.pushState({}, "", "/");
   withOidcConfig();
 });
 
@@ -66,6 +72,51 @@ describe("OidcManager.signIn redirect guard", () => {
     await expect(OidcManager.signIn()).rejects.toThrow("redirect_failed");
     await OidcManager.signIn();
     expect(signinRedirect).toHaveBeenCalledTimes(2);
+  });
+
+  it("never returns the user back to /callback", async () => {
+    window.history.pushState({}, "", "/callback?code=abc");
+    const { OidcManager } = await import("./oidc-manager");
+    await OidcManager.signIn();
+    expect(signinRedirect).toHaveBeenCalledWith({ state: { returnUrl: "/" } });
+  });
+
+  it("preserves path, query and hash of the current location", async () => {
+    window.history.pushState({}, "", "/ic/bob?period=month#section");
+    const { OidcManager } = await import("./oidc-manager");
+    await OidcManager.signIn();
+    expect(signinRedirect).toHaveBeenCalledWith({
+      state: { returnUrl: "/ic/bob?period=month#section" },
+    });
+  });
+});
+
+describe("OidcManager.handleCallback return-url safety", () => {
+  function callbackUser(returnUrl: unknown) {
+    return { access_token: "tok", profile: {}, state: { returnUrl } };
+  }
+
+  it("rejects cross-origin and backslash-smuggled targets", async () => {
+    const { OidcManager } = await import("./oidc-manager");
+    for (const evil of [
+      "//evil.com",
+      "/\\evil.com",
+      "https://evil.com/x",
+      "javascript:alert(1)",
+    ]) {
+      signinRedirectCallback.mockResolvedValueOnce(callbackUser(evil));
+      const url = await OidcManager.handleCallback("https://app/callback?code=x");
+      expect(url).toBe("/");
+    }
+  });
+
+  it("keeps a same-origin path with query and hash", async () => {
+    signinRedirectCallback.mockResolvedValue(
+      callbackUser("/ic/bob?period=month#section"),
+    );
+    const { OidcManager } = await import("./oidc-manager");
+    const url = await OidcManager.handleCallback("https://app/callback?code=x");
+    expect(url).toBe("/ic/bob?period=month#section");
   });
 });
 
