@@ -37,7 +37,9 @@ export type PeerStoryInput = {
 
 type PeerStoryEntry = PeerStoryInput & {
   status: PeerStatusWithNeutral;
-  gap: number;
+  gapPct: number | null;
+  gapDelta: number;
+  severity: number;
 };
 
 interface PeerStorySectionProps {
@@ -54,14 +56,18 @@ function storyEntries(entries: PeerStoryInput[]): PeerStoryEntry[] {
       stats && Number.isFinite(entry.value)
         ? peerStatusVsQuartiles(entry.value, stats, entry.higherIsBetter)
         : "neutral";
-    const rawGap =
+    const rawDelta = stats ? entry.value - stats.p50 : 0;
+    const gapDelta = entry.higherIsBetter ? rawDelta : -rawDelta;
+    const gapPct =
       stats && Math.abs(stats.p50) > 1e-9
-        ? (entry.value - stats.p50) / Math.abs(stats.p50)
-        : 0;
+        ? gapDelta / Math.abs(stats.p50)
+        : null;
     return {
       ...entry,
       status,
-      gap: entry.higherIsBetter ? rawGap : -rawGap,
+      gapPct,
+      gapDelta,
+      severity: gapPct == null ? Math.abs(gapDelta) : Math.abs(gapPct),
     };
   });
 }
@@ -97,6 +103,12 @@ function formatGapPct(gap: number): string {
   return `${sign}${Math.round(Math.abs(gap) * 100)}%`;
 }
 
+function formatGap(entry: PeerStoryEntry): string {
+  if (entry.gapPct != null) return formatGapPct(entry.gapPct);
+  const sign = entry.gapDelta >= 0 ? "+" : "-";
+  return `${sign}${formatStat(Math.abs(entry.gapDelta), entry.unit, entry.format)}`;
+}
+
 function outlierText(status: PeerStatusWithNeutral): string {
   return status === "bottom" ? "Bottom 25%" : "Top 25%";
 }
@@ -104,10 +116,10 @@ function outlierText(status: PeerStatusWithNeutral): string {
 function sortedOutliers(entries: PeerStoryEntry[]) {
   const bottom = entries
     .filter((entry) => entry.status === "bottom")
-    .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+    .sort((a, b) => b.severity - a.severity);
   const top = entries
     .filter((entry) => entry.status === "top")
-    .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+    .sort((a, b) => b.severity - a.severity);
   return { bottom, top };
 }
 
@@ -241,7 +253,7 @@ function HeroCard({
             <span className="text-sm tabular-nums text-muted-foreground">
               gap{" "}
               <span className={cn("font-normal", PEER_TEXT[color])}>
-                {formatGapPct(entry.gap)}
+                {formatGap(entry)}
               </span>{" "}
               from {cohortLabel} median{" "}
               <span className="text-foreground">
@@ -330,7 +342,7 @@ function ChipTooltip({
       </span>
       {entry.stats ? (
         <span className="text-background/70">
-          gap {formatGapPct(entry.gap)} · {cohortLabel} median{" "}
+          gap {formatGap(entry)} · {cohortLabel} median{" "}
           {formatStat(entry.stats.p50, entry.unit, entry.format)}
         </span>
       ) : null}
@@ -352,9 +364,10 @@ function OutlierChips({
         <Tooltip key={entry.key}>
           <TooltipTrigger
             render={
-              <span
+              <button
+                type="button"
                 className={cn(
-                  "inline-flex cursor-default items-center gap-1 rounded-full border px-2.5 py-1 text-xs",
+                  "inline-flex cursor-help items-center gap-1 rounded-full border bg-transparent px-2.5 py-1 text-xs focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
                   PEER_TEXT[entry.status],
                 )}
               >
@@ -363,7 +376,7 @@ function OutlierChips({
                 <span className="font-mono tabular-nums">
                   {formatStat(entry.value, entry.unit, entry.format)}
                 </span>
-              </span>
+              </button>
             }
           />
           <TooltipContent side="top" className="max-w-64">
@@ -375,10 +388,21 @@ function OutlierChips({
   );
 }
 
-function FlatGrid({ entries }: { entries: PeerStoryEntry[] }) {
+function FlatGrid({
+  entries,
+  className,
+}: {
+  entries: PeerStoryEntry[];
+  className?: string;
+}) {
   if (entries.length === 0) return null;
   return (
-    <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
+    <div
+      className={cn(
+        "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]",
+        className,
+      )}
+    >
       {entries.map((entry) => (
         <Card key={entry.key} className="p-4">
           <div className="min-w-0">
@@ -510,11 +534,11 @@ export function PeerStorySection({
   }
 
   if (focusMode === "neutral") {
-    return <FlatGrid entries={allEntries} />;
+    return <FlatGrid entries={allEntries} className={className} />;
   }
 
   if (focusMode === "all" && !hero) {
-    return <FlatGrid entries={allEntries} />;
+    return <FlatGrid entries={allEntries} className={className} />;
   }
 
   return (

@@ -309,11 +309,11 @@ export function transformBulletMetrics(
     const baseUnit = catalogRow.unit ?? '';
     const isMemberScale = catalogRow.is_member_scale;
     const higherIsBetter = catalogRow.higher_is_better;
-    const thresholds = catalogRow.thresholds;
-    if (!thresholds) continue;
-    const goodThr = thresholds.good;
-    const warnThr = thresholds.warn;
     const isSchemaError = catalogRow.schema_status === 'error';
+    const thresholds = catalogRow.thresholds;
+    if (!thresholds && !isSchemaError) continue;
+    const goodThr = thresholds?.good ?? 0;
+    const warnThr = thresholds?.warn ?? 0;
 
     // Member-scale metrics use team headcount as the denominator. Unit
     // becomes "/ N" at the team view; IC view keeps them unavailable.

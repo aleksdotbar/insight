@@ -123,53 +123,23 @@ const ResponsiveContainer = RechartsPrimitive.ResponsiveContainer
 const Tooltip = RechartsPrimitive.Tooltip
 const Legend = RechartsPrimitive.Legend
 
-function Bar({
-  isAnimationActive = false,
-  ...props
-}: React.ComponentProps<typeof RechartsPrimitive.Bar>) {
-  return (
-    <RechartsPrimitive.Bar
-      isAnimationActive={isAnimationActive}
-      {...props}
-    />
-  )
+function withAnimationDisabledDefault<
+  T extends React.ComponentType<{ isAnimationActive?: boolean }>,
+>(Component: T): T {
+  const component = Component as T & {
+    defaultProps?: Partial<React.ComponentProps<T>>
+  }
+  component.defaultProps = {
+    ...component.defaultProps,
+    isAnimationActive: false,
+  }
+  return component
 }
 
-function Line({
-  isAnimationActive = false,
-  ...props
-}: React.ComponentProps<typeof RechartsPrimitive.Line>) {
-  return (
-    <RechartsPrimitive.Line
-      isAnimationActive={isAnimationActive}
-      {...props}
-    />
-  )
-}
-
-function Area({
-  isAnimationActive = false,
-  ...props
-}: React.ComponentProps<typeof RechartsPrimitive.Area>) {
-  return (
-    <RechartsPrimitive.Area
-      isAnimationActive={isAnimationActive}
-      {...props}
-    />
-  )
-}
-
-function Treemap({
-  isAnimationActive = false,
-  ...props
-}: React.ComponentProps<typeof RechartsPrimitive.Treemap>) {
-  return (
-    <RechartsPrimitive.Treemap
-      isAnimationActive={isAnimationActive}
-      {...props}
-    />
-  )
-}
+const Bar = withAnimationDisabledDefault(RechartsPrimitive.Bar)
+const Line = withAnimationDisabledDefault(RechartsPrimitive.Line)
+const Area = withAnimationDisabledDefault(RechartsPrimitive.Area)
+const Treemap = withAnimationDisabledDefault(RechartsPrimitive.Treemap)
 
 const ChartTooltip = Tooltip
 
