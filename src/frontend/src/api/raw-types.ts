@@ -112,6 +112,16 @@ export type RawCrmKpisRow = {
   deals_won: number | string | null;
   deals_value_closed: number | string | null;
   comms_count: number | string | null;
+};
+
+/**
+ * POST /metrics/{CRM_PIPELINE_NOW}/query — date-less stock snapshot of open
+ * deals per rep. A distinct metric from `CRM_KPIS` (a period flow sum): the
+ * gold view `insight.crm_pipeline_now` exposes no `metric_date` column, so
+ * the FE queries it without a period (`queryMetricRaw`).
+ */
+export type RawCrmPipelineRow = {
+  person_id: string;
   pipeline_count: number | string | null;
   pipeline_value: number | string | null;
 };

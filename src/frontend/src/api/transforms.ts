@@ -14,6 +14,7 @@ import type {
   BulletMetric,
   CrmFlowPoint,
   CrmKpis,
+  CrmPipeline,
   LocDataPoint,
   DeliveryDataPoint,
   TeamMember,
@@ -25,6 +26,7 @@ import type {
   RawBulletAggregateRow,
   RawCrmFlowRow,
   RawCrmKpisRow,
+  RawCrmPipelineRow,
   RawLocTrendRow,
   RawDeliveryTrendRow,
   RawTeamMemberRow,
@@ -513,6 +515,14 @@ export function transformCrmKpis(row: RawCrmKpisRow | null): CrmKpis | null {
     dealsWon: numCoerce(row.deals_won),
     dealsValueClosed: numCoerce(row.deals_value_closed),
     commsCount: numCoerce(row.comms_count),
+  };
+}
+
+export function transformCrmPipeline(
+  row: RawCrmPipelineRow | null,
+): CrmPipeline | null {
+  if (row === null) return null;
+  return {
     pipelineCount: numCoerce(row.pipeline_count),
     pipelineValue: numCoerce(row.pipeline_value),
   };

@@ -226,6 +226,14 @@ export interface CrmKpis {
   dealsWon: number;
   dealsValueClosed: number;
   commsCount: number;
+}
+
+/**
+ * Open-deal pipeline snapshot — sourced from the date-less `CRM_PIPELINE_NOW`
+ * metric, kept separate from {@link CrmKpis} (a period flow sum) because the
+ * two come from different metrics with different time semantics.
+ */
+export interface CrmPipeline {
   pipelineCount: number;
   pipelineValue: number;
 }
