@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { getPerson } from "@/api/identity-client";
 import { OidcManager, authStore, getViewerEmail } from "@/auth";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AuthGate } from "@/components/auth-gate";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { MockBanner } from "@/components/mock-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -37,14 +38,16 @@ export const Route = createRootRoute({
 function RootLayout() {
   return (
     <TooltipProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset className="min-w-0 overflow-x-clip">
-          <ImpersonationBanner />
-          <MockBanner />
-          <Outlet />
-        </SidebarInset>
-      </SidebarProvider>
+      <AuthGate>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset className="min-w-0 overflow-x-clip">
+            <ImpersonationBanner />
+            <MockBanner />
+            <Outlet />
+          </SidebarInset>
+        </SidebarProvider>
+      </AuthGate>
     </TooltipProvider>
   );
 }

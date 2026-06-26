@@ -1,5 +1,6 @@
 export { OidcManager } from "./oidc-manager";
 export { authStore } from "./auth-store";
+export { isTerminalAuthFailure } from "./auth-policy";
 export { useAuth } from "./use-auth";
 export { getStartUrl, storeStartUrl } from "./start-url";
 export {

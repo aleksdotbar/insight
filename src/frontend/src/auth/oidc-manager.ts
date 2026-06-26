@@ -8,6 +8,7 @@ import type { AuthUser, OidcConfig, OidcSigninState } from "./types";
 let userManager: UserManager | null = null;
 let initPromise: Promise<void> | null = null;
 let refreshPromise: Promise<string | null> | null = null;
+let redirectInFlight = false;
 
 const { promise: authReady, resolve: authReadyResolve } =
   Promise.withResolvers<User | null>();
@@ -163,10 +164,21 @@ export const OidcManager = {
   async signIn(): Promise<void> {
     await OidcManager.init();
     if (!userManager) return;
+    // Dedup concurrent callers (multiple 401s, StrictMode double-effect,
+    // beforeLoad + AuthGate racing) into a single redirect. On success the
+    // page unloads, so the flag never goes stale; reset only if the redirect
+    // itself throws, to allow a retry.
+    if (redirectInFlight) return;
+    redirectInFlight = true;
     const state: OidcSigninState = {
       returnUrl: window.location.pathname + window.location.search,
     };
-    await userManager.signinRedirect({ state });
+    try {
+      await userManager.signinRedirect({ state });
+    } catch (err) {
+      redirectInFlight = false;
+      throw err;
+    }
   },
 
   async handleCallback(callbackUrl: string): Promise<string> {
