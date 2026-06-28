@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""New-code (diff) coverage gate, rendered like constructorfabric/insight's
+"""Code-coverage gate (diff), rendered like constructorfabric/insight's
 coverage.py: a per-file table (New lines / Coverage / Min / Result) plus the
 raw diff-cover output, written to the GitHub job summary.
 
@@ -84,14 +84,14 @@ def main() -> int:
     passed = total == 0 or pct >= DIFF_MIN
     min_disp = f"{DIFF_MIN:.0f}"
 
-    out = ["## New-code coverage", ""]
+    out = ["## Code coverage gate", ""]
     if total == 0:
         out.append(f"**{icon(True)} PASS** — no changed coverable lines in this diff "
                    f"(≥ {min_disp}% required).")
     else:
         out += [
-            f"**{icon(passed)} {'PASS' if passed else 'FAIL'}** — new code "
-            f"(≥ {min_disp}%): {covered}/{total} lines covered ({pct:.1f}%).",
+            f"**{icon(passed)} {'PASS' if passed else 'FAIL'}** — code coverage on "
+            f"changed lines (≥ {min_disp}%): {covered}/{total} covered ({pct:.1f}%).",
             "",
             "| File | New lines | Coverage | Min | Result |",
             "| --- | ---: | ---: | ---: | :---: |",

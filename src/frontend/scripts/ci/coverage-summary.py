@@ -8,7 +8,7 @@ process the coverage artifact produced by `pnpm test:coverage`. pnpm itself is
 Python-free — local devs use `pnpm test:coverage` and open coverage/index.html.
 
 This is the GLOBAL coverage view and is a non-failing WARNING — it never exits
-non-zero. The enforcing gate is the new-code diff gate (scripts/ci/diff-coverage.py).
+non-zero. The enforcing gate is the code-coverage gate (scripts/ci/diff-coverage.py).
 
 Prints markdown to stdout; redirect into $GITHUB_STEP_SUMMARY in CI, e.g.
     python3 scripts/ci/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
@@ -79,7 +79,7 @@ def main() -> int:
         "## Coverage summary",
         "",
         "_Global coverage — informational only (warning, not a gate). The "
-        "new-code diff gate is what blocks PRs._",
+        "code-coverage gate is what blocks PRs._",
         "",
         "| Metric | Covered | Total | Coverage |",
         "| --- | ---: | ---: | ---: |",

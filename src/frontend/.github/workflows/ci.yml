@@ -48,7 +48,7 @@ jobs:
         run: pnpm test:coverage
 
       # Producer only: hand the Cobertura (and the full HTML/lcov report) to the
-      # `coverage` job, which renders the summary and runs the new-code gate.
+      # `coverage` job, which renders the summary and runs the code-coverage gate.
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7
@@ -115,7 +115,7 @@ jobs:
   # Single coverage job (like constructorfabric/insight): consumes the Cobertura
   # the `test` job produced and BOTH renders the global coverage summary to the
   # job summary (informational warning — runs on push and PR) AND enforces the
-  # new-code diff gate (hard-fails a PR when coverage of changed lines < 80%).
+  # code-coverage gate (hard-fails a PR when coverage of changed lines < 80%).
   coverage:
     name: Coverage summary & gate
     needs: test
@@ -147,7 +147,7 @@ jobs:
         if: always()
         run: python3 scripts/ci/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
 
-      # --- New-code diff gate: pull requests only (needs a base to diff against) ---
+      # --- Code-coverage gate (diff): pull requests only (needs a base to diff against) ---
       - name: Fetch base branch
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags origin "${{ github.base_ref }}"
@@ -158,7 +158,7 @@ jobs:
 
       # Hard gate: fails the PR when coverage of changed lines is < 80%.
       # Markdown goes to the job summary (no PR comment → works on fork PRs).
-      - name: Enforce new-code coverage (>= 80%)
+      - name: Enforce code coverage on changed lines (>= 80%)
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
