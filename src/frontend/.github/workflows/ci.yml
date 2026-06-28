@@ -47,29 +47,15 @@ jobs:
       - name: Run unit tests with coverage
         run: pnpm test:coverage
 
-      # Cobertura -> markdown summary via the same action the insight repo
-      # uses (irongut/CodeCoverageSummary), rendered into the run's job
-      # summary. No external service and no PR comment, so it works on fork
-      # PRs with a read-only token. thresholds "60 80" colour the badge
-      # red/yellow/green; fail_below_min stays off for now because the
-      # frontend baseline (~24% lines) is well under insight's 60% bar.
+      # Cobertura -> markdown summary via our own self-contained script
+      # (scripts/ci/coverage-summary.py, no third-party action), rendered into
+      # the run's job summary. This is the GLOBAL coverage view and is a
+      # non-failing warning; the new-code diff gate (coverage-gate job) is what
+      # blocks PRs. ubuntu-latest ships python3; the script falls back to the
+      # stdlib XML parser and prints a notice if the report is missing.
       - name: Coverage summary
-        uses: irongut/CodeCoverageSummary@v1.3.0
-        with:
-          filename: coverage/cobertura-coverage.xml
-          format: markdown
-          output: both
-          badge: true
-          hide_complexity: true
-          fail_below_min: false
-          thresholds: "60 80"
-
-      - name: Coverage to job summary
         if: always()
-        run: |
-          f="$GITHUB_WORKSPACE/code-coverage-results.md"
-          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY";
-          else echo "_No coverage summary produced (tests likely failed before coverage ran)._" >> "$GITHUB_STEP_SUMMARY"; fi
+        run: python3 scripts/ci/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
 
       # Keep the full HTML + lcov report downloadable from the run for anyone
       # who wants per-file detail.
