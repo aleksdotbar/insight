@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:coverage:watch": "vitest --coverage",
-    "test:coverage:diff": "pnpm test:coverage && BASE_REF=main bash scripts/ci/diff-coverage.sh",
+    "test:coverage:diff": "pnpm test:coverage && BASE_REF=main python3 scripts/ci/diff-coverage.py",
     "test:coverage:summary": "pnpm test:coverage && python3 scripts/ci/coverage-summary.py",
     "preview": "vite preview"
   },

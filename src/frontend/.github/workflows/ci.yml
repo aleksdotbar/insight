@@ -162,4 +162,4 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: bash scripts/ci/diff-coverage.sh
+        run: python3 scripts/ci/diff-coverage.py
