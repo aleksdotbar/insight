@@ -135,3 +135,46 @@ jobs:
 
       - name: tsc --noEmit
         run: pnpm typecheck
+
+  # New-code coverage gate: hard-fails a PR when coverage of the lines it
+  # changed (vs the base branch) is below 80%. Reuses the Cobertura the `test`
+  # job already produced — does not re-run tests. The global coverage summary
+  # (irongut, above) stays a non-failing warning; this is the part that gates.
+  coverage-gate:
+    name: New-code coverage gate
+    needs: test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          # diff-cover needs the merge-base with the base branch, so fetch full history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
+      # Reuse the Cobertura the `test` job already produced — don't re-run tests.
+      - name: Download coverage report
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage/
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install diff-cover
+        run: pip install diff-cover
+
+      # Hard gate: fails the PR when coverage of changed lines is < 80%.
+      # Markdown goes to the job summary (no PR comment → works on fork PRs).
+      - name: Enforce new-code coverage (>= 80%)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bash scripts/ci/diff-coverage.sh

@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:coverage:watch": "vitest --coverage",
+    "test:coverage:diff": "pnpm test:coverage && BASE_REF=main bash scripts/ci/diff-coverage.sh",
     "preview": "vite preview"
   },
   "dependencies": {

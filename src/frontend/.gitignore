@@ -55,3 +55,4 @@ __pycache__/
 
 # Cypilot
 cypilot.*.backup/
+cypilot/.plans/
