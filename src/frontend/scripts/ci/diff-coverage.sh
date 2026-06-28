@@ -26,4 +26,4 @@ fi
 diff-cover "$REPORT" \
   --compare-branch "origin/${BASE_REF}" \
   --fail-under "$DIFF_MIN" \
-  --markdown-report "$SUMMARY"
+  --format "markdown:${SUMMARY}"
