@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Render a global coverage summary as GitHub-flavored markdown from the
-Cobertura report `vitest run --coverage` emits. Self-contained (no third-party
-action), mirroring the approach in constructorfabric/insight.
+Cobertura report `vitest run --coverage` emits. Mirrors the approach in
+constructorfabric/insight.
+
+CI-ONLY: this script is invoked exclusively by .github/workflows/ci.yml to
+process the coverage artifact produced by `pnpm test:coverage`. pnpm itself is
+Python-free — local devs use `pnpm test:coverage` and open coverage/index.html.
 
 This is the GLOBAL coverage view and is a non-failing WARNING — it never exits
-non-zero. The enforcing gate is the new-code diff gate (scripts/ci/diff-coverage.sh).
+non-zero. The enforcing gate is the new-code diff gate (scripts/ci/diff-coverage.py).
 
 Prints markdown to stdout; redirect into $GITHUB_STEP_SUMMARY in CI, e.g.
     python3 scripts/ci/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"

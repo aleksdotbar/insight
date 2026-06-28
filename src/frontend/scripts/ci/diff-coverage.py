@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """New-code (diff) coverage gate, rendered like constructorfabric/insight's
 coverage.py: a per-file table (New lines / Coverage / Min / Result) plus the
-raw diff-cover output, written to the GitHub job summary. Single source of
-truth for local + CI.
+raw diff-cover output, written to the GitHub job summary.
+
+CI-ONLY: this script is invoked exclusively by .github/workflows/ci.yml to
+process the coverage artifact produced by `pnpm test:coverage`. pnpm itself is
+Python-free; this gate runs in CI, not via any pnpm command.
 
 It runs `diff-cover` with `--fail-under 0` (so diff-cover never fails) against
 the Cobertura report, then decides PASS/FAIL itself: the diff's overall new-line
