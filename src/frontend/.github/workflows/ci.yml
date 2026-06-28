@@ -47,18 +47,8 @@ jobs:
       - name: Run unit tests with coverage
         run: pnpm test:coverage
 
-      # Cobertura -> markdown summary via our own self-contained script
-      # (scripts/ci/coverage-summary.py, no third-party action), rendered into
-      # the run's job summary. This is the GLOBAL coverage view and is a
-      # non-failing warning; the new-code diff gate (coverage-gate job) is what
-      # blocks PRs. ubuntu-latest ships python3; the script falls back to the
-      # stdlib XML parser and prints a notice if the report is missing.
-      - name: Coverage summary
-        if: always()
-        run: python3 scripts/ci/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
-
-      # Keep the full HTML + lcov report downloadable from the run for anyone
-      # who wants per-file detail.
+      # Producer only: hand the Cobertura (and the full HTML/lcov report) to the
+      # `coverage` job, which renders the summary and runs the new-code gate.
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7
@@ -122,14 +112,13 @@ jobs:
       - name: tsc --noEmit
         run: pnpm typecheck
 
-  # New-code coverage gate: hard-fails a PR when coverage of the lines it
-  # changed (vs the base branch) is below 80%. Reuses the Cobertura the `test`
-  # job already produced — does not re-run tests. The global coverage summary
-  # (irongut, above) stays a non-failing warning; this is the part that gates.
-  coverage-gate:
-    name: New-code coverage gate
+  # Single coverage job (like constructorfabric/insight): consumes the Cobertura
+  # the `test` job produced and BOTH renders the global coverage summary to the
+  # job summary (informational warning — runs on push and PR) AND enforces the
+  # new-code diff gate (hard-fails a PR when coverage of changed lines < 80%).
+  coverage:
+    name: Coverage summary & gate
     needs: test
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -139,9 +128,6 @@ jobs:
           # diff-cover needs the merge-base with the base branch, so fetch full history.
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Fetch base branch
-        run: git fetch --no-tags origin "${{ github.base_ref }}"
 
       # Reuse the Cobertura the `test` job already produced — don't re-run tests.
       - name: Download coverage report
@@ -155,12 +141,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Global coverage summary -> job summary. Non-failing warning; self-contained
+      # (no third-party action). Renders on both push and PR.
+      - name: Coverage summary
+        if: always()
+        run: python3 scripts/ci/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
+
+      # --- New-code diff gate: pull requests only (needs a base to diff against) ---
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
       - name: Install diff-cover
+        if: github.event_name == 'pull_request'
         run: pip install diff-cover
 
       # Hard gate: fails the PR when coverage of changed lines is < 80%.
       # Markdown goes to the job summary (no PR comment → works on fork PRs).
       - name: Enforce new-code coverage (>= 80%)
+        if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: bash scripts/ci/diff-coverage.sh
