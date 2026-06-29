@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { differenceInCalendarDays, format } from "date-fns";
 import type { DateRange } from "@/api/period-to-date-range";
 
 import { ComingSoon } from "@/components/widgets/coming-soon";
@@ -70,37 +70,46 @@ type AiAcceptedTrendPoint = {
 type TrendGrain = "day" | "week" | "month";
 
 function dateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return format(date, "yyyy-MM-dd");
 }
 
 function addDays(date: Date, days: number): Date {
   const next = new Date(date);
-  next.setUTCDate(next.getUTCDate() + days);
+  next.setDate(next.getDate() + days);
   return next;
 }
 
 function parseRangeDate(value: string): Date | null {
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const parts = value.split("-").map(Number);
+  if (parts.length !== 3) return null;
+  const [year, month, day] = parts;
+  if (!year || !month || !day) return null;
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+    ? date
+    : null;
 }
 
 function daysInRange(range: DateRange): number {
   const start = parseRangeDate(range.from);
   const end = parseRangeDate(range.to);
   if (!start || !end || start > end) return 0;
-  return Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  return differenceInCalendarDays(end, start) + 1;
 }
 
 function trendGrain(range: DateRange): TrendGrain {
   const days = daysInRange(range);
   if (days <= 100) return "day";
+  if (days <= 180) return "week";
   return "month";
 }
 
 function weekStartKey(value: string): string {
   const date = parseRangeDate(value);
   if (!date) return value;
-  const day = date.getUTCDay();
+  const day = date.getDay();
   const daysSinceMonday = (day + 6) % 7;
   return dateKey(addDays(date, -daysSinceMonday));
 }
@@ -108,9 +117,7 @@ function weekStartKey(value: string): string {
 function monthStartKey(value: string): string {
   const date = parseRangeDate(value);
   if (!date) return value;
-  return dateKey(
-    new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
-  );
+  return dateKey(new Date(date.getFullYear(), date.getMonth(), 1));
 }
 
 function trendBucketKey(value: string, grain: TrendGrain): string {
@@ -120,9 +127,9 @@ function trendBucketKey(value: string, grain: TrendGrain): string {
 }
 
 function enumerateBucketKeys(range: DateRange, grain: TrendGrain): string[] {
-  const start = new Date(`${range.from}T00:00:00.000Z`);
-  const end = new Date(`${range.to}T00:00:00.000Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+  const start = parseRangeDate(range.from);
+  const end = parseRangeDate(range.to);
+  if (!start || !end) return [];
 
   const keys: string[] = [];
   const seen = new Set<string>();

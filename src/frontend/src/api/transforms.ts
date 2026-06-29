@@ -311,7 +311,7 @@ export function transformBulletMetrics(
     const higherIsBetter = catalogRow.higher_is_better;
     const isSchemaError = catalogRow.schema_status === 'error';
     const thresholds = catalogRow.thresholds;
-    if (!thresholds && !isSchemaError) continue;
+    const hasThresholds = thresholds != null;
     const goodThr = thresholds?.good ?? 0;
     const warnThr = thresholds?.warn ?? 0;
 
@@ -410,7 +410,7 @@ export function transformBulletMetrics(
       // schema_status='error' suppresses threshold-based coloring per DESIGN
       // §3.3: bar dimensions render normally but the row is flagged so
       // consumers can show the "Metric source unavailable" indicator.
-      status: isSchemaError
+      status: isSchemaError || !hasThresholds
         ? 'unavailable'
         : evaluateStatus(
             r.value,

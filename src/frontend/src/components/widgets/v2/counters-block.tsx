@@ -71,7 +71,6 @@ function buildPeerStoryInputs(
     const value = Number(row.value);
     if (!Number.isFinite(value)) return [];
     const catalogRow = byMetricKey(bulletCatalogKey(row));
-    const stats = row.schema_error === true || !catalogRow ? null : row.peer ?? null;
     return [
       {
         key: row.metric_key,
@@ -81,7 +80,8 @@ function buildPeerStoryInputs(
         unit: row.unit,
         format: catalogRow?.format,
         higherIsBetter: catalogRow?.higher_is_better ?? true,
-        stats,
+        stats: row.peer ?? null,
+        neutral: row.schema_error === true || !catalogRow,
       },
     ];
   });

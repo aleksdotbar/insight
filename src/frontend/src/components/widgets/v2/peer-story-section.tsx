@@ -40,6 +40,7 @@ export type PeerStoryInput = {
   format?: string;
   higherIsBetter: boolean;
   stats: PeerStats | null;
+  neutral?: boolean;
 };
 
 type PeerStoryEntry = PeerStoryInput & {
@@ -56,13 +57,22 @@ interface PeerStorySectionProps {
   className?: string;
 }
 
+function peerSpread(stats: PeerStats): number {
+  const iqr = Math.abs(stats.p75 - stats.p25);
+  if (iqr > 1e-9) return iqr;
+  const range = Math.abs(stats.max - stats.min);
+  if (range > 1e-9) return range;
+  return 1;
+}
+
 function storyEntries(entries: PeerStoryInput[]): PeerStoryEntry[] {
   return entries.map((entry) => {
     const stats = entry.stats;
-    const status =
-      stats && Number.isFinite(entry.value)
-        ? peerStatusVsQuartiles(entry.value, stats, entry.higherIsBetter)
-        : "neutral";
+    const usePeerRanking =
+      entry.neutral !== true && stats != null && Number.isFinite(entry.value);
+    const status = usePeerRanking
+      ? peerStatusVsQuartiles(entry.value, stats, entry.higherIsBetter)
+      : "neutral";
     const rawDelta = stats ? entry.value - stats.p50 : 0;
     const gapDelta = entry.higherIsBetter ? rawDelta : -rawDelta;
     const gapPct =
@@ -74,7 +84,10 @@ function storyEntries(entries: PeerStoryInput[]): PeerStoryEntry[] {
       status,
       gapPct,
       gapDelta,
-      severity: gapPct == null ? Math.abs(gapDelta) : Math.abs(gapPct),
+      severity:
+        usePeerRanking && stats
+          ? Math.abs(gapPct ?? gapDelta / peerSpread(stats))
+          : 0,
     };
   });
 }
@@ -501,6 +514,20 @@ function SupportingFold({
 }) {
   const [open, setOpen] = useState(false);
   if (entries.length === 0) return null;
+  const neutralCount = entries.filter((entry) => entry.status === "neutral").length;
+  const trueOnParCount = entries.length - neutralCount;
+  const summaryLabel =
+    neutralCount === 0
+      ? `${entries.length} on-par metric${entries.length === 1 ? "" : "s"}`
+      : trueOnParCount === 0
+        ? `${entries.length} supporting metric${entries.length === 1 ? "" : "s"}`
+        : `${entries.length} supporting and on-par metric${
+            entries.length === 1 ? "" : "s"
+          }`;
+  const summaryDescription =
+    neutralCount === 0
+      ? `Metrics within the ${cohortLabel}'s normal range - no peer outlier`
+      : "Additional metrics without a visible peer outlier";
   return (
     <div className="rounded-md border">
       <button
@@ -511,11 +538,10 @@ function SupportingFold({
       >
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">
-            {open ? "Hide" : "Show"} {entries.length} on-par metric
-            {entries.length === 1 ? "" : "s"}
+            {open ? "Hide" : "Show"} {summaryLabel}
           </div>
           <div className="text-[11px] text-muted-foreground">
-            Metrics within the {cohortLabel}&apos;s normal range - no peer outlier
+            {summaryDescription}
           </div>
         </div>
         {open ? (
@@ -557,7 +583,7 @@ function SupportingRow({
         ) : null}
       </div>
       <div className="text-muted-foreground">
-        {entry.stats ? (
+        {entry.status !== "neutral" && entry.stats ? (
           <span>
             on par · {cohortLabel} median:{" "}
             {formatStat(entry.stats.p50, entry.unit, entry.format)}

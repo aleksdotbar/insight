@@ -10,8 +10,8 @@ function hashString(input: string): number {
 export function swatchPalette(seeds: string[]): Record<string, string> {
   const ordered = [...new Set(seeds)].sort((a, b) => hashString(a) - hashString(b));
   const palette: Record<string, string> = {};
-  ordered.forEach((seed, i) => {
-    const hue = Math.round((i * 360) / ordered.length);
+  ordered.forEach((seed) => {
+    const hue = hashString(seed) % 360;
     palette[seed] = `oklch(var(--swatch-l) 0.14 ${hue})`;
   });
   return palette;
