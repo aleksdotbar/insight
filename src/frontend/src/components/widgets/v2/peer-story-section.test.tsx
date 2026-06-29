@@ -145,6 +145,26 @@ describe("<PeerStorySection>", () => {
     expect(screen.queryByText("%")).not.toBeInTheDocument();
   });
 
+  it("renders currency values inline without a separate unit", () => {
+    render(
+      <PeerStorySection
+        entries={[
+          metric("cost", "Reported AI cost", 1234, {
+            unit: "$",
+            format: "currency",
+            higherIsBetter: false,
+            stats: { p25: 100, p50: 879, p75: 1000, min: 0, max: 5000, n: 8 },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("$1,234")).toBeInTheDocument();
+    expect(screen.getByText("$879")).toBeInTheDocument();
+    expect(screen.queryByText("1,234")).not.toBeInTheDocument();
+    expect(screen.queryByText("$")).not.toBeInTheDocument();
+  });
+
   it("keeps in-pack folded rows above no-peer rows and labels missing peer context", async () => {
     const user = userEvent.setup();
 

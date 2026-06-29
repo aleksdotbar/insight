@@ -23,6 +23,13 @@ import {
 } from "@/lib/peers";
 import { STATUS_SURFACE_CLASS } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import { LOCALE } from "@/config/constants";
+
+const CURRENCY_FORMAT = new Intl.NumberFormat(LOCALE, {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
 
 export type PeerStoryInput = {
   key: string;
@@ -77,6 +84,9 @@ function formatValue(
   unit: string | undefined,
   format: string | undefined,
 ): string {
+  if (format === "currency") {
+    return CURRENCY_FORMAT.format(value);
+  }
   if (unit === "%" || format === "percent") {
     return Math.round(value).toLocaleString();
   }
@@ -93,6 +103,7 @@ function formatStat(
   format: string | undefined,
 ): string {
   const formatted = formatValue(value, unit, format);
+  if (format === "currency") return formatted;
   if (unit === "%" || format === "percent") return `${formatted}%`;
   if (!unit) return formatted;
   return `${formatted} ${unit}`;
@@ -103,6 +114,7 @@ function formatDisplayValue(
   unit: string | undefined,
   format: string | undefined,
 ): string {
+  if (format === "currency") return formatStat(value, unit, format);
   if (unit === "%" || format === "percent") return formatStat(value, unit, format);
   return formatValue(value, unit, format);
 }
@@ -111,6 +123,7 @@ function displayUnit(
   unit: string | undefined,
   format: string | undefined,
 ): string | undefined {
+  if (format === "currency") return undefined;
   if (unit === "%" || format === "percent") return undefined;
   return unit;
 }
