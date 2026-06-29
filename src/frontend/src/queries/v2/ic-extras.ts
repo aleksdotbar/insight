@@ -83,6 +83,7 @@ interface SectionTrendLongRow {
 export interface AiToolSummaryRow {
   person_id: string;
   tool: string;
+  tool_name: string;
   accepted_lines_added: number;
   accepted_lines_removed: number;
   cost_cents: number | null;
@@ -93,6 +94,7 @@ export interface AiToolTrendRow {
   person_id: string;
   metric_date: string;
   tool: string;
+  tool_name: string;
   accepted_lines_added: number;
 }
 

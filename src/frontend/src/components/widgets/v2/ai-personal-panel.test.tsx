@@ -161,6 +161,7 @@ describe("<AiPersonalPanel>", () => {
         {
           person_id: "dev@example.com",
           tool: "claude_code",
+          tool_name: "Claude Code",
           accepted_lines_added: 100,
           accepted_lines_removed: 0,
           cost_cents: null,
@@ -169,6 +170,7 @@ describe("<AiPersonalPanel>", () => {
         {
           person_id: "dev@example.com",
           tool: "cursor",
+          tool_name: "Cursor",
           accepted_lines_added: 250,
           accepted_lines_removed: 0,
           cost_cents: null,
@@ -177,6 +179,7 @@ describe("<AiPersonalPanel>", () => {
         {
           person_id: "dev@example.com",
           tool: "codex",
+          tool_name: "Codex",
           accepted_lines_added: 0,
           accepted_lines_removed: 0,
           cost_cents: null,
@@ -203,6 +206,7 @@ describe("<AiPersonalPanel>", () => {
         {
           person_id: "dev@example.com",
           tool: "cursor",
+          tool_name: "Cursor",
           accepted_lines_added: 250,
           accepted_lines_removed: 0,
           cost_cents: null,
@@ -214,6 +218,7 @@ describe("<AiPersonalPanel>", () => {
           person_id: "dev@example.com",
           metric_date: "2026-04-02",
           tool: "cursor",
+          tool_name: "Cursor",
           accepted_lines_added: 125,
         },
       ],

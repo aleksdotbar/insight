@@ -45,26 +45,19 @@ interface AiPersonalPanelProps {
   range: DateRange | null | undefined;
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  claude_code: "Claude Code",
-  cursor: "Cursor",
-  codex: "Codex",
-  copilot: "GitHub Copilot",
-  windsurf: "Windsurf",
-};
-
-function toolLabel(tool: string): string {
-  return TOOL_LABELS[tool] ?? tool;
-}
-
 function num(v: number | null | undefined): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
-function toolsByAcceptedLines(rows: AiToolSummaryRow[]): string[] {
+type AiTool = {
+  key: string;
+  name: string;
+};
+
+function toolsByAcceptedLines(rows: AiToolSummaryRow[]): AiTool[] {
   return [...rows]
     .sort((a, b) => num(b.accepted_lines_added) - num(a.accepted_lines_added))
-    .map((r) => r.tool);
+    .map((r) => ({ key: r.tool, name: r.tool_name }));
 }
 
 type AiAcceptedTrendPoint = {
@@ -157,7 +150,7 @@ function trendTooltipPattern(grain: TrendGrain): string {
 function trendData(
   rows: AiToolTrendRow[],
   range: DateRange,
-  tools: string[]
+  tools: AiTool[]
 ): AiAcceptedTrendPoint[] {
   const grain = trendGrain(range);
   const labelPattern = trendLabelPattern(grain);
@@ -169,7 +162,7 @@ function trendData(
       label: formatDateLabel(key, labelPattern),
       tooltipLabel: formatDateLabel(key, tooltipPattern),
     };
-    for (const tool of tools) point[tool] = 0;
+    for (const tool of tools) point[tool.key] = 0;
     byDate.set(key, point);
   }
   for (const row of rows) {
@@ -181,7 +174,7 @@ function trendData(
         label: formatDateLabel(key, labelPattern),
         tooltipLabel: formatDateLabel(key, tooltipPattern),
       };
-      for (const tool of tools) point[tool] = 0;
+      for (const tool of tools) point[tool.key] = 0;
       byDate.set(key, point);
     }
     point[row.tool] = num(point[row.tool] as number) + num(row.accepted_lines_added);
@@ -192,13 +185,13 @@ function trendData(
 }
 
 function chartConfig(
-  tools: string[],
+  tools: AiTool[],
   colors: Record<string, string>
 ): ChartConfig {
   return Object.fromEntries(
     tools.map((tool) => [
-      tool,
-      { label: toolLabel(tool), color: colors[tool] },
+      tool.key,
+      { label: tool.name, color: colors[tool.key] },
     ])
   );
 }
@@ -279,7 +272,7 @@ function aiPeerStoryEntries(
 }
 
 interface DailyAcceptedLinesChartProps {
-  tools: string[];
+  tools: AiTool[];
   colors: Record<string, string>;
   data: AiAcceptedTrendPoint[];
   grain: TrendGrain;
@@ -356,11 +349,11 @@ function DailyAcceptedLinesChart({
             <ChartLegend content={<ChartLegendContent />} />
             {tools.map((tool) => (
               <ChartBar
-                key={tool}
-                dataKey={tool}
+                key={tool.key}
+                dataKey={tool.key}
                 stackId="accepted-lines"
-                fill={`var(--color-${tool})`}
-                name={toolLabel(tool)}
+                fill={`var(--color-${tool.key})`}
+                name={tool.name}
                 radius={[2, 2, 0, 0]}
               />
             ))}
@@ -492,12 +485,12 @@ export function AiPersonalPanel({ personId, range }: AiPersonalPanelProps) {
   const summary = summaryQ.data ?? [];
   const trend = trendQ.data ?? [];
   const tools = toolsByAcceptedLines(summary);
-  const colors = swatchPalette(tools);
+  const colors = swatchPalette(tools.map((tool) => tool.key));
   const acceptedShareRows = summary
     .filter((row) => num(row.accepted_lines_added) > 0)
     .sort((a, b) => num(b.accepted_lines_added) - num(a.accepted_lines_added))
     .map((row) => ({
-      label: toolLabel(row.tool),
+      label: row.tool_name,
       value: num(row.accepted_lines_added),
       tool: row.tool,
     }));
