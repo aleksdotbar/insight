@@ -47,32 +47,8 @@ jobs:
       - name: Run unit tests with coverage
         run: pnpm test:coverage
 
-      # Cobertura -> markdown summary via the same action the insight repo
-      # uses (irongut/CodeCoverageSummary), rendered into the run's job
-      # summary. No external service and no PR comment, so it works on fork
-      # PRs with a read-only token. thresholds "60 80" colour the badge
-      # red/yellow/green; fail_below_min stays off for now because the
-      # frontend baseline (~24% lines) is well under insight's 60% bar.
-      - name: Coverage summary
-        uses: irongut/CodeCoverageSummary@v1.3.0
-        with:
-          filename: coverage/cobertura-coverage.xml
-          format: markdown
-          output: both
-          badge: true
-          hide_complexity: true
-          fail_below_min: false
-          thresholds: "60 80"
-
-      - name: Coverage to job summary
-        if: always()
-        run: |
-          f="$GITHUB_WORKSPACE/code-coverage-results.md"
-          if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY";
-          else echo "_No coverage summary produced (tests likely failed before coverage ran)._" >> "$GITHUB_STEP_SUMMARY"; fi
-
-      # Keep the full HTML + lcov report downloadable from the run for anyone
-      # who wants per-file detail.
+      # Producer only: hand the Cobertura (and the full HTML/lcov report) to the
+      # `coverage` job, which renders the summary and runs the code-coverage gate.
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7
@@ -135,3 +111,55 @@ jobs:
 
       - name: tsc --noEmit
         run: pnpm typecheck
+
+  # Single coverage job (like constructorfabric/insight): consumes the Cobertura
+  # the `test` job produced and BOTH renders the global coverage summary to the
+  # job summary (informational warning — runs on push and PR) AND enforces the
+  # code-coverage gate (hard-fails a PR when coverage of changed lines < 80%).
+  coverage:
+    name: Coverage summary & gate
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          # diff-cover needs the merge-base with the base branch, so fetch full history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Reuse the Cobertura the `test` job already produced — don't re-run tests.
+      - name: Download coverage report
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage/
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Global coverage summary -> job summary. Non-failing warning; self-contained
+      # (no third-party action). Renders on both push and PR.
+      - name: Coverage summary
+        if: always()
+        run: python3 scripts/ci/coverage-summary.py >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Code-coverage gate (diff): pull requests only (needs a base to diff against) ---
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
+      - name: Install diff-cover
+        if: github.event_name == 'pull_request'
+        run: pip install diff-cover
+
+      # Hard gate: fails the PR when coverage of changed lines is < 80%.
+      # Markdown goes to the job summary (no PR comment → works on fork PRs).
+      - name: Enforce code coverage on changed lines (>= 80%)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 scripts/ci/diff-coverage.py
