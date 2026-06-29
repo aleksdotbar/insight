@@ -196,21 +196,6 @@ function chartConfig(
   );
 }
 
-const AI_COUNTER_ORDER = [
-  "ai_person_counter_daily.ai_accepted_lines",
-  "ai_person_counter_daily.ai_active_days",
-  "ai_person_counter_daily.ai_assistant_messages",
-  "ai_person_counter_daily.ai_cost_cents",
-  "ai_person_counter_daily.ai_accepted_edit_actions",
-  "ai_person_counter_daily.ai_tool_acceptance_rate",
-  "ai_person_counter_daily.ai_removed_lines",
-  "ai_person_counter_daily.ai_assistant_actions",
-] as const;
-
-const AI_COUNTER_ORDER_INDEX = new Map<string, number>(
-  AI_COUNTER_ORDER.map((key, index) => [key, index]),
-);
-
 function counterStats(row: AiPeerCounterRow): PeerStats | null {
   const { p25, median, p75, range_min, range_max, n } = row;
   if (
@@ -247,8 +232,7 @@ function aiPeerStoryEntries(
   rows: AiPeerCounterRow[],
   byMetricKey: (metricKey: string) => CatalogMetric | undefined,
 ): PeerStoryInput[] {
-  const entries = rows.flatMap((row) => {
-    if (!AI_COUNTER_ORDER_INDEX.has(row.metric_key)) return [];
+  return rows.flatMap((row) => {
     const catalog = byMetricKey(row.metric_key);
     if (!catalog || row.value == null || !Number.isFinite(row.value)) return [];
     return [
@@ -264,11 +248,6 @@ function aiPeerStoryEntries(
       },
     ];
   });
-  return entries.sort(
-    (a, b) =>
-      (AI_COUNTER_ORDER_INDEX.get(a.key) ?? Number.MAX_SAFE_INTEGER) -
-      (AI_COUNTER_ORDER_INDEX.get(b.key) ?? Number.MAX_SAFE_INTEGER),
-  );
 }
 
 interface DailyAcceptedLinesChartProps {

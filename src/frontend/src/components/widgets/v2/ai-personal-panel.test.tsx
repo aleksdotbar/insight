@@ -200,7 +200,7 @@ describe("<AiPersonalPanel>", () => {
     expect(screen.getByText("Period total by tool")).toBeInTheDocument();
   });
 
-  it("renders trend chart and catalog-backed peer counters while ignoring unknown metric keys", () => {
+  it("renders trend chart and catalog-backed peer counters while ignoring uncataloged metric keys", () => {
     setPanelData({
       summary: [
         {
@@ -225,7 +225,7 @@ describe("<AiPersonalPanel>", () => {
       counters: [
         peerCounter("ai_person_counter_daily.ai_accepted_lines", 95),
         peerCounter("ai_person_counter_daily.ai_removed_lines", 90),
-        peerCounter("unknown.metric", 95),
+        peerCounter("uncataloged.metric", 95),
       ],
     });
 
@@ -236,7 +236,7 @@ describe("<AiPersonalPanel>", () => {
     expect(screen.getByText("Top win")).toBeInTheDocument();
     expect(screen.getAllByText("AI-added lines")).toHaveLength(2);
     expect(screen.getByText("AI-removed lines")).toBeInTheDocument();
-    expect(screen.queryByText("unknown.metric")).not.toBeInTheDocument();
+    expect(screen.queryByText("uncataloged.metric")).not.toBeInTheDocument();
   });
 
   it("renders loading and error states for independent sections", () => {
