@@ -67,7 +67,7 @@ describe("AI query options", () => {
     expect(builder("Dev@Example.com", RANGE).queryKey).toEqual([
       "v2",
       keyPart,
-      "Dev@Example.com",
+      "dev@example.com",
       "2026-04-01",
       "2026-04-30",
     ]);
@@ -117,7 +117,7 @@ describe("AI query options", () => {
         queryKey: [
           "v2",
           keyPart,
-          "Dev@Example.com",
+          "dev@example.com",
           "2026-04-01",
           "2026-04-30",
         ],

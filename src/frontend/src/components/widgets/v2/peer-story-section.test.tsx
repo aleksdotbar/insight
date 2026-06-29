@@ -179,7 +179,11 @@ describe("<PeerStorySection>", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: /Show 3 on-par metrics/ }));
+    await user.click(
+      screen.getByRole("button", {
+        name: /Show 3 supporting and on-par metrics/,
+      }),
+    );
 
     const fold = screen.getByText("Juliet balance").closest(".contents")?.parentElement;
     expect(fold).toBeTruthy();

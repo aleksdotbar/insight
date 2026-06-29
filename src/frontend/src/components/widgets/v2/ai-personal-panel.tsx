@@ -67,7 +67,7 @@ type AiAcceptedTrendPoint = {
   [tool: string]: number | string;
 };
 
-type TrendGrain = "day" | "week" | "month";
+type TrendGrain = "day" | "month";
 
 function dateKey(date: Date): string {
   return format(date, "yyyy-MM-dd");
@@ -102,16 +102,7 @@ function daysInRange(range: DateRange): number {
 function trendGrain(range: DateRange): TrendGrain {
   const days = daysInRange(range);
   if (days <= 100) return "day";
-  if (days <= 180) return "week";
   return "month";
-}
-
-function weekStartKey(value: string): string {
-  const date = parseRangeDate(value);
-  if (!date) return value;
-  const day = date.getDay();
-  const daysSinceMonday = (day + 6) % 7;
-  return dateKey(addDays(date, -daysSinceMonday));
 }
 
 function monthStartKey(value: string): string {
@@ -121,7 +112,6 @@ function monthStartKey(value: string): string {
 }
 
 function trendBucketKey(value: string, grain: TrendGrain): string {
-  if (grain === "week") return weekStartKey(value);
   if (grain === "month") return monthStartKey(value);
   return value;
 }
@@ -279,8 +269,7 @@ function DailyAcceptedLinesChart({
   isError,
   onRetry,
 }: DailyAcceptedLinesChartProps) {
-  const grainLabel =
-    grain === "month" ? "Monthly" : grain === "week" ? "Weekly" : "Daily";
+  const grainLabel = grain === "month" ? "Monthly" : "Daily";
   const title = "AI-added lines over time";
   if (isPending) return <Skeleton className="h-56 w-full rounded-lg" />;
   if (isError) {
