@@ -12,9 +12,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Bar,
   BarChart,
   CartesianGrid,
+  ChartBar,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
@@ -354,7 +354,7 @@ function DailyAcceptedLinesChart({
             />
             <ChartLegend content={<ChartLegendContent />} />
             {tools.map((tool) => (
-              <Bar
+              <ChartBar
                 key={tool}
                 dataKey={tool}
                 stackId="accepted-lines"

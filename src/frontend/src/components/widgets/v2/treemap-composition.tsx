@@ -8,9 +8,9 @@ import {
 } from "@/components/ui/card";
 import {
   ChartContainer,
+  ChartTreemap,
   ChartTooltip,
   ChartTooltipContent,
-  Treemap,
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -135,7 +135,7 @@ export function TreemapComposition({
       </CardHeader>
       <CardContent>
         <ChartContainer config={CHART_CONFIG} className="h-48 w-full">
-          <Treemap
+          <ChartTreemap
             data={rows as unknown as Record<string, unknown>[]}
             dataKey="value"
             nameKey="name"
@@ -145,7 +145,7 @@ export function TreemapComposition({
             <ChartTooltip
               content={<ChartTooltipContent hideIndicator />}
             />
-          </Treemap>
+          </ChartTreemap>
         </ChartContainer>
       </CardContent>
     </Card>

@@ -7,9 +7,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Bar,
   BarChart,
   CartesianGrid,
+  ChartBar,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
@@ -91,19 +91,19 @@ export function LocStackedBar({
             />
             <ChartTooltip content={<ChartTooltipContent />} />
             <ChartLegend content={<ChartLegendContent />} />
-            <Bar
+            <ChartBar
               dataKey="codeLoc"
               stackId="a"
               fill="var(--color-codeLoc)"
               name="Clean LOC"
             />
-            <Bar
+            <ChartBar
               dataKey="specLines"
               stackId="a"
               fill="var(--color-specLines)"
               name="Spec"
             />
-            <Bar
+            <ChartBar
               dataKey="configLoc"
               stackId="a"
               fill="var(--color-configLoc)"

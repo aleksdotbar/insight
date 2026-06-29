@@ -13,7 +13,6 @@ import {
   applyFocus,
   PEER_TEXT,
   peerStatusVsQuartiles,
-  statsToDisplayUnit,
   type PeerStats,
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
@@ -72,11 +71,7 @@ function buildPeerStoryInputs(
     const value = Number(row.value);
     if (!Number.isFinite(value)) return [];
     const catalogRow = byMetricKey(bulletCatalogKey(row));
-    const rawStats = row.schema_error === true ? null : row.peer;
-    const stats =
-      catalogRow && rawStats
-        ? statsToDisplayUnit(rawStats, catalogRow.unit, row.unit)
-        : null;
+    const stats = row.schema_error === true || !catalogRow ? null : row.peer ?? null;
     return [
       {
         key: row.metric_key,

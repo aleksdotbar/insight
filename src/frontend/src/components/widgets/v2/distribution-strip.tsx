@@ -9,9 +9,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Bar,
   BarChart,
   CartesianGrid,
+  ChartBar,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
@@ -131,7 +131,7 @@ function HistogramBody({
         />
         <YAxis hide />
         <ChartTooltip content={<ChartTooltipContent hideIndicator />} />
-        <Bar
+        <ChartBar
           dataKey="count"
           fill="var(--color-count)"
           radius={3}

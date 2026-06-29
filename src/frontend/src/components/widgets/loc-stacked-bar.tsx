@@ -1,11 +1,11 @@
 import { memo } from "react";
 import {
-  Bar,
   BarChart,
   CartesianGrid,
-  Legend,
+  ChartBar,
+  ChartLegend,
+  ChartTooltip,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from "@/components/ui/chart";
@@ -61,11 +61,11 @@ function LocStackedBarImpl({ data }: LocStackedBarProps) {
           axisLine={false}
           tickLine={false}
         />
-        <Tooltip />
-        <Legend wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
-        <Bar dataKey="Code LOC" stackId="loc" fill={CHART_BLUE} />
-        <Bar dataKey="Spec Lines" stackId="loc" fill={CHART_SPEC_LINES} />
-        <Bar dataKey="Config" stackId="loc" fill={CHART_GRAY} radius={[3, 3, 0, 0]} />
+        <ChartTooltip />
+        <ChartLegend wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
+        <ChartBar dataKey="Code LOC" stackId="loc" fill={CHART_BLUE} />
+        <ChartBar dataKey="Spec Lines" stackId="loc" fill={CHART_SPEC_LINES} />
+        <ChartBar dataKey="Config" stackId="loc" fill={CHART_GRAY} radius={[3, 3, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

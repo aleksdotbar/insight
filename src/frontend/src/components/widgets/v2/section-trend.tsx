@@ -7,15 +7,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Area,
   CartesianGrid,
+  ChartArea,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
+  ChartLine,
   ChartTooltip,
   ChartTooltipContent,
   ComposedChart,
-  Line,
   ReferenceLine,
   type ChartConfig,
   XAxis,
@@ -152,7 +152,7 @@ export function SectionTrend({
               const color = `var(--color-${s.key})`;
               if (s.type === "area" || s.type === "stacked-area") {
                 return (
-                  <Area
+                  <ChartArea
                     key={s.key}
                     yAxisId={yAxisId}
                     type="monotone"
@@ -167,7 +167,7 @@ export function SectionTrend({
                 );
               }
               return (
-                <Line
+                <ChartLine
                   key={s.key}
                   yAxisId={yAxisId}
                   type="monotone"

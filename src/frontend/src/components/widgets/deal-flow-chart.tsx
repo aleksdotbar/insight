@@ -1,11 +1,11 @@
 import { memo } from "react";
 import {
   CartesianGrid,
-  Legend,
-  Line,
+  ChartLegend,
+  ChartLine,
+  ChartTooltip,
   LineChart,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
 } from "@/components/ui/chart";
@@ -60,11 +60,11 @@ function DealFlowChartImpl({ data }: DealFlowChartProps) {
           tickLine={false}
           allowDecimals={false}
         />
-        <Tooltip />
-        <Legend wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
-        <Line type="monotone" dataKey="Opened" stroke={CHART_BLUE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-        <Line type="monotone" dataKey="Closed" stroke={CHART_PURPLE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-        <Line type="monotone" dataKey="Won" stroke={CHART_GREEN} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <ChartTooltip />
+        <ChartLegend wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
+        <ChartLine type="monotone" dataKey="Opened" stroke={CHART_BLUE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <ChartLine type="monotone" dataKey="Closed" stroke={CHART_PURPLE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <ChartLine type="monotone" dataKey="Won" stroke={CHART_GREEN} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
       </LineChart>
     </ResponsiveContainer>
   );

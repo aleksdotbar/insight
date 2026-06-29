@@ -120,28 +120,55 @@ const XAxis = RechartsPrimitive.XAxis
 const YAxis = RechartsPrimitive.YAxis
 const ReferenceLine = RechartsPrimitive.ReferenceLine
 const ResponsiveContainer = RechartsPrimitive.ResponsiveContainer
-const Tooltip = RechartsPrimitive.Tooltip
-const Legend = RechartsPrimitive.Legend
+const ChartTooltip = RechartsPrimitive.Tooltip
 
-function withAnimationDisabledDefault<
-  T extends React.ComponentType<{ isAnimationActive?: boolean }>,
->(Component: T): T {
-  const component = Component as T & {
-    defaultProps?: Partial<React.ComponentProps<T>>
-  }
-  component.defaultProps = {
-    ...component.defaultProps,
-    isAnimationActive: false,
-  }
-  return component
+function ChartBar({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Bar>) {
+  return (
+    <RechartsPrimitive.Bar
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
 }
 
-const Bar = withAnimationDisabledDefault(RechartsPrimitive.Bar)
-const Line = withAnimationDisabledDefault(RechartsPrimitive.Line)
-const Area = withAnimationDisabledDefault(RechartsPrimitive.Area)
-const Treemap = withAnimationDisabledDefault(RechartsPrimitive.Treemap)
+function ChartLine({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Line>) {
+  return (
+    <RechartsPrimitive.Line
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
 
-const ChartTooltip = Tooltip
+function ChartArea({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Area>) {
+  return (
+    <RechartsPrimitive.Area
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+function ChartTreemap({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Treemap>) {
+  return (
+    <RechartsPrimitive.Treemap
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
 
 function ChartTooltipContent({
   active,
@@ -297,7 +324,7 @@ function ChartTooltipContent({
   )
 }
 
-const ChartLegend = Legend
+const ChartLegend = RechartsPrimitive.Legend
 
 function ChartLegendContent({
   className,
@@ -391,24 +418,22 @@ function getPayloadConfigFromPayload(
 }
 
 export {
-  Area,
-  Bar,
   BarChart,
   CartesianGrid,
+  ChartArea,
+  ChartBar,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
+  ChartLine,
   ChartStyle,
   ChartTooltip,
   ChartTooltipContent,
+  ChartTreemap,
   ComposedChart,
-  Legend,
-  Line,
   LineChart,
   ReferenceLine,
   ResponsiveContainer,
-  Tooltip,
-  Treemap,
   XAxis,
   YAxis,
 }
