@@ -293,21 +293,36 @@ function HeroCard({
 
 function SideCards({ entries }: { entries: PeerStoryEntry[] }) {
   if (entries.length === 0) return null;
+  const stretchCards = entries.length > 1;
   return (
-    <div className="grid content-start gap-3">
+    <div
+      className={cn(
+        "grid gap-3",
+        stretchCards ? "h-full" : "content-start",
+        entries.length === 2 && "grid-rows-2",
+        entries.length === 3 && "grid-rows-3",
+      )}
+    >
       {entries.map((entry) => (
-        <SideCard key={entry.key} entry={entry} />
+        <SideCard key={entry.key} entry={entry} stretch={stretchCards} />
       ))}
     </div>
   );
 }
 
-function SideCard({ entry }: { entry: PeerStoryEntry }) {
+function SideCard({
+  entry,
+  stretch,
+}: {
+  entry: PeerStoryEntry;
+  stretch: boolean;
+}) {
   const unit = displayUnit(entry.unit, entry.format);
   return (
     <Card
       className={cn(
         "min-h-28 p-0",
+        stretch && "h-full",
         "border-current/20",
         PEER_TEXT[entry.status],
         entry.status === "top" && "bg-success/5",
