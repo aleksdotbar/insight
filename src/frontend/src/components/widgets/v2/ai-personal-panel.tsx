@@ -57,7 +57,7 @@ type AiTool = {
 function toolsByAcceptedLines(rows: AiToolSummaryRow[]): AiTool[] {
   return [...rows]
     .sort((a, b) => num(b.accepted_lines_added) - num(a.accepted_lines_added))
-    .map((r) => ({ key: r.tool, name: r.tool_name }));
+    .map((r) => ({ key: r.tool, name: r.tool_name || r.tool }));
 }
 
 type AiAcceptedTrendPoint = {
@@ -108,7 +108,9 @@ function weekStartKey(value: string): string {
 function monthStartKey(value: string): string {
   const date = parseRangeDate(value);
   if (!date) return value;
-  return dateKey(new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)));
+  return dateKey(
+    new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
+  );
 }
 
 function trendBucketKey(value: string, grain: TrendGrain): string {
@@ -177,7 +179,8 @@ function trendData(
       for (const tool of tools) point[tool.key] = 0;
       byDate.set(key, point);
     }
-    point[row.tool] = num(point[row.tool] as number) + num(row.accepted_lines_added);
+    point[row.tool] =
+      num(point[row.tool] as number) + num(row.accepted_lines_added);
   }
   return [...byDate.values()].sort((a, b) =>
     String(a.date) < String(b.date) ? -1 : 1
@@ -230,7 +233,7 @@ function counterStats(row: AiPeerCounterRow): PeerStats | null {
 
 function aiPeerStoryEntries(
   rows: AiPeerCounterRow[],
-  byMetricKey: (metricKey: string) => CatalogMetric | undefined,
+  byMetricKey: (metricKey: string) => CatalogMetric | undefined
 ): PeerStoryInput[] {
   return rows.flatMap((row) => {
     const catalog = byMetricKey(row.metric_key);
@@ -297,11 +300,19 @@ function DailyAcceptedLinesChart({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-        <CardDescription className="text-xs">{grainLabel} by tool</CardDescription>
+        <CardDescription className="text-xs">
+          {grainLabel} by tool
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig(tools, colors)} className="h-56 w-full">
-          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <ChartContainer
+          config={chartConfig(tools, colors)}
+          className="h-56 w-full"
+        >
+          <BarChart
+            data={data}
+            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
               dataKey="label"
@@ -386,7 +397,9 @@ function AcceptedLinesShareChart({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-        <CardDescription className="text-xs">Period total by tool</CardDescription>
+        <CardDescription className="text-xs">
+          Period total by tool
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex h-24 w-full overflow-hidden rounded-md bg-muted md:h-28">
@@ -403,8 +416,12 @@ function AcceptedLinesShareChart({
                 }}
                 title={`${row.label}: ${row.value.toLocaleString()} lines`}
               >
-                <div className="truncate text-sm font-semibold">{row.label}</div>
-                <div className="mt-1 text-xs leading-4 opacity-90">{Math.round(pct)}%</div>
+                <div className="truncate text-sm font-semibold">
+                  {row.label}
+                </div>
+                <div className="mt-1 text-xs leading-4 opacity-90">
+                  {Math.round(pct)}%
+                </div>
                 <div className="text-xs leading-4 opacity-90">
                   {row.value.toLocaleString()} lines
                 </div>
@@ -469,7 +486,7 @@ export function AiPersonalPanel({ personId, range }: AiPersonalPanelProps) {
     .filter((row) => num(row.accepted_lines_added) > 0)
     .sort((a, b) => num(b.accepted_lines_added) - num(a.accepted_lines_added))
     .map((row) => ({
-      label: row.tool_name,
+      label: row.tool_name || row.tool,
       value: num(row.accepted_lines_added),
       tool: row.tool,
     }));
