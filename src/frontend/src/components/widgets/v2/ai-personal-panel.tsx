@@ -60,6 +60,16 @@ function toolsByAcceptedLines(rows: AiToolSummaryRow[]): AiTool[] {
     .map((r) => ({ key: r.tool, name: r.tool_name || r.tool }));
 }
 
+function toolsByTrendAcceptedLines(rows: AiToolTrendRow[]): AiTool[] {
+  const tools = new Map<string, AiTool>();
+  for (const row of rows) {
+    if (!tools.has(row.tool)) {
+      tools.set(row.tool, { key: row.tool, name: row.tool_name || row.tool });
+    }
+  }
+  return [...tools.values()];
+}
+
 type AiAcceptedTrendPoint = {
   date: string;
   label: string;
@@ -476,8 +486,10 @@ export function AiPersonalPanel({ personId, range }: AiPersonalPanelProps) {
 
   const summary = summaryQ.data ?? [];
   const trend = trendQ.data ?? [];
-  const tools = toolsByAcceptedLines(summary);
-  const colors = swatchPalette(tools.map((tool) => tool.key));
+  const summaryTools = toolsByAcceptedLines(summary);
+  const summaryColors = swatchPalette(summaryTools.map((tool) => tool.key));
+  const trendTools = toolsByTrendAcceptedLines(trend);
+  const trendColors = swatchPalette(trendTools.map((tool) => tool.key));
   const acceptedShareRows = summary
     .filter((row) => num(row.accepted_lines_added) > 0)
     .sort((a, b) => num(b.accepted_lines_added) - num(a.accepted_lines_added))
@@ -491,15 +503,15 @@ export function AiPersonalPanel({ personId, range }: AiPersonalPanelProps) {
     <div className="flex flex-col gap-4">
       <AcceptedLinesShareChart
         rows={acceptedShareRows}
-        colors={colors}
+        colors={summaryColors}
         isPending={summaryQ.isPending}
         isError={summaryQ.isError}
         onRetry={() => summaryQ.refetch()}
       />
       <DailyAcceptedLinesChart
-        tools={tools}
-        colors={colors}
-        data={trendData(trend, fallbackRange, tools)}
+        tools={trendTools}
+        colors={trendColors}
+        data={trendData(trend, fallbackRange, trendTools)}
         grain={trendGrain(fallbackRange)}
         isPending={trendQ.isPending}
         isError={trendQ.isError}
