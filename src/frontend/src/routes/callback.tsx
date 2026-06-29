@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { OidcManager, getStartUrl } from "@/auth";
-import { Button } from "@/components/ui/button";
+import { AuthError } from "@/components/auth-error";
 import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -58,26 +58,14 @@ function CallbackScreen() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center p-6">
-      <Card className="w-full max-w-md">
-        <CardContent className="flex flex-col gap-4 text-center">
-          <h1 className="text-base font-semibold text-foreground">
-            {t("auth.callback.failed_title")}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {data.error === "missing_code"
-              ? t("auth.callback.missing_code")
-              : t("auth.callback.exchange_failed")}
-          </p>
-          <Button
-            onClick={() => {
-              void OidcManager.signIn();
-            }}
-          >
-            {t("common.actions.try_again")}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthError
+      title={t("auth.callback.failed_title")}
+      message={
+        data.error === "missing_code"
+          ? t("auth.callback.missing_code")
+          : t("auth.callback.exchange_failed")
+      }
+      onRetry={() => void OidcManager.signIn().catch(() => undefined)}
+    />
   );
 }

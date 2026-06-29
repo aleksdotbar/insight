@@ -1,11 +1,11 @@
-import type { AuthSnapshot, AuthStatus, AuthUser } from "./types";
+import type { AuthReason, AuthSnapshot, AuthStatus, AuthUser } from "./types";
 
 let snapshot: AuthSnapshot = {
-  status: "idle",
+  status: "initializing",
   token: null,
   user: null,
   tenantId: null,
-  error: null,
+  reason: null,
 };
 
 const listeners = new Set<() => void>();
@@ -26,9 +26,9 @@ export const authStore = {
     return snapshot;
   },
 
-  setStatus(status: AuthStatus, error: string | null = null): void {
-    if (snapshot.status === status && snapshot.error === error) return;
-    snapshot = { ...snapshot, status, error };
+  setStatus(status: AuthStatus, reason: AuthReason | null = null): void {
+    if (snapshot.status === status && snapshot.reason === reason) return;
+    snapshot = { ...snapshot, status, reason };
     emit();
   },
 
@@ -51,11 +51,11 @@ export const authStore = {
 
   reset(): void {
     snapshot = {
-      status: "idle",
+      status: "initializing",
       token: null,
       user: null,
       tenantId: null,
-      error: null,
+      reason: null,
     };
     emit();
   },

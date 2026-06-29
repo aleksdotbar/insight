@@ -111,6 +111,11 @@
       "failed_title": "Sign-in failed",
       "missing_code": "No authorization code in the callback URL.",
       "exchange_failed": "We couldn't exchange the authorization code for a session."
+    },
+    "reauth": {
+      "redirecting": "Session expired — redirecting to sign-in…",
+      "failed_title": "Couldn't reach sign-in",
+      "failed_message": "We couldn't redirect you to sign in. Check your connection and try again."
     }
   },
   "error_boundary": {

@@ -15,6 +15,7 @@ export {
   type ViewerSource,
 } from "./use-viewer";
 export type {
+  AuthReason,
   AuthSnapshot,
   AuthStatus,
   AuthUser,

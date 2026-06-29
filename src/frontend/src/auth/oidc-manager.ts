@@ -3,11 +3,12 @@ import { UserManager, WebStorageStateStore, type User } from "oidc-client-ts";
 import { authStore } from "./auth-store";
 import { readOidcConfig } from "./config";
 import { readDevUserEmail } from "./dev-config";
-import type { AuthUser, OidcConfig, OidcSigninState } from "./types";
+import type { AuthReason, AuthUser, OidcConfig, OidcSigninState } from "./types";
 
 let userManager: UserManager | null = null;
 let initPromise: Promise<void> | null = null;
 let refreshPromise: Promise<string | null> | null = null;
+let redirectPromise: Promise<void> | null = null;
 
 const { promise: authReady, resolve: authReadyResolve } =
   Promise.withResolvers<User | null>();
@@ -28,19 +29,24 @@ function buildSettings(config: OidcConfig) {
 }
 
 /**
- * Same-origin path validation for the post-callback redirect target.
+ * Same-origin validation for the post-callback redirect target.
  *
  * `window.location.replace(raw)` honors absolute URLs, protocol-relative
- * `//host/path`, and `javascript:` / `data:` schemes — any of which would
- * pivot a freshly minted session to an attacker origin if `state.returnUrl`
- * is tampered with (XSS, malicious extension, shared device, library bug).
- * Restrict to same-origin paths.
+ * `//host/path`, backslash variants (`/\host` — browsers fold `\`→`/`), and
+ * `javascript:` / `data:` schemes — any of which would pivot a freshly minted
+ * session to an attacker origin if `state.returnUrl` is tampered with (XSS,
+ * malicious extension, shared device, library bug). Resolve against our own
+ * origin and only echo back a same-origin path + query + hash.
  */
 function safeReturnUrl(raw: unknown): string {
   if (typeof raw !== "string") return "/";
-  if (!raw.startsWith("/")) return "/";
-  if (raw.startsWith("//")) return "/";
-  return raw;
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return "/";
+  }
 }
 
 function toAuthUser(user: User): AuthUser {
@@ -61,41 +67,42 @@ function wireEvents(um: UserManager): void {
 
   um.events.addUserUnloaded(() => {
     authStore.setToken(null);
-    authStore.setStatus("expired");
+    authStore.setStatus("renewing");
   });
 
   um.events.addAccessTokenExpired(() => {
     authStore.setToken(null);
-    authStore.setStatus("expired");
+    authStore.setStatus("renewing");
   });
 
+  // Background silent renew has given up — the session can't recover on its
+  // own, so escalate to an interactive redirect without waiting for the next
+  // request to 401.
   um.events.addSilentRenewError(() => {
-    authStore.setStatus("expired", "silent_renew_failed");
+    void OidcManager.requireReauth("silent_renew_failed");
   });
 }
 
 async function doInit(): Promise<void> {
-  authStore.setStatus("loading");
+  authStore.setStatus("initializing");
 
   const config = readOidcConfig();
 
   if (!config) {
-    // Bypass auth when running with no OIDC AND either:
-    //   - we're in Vite dev (developer convenience), or
-    //   - the runtime explicitly injected a dev user email via
-    //     window.__DEV_CONFIG__ (compose dev stack with the published
-    //     ghcr image; entrypoint refuses to emit __DEV_CONFIG__ when
-    //     real OIDC is also configured, so prod fails closed).
+    // No OIDC config: auth is not active. In Vite dev or when the runtime
+    // injected a dev user email (compose dev stack with the published ghcr
+    // image) this is an intentional bypass; otherwise it's an unconfigured
+    // deploy that fails closed (no token is minted, so requests 401 and
+    // surface nothing — `requireReauth` has no IdP to redirect to and no-ops).
     const runtimeDevEmail = readDevUserEmail();
     if (import.meta.env.DEV || runtimeDevEmail) {
       console.warn(
         "[OidcManager] No window.__OIDC_CONFIG__ — auth bypassed (dev impersonation).",
       );
-      authStore.setStatus("authenticated");
-      authReadyResolve(null);
-      return;
+      authStore.setStatus("disabled", "dev_bypass");
+    } else {
+      authStore.setStatus("disabled", "missing_oidc_config");
     }
-    authStore.setStatus("unauthorized", "missing_oidc_config");
     authReadyResolve(null);
     return;
   }
@@ -110,7 +117,9 @@ async function doInit(): Promise<void> {
     authStore.setStatus("authenticated");
     authReadyResolve(existingUser);
   } else {
-    authStore.setStatus("idle");
+    // Configured but no live session — an interactive sign-in is needed.
+    // `beforeLoad` performs the redirect for this first-load case.
+    authStore.setStatus("reauth_required");
     authReadyResolve(null);
   }
 }
@@ -141,7 +150,7 @@ export const OidcManager = {
         // signinSilent replaces the stored user atomically on success and
         // leaves the previous one untouched on failure — do NOT removeUser()
         // first, that would synchronously fire addUserUnloaded and flip the
-        // store to `expired` mid-renew, blanking the token for any
+        // store to `renewing` mid-renew, blanking the token for any
         // concurrent fetchWithAuth caller.
         const newUser = await userManager.signinSilent();
         const token = newUser?.access_token ?? null;
@@ -163,10 +172,46 @@ export const OidcManager = {
   async signIn(): Promise<void> {
     await OidcManager.init();
     if (!userManager) return;
-    const state: OidcSigninState = {
-      returnUrl: window.location.pathname + window.location.search,
-    };
-    await userManager.signinRedirect({ state });
+    // Share a single in-flight redirect (same idiom as `refresh`/`init`):
+    // concurrent callers — multiple 401s, the silent-renew failure, the
+    // first-load guard — await the very same promise and observe the same
+    // outcome, so a redirect that rejects rejects for all of them (letting
+    // every `requireReauth` caller fall through to `reauth_failed`). On
+    // success the page unloads; on rejection the slot is cleared for a retry.
+    if (redirectPromise) return redirectPromise;
+    // Never return the user to /callback — it has no `code` on a fresh visit
+    // and would loop straight back into the failure screen.
+    const path = window.location.pathname;
+    const returnUrl =
+      path === "/callback"
+        ? "/"
+        : path + window.location.search + window.location.hash;
+    const state: OidcSigninState = { returnUrl };
+    redirectPromise = userManager.signinRedirect({ state }).finally(() => {
+      redirectPromise = null;
+    });
+    return redirectPromise;
+  },
+
+  /**
+   * Single owner of the "session is dead, recover it" decision. Both the
+   * 401 path (`fetchWithAuth`) and the background silent-renew failure funnel
+   * here so the redirect lives in one place with one outcome model:
+   *   - no IdP to redirect to (dev / unconfigured) → no-op, leave the app as-is
+   *   - redirect starts → status `reauth_required`, the overlay covers the UI
+   *   - redirect can't start → status `reauth_failed`, the gate offers a retry
+   *
+   * Never rejects — callers may `void` it; failures surface through state.
+   */
+  async requireReauth(reason: AuthReason | null = null): Promise<void> {
+    await OidcManager.init();
+    if (!userManager) return;
+    authStore.setStatus("reauth_required", reason);
+    try {
+      await OidcManager.signIn();
+    } catch {
+      authStore.setStatus("reauth_failed", reason);
+    }
   },
 
   async handleCallback(callbackUrl: string): Promise<string> {

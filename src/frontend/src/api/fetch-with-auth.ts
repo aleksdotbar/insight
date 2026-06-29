@@ -25,8 +25,14 @@ function devBearer(): string | null {
 }
 
 function injectAuthHeaders(headers: Headers): void {
-  const { token, tenantId } = authStore.getSnapshot();
-  const bearer = token ?? devBearer();
+  const { status, reason, token, tenantId } = authStore.getSnapshot();
+  // Only mint a dev/impersonation bearer for the genuine dev bypass. Under
+  // real OIDC the token is briefly null while renewing — never let a URL
+  // `?override=` identity forge an unsigned `alg:none` bearer there. An
+  // unconfigured prod deploy lands on `disabled`/`missing_oidc_config` and
+  // must fail closed too, hence the explicit `dev_bypass` reason check.
+  const devEligible = status === "disabled" && reason === "dev_bypass";
+  const bearer = token ?? (devEligible ? devBearer() : null);
   if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
   if (tenantId) headers.set("X-Tenant-ID", tenantId);
 }
@@ -44,7 +50,7 @@ export async function fetchWithAuth(
 
   const newToken = await OidcManager.refresh();
   if (!newToken) {
-    authStore.setStatus("unauthorized", "refresh_failed");
+    void OidcManager.requireReauth("refresh_failed");
     return res;
   }
 
@@ -52,7 +58,7 @@ export async function fetchWithAuth(
   injectAuthHeaders(retryHeaders);
   const retryRes = await fetch(input, { ...init, headers: retryHeaders });
   if (retryRes.status === 401) {
-    authStore.setStatus("unauthorized", "token_rejected");
+    void OidcManager.requireReauth("token_rejected");
   }
   return retryRes;
 }

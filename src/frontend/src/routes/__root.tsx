@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { getPerson } from "@/api/identity-client";
 import { OidcManager, authStore, getViewerEmail } from "@/auth";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AuthGate } from "@/components/auth-gate";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { MockBanner } from "@/components/mock-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -24,12 +25,19 @@ export const Route = createRootRoute({
     if (location.pathname === "/callback") return;
     await OidcManager.init();
 
-    if (authStore.getSnapshot().status === "authenticated") {
+    const { status } = authStore.getSnapshot();
+    if (status === "authenticated") {
       await prefetchViewerIdentity();
       return;
     }
+    // No interactive login to perform when OIDC is inactive — let the app
+    // render (dev bypass works; an unconfigured deploy fails closed downstream).
+    if (status === "disabled") return;
 
-    await OidcManager.signIn();
+    // requireReauth never rejects: a redirect that can't start lands in
+    // `reauth_failed` and the route still mounts, so AuthGate shows the retry
+    // UI instead of throwing an unhandled error out of beforeLoad.
+    await OidcManager.requireReauth();
   },
   component: RootLayout,
 });
@@ -37,14 +45,16 @@ export const Route = createRootRoute({
 function RootLayout() {
   return (
     <TooltipProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset className="min-w-0 overflow-x-clip">
-          <ImpersonationBanner />
-          <MockBanner />
-          <Outlet />
-        </SidebarInset>
-      </SidebarProvider>
+      <AuthGate>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset className="min-w-0 overflow-x-clip">
+            <ImpersonationBanner />
+            <MockBanner />
+            <Outlet />
+          </SidebarInset>
+        </SidebarProvider>
+      </AuthGate>
     </TooltipProvider>
   );
 }
