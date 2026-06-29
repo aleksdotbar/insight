@@ -126,6 +126,25 @@ describe("<PeerStorySection>", () => {
     expect(screen.queryByRole("button", { name: /Hotel fog/ })).not.toBeInTheDocument();
   });
 
+  it("renders percent values as whole inline percentages", () => {
+    render(
+      <PeerStorySection
+        entries={[
+          metric("acceptance", "Tool acceptance", 94.6, {
+            unit: "%",
+            format: "percent",
+            stats: { p25: 12.2, p50: 31.8, p75: 60.4, min: 0, max: 100, n: 8 },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("95%")).toBeInTheDocument();
+    expect(screen.getByText("32%")).toBeInTheDocument();
+    expect(screen.queryByText("94.6")).not.toBeInTheDocument();
+    expect(screen.queryByText("%")).not.toBeInTheDocument();
+  });
+
   it("keeps in-pack folded rows above no-peer rows and labels missing peer context", async () => {
     const user = userEvent.setup();
 

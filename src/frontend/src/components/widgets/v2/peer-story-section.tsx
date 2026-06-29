@@ -78,7 +78,7 @@ function formatValue(
   format: string | undefined,
 ): string {
   if (unit === "%" || format === "percent") {
-    return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    return Math.round(value).toLocaleString();
   }
   const rounded =
     unit === "days" && format !== "integer"
@@ -93,9 +93,26 @@ function formatStat(
   format: string | undefined,
 ): string {
   const formatted = formatValue(value, unit, format);
+  if (unit === "%" || format === "percent") return `${formatted}%`;
   if (!unit) return formatted;
-  if (unit === "%") return `${formatted}${unit}`;
   return `${formatted} ${unit}`;
+}
+
+function formatDisplayValue(
+  value: number,
+  unit: string | undefined,
+  format: string | undefined,
+): string {
+  if (unit === "%" || format === "percent") return formatStat(value, unit, format);
+  return formatValue(value, unit, format);
+}
+
+function displayUnit(
+  unit: string | undefined,
+  format: string | undefined,
+): string | undefined {
+  if (unit === "%" || format === "percent") return undefined;
+  return unit;
 }
 
 function formatGapPct(gap: number): string {
@@ -206,6 +223,7 @@ function HeroCard({
 }) {
   const isBad = entry.status === "bottom";
   const color = isBad ? "bottom" : "top";
+  const unit = displayUnit(entry.unit, entry.format);
   return (
     <Card
       className={cn(
@@ -243,10 +261,10 @@ function HeroCard({
                 PEER_TEXT[color],
               )}
             >
-              {formatValue(entry.value, entry.unit, entry.format)}
+              {formatDisplayValue(entry.value, entry.unit, entry.format)}
             </span>
-            {entry.unit ? (
-              <span className="text-base text-muted-foreground">{entry.unit}</span>
+            {unit ? (
+              <span className="text-base text-muted-foreground">{unit}</span>
             ) : null}
           </span>
           {entry.stats ? (
@@ -278,48 +296,54 @@ function SideCards({ entries }: { entries: PeerStoryEntry[] }) {
   return (
     <div className="grid content-start gap-3">
       {entries.map((entry) => (
-        <Card
-          key={entry.key}
-          className={cn(
-            "min-h-28 p-0",
-            "border-current/20",
-            PEER_TEXT[entry.status],
-            entry.status === "top" && "bg-success/5",
-            entry.status === "bottom" && "bg-destructive/5",
-            entry.status === "top" && "shadow-[inset_4px_0_0_0_var(--success)]",
-            entry.status === "bottom" && "shadow-[inset_4px_0_0_0_var(--destructive)]",
-          )}
-        >
-          <div className="flex h-full">
-            <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-4">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-muted-foreground">
-                  {entry.label}
-                </div>
-                {entry.sublabel ? (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {entry.sublabel}
-                  </div>
-                ) : null}
-              </div>
-              <div>
-                <div className="text-2xl font-semibold tabular-nums">
-                  {formatValue(entry.value, entry.unit, entry.format)}
-                  {entry.unit ? (
-                    <span className="ml-1 text-xs font-normal text-muted-foreground">
-                      {entry.unit}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-1 truncate text-[11px] text-muted-foreground">
-                  {outlierText(entry.status)}
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
+        <SideCard key={entry.key} entry={entry} />
       ))}
     </div>
+  );
+}
+
+function SideCard({ entry }: { entry: PeerStoryEntry }) {
+  const unit = displayUnit(entry.unit, entry.format);
+  return (
+    <Card
+      className={cn(
+        "min-h-28 p-0",
+        "border-current/20",
+        PEER_TEXT[entry.status],
+        entry.status === "top" && "bg-success/5",
+        entry.status === "bottom" && "bg-destructive/5",
+        entry.status === "top" && "shadow-[inset_4px_0_0_0_var(--success)]",
+        entry.status === "bottom" && "shadow-[inset_4px_0_0_0_var(--destructive)]",
+      )}
+    >
+      <div className="flex h-full">
+        <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-muted-foreground">
+              {entry.label}
+            </div>
+            {entry.sublabel ? (
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                {entry.sublabel}
+              </div>
+            ) : null}
+          </div>
+          <div>
+            <div className="text-2xl font-semibold tabular-nums">
+              {formatDisplayValue(entry.value, entry.unit, entry.format)}
+              {unit ? (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  {unit}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1 truncate text-[11px] text-muted-foreground">
+              {outlierText(entry.status)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -388,6 +412,32 @@ function OutlierChips({
   );
 }
 
+function FlatGridCard({ entry }: { entry: PeerStoryEntry }) {
+  const unit = displayUnit(entry.unit, entry.format);
+  return (
+    <Card className="p-4">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold text-muted-foreground">
+          {entry.label}
+        </div>
+        {entry.sublabel ? (
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+            {entry.sublabel}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-5 text-2xl font-semibold tabular-nums">
+        {formatDisplayValue(entry.value, entry.unit, entry.format)}
+        {unit ? (
+          <span className="ml-1 text-xs font-normal text-muted-foreground">
+            {unit}
+          </span>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
 function FlatGrid({
   entries,
   className,
@@ -404,26 +454,7 @@ function FlatGrid({
       )}
     >
       {entries.map((entry) => (
-        <Card key={entry.key} className="p-4">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-muted-foreground">
-              {entry.label}
-            </div>
-            {entry.sublabel ? (
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                {entry.sublabel}
-              </div>
-            ) : null}
-          </div>
-          <div className="mt-5 text-2xl font-semibold tabular-nums">
-            {formatValue(entry.value, entry.unit, entry.format)}
-            {entry.unit ? (
-              <span className="ml-1 text-xs font-normal text-muted-foreground">
-                {entry.unit}
-              </span>
-            ) : null}
-          </div>
-        </Card>
+        <FlatGridCard key={entry.key} entry={entry} />
       ))}
     </div>
   );
@@ -469,31 +500,44 @@ function SupportingFold({
         <div className="border-t p-3">
           <div className="grid gap-x-8 gap-y-2 text-sm md:grid-cols-[minmax(180px,280px)_auto_1fr]">
             {entries.map((entry) => (
-              <div key={entry.key} className="contents">
-                <div className="font-medium">{entry.label}</div>
-                <div className="font-mono font-semibold tabular-nums">
-                  {formatValue(entry.value, entry.unit, entry.format)}
-                  {entry.unit ? (
-                    <span className="ml-1 font-sans text-xs font-normal text-muted-foreground">
-                      {entry.unit}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="text-muted-foreground">
-                  {entry.stats ? (
-                    <span>
-                      on par · {cohortLabel} median:{" "}
-                      {formatStat(entry.stats.p50, entry.unit, entry.format)}
-                    </span>
-                  ) : (
-                    <span>no peer data</span>
-                  )}
-                </div>
-              </div>
+              <SupportingRow key={entry.key} entry={entry} cohortLabel={cohortLabel} />
             ))}
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function SupportingRow({
+  entry,
+  cohortLabel,
+}: {
+  entry: PeerStoryEntry;
+  cohortLabel: PeerCohortLabel;
+}) {
+  const unit = displayUnit(entry.unit, entry.format);
+  return (
+    <div className="contents">
+      <div className="font-medium">{entry.label}</div>
+      <div className="font-mono font-semibold tabular-nums">
+        {formatDisplayValue(entry.value, entry.unit, entry.format)}
+        {unit ? (
+          <span className="ml-1 font-sans text-xs font-normal text-muted-foreground">
+            {unit}
+          </span>
+        ) : null}
+      </div>
+      <div className="text-muted-foreground">
+        {entry.stats ? (
+          <span>
+            on par · {cohortLabel} median:{" "}
+            {formatStat(entry.stats.p50, entry.unit, entry.format)}
+          </span>
+        ) : (
+          <span>no peer data</span>
+        )}
+      </div>
     </div>
   );
 }
