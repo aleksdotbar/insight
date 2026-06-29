@@ -210,6 +210,7 @@ const AI_COUNTER_ORDER = [
   "ai_person_counter_daily.ai_cost_cents",
   "ai_person_counter_daily.ai_accepted_edit_actions",
   "ai_person_counter_daily.ai_tool_acceptance_rate",
+  "ai_person_counter_daily.ai_removed_lines",
   "ai_person_counter_daily.ai_assistant_actions",
 ] as const;
 

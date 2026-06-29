@@ -135,6 +135,10 @@ describe("<AiPersonalPanel>", () => {
       catalogMetric("ai_person_counter_daily.ai_active_days", "AI active days", {
         unit: "days",
       }),
+      catalogMetric("ai_person_counter_daily.ai_removed_lines", "AI-removed lines", {
+        sublabel: "Accepted deleted coding output",
+        unit: "lines",
+      }),
     ]);
     setPanelData();
   });
@@ -215,6 +219,7 @@ describe("<AiPersonalPanel>", () => {
       ],
       counters: [
         peerCounter("ai_person_counter_daily.ai_accepted_lines", 95),
+        peerCounter("ai_person_counter_daily.ai_removed_lines", 90),
         peerCounter("unknown.metric", 95),
       ],
     });
@@ -225,6 +230,7 @@ describe("<AiPersonalPanel>", () => {
     expect(screen.getByText("Daily by tool")).toBeInTheDocument();
     expect(screen.getByText("Top win")).toBeInTheDocument();
     expect(screen.getAllByText("AI-added lines")).toHaveLength(2);
+    expect(screen.getByText("AI-removed lines")).toBeInTheDocument();
     expect(screen.queryByText("unknown.metric")).not.toBeInTheDocument();
   });
 
