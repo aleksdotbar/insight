@@ -163,11 +163,11 @@ export function useIcSectionTrend(
   });
 }
 
-export function useIcAiToolSummary(
+export function icAiToolSummaryQueryOptions(
   personId: string,
   range: DateRange,
-): UseQueryResult<AiToolSummaryRow[]> {
-  return useQuery({
+) {
+  return {
     queryKey: ["v2", "ic-ai-tool-summary", personId, range.from, range.to],
     enabled: Boolean(personId && range.from && range.to),
     placeholderData: keepPreviousData,
@@ -179,14 +179,21 @@ export function useIcAiToolSummary(
       );
       return resp.items;
     },
-  });
+  };
 }
 
-export function useIcAiToolTrend(
+export function useIcAiToolSummary(
   personId: string,
   range: DateRange,
-): UseQueryResult<AiToolTrendRow[]> {
-  return useQuery({
+): UseQueryResult<AiToolSummaryRow[]> {
+  return useQuery(icAiToolSummaryQueryOptions(personId, range));
+}
+
+export function icAiToolTrendQueryOptions(
+  personId: string,
+  range: DateRange,
+) {
+  return {
     queryKey: ["v2", "ic-ai-tool-trend", personId, range.from, range.to],
     enabled: Boolean(personId && range.from && range.to),
     placeholderData: keepPreviousData,
@@ -198,14 +205,21 @@ export function useIcAiToolTrend(
       );
       return resp.items;
     },
-  });
+  };
 }
 
-export function useIcAiPeerCounters(
+export function useIcAiToolTrend(
   personId: string,
   range: DateRange,
-): UseQueryResult<AiPeerCounterRow[]> {
-  return useQuery({
+): UseQueryResult<AiToolTrendRow[]> {
+  return useQuery(icAiToolTrendQueryOptions(personId, range));
+}
+
+export function icAiPeerCountersQueryOptions(
+  personId: string,
+  range: DateRange,
+) {
+  return {
     queryKey: ["v2", "ic-ai-peer-counters", personId, range.from, range.to],
     enabled: Boolean(personId && range.from && range.to),
     placeholderData: keepPreviousData,
@@ -217,7 +231,14 @@ export function useIcAiPeerCounters(
       );
       return resp.items;
     },
-  });
+  };
+}
+
+export function useIcAiPeerCounters(
+  personId: string,
+  range: DateRange,
+): UseQueryResult<AiPeerCounterRow[]> {
+  return useQuery(icAiPeerCountersQueryOptions(personId, range));
 }
 
 export interface DrilldownBatchData {
