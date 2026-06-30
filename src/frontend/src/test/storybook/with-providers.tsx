@@ -1,0 +1,55 @@
+/**
+ * Story decorator that mounts a story inside Insight's real provider stack —
+ * the SPA replacement for the corporate `WithFederation` decorator
+ * (federation/packages/storybook-react/src/preview/decorators/withFederation.tsx).
+ *
+ * Federation-specific providers (FragmentContextProvider, fragment
+ * localization, federation mock) are dropped. We keep the providers a
+ * widget actually needs in isolation:
+ *   - QueryClientProvider  — fresh client per story (retry off, gcTime 0)
+ *   - TanStack Router      — memory-history router (story = not-found route)
+ *   - ThemeProvider        — light/dark classes; the theme toolbar drives it
+ *   - I18nextProvider      — app i18n instance
+ *
+ * `CatalogProvider` is intentionally NOT included globally — catalog-driven
+ * widgets mock `POST /catalog/get_metrics` via MSW per story, so the story
+ * exercises the real `useCatalog()` wiring instead of a stubbed provider.
+ */
+
+import type { Decorator } from "@storybook/react-vite";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
+import { useEffect, useMemo } from "react";
+import { I18nextProvider } from "react-i18next";
+
+import { ThemeProvider } from "@/components/theme-provider";
+import i18n from "@/i18n";
+import { createTestingRouter } from "./test-router";
+
+export const WithProviders: Decorator = (Story) => {
+  const client = useMemo(
+    () =>
+      new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      }),
+    [],
+  );
+  const { router } = useMemo(() => createTestingRouter(), []);
+
+  // Render the story as the memory-router's not-found component, mirroring
+  // the corporate fragment decorator. This gives the story full router
+  // context (Link / useNavigate / useRouterState) without the app route tree.
+  useEffect(() => {
+    router.update({ defaultNotFoundComponent: () => <Story /> });
+  }, [router, Story]);
+
+  return (
+    <QueryClientProvider client={client}>
+      <ThemeProvider>
+        <I18nextProvider i18n={i18n}>
+          <RouterProvider router={router} />
+        </I18nextProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+};

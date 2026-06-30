@@ -3,10 +3,20 @@
  * pipeline doesn't pull in the testing-library deps in production bundles,
  * and so the test setup file can run jsdom + jest-dom matchers without
  * interfering with dev-mode HMR.
+ *
+ * Two projects:
+ *   - `unit`      — existing RTL/jsdom unit & component tests (`*.test.tsx`).
+ *   - `storybook` — stories tagged `["test"]` run as tests in a real browser
+ *                   via @storybook/addon-vitest + @vitest/browser-playwright.
+ *                   See docs/testing/storybook-component-tests.md.
+ *
+ * Run a single project with `--project=unit` / `--project=storybook`.
  */
 
 import path from "path";
 import react from "@vitejs/plugin-react";
+import { playwright } from "@vitest/browser-playwright";
+import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -17,24 +27,55 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "jsdom",
-    globals: false,
-    setupFiles: ["./src/test/setup.ts"],
-    css: false,
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "html", "cobertura"],
-      reportsDirectory: "./coverage",
-      include: ["src/**/*.{ts,tsx}"],
-      exclude: [
-        "src/**/*.test.{ts,tsx}",
-        "src/test/**", // setup + test utils
-        "src/mocks/**", // MSW handlers + factories
-        "src/**/*.d.ts",
-        "src/routeTree.gen.ts", // TanStack Router generated file
-        "src/main.tsx", // entry/bootstrap
-      ],
-    },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          environment: "jsdom",
+          globals: false,
+          css: false,
+          setupFiles: ["./src/test/setup.ts"],
+          include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+          // Coverage is a property of the jsdom unit project (main's v8
+          // config); the browser `storybook` project is excluded from it.
+          coverage: {
+            provider: "v8",
+            reporter: ["text", "html", "cobertura"],
+            reportsDirectory: "./coverage",
+            include: ["src/**/*.{ts,tsx}"],
+            exclude: [
+              "src/**/*.test.{ts,tsx}",
+              "src/test/**", // setup + test utils
+              "src/mocks/**", // MSW handlers + factories
+              "src/**/*.d.ts",
+              "src/routeTree.gen.ts", // TanStack Router generated file
+              "src/main.tsx", // entry/bootstrap
+            ],
+          },
+        },
+      },
+      {
+        extends: true,
+        plugins: [
+          storybookTest({
+            configDir: path.resolve(__dirname, ".storybook"),
+            tags: { include: ["test"], exclude: [], skip: ["skip-test"] },
+          }),
+        ],
+        test: {
+          name: "storybook",
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: playwright(),
+            instances: [{ browser: "chromium" }],
+          },
+          // Preview annotations (decorators / MSW loader / parameters from
+          // .storybook/preview.tsx) are applied automatically by
+          // @storybook/addon-vitest since Storybook 10.3 — no setup file needed.
+        },
+      },
+    ],
   },
 });
