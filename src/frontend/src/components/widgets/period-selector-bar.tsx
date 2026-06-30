@@ -150,6 +150,7 @@ export function PeriodSelectorBar({
             ) : null}
             <Calendar
               mode="range"
+              resetOnSelect
               showOutsideDays={false}
               selected={tempRange}
               onSelect={(r) => setTempRange(r)}
