@@ -26,7 +26,11 @@ import { ThemeProvider } from "@/components/theme-provider";
 import i18n from "@/i18n";
 import { createTestingRouter } from "./test-router";
 
-export const WithProviders: Decorator = (Story) => {
+export const WithProviders: Decorator = (Story, context) => {
+  // Drive our own ThemeProvider from the addon-themes toolbar global. Without
+  // this, ThemeProvider reads (empty) localStorage → falls back to "system" and
+  // rewrites <html>, clobbering the light/dark class withThemeByClassName set.
+  const selectedTheme = context.globals.theme === "dark" ? "dark" : "light";
   const client = useMemo(
     () =>
       new QueryClient({
@@ -34,18 +38,21 @@ export const WithProviders: Decorator = (Story) => {
       }),
     [],
   );
-  const { router } = useMemo(() => createTestingRouter(), []);
+  const { router, reset } = useMemo(() => createTestingRouter(), []);
 
   // Render the story as the memory-router's not-found component, mirroring
   // the corporate fragment decorator. This gives the story full router
   // context (Link / useNavigate / useRouterState) without the app route tree.
+  // reset() first so a story that navigated doesn't leak its location into the
+  // next story (the router is memoized for the decorator's lifetime).
   useEffect(() => {
+    reset();
     router.update({ defaultNotFoundComponent: () => <Story /> });
-  }, [router, Story]);
+  }, [router, reset, Story]);
 
   return (
     <QueryClientProvider client={client}>
-      <ThemeProvider>
+      <ThemeProvider key={selectedTheme} defaultTheme={selectedTheme}>
         <I18nextProvider i18n={i18n}>
           <RouterProvider router={router} />
         </I18nextProvider>
