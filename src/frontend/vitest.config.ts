@@ -30,9 +30,12 @@ export default defineConfig({
     // Coverage is a GLOBAL option in Vitest — with `projects` it must live at
     // the root `test` level; a `coverage` block nested inside a project is
     // ignored (which silently dropped our `cobertura` reporter and left CI's
-    // diff-coverage gate without its report). CI runs
-    // `vitest run --project=unit --coverage`, so only the jsdom unit project is
-    // measured; the browser `storybook` project is not run under coverage.
+    // diff-coverage gate without its report). CI runs `vitest run --coverage`
+    // (`pnpm test:coverage:ci`) with no `--project` filter, so BOTH the jsdom
+    // `unit` project and the browser `storybook` project run in one pass and
+    // their coverage merges into a single report — a component exercised only by
+    // a story counts toward the diff-coverage gate. (`pnpm test:coverage` stays
+    // unit-only for a fast local loop that needs no browser.)
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "cobertura"],

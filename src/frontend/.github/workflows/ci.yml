@@ -1,9 +1,10 @@
 name: CI
 
-# Quality gates that run on every PR and on pushes to main: the Vitest unit
-# suite (with coverage), ESLint, and the TypeScript type check. docker.yml
-# only fires on main and just builds the image — these are the checks that
-# actually validate the code before it lands. The three jobs run in parallel.
+# Quality gates that run on every PR and on pushes to main: the Vitest unit +
+# Storybook component suites (with merged coverage), ESLint, and the TypeScript
+# type check. docker.yml only fires on main and just builds the image — these
+# are the checks that actually validate the code before it lands. The three jobs
+# run in parallel.
 on:
   pull_request:
   push:
@@ -18,9 +19,9 @@ permissions:
 
 jobs:
   test:
-    name: Unit tests & coverage
+    name: Tests & coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -44,8 +45,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run unit tests with coverage
-        run: pnpm test:coverage
+      # The `storybook` Vitest project runs stories as tests in a real headless
+      # chromium (@vitest/browser-playwright). Cache the browser binary keyed on
+      # the lockfile (Playwright version is pinned there); on a hit the install
+      # below only re-runs the fast apt-get OS-deps step.
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Runs BOTH Vitest projects (unit/jsdom + storybook/browser) in one pass so
+      # their coverage merges into a single Cobertura report. Component (story)
+      # tests are blocking — a failing story fails this job like a unit test does.
+      - name: Run unit + component tests with coverage
+        run: pnpm test:coverage:ci
 
       # Producer only: hand the Cobertura (and the full HTML/lcov report) to the
       # `coverage` job, which renders the summary and runs the code-coverage gate.

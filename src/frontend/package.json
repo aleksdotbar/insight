@@ -14,6 +14,7 @@
     "test:watch": "vitest --project=unit",
     "test:coverage": "vitest run --project=unit --coverage",
     "test:coverage:watch": "vitest --project=unit --coverage",
+    "test:coverage:ci": "vitest run --coverage",
     "test:storybook": "vitest --project=storybook",
     "test:storybook:ci": "vitest run --project=storybook",
     "storybook:dev": "storybook dev -p 6006",
