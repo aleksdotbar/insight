@@ -370,9 +370,22 @@ assertions run against `canvas`.
 
 ## 11. CI
 
-- Add `pnpm exec playwright install --with-deps chromium` before `test:storybook:ci`.
-- Browser-mode needs headless chromium (OS deps). For the test CI job, use a
-  Playwright base image (`mcr.microsoft.com/playwright`) or install on the fly.
+Implemented in `.github/workflows/ci.yml` (the `test` job):
+
+- The job runs **both** Vitest projects in one pass via `pnpm test:coverage:ci`
+  (`vitest run --coverage`, no `--project` filter). Coverage is a global option,
+  so the jsdom `unit` and browser `storybook` projects merge into a single
+  Cobertura report — a component exercised only by a story counts toward the
+  diff-coverage gate. The existing `coverage` job (summary + 80% diff gate)
+  consumes that report unchanged.
+- Browser-mode needs headless chromium: the job caches `~/.cache/ms-playwright`
+  (keyed on `pnpm-lock.yaml`, where the Playwright version is pinned) and runs
+  `pnpm exec playwright install --with-deps chromium` (a cache hit skips the
+  download and only re-runs the fast apt-get OS-deps step).
+- Component tests are **blocking**: a failing story fails the `test` job exactly
+  like a unit test does.
+- `pnpm test:coverage` stays unit-only for a fast local loop that needs no
+  browser; `pnpm test:coverage:ci` is what CI runs.
 - Prod build (`pnpm build`) is unaffected — Storybook/test deps are dev-only.
 
 ## 12. Rollout phases
@@ -381,7 +394,9 @@ assertions run against `canvas`.
    `storybook` project in `vitest.config.ts`, scripts.
 2. **Phase 1 — first widget (done):** stories + play tests for `KpiTile`; green
    `test:storybook`. MSW catalog-mock pattern established.
-3. **Phase 2 — CI:** playwright install + `test:storybook:ci` job.
+3. **Phase 2 — CI (done):** the `test` job caches + installs chromium and runs
+   `pnpm test:coverage:ci` (both projects, merged coverage). Story tests are
+   blocking and feed the diff-coverage gate. See §11.
 4. **Phase 3 — rollout:** stories for key widgets (`bullet-chart`,
    `members-heatmap`, `attention-needed`, `metric-card`, `members-table`).
 

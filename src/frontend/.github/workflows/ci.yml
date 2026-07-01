@@ -1,9 +1,10 @@
 name: CI
 
-# Quality gates that run on every PR and on pushes to main: the Vitest unit
-# suite (with coverage), ESLint, and the TypeScript type check. docker.yml
-# only fires on main and just builds the image — these are the checks that
-# actually validate the code before it lands. The three jobs run in parallel.
+# Quality gates that run on every PR and on pushes to main: the Vitest unit +
+# Storybook component suites (with merged coverage), ESLint, and the TypeScript
+# type check. docker.yml only fires on main and just builds the image — these
+# are the checks that actually validate the code before it lands. The three jobs
+# run in parallel.
 on:
   pull_request:
   push:
@@ -18,9 +19,16 @@ permissions:
 
 jobs:
   test:
-    name: Unit tests & coverage
+    name: Tests & coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Run in the official Playwright image: chromium + its OS deps are baked in,
+    # so the `storybook` browser project needs no browser download. Downloading
+    # chromium at CI time stalled indefinitely on the runner (the CDN fetch of
+    # chromium-linux.zip never progressed). The tag MUST track `playwright` in
+    # package.json (1.61.1) so the pre-installed browser build matches.
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -44,8 +52,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run unit tests with coverage
-        run: pnpm test:coverage
+      # Runs BOTH Vitest projects (unit/jsdom + storybook/browser) in one pass so
+      # their coverage merges into a single Cobertura report. The browser project
+      # uses the chromium pre-installed in the container image (see `container:`
+      # above) — no `playwright install` step. Component (story) tests are
+      # blocking: a failing story fails this job like a unit test does.
+      - name: Run unit + component tests with coverage
+        run: pnpm test:coverage:ci
 
       # Producer only: hand the Cobertura (and the full HTML/lcov report) to the
       # `coverage` job, which renders the summary and runs the code-coverage gate.
