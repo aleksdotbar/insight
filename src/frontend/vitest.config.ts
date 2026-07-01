@@ -27,6 +27,27 @@ export default defineConfig({
     },
   },
   test: {
+    // Coverage is a GLOBAL option in Vitest — with `projects` it must live at
+    // the root `test` level; a `coverage` block nested inside a project is
+    // ignored (which silently dropped our `cobertura` reporter and left CI's
+    // diff-coverage gate without its report). CI runs
+    // `vitest run --project=unit --coverage`, so only the jsdom unit project is
+    // measured; the browser `storybook` project is not run under coverage.
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "cobertura"],
+      reportsDirectory: "./coverage",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.stories.{ts,tsx}", // exercised by the browser storybook project, not unit
+        "src/test/**", // setup + test utils
+        "src/mocks/**", // MSW handlers + factories
+        "src/**/*.d.ts",
+        "src/routeTree.gen.ts", // TanStack Router generated file
+        "src/main.tsx", // entry/bootstrap
+      ],
+    },
     projects: [
       {
         extends: true,
@@ -37,22 +58,6 @@ export default defineConfig({
           css: false,
           setupFiles: ["./src/test/setup.ts"],
           include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-          // Coverage is a property of the jsdom unit project (main's v8
-          // config); the browser `storybook` project is excluded from it.
-          coverage: {
-            provider: "v8",
-            reporter: ["text", "html", "cobertura"],
-            reportsDirectory: "./coverage",
-            include: ["src/**/*.{ts,tsx}"],
-            exclude: [
-              "src/**/*.test.{ts,tsx}",
-              "src/test/**", // setup + test utils
-              "src/mocks/**", // MSW handlers + factories
-              "src/**/*.d.ts",
-              "src/routeTree.gen.ts", // TanStack Router generated file
-              "src/main.tsx", // entry/bootstrap
-            ],
-          },
         },
       },
       {
