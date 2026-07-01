@@ -1,12 +1,3 @@
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
-
 import { useCatalog } from "@/api/use-catalog";
 import type { CatalogMetric } from "@/api/catalog-client";
 import { MetricSublabel } from "@/components/widgets/v2/metric-sublabel";
@@ -18,10 +9,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  BarChart,
+  CartesianGrid,
+  ChartBar,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
+  ReferenceLine,
   type ChartConfig,
+  XAxis,
+  YAxis,
 } from "@/components/ui/chart";
 import { useSettings } from "@/hooks/use-settings";
 import {
@@ -134,7 +131,11 @@ function HistogramBody({
         />
         <YAxis hide />
         <ChartTooltip content={<ChartTooltipContent hideIndicator />} />
-        <Bar dataKey="count" fill="var(--color-count)" radius={3} />
+        <ChartBar
+          dataKey="count"
+          fill="var(--color-count)"
+          radius={3}
+        />
         {median != null ? (
           <ReferenceLine
             x={`${median}${unit}`}

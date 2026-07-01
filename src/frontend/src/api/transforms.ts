@@ -309,9 +309,11 @@ export function transformBulletMetrics(
     const baseUnit = catalogRow.unit ?? '';
     const isMemberScale = catalogRow.is_member_scale;
     const higherIsBetter = catalogRow.higher_is_better;
-    const goodThr = catalogRow.thresholds.good;
-    const warnThr = catalogRow.thresholds.warn;
     const isSchemaError = catalogRow.schema_status === 'error';
+    const thresholds = catalogRow.thresholds;
+    const hasThresholds = thresholds != null;
+    const goodThr = thresholds?.good ?? 0;
+    const warnThr = thresholds?.warn ?? 0;
 
     // Member-scale metrics use team headcount as the denominator. Unit
     // becomes "/ N" at the team view; IC view keeps them unavailable.
@@ -408,7 +410,7 @@ export function transformBulletMetrics(
       // schema_status='error' suppresses threshold-based coloring per DESIGN
       // §3.3: bar dimensions render normally but the row is flagged so
       // consumers can show the "Metric source unavailable" indicator.
-      status: isSchemaError
+      status: isSchemaError || !hasThresholds
         ? 'unavailable'
         : evaluateStatus(
             r.value,

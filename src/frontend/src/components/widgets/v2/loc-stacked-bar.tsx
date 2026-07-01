@@ -1,5 +1,3 @@
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
-
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import {
   Card,
@@ -9,12 +7,17 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  BarChart,
+  CartesianGrid,
+  ChartBar,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
+  XAxis,
+  YAxis,
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LocDataPoint } from "@/types/insight";
@@ -88,19 +91,19 @@ export function LocStackedBar({
             />
             <ChartTooltip content={<ChartTooltipContent />} />
             <ChartLegend content={<ChartLegendContent />} />
-            <Bar
+            <ChartBar
               dataKey="codeLoc"
               stackId="a"
               fill="var(--color-codeLoc)"
               name="Clean LOC"
             />
-            <Bar
+            <ChartBar
               dataKey="specLines"
               stackId="a"
               fill="var(--color-specLines)"
               name="Spec"
             />
-            <Bar
+            <ChartBar
               dataKey="configLoc"
               stackId="a"
               fill="var(--color-configLoc)"

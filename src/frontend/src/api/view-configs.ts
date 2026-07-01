@@ -43,6 +43,7 @@ export function useTeamViewConfig(): TeamViewConfig {
         const m = byKey.get(`${VIEW_CONFIG_PREFIX}${key}`);
         if (!m || m.schema_status === 'error') return [];
         const t = m.thresholds;
+        if (!t) return [];
         if (t.alert_trigger === undefined || t.alert_bad === undefined) return [];
         return [
           {
@@ -58,6 +59,7 @@ export function useTeamViewConfig(): TeamViewConfig {
       column_thresholds: TEAM_COLUMN_KEYS.flatMap((key) => {
         const m = byKey.get(`${VIEW_CONFIG_PREFIX}${key}`);
         if (!m || m.schema_status === 'error') return [];
+        if (!m.thresholds) return [];
         return [
           {
             metric_key: key,

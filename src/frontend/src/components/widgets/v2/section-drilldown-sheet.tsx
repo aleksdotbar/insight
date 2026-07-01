@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Maximize2, Minimize2, XIcon } from "lucide-react";
 
 import { CountersBlock } from "@/components/widgets/v2/counters-block";
+import { AiPersonalPanel } from "@/components/widgets/v2/ai-personal-panel";
 import { DistributionStrip } from "@/components/widgets/v2/distribution-strip";
 import { LocStackedBar } from "@/components/widgets/v2/loc-stacked-bar";
 import {
@@ -10,7 +11,6 @@ import {
   type SectionTrendSeries,
 } from "@/components/widgets/v2/section-trend";
 import { SummaryWithBreakdown } from "@/components/widgets/v2/summary-with-breakdown";
-import { TreemapComposition } from "@/components/widgets/v2/treemap-composition";
 import {
   Sheet,
   SheetClose,
@@ -33,10 +33,7 @@ import {
   useIcDrilldownBatch,
   type DrilldownBatchData,
 } from "@/queries/v2/ic-extras";
-import {
-  deriveAiToolComposition,
-  deriveCollabActivities,
-} from "@/lib/insight/v2/derivations";
+import { deriveCollabActivities } from "@/lib/insight/v2/derivations";
 import type { PeerCohortLabel } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 import type { BulletMetric, PeriodValue } from "@/types/insight";
@@ -204,6 +201,7 @@ function DrilldownBody({
   cohortLabel: PeerCohortLabel;
 }) {
   const { counters, distributions } = partitionBullets(rows);
+  const isAiAdoption = sectionId === "ai_adoption";
 
   const batchQ = useIcDrilldownBatch({
     sectionId: sectionId ?? null,
@@ -239,16 +237,20 @@ function DrilldownBody({
         batchQ.isFetching && "opacity-60"
       )}
     >
-      {sectionId && batch ? (
-        <DrilldownExtras sectionId={sectionId} batch={batch} rows={rows} />
+      {sectionId && !isAiAdoption && batch ? (
+        <DrilldownExtras
+          sectionId={sectionId}
+          batch={batch}
+          rows={rows}
+        />
       ) : null}
-      {counters.length > 0 ? (
+      {!isAiAdoption && counters.length > 0 ? (
         <CountersBlock rows={counters} cohortLabel={cohortLabel} />
       ) : null}
       {/* Histograms (ic_histogram) are per-person; a team aggregate has no
           single person, so the team renders distributions as a compact
           value-vs-expectation list (matches the sandbox's list layout). */}
-      {distributions.length > 0 ? (
+      {!isAiAdoption && distributions.length > 0 ? (
         personId != null ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {distributions.map((r) => (
@@ -267,6 +269,9 @@ function DrilldownBody({
             layout="list"
           />
         )
+      ) : null}
+      {isAiAdoption ? (
+        <AiPersonalPanel personId={personId} range={range} />
       ) : null}
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
@@ -338,38 +343,6 @@ function DrilldownExtras({
         data={(batch.sectionTrend ?? []) as SectionTrendPoint[]}
         rightAxis
       />
-    );
-  }
-  if (sectionId === "ai_adoption") {
-    const trendSeries: SectionTrendSeries[] = [
-      {
-        key: "cc_lines",
-        label: "Claude Code lines",
-        type: "area",
-        yAxisId: "left",
-      },
-      {
-        key: "cursor_lines",
-        label: "Cursor lines",
-        type: "area",
-        yAxisId: "right",
-      },
-    ];
-    return (
-      <div className="flex flex-col gap-4">
-        <SectionTrend
-          title="Daily AI authored lines"
-          description="Claude Code (left) + Cursor (right)"
-          series={trendSeries}
-          data={(batch.sectionTrend ?? []) as SectionTrendPoint[]}
-          rightAxis
-        />
-        <TreemapComposition
-          title="AI tool share"
-          description="Share of activity per tool"
-          rows={deriveAiToolComposition(rows)}
-        />
-      </div>
     );
   }
   if (sectionId === "collaboration") {

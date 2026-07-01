@@ -1,13 +1,3 @@
-import {
-  Area,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-} from "recharts";
-
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import {
   Card,
@@ -17,12 +7,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  CartesianGrid,
+  ChartArea,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
+  ChartLine,
   ChartTooltip,
   ChartTooltipContent,
+  ComposedChart,
+  ReferenceLine,
   type ChartConfig,
+  XAxis,
+  YAxis,
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -155,7 +152,7 @@ export function SectionTrend({
               const color = `var(--color-${s.key})`;
               if (s.type === "area" || s.type === "stacked-area") {
                 return (
-                  <Area
+                  <ChartArea
                     key={s.key}
                     yAxisId={yAxisId}
                     type="monotone"
@@ -170,7 +167,7 @@ export function SectionTrend({
                 );
               }
               return (
-                <Line
+                <ChartLine
                   key={s.key}
                   yAxisId={yAxisId}
                   type="monotone"

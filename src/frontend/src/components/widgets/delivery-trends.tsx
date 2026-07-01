@@ -1,14 +1,14 @@
 import { memo } from "react";
 import {
   CartesianGrid,
-  Legend,
-  Line,
+  ChartLegend,
+  ChartLine,
+  ChartTooltip,
   LineChart,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
-} from "recharts";
+} from "@/components/ui/chart";
 
 import {
   CHART_BLUE,
@@ -65,9 +65,9 @@ function DeliveryTrendsImpl({ data }: DeliveryTrendsProps) {
           tickLine={false}
           allowDecimals={false}
         />
-        <Tooltip />
-        <Legend wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
-        <Line
+        <ChartTooltip />
+        <ChartLegend wrapperStyle={{ fontSize: CHART_FONT_TICK, paddingTop: 8 }} />
+        <ChartLine
           type="monotone"
           dataKey="Commits"
           stroke={CHART_BLUE}
@@ -76,7 +76,7 @@ function DeliveryTrendsImpl({ data }: DeliveryTrendsProps) {
           activeDot={{ r: 5 }}
         />
         {hasPrs ? (
-          <Line
+          <ChartLine
             type="monotone"
             dataKey="PRs Merged"
             stroke={CHART_PURPLE}
@@ -86,7 +86,7 @@ function DeliveryTrendsImpl({ data }: DeliveryTrendsProps) {
             connectNulls={false}
           />
         ) : null}
-        <Line
+        <ChartLine
           type="monotone"
           dataKey="Tasks Done"
           stroke={CHART_GREEN}

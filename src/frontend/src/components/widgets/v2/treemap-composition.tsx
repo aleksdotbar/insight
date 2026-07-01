@@ -1,5 +1,3 @@
-import { Treemap } from "recharts";
-
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import {
   Card,
@@ -10,6 +8,7 @@ import {
 } from "@/components/ui/card";
 import {
   ChartContainer,
+  ChartTreemap,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -136,7 +135,7 @@ export function TreemapComposition({
       </CardHeader>
       <CardContent>
         <ChartContainer config={CHART_CONFIG} className="h-48 w-full">
-          <Treemap
+          <ChartTreemap
             data={rows as unknown as Record<string, unknown>[]}
             dataKey="value"
             nameKey="name"
@@ -146,7 +145,7 @@ export function TreemapComposition({
             <ChartTooltip
               content={<ChartTooltipContent hideIndicator />}
             />
-          </Treemap>
+          </ChartTreemap>
         </ChartContainer>
       </CardContent>
     </Card>

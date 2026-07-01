@@ -112,7 +112,63 @@ ${colorConfig
   )
 }
 
+const BarChart = RechartsPrimitive.BarChart
+const LineChart = RechartsPrimitive.LineChart
+const ComposedChart = RechartsPrimitive.ComposedChart
+const CartesianGrid = RechartsPrimitive.CartesianGrid
+const XAxis = RechartsPrimitive.XAxis
+const YAxis = RechartsPrimitive.YAxis
+const ReferenceLine = RechartsPrimitive.ReferenceLine
+const ResponsiveContainer = RechartsPrimitive.ResponsiveContainer
 const ChartTooltip = RechartsPrimitive.Tooltip
+
+function ChartBar({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Bar>) {
+  return (
+    <RechartsPrimitive.Bar
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+function ChartLine({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Line>) {
+  return (
+    <RechartsPrimitive.Line
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+function ChartArea({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Area>) {
+  return (
+    <RechartsPrimitive.Area
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
+
+function ChartTreemap({
+  isAnimationActive = false,
+  ...props
+}: React.ComponentProps<typeof RechartsPrimitive.Treemap>) {
+  return (
+    <RechartsPrimitive.Treemap
+      isAnimationActive={isAnimationActive}
+      {...props}
+    />
+  )
+}
 
 function ChartTooltipContent({
   active,
@@ -362,10 +418,22 @@ function getPayloadConfigFromPayload(
 }
 
 export {
+  BarChart,
+  CartesianGrid,
+  ChartArea,
+  ChartBar,
   ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
+  ChartLine,
   ChartStyle,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartTreemap,
+  ComposedChart,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
 }
