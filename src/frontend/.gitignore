@@ -6,6 +6,9 @@ node_modules/
 dist
 dist-ssr
 
+# Storybook
+storybook-static
+
 # Env files
 .env
 .env.local
