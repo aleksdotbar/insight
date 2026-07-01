@@ -25,9 +25,9 @@ jobs:
     # so the `storybook` browser project needs no browser download. Downloading
     # chromium at CI time stalled indefinitely on the runner (the CDN fetch of
     # chromium-linux.zip never progressed). The tag MUST track `playwright` in
-    # package.json (1.57.0) so the pre-installed browser build matches.
+    # package.json (1.61.1) so the pre-installed browser build matches.
     container:
-      image: mcr.microsoft.com/playwright:v1.57.0-noble
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
     timeout-minutes: 20
     steps:
       - name: Checkout
