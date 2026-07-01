@@ -47,8 +47,8 @@ jobs:
 
       # The `storybook` Vitest project runs stories as tests in a real headless
       # chromium (@vitest/browser-playwright). Cache the browser binary keyed on
-      # the lockfile (Playwright version is pinned there); on a hit the install
-      # below only re-runs the fast apt-get OS-deps step.
+      # the lockfile (Playwright version is pinned there); a cache hit skips the
+      # download entirely.
       - name: Cache Playwright browser
         id: playwright-cache
         uses: actions/cache@v4
@@ -56,8 +56,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
+      # No `--with-deps`: that runs `sudo apt-get`, which stalls for minutes on
+      # the ubuntu-latest runner — and the runner image already ships chromium's
+      # OS libraries, so headless chromium launches without it. Bounded timeout
+      # so a slow browser download fails fast instead of eating the job budget.
       - name: Install Playwright chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
+        timeout-minutes: 5
 
       # Runs BOTH Vitest projects (unit/jsdom + storybook/browser) in one pass so
       # their coverage merges into a single Cobertura report. Component (story)
