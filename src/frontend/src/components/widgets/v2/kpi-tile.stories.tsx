@@ -1,13 +1,13 @@
 /**
  * PoC story + component test for <KpiTile>.
  *
- * Demonstrates the vendored corporate Storybook setup end-to-end. Note the
- * @storybook/addon-vitest model: EVERY story runs as a browser test — a
- * story with no `play` is a smoke test (renders without throwing); a story
- * with `play` adds interaction assertions. Opt a story out with the
- * `skip-test` tag (see the `tags.skip` list in vitest.config.ts).
+ * Demonstrates the Storybook component-test setup end-to-end. Note the
+ * @storybook/addon-vitest model as configured here (`tags.include: ["test"]`
+ * in vitest.config.ts): a story runs as a browser test only when it carries
+ * the `test` tag. A tagged story with no `play` is a smoke test (renders
+ * without throwing); a tagged story with `play` adds interaction assertions.
  *
- *   - `Default`    — demo story for the Storybook UI; also a smoke test.
+ *   - `Default`    — demo story for the Storybook UI (untagged; not a test).
  *   - `TestOkRow`  — play-driven test asserting the same catalog→widget rule
  *                    the existing `kpi-tile.test.tsx` covers, but in a real
  *                    browser with the catalog mocked over the wire via MSW
@@ -93,6 +93,19 @@ const errorCatalog = catalog([
 const meta: Meta<typeof KpiTile> = {
   title: "Widgets/v2/KpiTile",
   component: KpiTile,
+  // In the app KpiTile is a grid cell sized by its parent; the card itself has
+  // no intrinsic width (its labels use `truncate`, i.e. `white-space: nowrap`),
+  // so in an isolated `layout: "centered"` story it would collapse to width 0
+  // and render as a blank canvas. Give it a representative tile width (above
+  // the `@[250px]/card` container-query breakpoint) so it renders as it does
+  // in a real dashboard.
+  decorators: [
+    (Story) => (
+      <div className="w-72">
+        <Story />
+      </div>
+    ),
+  ],
   // The catalog query keys off the signed-in tenant; align it with the
   // mocked catalog's `tenant_id` so the row is not treated as a cross-tenant
   // mismatch. The global preview `beforeEach` (authStore.reset + localStorage

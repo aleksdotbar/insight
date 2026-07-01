@@ -1,11 +1,7 @@
 /**
- * Story decorator that mounts a story inside Insight's real provider stack —
- * the SPA replacement for the corporate `WithFederation` decorator
- * (federation/packages/storybook-react/src/preview/decorators/withFederation.tsx).
+ * Story decorator that mounts a story inside Insight's real provider stack.
  *
- * Federation-specific providers (FragmentContextProvider, fragment
- * localization, federation mock) are dropped. We keep the providers a
- * widget actually needs in isolation:
+ * We keep the providers a widget actually needs in isolation:
  *   - QueryClientProvider  — fresh client per story (retry off, gcTime 0)
  *   - TanStack Router      — memory-history router (story = not-found route)
  *   - ThemeProvider        — light/dark classes; the theme toolbar drives it
@@ -40,9 +36,9 @@ export const WithProviders: Decorator = (Story, context) => {
   );
   const { router, reset } = useMemo(() => createTestingRouter(), []);
 
-  // Render the story as the memory-router's not-found component, mirroring
-  // the corporate fragment decorator. This gives the story full router
-  // context (Link / useNavigate / useRouterState) without the app route tree.
+  // Render the story as the memory-router's not-found component. This gives
+  // the story full router context (Link / useNavigate / useRouterState)
+  // without the app route tree.
   // reset() first so a story that navigated doesn't leak its location into the
   // next story (the router is memoized for the decorator's lifetime).
   useEffect(() => {

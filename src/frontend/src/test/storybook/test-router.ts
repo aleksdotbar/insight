@@ -1,7 +1,5 @@
 /**
- * Standalone memory-history TanStack Router for stories — the SPA analogue
- * of the corporate fragment router (federation/packages/storybook-react/
- * src/preview/router.ts), minus the fragment binding.
+ * Standalone memory-history TanStack Router for stories.
  *
  * We deliberately do NOT use the app's generated `routeTree.gen` here: a
  * story renders one component in isolation, so the router only needs to

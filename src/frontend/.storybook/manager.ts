@@ -1,6 +1,5 @@
 /**
- * Storybook UI (manager) theme. Vendored from
- * react-tests/src/storybook/manager.ts.
+ * Storybook UI (manager) theme.
  */
 
 import { addons } from "storybook/manager-api";

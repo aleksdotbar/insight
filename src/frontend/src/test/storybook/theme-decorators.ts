@@ -1,9 +1,7 @@
 /**
- * Theme toolbar for stories. Adaptation of the corporate
- * `commonPreviewDecorators` (react-tests/src/storybook/preview.ts) to
- * Insight's class convention: our `ThemeProvider`
- * (src/components/theme-provider.tsx) toggles `light`/`dark` classes on
- * `<html>` (Tailwind / shadcn convention), not `acv-color-scheme-*`.
+ * Theme toolbar for stories, matching Insight's class convention: our
+ * `ThemeProvider` (src/components/theme-provider.tsx) toggles `light`/`dark`
+ * classes on `<html>` (Tailwind / shadcn convention).
  */
 
 import { withThemeByClassName } from "@storybook/addon-themes";

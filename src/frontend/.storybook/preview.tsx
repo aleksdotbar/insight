@@ -1,9 +1,8 @@
 /**
  * Storybook preview: global decorators, MSW, and app styles.
  *
- * Mirrors the corporate preview structure (react-tests + storybook-react)
- * but wired to Insight's own theme/i18n/router providers and `index.css`
- * (Tailwind v4 + theme tokens) instead of `@constructor/globals`.
+ * Wires stories to Insight's own theme/i18n/router providers and `index.css`
+ * (Tailwind v4 + theme tokens).
  */
 
 import type { Preview } from "@storybook/react-vite";
@@ -19,6 +18,11 @@ import { WithProviders } from "@/test/storybook/with-providers";
 initialize({ onUnhandledRequest: "bypass" });
 
 const preview: Preview = {
+  // Opt-in test model: strip the `test` tag Storybook auto-applies to every
+  // story, so a story runs as a Vitest browser test ONLY when it re-adds
+  // `tags: ["test"]` itself. Without this, `tags.include: ["test"]` in
+  // vitest.config.ts would run every story (demo stories included) as a test.
+  tags: ["!test"],
   parameters: {
     layout: "centered",
     // Keep `Test*` stories (component tests) out of the docs/autodocs pages —
@@ -29,8 +33,8 @@ const preview: Preview = {
       },
     },
   },
-  // Global reset of app-level singletons before every story — parity with the
-  // corporate preview's per-story reset. Per-story state (QueryClient, router)
+  // Global reset of app-level singletons before every story. Per-story state
+  // (QueryClient, router)
   // is already fresh via `WithProviders`' `useMemo`, and MSW handlers are reset
   // by the addon; this covers the module-level singletons a story might mutate
   // (auth) and any persisted UI prefs (theme / locale / settings in

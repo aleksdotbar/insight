@@ -1,8 +1,5 @@
 /**
- * Storybook config. Vendored from the corporate `@constructor/react-tests`
- * `createStorybookConfig()` factory (see docs/testing/storybook-component-tests.md)
- * and inlined here so this public Apache-2.0 repo carries no private
- * `@constructor/*` dependency.
+ * Storybook config (see docs/testing/storybook-component-tests.md).
  *
  * The MSW worker (`public/mockServiceWorker.js`) is served automatically —
  * Storybook serves `public/` as a static dir by default.
