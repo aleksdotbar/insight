@@ -21,6 +21,13 @@ jobs:
   test:
     name: Tests & coverage
     runs-on: ubuntu-latest
+    # Run in the official Playwright image: chromium + its OS deps are baked in,
+    # so the `storybook` browser project needs no browser download. Downloading
+    # chromium at CI time stalled indefinitely on the runner (the CDN fetch of
+    # chromium-linux.zip never progressed). The tag MUST track `playwright` in
+    # package.json (1.57.0) so the pre-installed browser build matches.
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-noble
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -45,28 +52,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The `storybook` Vitest project runs stories as tests in a real headless
-      # chromium (@vitest/browser-playwright). Cache the browser binary keyed on
-      # the lockfile (Playwright version is pinned there); a cache hit skips the
-      # download entirely.
-      - name: Cache Playwright browser
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      # No `--with-deps`: that runs `sudo apt-get`, which stalls for minutes on
-      # the ubuntu-latest runner — and the runner image already ships chromium's
-      # OS libraries, so headless chromium launches without it. Bounded timeout
-      # so a slow browser download fails fast instead of eating the job budget.
-      - name: Install Playwright chromium
-        run: pnpm exec playwright install chromium
-        timeout-minutes: 5
-
       # Runs BOTH Vitest projects (unit/jsdom + storybook/browser) in one pass so
-      # their coverage merges into a single Cobertura report. Component (story)
-      # tests are blocking — a failing story fails this job like a unit test does.
+      # their coverage merges into a single Cobertura report. The browser project
+      # uses the chromium pre-installed in the container image (see `container:`
+      # above) — no `playwright install` step. Component (story) tests are
+      # blocking: a failing story fails this job like a unit test does.
       - name: Run unit + component tests with coverage
         run: pnpm test:coverage:ci
 
