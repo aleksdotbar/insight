@@ -37,6 +37,10 @@ export const METRIC_REGISTRY = {
   V2_IC_AI_TOOL_SUMMARY: "00000000-0000-0000-0001-000000000050",
   V2_IC_AI_TOOL_TREND: "00000000-0000-0000-0001-000000000051",
   V2_IC_AI_PEER_COUNTERS: "00000000-0000-0000-0001-000000000052",
+  // Per-person collaboration Messaging peer counters (#1527): long rows
+  // (person_id, metric_key, value + per-org_unit bands) for messages_sent /
+  // channel_posts. Mirrors V2_IC_AI_PEER_COUNTERS.
+  V2_IC_COLLAB_PEER_COUNTERS: "00000000-0000-0000-0001-000000000053",
 
   // Per-person PRs merged for a roster (period-bounded, from the weekly git
   // silver). Merged into the team_member rows for the heatmap PRs column.
