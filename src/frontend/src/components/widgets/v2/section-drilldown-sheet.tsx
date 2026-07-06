@@ -3,6 +3,7 @@ import { Maximize2, Minimize2, XIcon } from "lucide-react";
 
 import { CountersBlock } from "@/components/widgets/v2/counters-block";
 import { AiPersonalPanel } from "@/components/widgets/v2/ai-personal-panel";
+import { CollabMessagingPanel } from "@/components/widgets/v2/collab-messaging-panel";
 import { DistributionStrip } from "@/components/widgets/v2/distribution-strip";
 import { LocStackedBar } from "@/components/widgets/v2/loc-stacked-bar";
 import {
@@ -272,6 +273,9 @@ function DrilldownBody({
       ) : null}
       {isAiAdoption ? (
         <AiPersonalPanel personId={personId} range={range} />
+      ) : null}
+      {sectionId === "collaboration" ? (
+        <CollabMessagingPanel personId={personId} range={range} />
       ) : null}
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">

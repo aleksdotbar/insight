@@ -252,6 +252,44 @@ export function useIcAiPeerCounters(
   return useQuery(icAiPeerCountersQueryOptions(personId, range));
 }
 
+/**
+ * Per-person collaboration Messaging peer counters (#1527): messages_sent /
+ * channel_posts with per-`org_unit_id` bands. Same row shape + wiring as the AI
+ * peer counters (`icAiPeerCountersQueryOptions`), different metric id.
+ */
+export function icCollabPeerCountersQueryOptions(
+  personId: string,
+  range: DateRange,
+) {
+  const canonicalId = canonicalPersonId(personId);
+  return {
+    queryKey: [
+      "v2",
+      "ic-collab-peer-counters",
+      canonicalId,
+      range.from,
+      range.to,
+    ],
+    enabled: Boolean(canonicalId && range.from && range.to),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const resp = await queryMetric<AiPeerCounterRow>(
+        METRIC_REGISTRY.V2_IC_COLLAB_PEER_COUNTERS,
+        range,
+        { $filter: personFilter(canonicalId) },
+      );
+      return resp.items;
+    },
+  };
+}
+
+export function useIcCollabPeerCounters(
+  personId: string,
+  range: DateRange,
+): UseQueryResult<AiPeerCounterRow[]> {
+  return useQuery(icCollabPeerCountersQueryOptions(personId, range));
+}
+
 export interface DrilldownBatchData {
   histograms: Map<string, HistogramBin[]>;
   delivery: DeliveryDataPoint[] | null;

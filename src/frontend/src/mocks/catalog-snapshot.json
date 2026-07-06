@@ -1447,6 +1447,47 @@
         "resolved_from": "product-default",
         "bounded_by_lock": false
       }
+    },
+    {
+      "id": "019e9000-0000-7000-a000-000000000053",
+      "metric_key": "collab_person_counter_daily.messages_sent",
+      "label": "Messages sent",
+      "sublabel": "Chat messages across sources · period total",
+      "unit": "messages",
+      "higher_is_better": true,
+      "is_member_scale": false,
+      "source_tags": [
+        "m365",
+        "slack",
+        "zulip"
+      ],
+      "schema_status": "ok",
+      "thresholds": {
+        "good": 200,
+        "warn": 50,
+        "resolved_from": "product-default",
+        "bounded_by_lock": false
+      }
+    },
+    {
+      "id": "019e9000-0000-7000-a000-000000000054",
+      "metric_key": "collab_person_counter_daily.channel_posts",
+      "label": "Channel posts",
+      "sublabel": "Channel posts + replies · period total",
+      "unit": "messages",
+      "higher_is_better": true,
+      "is_member_scale": false,
+      "source_tags": [
+        "m365",
+        "slack"
+      ],
+      "schema_status": "ok",
+      "thresholds": {
+        "good": 20,
+        "warn": 5,
+        "resolved_from": "product-default",
+        "bounded_by_lock": false
+      }
     }
   ],
   "links": [
