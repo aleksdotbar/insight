@@ -272,13 +272,11 @@ export function useIcDashboardData(
           | RawTimeOffRow
         >(range, [
           { id: "kpis", metric_id: METRIC_REGISTRY.IC_KPIS, $filter: filter },
+          // One IC_BULLET_DELIVERY execution feeds both the task_delivery and
+          // code_quality transforms (the query emits rows for both sections;
+          // the catalog wire-prefix partitions them).
           {
-            id: "task_delivery",
-            metric_id: METRIC_REGISTRY.IC_BULLET_DELIVERY,
-            $filter: filter,
-          },
-          {
-            id: "code_quality",
+            id: "delivery_bullets",
             metric_id: METRIC_REGISTRY.IC_BULLET_DELIVERY,
             $filter: filter,
           },
@@ -343,7 +341,7 @@ export function useIcDashboardData(
         !isOk(byId.get("kpis") as BatchQueryResult<unknown> | undefined) ||
         !isOk(byId.get("kpis_prior") as BatchQueryResult<unknown> | undefined);
 
-      const sectionErrored = (id: IcDashboardSection): boolean =>
+      const sectionErrored = (id: string): boolean =>
         !isOk(byId.get(id) as BatchQueryResult<unknown> | undefined);
 
       return {
@@ -354,7 +352,7 @@ export function useIcDashboardData(
           cat,
         ),
         taskDelivery: transformBulletMetrics(
-          get<RawBulletAggregateRow>("task_delivery") ?? [],
+          get<RawBulletAggregateRow>("delivery_bullets") ?? [],
           "task_delivery",
           period,
           undefined,
@@ -362,7 +360,7 @@ export function useIcDashboardData(
           cat,
         ),
         codeQuality: transformBulletMetrics(
-          get<RawBulletAggregateRow>("code_quality") ?? [],
+          get<RawBulletAggregateRow>("delivery_bullets") ?? [],
           "code_quality",
           period,
           undefined,
@@ -415,8 +413,8 @@ export function useIcDashboardData(
         })(),
         errors: {
           kpis: kpisErrored,
-          task_delivery: sectionErrored("task_delivery"),
-          code_quality: sectionErrored("code_quality"),
+          task_delivery: sectionErrored("delivery_bullets"),
+          code_quality: sectionErrored("delivery_bullets"),
           git_output: sectionErrored("git_output"),
           ai_adoption: sectionErrored("ai_adoption"),
           collaboration: sectionErrored("collaboration"),

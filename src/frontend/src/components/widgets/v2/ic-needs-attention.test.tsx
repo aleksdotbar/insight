@@ -1,149 +1,66 @@
-/**
- * Component-render coverage for `<IcNeedsAttention>` (Refs #80, wave 3).
- *
- * Catalog-driven; covers the wave-1 DESIGN §3.3 rendering rules:
- *   - `ok` row that scores 'bottom' surfaces as an attention item.
- *   - `schema_status='error'` rows (surfaced as `row.schema_error: true`
- *     by transforms.ts) are filtered out of the attention surface — a
- *     broken metric never raises an alert.
- *   - Missing-id rows are filtered out — we can't tell if the value is
- *     "below peers" without a higher_is_better signal.
- */
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
-import { screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { IcNeedsAttention } from "@/components/widgets/v2/ic-needs-attention";
+import type { AttentionItem } from "@/lib/insight/attention";
 
-import { authStore } from "@/auth/auth-store";
+vi.mock("@/hooks/use-settings", () => ({
+  useSettings: () => ({ focusMode: "all" }),
+}));
 
-vi.mock("@/api/catalog-client", async () => {
-  const actual = await vi.importActual<typeof import("@/api/catalog-client")>(
-    "@/api/catalog-client",
-  );
-  return { ...actual, fetchCatalog: vi.fn() };
-});
-
-import * as catalogClient from "@/api/catalog-client";
-import {
-  buildCatalogResponse,
-  renderWithCatalogClient,
-} from "@/test/catalog-test-utils";
-import { IcNeedsAttention } from "./ic-needs-attention";
-import type { PeerStats } from "@/lib/peers";
-import type { BulletMetric, PeriodValue } from "@/types/insight";
-
-const fetchCatalog = catalogClient.fetchCatalog as ReturnType<typeof vi.fn>;
-
-function makeBullet(overrides: Partial<BulletMetric> = {}): BulletMetric {
+function item(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return {
-    period: "month" as PeriodValue,
-    section: "task_delivery",
-    metric_key: "tasks_completed",
-    label: "Tasks Closed",
-    value: "1",
-    unit: "tasks",
-    range_min: "0",
-    range_max: "20",
-    median: "5",
-    median_label: "Median: 5 tasks",
-    bar_left_pct: 0,
-    bar_width_pct: 5,
-    median_left_pct: 25,
-    status: "bad",
-    drill_id: "",
+    key: "ai.active_days",
+    group: "ai_adoption",
+    label: "Active AI days",
+    valueText: "2 days",
+    medianText: "Median 11 days",
+    relGap: 0.8,
     ...overrides,
   };
 }
 
-const STATS: PeerStats = { p25: 3, p50: 5, p75: 10, min: 1, max: 15, n: 12 };
-
-describe("<IcNeedsAttention>", () => {
-  beforeEach(() => {
-    authStore.reset();
-    authStore.setTenantId("t-1");
-    fetchCatalog.mockReset();
-  });
-  afterEach(() => {
-    authStore.reset();
-  });
-
-  it("surfaces an ok-row whose value is bottom-quartile vs peers", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "task_delivery_bullet_rows.tasks_completed",
-          higher_is_better: true,
-          schema_status: "ok",
-        },
-      ]),
+describe("IcNeedsAttention", () => {
+  it("renders nothing without items", () => {
+    const { container } = render(
+      <IcNeedsAttention items={[]} onOpenGroup={vi.fn()} />,
     );
-    renderWithCatalogClient(
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("ranks items by relative gap descending", () => {
+    render(
       <IcNeedsAttention
-        sections={[
-          {
-            id: "task_delivery",
-            label: "Task delivery",
-            rows: [makeBullet({ value: "1", peer: STATS })],
-          },
+        items={[
+          item({ key: "a", label: "Small gap", relGap: 0.1 }),
+          item({ key: "b", label: "Large gap", relGap: 2.5 }),
         ]}
-        onSectionClick={() => {}}
+        onOpenGroup={vi.fn()}
       />,
     );
-    await waitFor(() => {
-      expect(screen.getByText("1 metrics below peers")).toBeInTheDocument();
-    });
-    expect(screen.getByText("Tasks Closed")).toBeInTheDocument();
+    const rows = screen.getAllByRole("button");
+    expect(rows[0]).toHaveTextContent("Large gap");
+    expect(rows[1]).toHaveTextContent("Small gap");
   });
 
-  it("filters out schema_error rows even when value is bottom-quartile", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "task_delivery_bullet_rows.tasks_completed",
-          higher_is_better: true,
-          schema_status: "error",
-          schema_error_code: "table_not_found",
-        },
-      ]),
-    );
-    const { container } = (() => {
-      renderWithCatalogClient(
-        <IcNeedsAttention
-          sections={[
-            {
-              id: "task_delivery",
-              label: "Task delivery",
-              rows: [makeBullet({ value: "1", schema_error: true, peer: STATS })],
-            },
-          ]}
-          onSectionClick={() => {}}
-        />,
-      );
-      return { container: document.body };
-    })();
-    // The component returns null when attentionAll is empty — no
-    // "Needs attention" heading appears.
-    await waitFor(() => {
-      expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
-    });
-    expect(container).toBeTruthy();
-  });
-
-  it("filters out missing-id rows (no catalog entry)", async () => {
-    fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
-    renderWithCatalogClient(
+  it("routes clicks to the owning group", async () => {
+    const onOpenGroup = vi.fn();
+    render(
       <IcNeedsAttention
-        sections={[
-          {
-            id: "task_delivery",
-            label: "Task delivery",
-            rows: [makeBullet({ value: "1", peer: STATS })],
-          },
-        ]}
-        onSectionClick={() => {}}
+        items={[item({ group: "git_output" })]}
+        onOpenGroup={onOpenGroup}
       />,
     );
-    await waitFor(() => {
-      expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
-    });
+    await userEvent.click(screen.getByText("Active AI days"));
+    expect(onOpenGroup).toHaveBeenCalledWith("git_output");
+  });
+
+  it("collapses beyond the threshold with a show-more toggle", () => {
+    const items = Array.from({ length: 7 }, (_, i) =>
+      item({ key: `m${i}`, label: `Metric ${i}`, relGap: i }),
+    );
+    render(<IcNeedsAttention items={items} onOpenGroup={vi.fn()} />);
+    expect(screen.getByText("Show 4 more")).toBeInTheDocument();
   });
 });

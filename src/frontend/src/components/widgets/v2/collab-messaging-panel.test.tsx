@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogMetric } from "@/api/catalog-client";
 import type { DateRange } from "@/api/period-to-date-range";
 import { CollabMessagingPanel } from "@/components/widgets/v2/collab-messaging-panel";
-import type { AiPeerCounterRow } from "@/queries/v2/ic-extras";
+import type { PeerCounterRow } from "@/queries/v2/ic-extras";
 
 const mocks = vi.hoisted(() => ({
   useCatalog: vi.fn(),
@@ -71,8 +71,8 @@ function mockCatalog(metrics: CatalogMetric[]) {
 function peerCounter(
   metric_key: string,
   value: number,
-  overrides: Partial<AiPeerCounterRow> = {},
-): AiPeerCounterRow {
+  overrides: Partial<PeerCounterRow> = {},
+): PeerCounterRow {
   return {
     person_id: "dev@example.com",
     org_unit_id: "Engineering",

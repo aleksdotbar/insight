@@ -1,7 +1,5 @@
 import { Sparkles, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
-import { formatKpiValue } from "@/api/transforms";
-import { useCatalog } from "@/api/use-catalog";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -12,140 +10,89 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
-import { STATUS_TEXT_CLASS, applyFocusStatus, type Status } from "@/lib/status";
+import type { KpiTileData } from "@/lib/insight/kpi-row";
+import type { GroupId } from "@/lib/insight/groups";
+import { STATUS_TEXT_CLASS } from "@/lib/status";
 import { cn } from "@/lib/utils";
-import type { IcKpi } from "@/types/insight";
 
 export interface KpiTileProps {
-  kpi: IcKpi;
-  onClick?: (metricKey: string) => void;
+  tile: KpiTileData;
+  onOpenGroup?: (id: GroupId) => void;
 }
 
 const CARD_SURFACE = "@container/card";
 
-function peerStatusVsMedian(
-  value: number,
-  median: number,
-  higherIsBetter: boolean
-): Status {
-  if (!Number.isFinite(value) || !Number.isFinite(median) || median === 0) {
-    return "neutral";
-  }
-  const meetsTarget = higherIsBetter ? value >= median : value <= median;
-  return meetsTarget ? "good" : "bad";
-}
-
-export function KpiTile({ kpi, onClick }: KpiTileProps) {
-  const { focusMode, showExplanations } = useSettings();
-  const { byMetricKey } = useCatalog();
-  // Wire key is `ic_kpis.<bare>`; `kpi.metric_key` here is the bare form
-  // because `transformIcKpis` strips the `ic_kpis.` prefix.
-  const catalogRow = byMetricKey(`ic_kpis.${kpi.metric_key}`);
-  const sourceTags = catalogRow?.source_tags.length
-    ? catalogRow.source_tags.join(", ")
-    : null;
-  const isSchemaError = catalogRow?.schema_status === "error";
-  const fmt = catalogRow?.format;
-  const isCountMetric =
-    catalogRow !== undefined && fmt !== "percent" && fmt !== "hours";
-  const rawValue = kpi.raw_value ?? (isCountMetric ? 0 : null);
-  const hasValue = rawValue !== null;
-  // Department peer median folded onto the KPI row by the IC_KPIS query_ref.
-  const peerMedian = kpi.peer_median ?? null;
-  const hasMedian =
-    peerMedian != null && Number.isFinite(peerMedian) && peerMedian > 0;
-  const value = kpi.value ?? (isCountMetric ? formatKpiValue(0, fmt) : "—");
-  // Units are implied by the card label, so we drop them — except `%`, which
-  // reads as part of the number and renders at the value's size.
-  const isPercent = kpi.unit === "%";
-
-  // Value coloring: how the result sits against the peer median. Suppressed
-  // (neutral) for schema_status='error' / missing-id / no-median rows.
-  const valueStatus = applyFocusStatus(
-    !isSchemaError && catalogRow && hasValue && hasMedian && peerMedian != null
-      ? peerStatusVsMedian(
-          rawValue as number,
-          peerMedian,
-          catalogRow.higher_is_better
-        )
-      : "neutral",
-    focusMode
-  );
-
-  // Trend coloring: whether the period-over-period move is favorable
-  // (`delta_type` already folds in `higher_is_better`).
-  const trendStatus = applyFocusStatus(kpi.delta_type, focusMode);
-  const showDelta = kpi.delta !== "" && kpi.delta_type !== "neutral";
-  const trendDown = kpi.delta.trim().startsWith("-");
-  // For percent-valued metrics the delta is in percentage points, not a
-  // relative %; drop the `%` so "+5" doesn't read as "5% of 86%".
-  const deltaText = isPercent ? kpi.delta.replace(/%$/, "") : kpi.delta;
-
-  const medianLabel =
-    hasMedian &&
-    catalogRow !== undefined &&
-    !isSchemaError &&
-    peerMedian != null
-      ? `Median ${formatKpiValue(peerMedian, catalogRow.format)}${isPercent ? "%" : ""}`
-      : null;
-
-  const interactive = Boolean(onClick);
+/**
+ * Presentational KPI tile: everything display-ready arrives on `tile`
+ * (selectors in `lib/insight/kpi-row.ts` own formatting and scoring for both
+ * the legacy batch and metric-collection sources).
+ */
+export function KpiTile({ tile, onOpenGroup }: KpiTileProps) {
+  const { showExplanations } = useSettings();
+  const interactive = Boolean(onOpenGroup && tile.groupId);
 
   return (
     <Card
       className={cn(
         CARD_SURFACE,
-        interactive && "text-left transition-colors hover:bg-accent/50"
+        interactive && "text-left transition-colors hover:bg-accent/50",
       )}
       render={
         interactive ? (
           <button
             type="button"
-            onClick={() => onClick?.(kpi.metric_key)}
-            aria-label={`Open ${kpi.label} details`}
+            onClick={() => {
+              if (tile.groupId) onOpenGroup?.(tile.groupId);
+            }}
+            aria-label={`Open ${tile.label} details`}
           />
         ) : undefined
       }
     >
       <CardHeader>
         <CardDescription className="flex flex-col gap-0.5">
-          <span className="truncate">{kpi.label}</span>
-          {showExplanations && sourceTags ? (
+          <span className="truncate">{tile.label}</span>
+          {showExplanations && tile.context ? (
             <span className="truncate font-normal text-muted-foreground/70">
-              {sourceTags}
+              {tile.context}
             </span>
           ) : null}
         </CardDescription>
         <CardTitle
           className={cn(
             "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl",
-            valueStatus !== "neutral" && STATUS_TEXT_CLASS[valueStatus]
+            tile.valueStatus !== "neutral" &&
+              STATUS_TEXT_CLASS[tile.valueStatus],
           )}
         >
-          {value}
-          {isPercent && value !== "—" ? "%" : null}
+          {tile.value}
         </CardTitle>
-        {showDelta ? (
+        {tile.delta ? (
           <CardAction>
-            <Badge variant="outline" className={STATUS_TEXT_CLASS[trendStatus]}>
-              {trendDown ? <TrendingDownIcon /> : <TrendingUpIcon />}
-              {deltaText}
+            <Badge
+              variant="outline"
+              className={STATUS_TEXT_CLASS[tile.delta.status]}
+            >
+              {tile.delta.down ? <TrendingDownIcon /> : <TrendingUpIcon />}
+              {tile.delta.text}
             </Badge>
           </CardAction>
         ) : null}
       </CardHeader>
       <CardFooter className="text-sm text-muted-foreground">
-        {medianLabel ?? "No peer data"}
+        {tile.medianLabel ?? "No peer data"}
       </CardFooter>
     </Card>
   );
 }
 
-export function KpiTilePlaceholder({ label }: { label: string }) {
+export function KpiTilePlaceholder({ label }: { label?: string }) {
   return (
     <Card className={CARD_SURFACE}>
       <CardHeader>
-        <CardDescription className="truncate">{label}</CardDescription>
+        <CardDescription className="truncate">
+          {label ?? " "}
+        </CardDescription>
         <CardTitle className="text-2xl font-semibold tabular-nums">—</CardTitle>
       </CardHeader>
       <CardFooter className="gap-1.5 text-sm text-muted-foreground">

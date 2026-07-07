@@ -17,7 +17,7 @@ import {
 import type { PeerStats } from "@/lib/peers";
 import {
   useIcCollabPeerCounters,
-  type AiPeerCounterRow,
+  type PeerCounterRow,
 } from "@/queries/v2/ic-extras";
 
 interface CollabMessagingPanelProps {
@@ -26,7 +26,7 @@ interface CollabMessagingPanelProps {
 }
 
 /** Build `PeerStats` from a counter row, or null when any band is absent. */
-function counterStats(row: AiPeerCounterRow): PeerStats | null {
+function counterStats(row: PeerCounterRow): PeerStats | null {
   const { p25, median, p75, range_min, range_max, n } = row;
   const bands = [p25, median, p75, range_min, range_max, n];
   if (bands.some((b) => b == null || !Number.isFinite(b))) return null;
@@ -41,7 +41,7 @@ function counterStats(row: AiPeerCounterRow): PeerStats | null {
 }
 
 function peerStoryEntries(
-  rows: AiPeerCounterRow[],
+  rows: PeerCounterRow[],
   byMetricKey: (metricKey: string) => CatalogMetric | undefined,
 ): PeerStoryInput[] {
   return rows.flatMap((row) => {

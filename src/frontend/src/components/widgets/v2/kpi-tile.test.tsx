@@ -1,216 +1,67 @@
-/**
- * Component-render coverage for `<KpiTile>` (Refs #80, wave 3).
- *
- * Verifies the catalog-driven KPI tile against the wave-1 DESIGN §3.3
- * rendering rules:
- *   - `ok` rows render with peer coloring driven by the catalog row's
- *     `higher_is_better` and the median bar's `vs median` label.
- *   - `schema_status='error'` rows render the label/value but suppress
- *     the median bar so the broken metric reads as "no peer coloring".
- *   - Missing-id rows (no catalog entry for `ic_kpis.<key>`) render the
- *     tile without the median bar — graceful degrade per AC #4.
- */
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
-import { screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { KpiTile, KpiTilePlaceholder } from "@/components/widgets/v2/kpi-tile";
+import type { KpiTileData } from "@/lib/insight/kpi-row";
 
-import { authStore } from "@/auth/auth-store";
+vi.mock("@/hooks/use-settings", () => ({
+  useSettings: () => ({ focusMode: "all", showExplanations: true }),
+}));
 
-vi.mock("@/api/catalog-client", async () => {
-  const actual = await vi.importActual<typeof import("@/api/catalog-client")>(
-    "@/api/catalog-client",
-  );
-  return { ...actual, fetchCatalog: vi.fn() };
-});
-
-import * as catalogClient from "@/api/catalog-client";
-import {
-  buildCatalogResponse,
-  renderWithCatalogClient,
-} from "@/test/catalog-test-utils";
-import { KpiTile } from "./kpi-tile";
-import type { IcKpi, PeriodValue } from "@/types/insight";
-
-const fetchCatalog = catalogClient.fetchCatalog as ReturnType<typeof vi.fn>;
-
-function makeKpi(overrides: Partial<IcKpi> = {}): IcKpi {
+function tile(overrides: Partial<KpiTileData> = {}): KpiTileData {
   return {
-    period: "month" as PeriodValue,
-    metric_key: "bugs_fixed",
-    label: "Bugs Fixed",
-    value: "12",
-    raw_value: 12,
-    unit: "",
-    sublabel: "Jira",
-    description: "Bug-type Jira issues closed in the selected period.",
-    delta: "",
-    delta_type: "neutral",
+    key: "ai.active_days",
+    label: "Active AI days",
+    value: "14",
+    valueStatus: "good",
+    delta: { text: "+17%", status: "good", down: false },
+    medianLabel: "Median 11",
+    context: "Days with any AI tool activity",
+    groupId: "ai_adoption",
     ...overrides,
   };
 }
 
-describe("<KpiTile>", () => {
-  beforeEach(() => {
-    authStore.reset();
-    authStore.setTenantId("t-1");
-    fetchCatalog.mockReset();
-  });
-  afterEach(() => {
-    authStore.reset();
-  });
-
-  it("renders value and median label for an ok catalog row", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "ic_kpis.bugs_fixed",
-          higher_is_better: true,
-          schema_status: "ok",
-        },
-      ]),
-    );
-    renderWithCatalogClient(
-      <KpiTile kpi={makeKpi({ peer_median: 6, peer_n: 4 })} />,
-    );
-    // `vs median 6 · 4 peers` proves the catalog row drove the median
-    // bar render (showMedian gates on `catalogRow !== undefined`). Wait
-    // for it directly — the label renders synchronously from the prop,
-    // but the median bar only appears once the catalog query resolves.
-    await waitFor(() => {
-      expect(screen.getByText(/median 6/i)).toBeInTheDocument();
-    });
-    expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
-    expect(screen.getByText("12")).toBeInTheDocument();
+describe("KpiTile", () => {
+  it("renders the display-ready value, delta, median, and context", () => {
+    render(<KpiTile tile={tile()} />);
+    expect(screen.getByText("14")).toBeInTheDocument();
+    expect(screen.getByText("+17%")).toBeInTheDocument();
+    expect(screen.getByText("Median 11")).toBeInTheDocument();
+    expect(
+      screen.getByText("Days with any AI tool activity"),
+    ).toBeInTheDocument();
   });
 
-  it("suppresses the median bar for schema_status='error'", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "ic_kpis.bugs_fixed",
-          higher_is_better: true,
-          schema_status: "error",
-          schema_error_code: "column_not_found",
-        },
-      ]),
-    );
-    renderWithCatalogClient(
-      <KpiTile kpi={makeKpi({ peer_median: 6, peer_n: 4 })} />,
-    );
-    // Tile label still renders (broken-metric indicator semantic),
-    // but the median bar is suppressed so the row reads as "no peer
-    // comparison available."
-    await waitFor(() => {
-      expect(screen.queryByText(/median/i)).not.toBeInTheDocument();
-    });
-    expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
+  it("falls back to 'No peer data' without a median label", () => {
+    render(<KpiTile tile={tile({ medianLabel: null })} />);
+    expect(screen.getByText("No peer data")).toBeInTheDocument();
   });
 
-  it("renders the tile without median bar when the catalog has no row (missing-id)", async () => {
-    fetchCatalog.mockResolvedValue(buildCatalogResponse([]));
-    renderWithCatalogClient(
-      <KpiTile kpi={makeKpi({ peer_median: 6, peer_n: 4 })} />,
-    );
-    // Missing-id row: `catalogRow === undefined`, so the median bar is
-    // suppressed. The tile's label / value come from the KPI prop
-    // itself (already catalog-sourced by transforms), so they still
-    // appear.
-    await waitFor(() => {
-      expect(screen.queryByText(/median/i)).not.toBeInTheDocument();
-    });
-    expect(screen.getByText("Bugs Fixed")).toBeInTheDocument();
-    expect(screen.getByText("12")).toBeInTheDocument();
+  it("omits the delta badge when delta is null", () => {
+    render(<KpiTile tile={tile({ delta: null })} />);
+    expect(screen.queryByText("+17%")).not.toBeInTheDocument();
   });
 
-  it("count metric with a null period renders 0 (not —) and still shows the peer median", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "ic_kpis.prs_merged",
-          higher_is_better: true,
-          schema_status: "ok",
-          format: "integer",
-        },
-      ]),
+  it("navigates to its group on click", async () => {
+    const onOpenGroup = vi.fn();
+    render(<KpiTile tile={tile()} onOpenGroup={onOpenGroup} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open Active AI days details" }),
     );
-    renderWithCatalogClient(
-      <KpiTile
-        kpi={makeKpi({
-          metric_key: "prs_merged",
-          label: "Pull Requests Merged",
-          value: null,
-          raw_value: null,
-          peer_median: 36,
-          peer_n: 20,
-        })}
-      />,
-    );
-    await waitFor(() => {
-      expect(screen.getByText(/median 36/i)).toBeInTheDocument();
-    });
-    expect(screen.getByText("Pull Requests Merged")).toBeInTheDocument();
-    expect(screen.getByText("0")).toBeInTheDocument();
-    expect(screen.queryByText("No peer data")).not.toBeInTheDocument();
-    expect(screen.queryByText("—")).not.toBeInTheDocument();
+    expect(onOpenGroup).toHaveBeenCalledWith("ai_adoption");
   });
 
-  it("rate metric with a null period keeps — but still shows the peer median", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "ic_kpis.focus_time_pct",
-          higher_is_better: true,
-          schema_status: "ok",
-          format: "percent",
-        },
-      ]),
-    );
-    renderWithCatalogClient(
-      <KpiTile
-        kpi={makeKpi({
-          metric_key: "focus_time_pct",
-          label: "Focus Time",
-          value: null,
-          raw_value: null,
-          unit: "%",
-          peer_median: 70,
-          peer_n: 20,
-        })}
-      />,
-    );
-    await waitFor(() => {
-      expect(screen.getByText(/median 70/i)).toBeInTheDocument();
-    });
-    expect(screen.getByText("Focus Time")).toBeInTheDocument();
-    expect(screen.getByText("—")).toBeInTheDocument();
+  it("is not interactive without a group id", () => {
+    render(<KpiTile tile={tile({ groupId: null })} onOpenGroup={vi.fn()} />);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
+});
 
-  it("shows 'No peer data' only when the cohort median is absent", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "ic_kpis.prs_merged",
-          higher_is_better: true,
-          schema_status: "ok",
-          format: "integer",
-        },
-      ]),
-    );
-    renderWithCatalogClient(
-      <KpiTile
-        kpi={makeKpi({
-          metric_key: "prs_merged",
-          label: "Pull Requests Merged",
-          value: "5",
-          raw_value: 5,
-          peer_median: null,
-          peer_n: null,
-        })}
-      />,
-    );
-    await waitFor(() => {
-      expect(screen.getByText("No peer data")).toBeInTheDocument();
-    });
-    expect(screen.getByText("5")).toBeInTheDocument();
+describe("KpiTilePlaceholder", () => {
+  it("renders label-less while a metric tile has no data", () => {
+    render(<KpiTilePlaceholder />);
+    expect(screen.getByText("Coming soon")).toBeInTheDocument();
   });
 });

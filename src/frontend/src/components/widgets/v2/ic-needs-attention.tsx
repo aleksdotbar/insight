@@ -1,73 +1,34 @@
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
-import { useCatalog } from "@/api/use-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSettings } from "@/hooks/use-settings";
-import { bulletCatalogKey } from "@/lib/insight/v2/peer-status";
-import {
-  applyFocus,
-  PEER_TEXT,
-  peerStatusVsQuartiles,
-} from "@/lib/peers";
-import type { IcSectionId } from "@/lib/insight/v2/sections";
+import type { AttentionItem } from "@/lib/insight/attention";
+import type { GroupId } from "@/lib/insight/groups";
+import { PEER_TEXT, applyFocus } from "@/lib/peers";
 import { cn } from "@/lib/utils";
-import type { BulletMetric } from "@/types/insight";
 
 const COLLAPSED_ATTENTION = 3;
 const COLLAPSE_THRESHOLD = 6;
 
-interface AttentionItem {
-  section: IcSectionId;
-  row: BulletMetric;
-  median: number | null;
-  relGap: number;
-}
-
-export interface IcNeedsAttentionSection {
-  id: IcSectionId;
-  label: string;
-  rows: BulletMetric[];
-}
-
 export interface IcNeedsAttentionProps {
-  sections: IcNeedsAttentionSection[];
-  onSectionClick: (id: IcSectionId) => void;
+  items: AttentionItem[];
+  onOpenGroup: (id: GroupId) => void;
 }
 
+/**
+ * Cross-group "needs attention" surface. Items arrive precomputed from the
+ * per-source selectors in `lib/insight/attention.ts`; this component only
+ * ranks (relGap descending), collapses, and renders.
+ */
 export function IcNeedsAttention({
-  sections,
-  onSectionClick,
+  items,
+  onOpenGroup,
 }: IcNeedsAttentionProps) {
   const { focusMode } = useSettings();
-  const { byMetricKey } = useCatalog();
   const [showAll, setShowAll] = useState(false);
 
-  const attentionAll: AttentionItem[] = [];
-  for (const s of sections) {
-    for (const r of s.rows) {
-      // schema_status='error' rows never trigger the attention surface —
-      // we can't compare a broken metric to peers. Missing-id rows likewise
-      // collapse out (no catalog row → no higher_is_better signal).
-      if (r.schema_error) continue;
-      const value = Number(r.value);
-      if (!Number.isFinite(value)) continue;
-      const stats = r.peer;
-      if (!stats) continue;
-      const m = byMetricKey(bulletCatalogKey(r));
-      if (!m) continue;
-      const higherIsBetter = m.higher_is_better;
-      const ps = peerStatusVsQuartiles(value, stats, higherIsBetter);
-      if (ps !== "bottom") continue;
-      const median = stats.p50;
-      const denom = Math.abs(median) > 1e-9 ? Math.abs(median) : 1;
-      const relGap = higherIsBetter
-        ? (median - value) / denom
-        : (value - median) / denom;
-      attentionAll.push({ section: s.id, row: r, median, relGap });
-    }
-  }
-  attentionAll.sort((a, b) => b.relGap - a.relGap);
+  const attentionAll = [...items].sort((a, b) => b.relGap - a.relGap);
 
   if (attentionAll.length === 0) return null;
 
@@ -88,15 +49,15 @@ export function IcNeedsAttention({
         <AlertTitle>{attentionAll.length} metrics below peers</AlertTitle>
         <AlertDescription>
           <ul className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
-            {visible.map(({ row, section, median }) => (
-              <li key={`${section}-${row.metric_key}`}>
+            {visible.map((item) => (
+              <li key={`${item.group}-${item.key}`}>
                 <button
                   type="button"
-                  onClick={() => onSectionClick(section)}
+                  onClick={() => onOpenGroup(item.group)}
                   className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0 truncate text-foreground">
-                    {row.label}
+                    {item.label}
                   </span>
                   <span
                     className={cn(
@@ -104,13 +65,11 @@ export function IcNeedsAttention({
                       PEER_TEXT[badStatus],
                     )}
                   >
-                    {row.value}
-                    {row.unit ? ` ${row.unit}` : ""}
+                    {item.valueText}
                   </span>
-                  {median != null ? (
+                  {item.medianText ? (
                     <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
-                      Median {Math.round(median * 10) / 10}
-                      {row.unit ? ` ${row.unit}` : ""}
+                      {item.medianText}
                     </span>
                   ) : null}
                 </button>

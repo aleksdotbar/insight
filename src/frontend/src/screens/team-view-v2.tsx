@@ -4,9 +4,11 @@ import { ComingSoon } from "@/components/widgets/coming-soon";
 import { DashboardEmptyState } from "@/components/widgets/v2/dashboard-empty-state";
 import { DashboardHeader } from "@/components/widgets/v2/dashboard-header";
 import { SectionCard } from "@/components/widgets/v2/section-card";
-import { SectionDrilldownSheet } from "@/components/widgets/v2/section-drilldown-sheet";
+import { GroupDrilldownSheet } from "@/components/widgets/v2/group-drilldown-sheet";
 import { MembersHeatmap } from "@/components/widgets/v2/members-heatmap";
 import { TeamMembersAttention } from "@/components/widgets/v2/team-members-attention";
+import { TeamMetricGroupCard } from "@/components/widgets/metric-views/team-metric-group-card";
+import type { TeamMemberRef } from "@/components/widgets/metric-views/team-collection-drilldown";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useCatalog } from "@/api/use-catalog";
@@ -16,13 +18,19 @@ import {
   findIdentityNode,
 } from "@/lib/insight/identity-tree";
 import {
-  TEAM_SECTIONS,
-  type TeamSectionId,
-} from "@/lib/insight/v2/sections";
+  GROUPS,
+  legacyGroups,
+  metricGroups,
+  type GroupId,
+} from "@/lib/insight/groups";
+import { metricBelowCounts } from "@/lib/insight/team-metrics";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
 import { teamSectionStatusByMetric } from "@/lib/insight/v2/team-member-status";
+import { projectViews } from "@/lib/metrics/collection";
+import { normalizePersonId } from "@/lib/metrics/entity";
 import { useIcPerson } from "@/queries/ic-dashboard";
+import { useMetricCollectionSet } from "@/queries/metric-results";
 import {
   useTeamBulletSections,
   useTeamMembers,
@@ -34,7 +42,15 @@ import {
 } from "@/queries/v2/team-extras";
 import type { BulletMetric } from "@/types/insight";
 
-const SECTION_KEYS = TEAM_SECTIONS.map((s) => s.id);
+const LEGACY_GROUP_IDS = legacyGroups().map((def) => def.id);
+
+// Team surfaces request period + peer only: a per-member timeseries over a
+// large roster would exceed the backend's all-or-nothing row limit and fail
+// the whole request.
+const TEAM_METRIC_COLLECTIONS = metricGroups().map((def) => ({
+  key: def.id,
+  collection: projectViews(def.collection, ["period", "peer"]),
+}));
 
 export interface TeamViewV2ScreenProps {
   teamId: string;
@@ -44,14 +60,14 @@ export interface TeamViewV2ScreenProps {
 export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps) {
   const { period, dateRange, setPeriod } = usePeriod();
   const { byMetricKey } = useCatalog();
-  const [openSection, setOpenSection] = useState<TeamSectionId | null>(null);
+  const [openGroup, setOpenGroup] = useState<GroupId | null>(null);
 
   // Close any open drilldown when the viewed team changes. Render-phase
   // reset against the previous id rather than an effect (no cascading commit).
   const [prevTeamId, setPrevTeamId] = useState(teamId);
   if (teamId !== prevTeamId) {
     setPrevTeamId(teamId);
-    setOpenSection(null);
+    setOpenGroup(null);
   }
 
   const viewerQ = useIcPerson(viewerEmail);
@@ -75,6 +91,11 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
   });
   const members = membersQ.data ?? [];
   const memberIds = members.map((m) => m.person_id);
+  const memberEntityIds = memberIds.map(normalizePersonId);
+  const memberRefs: TeamMemberRef[] = members.map((m) => ({
+    entityId: normalizePersonId(m.person_id),
+    displayName: m.name,
+  }));
   const bulletsQ = useTeamMemberBullets(memberIds, period, dateRange);
   const prevBulletsQ = useTeamMemberBulletsPrevious(
     memberIds,
@@ -92,7 +113,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
   const deptDistQ = useDeptDistributions(orgUnitIds, period, dateRange);
 
   const sectionsQ = useTeamBulletSections(
-    SECTION_KEYS,
+    LEGACY_GROUP_IDS,
     teamId,
     teamSize,
     period,
@@ -100,42 +121,55 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
     { keepPrevious: true, roster },
   );
 
+  const metricGroupData = useMetricCollectionSet(
+    TEAM_METRIC_COLLECTIONS,
+    { type: "person", ids: memberEntityIds },
+    dateRange,
+  );
+
   const sectionData = sectionsQ.data;
-  const rowsBySection: Record<TeamSectionId, BulletMetric[]> = {
-    task_delivery: orderRowsForSection(
-      "task_delivery",
-      sectionData?.bySection.task_delivery ?? [],
-    ),
-    git_output: orderRowsForSection(
-      "git_output",
-      sectionData?.bySection.git_output ?? [],
-    ),
-    collaboration: orderRowsForSection(
-      "collaboration",
-      sectionData?.bySection.collaboration ?? [],
-    ),
-    ai_adoption: orderRowsForSection(
-      "ai_adoption",
-      sectionData?.bySection.ai_adoption ?? [],
-    ),
-    wiki: orderRowsForSection(
-      "wiki",
-      sectionData?.bySection.wiki ?? [],
-    ),
-  };
+  const legacyRowsByGroup: Record<string, BulletMetric[]> =
+    Object.fromEntries(
+      LEGACY_GROUP_IDS.map((id) => [
+        id,
+        orderRowsForSection(id, sectionData?.bySection[id] ?? []),
+      ]),
+    );
+
+  const metricBelowByMember = new Map<string, number>();
+  for (const def of metricGroups()) {
+    const byKey = metricGroupData.get(def.id)?.byKey;
+    if (!byKey) continue;
+    for (const [memberId, count] of metricBelowCounts(
+      def,
+      byKey,
+      memberEntityIds,
+    )) {
+      metricBelowByMember.set(
+        memberId,
+        (metricBelowByMember.get(memberId) ?? 0) + count,
+      );
+    }
+  }
 
   const sectionsPending = sectionsQ.isPending;
   const sectionsFetching = sectionsQ.isFetching;
+  const isMetricsFetching = [...metricGroupData.values()].some(
+    (result) => result.isFetching,
+  );
   const isFetching =
-    sectionsFetching || membersQ.isFetching || bulletsQ.isFetching;
-  const hasSectionData = Object.values(rowsBySection).some((rows) =>
+    sectionsFetching ||
+    membersQ.isFetching ||
+    bulletsQ.isFetching ||
+    isMetricsFetching;
+  const hasGroupData = Object.values(legacyRowsByGroup).some((rows) =>
     rows.some(hasBulletValue),
   );
   const hasMembers = members.length > 0;
   const isAllEmpty =
     !sectionsPending &&
     !membersQ.isPending &&
-    !hasSectionData &&
+    !hasGroupData &&
     !hasMembers;
   const showFullSpinner =
     sectionsPending || membersQ.isPending || (isAllEmpty && isFetching);
@@ -170,6 +204,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
               members={members}
               bulletsByPerson={bulletsQ.data}
               deptCohorts={deptDistQ.data}
+              metricBelowByMember={metricBelowByMember}
             />
 
             {membersQ.isError ? (
@@ -192,13 +227,27 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                 Sections
               </p>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-                {TEAM_SECTIONS.map((s) => {
-                  if (sectionsQ.isError || sectionData?.errors[s.id]) {
+                {GROUPS.map((def) => {
+                  if (def.kind === "metrics") {
+                    const result = metricGroupData.get(def.id);
+                    if (!result) return null;
+                    return (
+                      <TeamMetricGroupCard
+                        key={def.id}
+                        def={def}
+                        data={result}
+                        memberIds={memberEntityIds}
+                        onOpen={() => setOpenGroup(def.id)}
+                        subtitle="vs department peers"
+                      />
+                    );
+                  }
+                  if (sectionsQ.isError || sectionData?.errors[def.id]) {
                     return (
                       <SectionCard
-                        key={s.id}
-                        title={s.label}
-                        sectionId={s.id}
+                        key={def.id}
+                        title={def.title}
+                        sectionId={def.id}
                         rows={[]}
                         onOpen={() => {}}
                         unavailable
@@ -207,18 +256,18 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                   }
                   return (
                     <SectionCard
-                      key={s.id}
-                      title={s.label}
-                      sectionId={s.id}
-                      rows={rowsBySection[s.id]}
+                      key={def.id}
+                      title={def.title}
+                      sectionId={def.id}
+                      rows={legacyRowsByGroup[def.id] ?? []}
                       statusByMetricKey={teamSectionStatusByMetric(
-                        rowsBySection[s.id],
+                        legacyRowsByGroup[def.id] ?? [],
                         members,
                         bulletsQ.data,
                         deptDistQ.data,
                         byMetricKey,
                       )}
-                      onOpen={() => setOpenSection(s.id)}
+                      onOpen={() => setOpenGroup(def.id)}
                       subtitle="vs department peers"
                     />
                   );
@@ -229,13 +278,31 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
         )}
       </main>
 
-      {TEAM_SECTIONS.map((s) => (
-        <SectionDrilldownSheet
-          key={s.id}
-          open={openSection === s.id}
-          onOpenChange={(o) => setOpenSection(o ? s.id : null)}
-          title={s.label}
-          rows={rowsBySection[s.id]}
+      {GROUPS.map((def) => (
+        <GroupDrilldownSheet
+          key={def.id}
+          open={openGroup === def.id}
+          onOpenChange={(o) => setOpenGroup(o ? def.id : null)}
+          def={def}
+          rows={legacyRowsByGroup[def.id] ?? []}
+          metricTarget={
+            def.kind === "metrics"
+              ? {
+                  kind: "team",
+                  members: memberRefs,
+                  data:
+                    metricGroupData.get(def.id) ??
+                    ({
+                      byKey: new Map(),
+                      previousByKey: null,
+                      isPending: true,
+                      isFetching: false,
+                      isError: false,
+                      refetch: () => {},
+                    } as const)
+                }
+              : undefined
+          }
           cohortLabel="department"
         />
       ))}

@@ -1,0 +1,139 @@
+import { fetchWithAuth } from "@/api/fetch-with-auth";
+import { AnalyticsApiError } from "@/api/analytics-client";
+
+const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ??
+  "/api/analytics/v1";
+
+export type MetricFormat = "integer" | "decimal" | "currency" | "percent";
+export type MetricDirection =
+  | "higher_is_better"
+  | "lower_is_better"
+  | "neutral";
+export type MetricResultViewKind =
+  | "period"
+  | "timeseries"
+  | "peer"
+  | "breakdown";
+export type MetricBucket = "day" | "week" | "month";
+export type MetricComputation = "sum" | "ratio";
+export type MetricEntityType = "person";
+
+export interface MetricResultsRequest {
+  entity: { type: MetricEntityType; ids: string[] };
+  period: { from: string; to: string };
+  metrics: MetricRequest[];
+}
+
+export interface MetricRequest {
+  metric_key: string;
+  views: MetricViewRequest[];
+}
+
+export type MetricViewRequest =
+  | { view: "period" }
+  | { view: "peer"; cohort_key?: string }
+  | {
+      view: "timeseries";
+      bucket?: MetricBucket;
+      dimensions?: string[];
+    }
+  | {
+      view: "breakdown";
+      dimensions: string[];
+    };
+
+export interface MetricDimension {
+  key: string;
+  value: string;
+  label?: string;
+}
+
+export type MetricResult = SumMetricResult | RatioMetricResult;
+
+interface MetricResultBase {
+  metric_key: string;
+  label: string;
+  description?: string;
+  explanation?: string;
+  unit: string | null;
+  format: MetricFormat;
+  direction: MetricDirection;
+  views: MetricResultView[];
+}
+
+export interface SumMetricResult extends MetricResultBase {
+  computation: "sum";
+}
+
+export interface RatioMetricResult extends MetricResultBase {
+  computation: "ratio";
+  scale: number;
+}
+
+export type MetricResultView =
+  | PeriodView
+  | TimeseriesView
+  | PeerView
+  | BreakdownView;
+
+export interface PeriodView {
+  view: "period";
+  values: Array<{ entity_id: string; value: number | null }>;
+}
+
+export interface TimeseriesView {
+  view: "timeseries";
+  bucket: MetricBucket;
+  series: Array<{
+    entity_id: string;
+    dimensions: MetricDimension[];
+    points: Array<{ bucket_start: string; value: number | null }>;
+  }>;
+}
+
+export interface PeerView {
+  view: "peer";
+  values: Array<{
+    entity_id: string;
+    target_value: number | null;
+    p25: number | null;
+    median: number | null;
+    p75: number | null;
+    min: number | null;
+    max: number | null;
+    n: number;
+  }>;
+}
+
+export interface BreakdownView {
+  view: "breakdown";
+  dimensions: string[];
+  values: Array<{
+    entity_id: string;
+    dimensions: MetricDimension[];
+    value: number | null;
+  }>;
+}
+
+export interface MetricResultsResponse {
+  metrics: MetricResult[];
+}
+
+export async function queryMetricResults(
+  body: MetricResultsRequest,
+): Promise<MetricResultsResponse> {
+  const res = await fetchWithAuth(`${BASE}/metric-results`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new AnalyticsApiError(res.status, errorBody);
+  }
+  try {
+    return (await res.json()) as MetricResultsResponse;
+  } catch {
+    throw new AnalyticsApiError(res.status, { error: "invalid_json" });
+  }
+}

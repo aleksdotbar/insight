@@ -1,0 +1,152 @@
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ComingSoon } from "@/components/widgets/coming-soon";
+import { useSettings } from "@/hooks/use-settings";
+import type { MetricGroup } from "@/lib/insight/groups";
+import {
+  teamMetricStandings,
+  type TeamMetricStanding,
+} from "@/lib/insight/team-metrics";
+import {
+  SECTION_STRIPE,
+  aggregateSectionStatus,
+  sectionCounts,
+} from "@/lib/scoring";
+import { STATUS_BG_CLASS, applyFocusStatus } from "@/lib/status";
+import type { MetricCollectionResult } from "@/queries/metric-results";
+import { cn } from "@/lib/utils";
+
+export interface TeamMetricGroupCardProps {
+  def: MetricGroup;
+  data: MetricCollectionResult;
+  memberIds: string[];
+  onOpen: () => void;
+  subtitle?: string;
+}
+
+/**
+ * Team card for a metrics-backed group. No team aggregates — a ratio can't
+ * be summed from per-member values — so each preview row reports roster
+ * standings against members' own cohorts ("3 of 8 in top").
+ */
+export function TeamMetricGroupCard({
+  def,
+  data,
+  memberIds,
+  onOpen,
+  subtitle,
+}: TeamMetricGroupCardProps) {
+  const { focusMode } = useSettings();
+
+  if (data.isPending) {
+    return <ComingSoon variant="card" state="loading" label={def.title} />;
+  }
+  if (data.isError) {
+    return (
+      <ComingSoon
+        variant="card"
+        state="error"
+        label={def.title}
+        onRetry={data.refetch}
+      />
+    );
+  }
+
+  const standings = teamMetricStandings(def, data.byKey, memberIds);
+  const scored = standings.filter((s) => s.scored > 0);
+  const scoredMetrics = standings.map((standing) => ({
+    row: standing,
+    status: standing.status,
+  }));
+  const status = applyFocusStatus(
+    aggregateSectionStatus(scoredMetrics),
+    focusMode,
+  );
+  const counts = sectionCounts(scoredMetrics);
+  const evaluated = counts.good + counts.warn + counts.bad;
+  const badgeText =
+    evaluated === 0
+      ? "No peer data"
+      : `${counts.good} of ${evaluated} metrics ahead`;
+
+  const preview: TeamMetricStanding[] = def.card.preview
+    .map((key) => scored.find((s) => s.metric.metric_key === key))
+    .filter((s): s is TeamMetricStanding => s != null);
+  const stripeClass =
+    status === "neutral" ? "border-l-border" : SECTION_STRIPE[status];
+
+  return (
+    <Card
+      render={
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open ${def.title} details`}
+        />
+      }
+      className={cn(
+        "border-l-2 text-left transition-colors hover:bg-accent/50",
+        stripeClass,
+      )}
+    >
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
+        <CardDescription className="flex flex-col gap-1 text-xs">
+          {subtitle ? (
+            <span className="text-muted-foreground">{subtitle}</span>
+          ) : null}
+          <span className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                STATUS_BG_CLASS[status],
+              )}
+              aria-hidden
+            />
+            <span className="tabular-nums">{badgeText}</span>
+          </span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 pt-0">
+        {scored.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No metrics with peer data for this period.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {(preview.length > 0 ? preview : scored.slice(0, 3)).map(
+              (standing) => {
+                const rowStatus = applyFocusStatus(standing.status, focusMode);
+                return (
+                  <li
+                    key={standing.metric.metric_key}
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    <span
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        STATUS_BG_CLASS[rowStatus],
+                      )}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                      {standing.metric.label}
+                    </span>
+                    <span className="shrink-0 font-medium tabular-nums">
+                      {standing.top} of {standing.scored} in top
+                    </span>
+                  </li>
+                );
+              },
+            )}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
