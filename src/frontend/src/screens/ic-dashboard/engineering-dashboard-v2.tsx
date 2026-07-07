@@ -174,9 +174,16 @@ export function EngineeringDashboardV2({
     !hasMetricKpiData &&
     !hasLegacyGroupData &&
     !hasMetricGroupData;
-  const isMetricsFetching =
-    kpiData.isFetching ||
-    [...groupData.values()].some((result) => result.isFetching);
+  // The page dim signals "the data you're already looking at is being
+  // replaced" (period/range change, where keepPreviousData shows the old
+  // values while new ones load). A collection's FIRST load must not dim the
+  // page — it has no prior data to replace and shows its own card spinner —
+  // so gate on revalidation (`isFetching && !isPending`), not bare fetching.
+  const isMetricsRevalidating =
+    (kpiData.isFetching && !kpiData.isPending) ||
+    [...groupData.values()].some(
+      (result) => result.isFetching && !result.isPending,
+    );
   const showFullSpinner = dashQ.isPending || (isAllEmpty && dashQ.isFetching);
 
   // Close any open drilldown when the viewed person changes. Render-phase
@@ -217,7 +224,7 @@ export function EngineeringDashboardV2({
           <div
             className={cn(
               "flex flex-col gap-8 transition-opacity",
-              (dashQ.isFetching || isMetricsFetching) && "opacity-60",
+              (dashQ.isFetching || isMetricsRevalidating) && "opacity-60",
             )}
           >
             <section className="flex flex-col gap-3">

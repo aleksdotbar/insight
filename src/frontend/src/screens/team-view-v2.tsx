@@ -154,14 +154,16 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
 
   const sectionsPending = sectionsQ.isPending;
   const sectionsFetching = sectionsQ.isFetching;
-  const isMetricsFetching = [...metricGroupData.values()].some(
-    (result) => result.isFetching,
+  // Only a metric group's revalidation dims the page (replacing data already
+  // shown); its first load has no prior data and shows its own card spinner.
+  const isMetricsRevalidating = [...metricGroupData.values()].some(
+    (result) => result.isFetching && !result.isPending,
   );
   const isFetching =
     sectionsFetching ||
     membersQ.isFetching ||
     bulletsQ.isFetching ||
-    isMetricsFetching;
+    isMetricsRevalidating;
   const hasGroupData = Object.values(legacyRowsByGroup).some((rows) =>
     rows.some(hasBulletValue),
   );
