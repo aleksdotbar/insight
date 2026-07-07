@@ -31,7 +31,11 @@ import {
 } from "@/lib/insight/groups";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
-import { entityObserved } from "@/lib/metrics/collection";
+import {
+  entityObserved,
+  projectViews,
+  type MetricCollectionConfig,
+} from "@/lib/metrics/collection";
 import { normalizePersonId } from "@/lib/metrics/entity";
 import { cn } from "@/lib/utils";
 import { useIcDashboardData, type IcDashboardData } from "@/queries/ic-dashboard";
@@ -42,6 +46,19 @@ import {
 import type { BulletMetric, IdentityPerson } from "@/types/insight";
 
 const IC_KPI_PREFIX = "ic_kpis.";
+
+// Stable references so the disabled drilldown query keeps a constant key.
+const EMPTY_COLLECTION: MetricCollectionConfig = { metrics: [] };
+const CLOSED_ENTITY = { type: "person" as const, ids: [] };
+// Placeholder for closed drilldown sheets; their body never renders.
+const CLOSED_DRILLDOWN_DATA = {
+  byKey: new Map(),
+  previousByKey: null,
+  isPending: true,
+  isFetching: false,
+  isError: false,
+  refetch: () => {},
+} as const;
 
 // The one per-key seam that survives coexistence: which legacy batch field
 // feeds each legacy group's rows. Dies with `LegacyGroup`.
@@ -76,14 +93,35 @@ export function EngineeringDashboardV2({
   const kpiData = useMetricCollection(KPI_ROW_COLLECTION, entity, dateRange, {
     previousPeriod: period,
   });
+  // Cards only render period + peer; the heavy timeseries/breakdown views
+  // exist for the drilldown. Fetch the light projection here so a card paints
+  // as fast as a KPI tile, and let the open drilldown fetch the full
+  // collection lazily below.
   const groupData = useMetricCollectionSet(
-    metricGroups().map((def) => ({ key: def.id, collection: def.collection })),
+    metricGroups().map((def) => ({
+      key: def.id,
+      collection: projectViews(def.collection, ["period", "peer"]),
+    })),
     entity,
     dateRange,
   );
 
   const [openGroup, setOpenGroup] = useState<GroupId | null>(null);
   const data = dashQ.data;
+
+  // Full collection for the open metrics group only (drives the drilldown's
+  // chart blocks + peer story). Disabled while nothing is open — empty ids
+  // gate the query off — so heavy views are never fetched for drilldowns the
+  // user doesn't open.
+  const openMetricDef =
+    openGroup != null
+      ? (metricGroups().find((def) => def.id === openGroup) ?? null)
+      : null;
+  const drilldownData = useMetricCollection(
+    openMetricDef?.collection ?? EMPTY_COLLECTION,
+    openMetricDef ? entity : CLOSED_ENTITY,
+    dateRange,
+  );
 
   const legacyRowsByGroup: Record<string, BulletMetric[]> =
     Object.fromEntries(
@@ -333,16 +371,10 @@ export function EngineeringDashboardV2({
               ? {
                   kind: "person",
                   entityId,
+                  // The drilldown for the open group reads the full-collection
+                  // query; closed sheets never render their body.
                   data:
-                    groupData.get(def.id) ??
-                    ({
-                      byKey: new Map(),
-                      previousByKey: null,
-                      isPending: true,
-                      isFetching: false,
-                      isError: false,
-                      refetch: () => {},
-                    } as const)
+                    def.id === openGroup ? drilldownData : CLOSED_DRILLDOWN_DATA,
                 }
               : undefined
           }
