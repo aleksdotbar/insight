@@ -89,6 +89,23 @@ describe("MetricGroupCard", () => {
     expect(screen.getByText("3 days")).toBeInTheDocument();
   });
 
+  it("keeps the card name and shows a spinner while loading", () => {
+    render(
+      <MetricGroupCard
+        def={DEF}
+        data={result([], { isPending: true })}
+        entityId="me@x.com"
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("AI adoption")).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "Loading AI adoption" }),
+    ).toBeInTheDocument();
+    // Not interactive while loading — nothing to open yet.
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("gives unmeasured people no standing (regression: the fifth scoring surface)", () => {
     // Zero-filled period value with a null peer target_value: every other
     // selector calls this person neutral — the card must not red-flag them.

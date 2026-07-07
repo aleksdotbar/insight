@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { useSettings } from "@/hooks/use-settings";
 import { formatMetricValue } from "@/lib/format";
@@ -61,7 +62,26 @@ export function MetricGroupCard({
   const { focusMode } = useSettings();
 
   if (data.isPending) {
-    return <ComingSoon variant="card" state="loading" label={def.title} />;
+    // Keep the card's identity while it loads: the name in the header, a
+    // spinner in the body. Not interactive — nothing to open yet.
+    return (
+      <Card className="border-l-2 border-l-border">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
+          {subtitle ? (
+            <CardDescription className="text-xs text-muted-foreground">
+              {subtitle}
+            </CardDescription>
+          ) : null}
+        </CardHeader>
+        <CardContent className="flex items-center justify-center py-6">
+          <Spinner
+            className="size-5 text-muted-foreground"
+            aria-label={`Loading ${def.title}`}
+          />
+        </CardContent>
+      </Card>
+    );
   }
   if (data.isError) {
     return (
