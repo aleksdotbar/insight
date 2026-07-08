@@ -1,6 +1,9 @@
 import { http, HttpResponse } from "msw";
 
 import { METRIC_REGISTRY } from "@/api/metric-registry";
+import type { MetricResultsRequest } from "@/api/metric-results-client";
+
+import { buildMetricResultsResponse } from "./metric-results-factory";
 
 import { buildMockCatalogResponse } from "./catalog-factory";
 import {
@@ -314,6 +317,19 @@ interface BatchQueryRequest {
 }
 
 export const handlers = [
+  http.post("/api/analytics/v1/metric-results", async ({ request }) => {
+    const body = (await request
+      .json()
+      .catch(() => null)) as MetricResultsRequest | null;
+    if (
+      !body ||
+      !Array.isArray(body.entity?.ids) ||
+      !Array.isArray(body.metrics)
+    ) {
+      return HttpResponse.json({ error: "invalid_argument" }, { status: 400 });
+    }
+    return HttpResponse.json(buildMetricResultsResponse(body));
+  }),
   http.post(
     "/api/analytics/v1/metrics/queries",
     async ({ request }) => {

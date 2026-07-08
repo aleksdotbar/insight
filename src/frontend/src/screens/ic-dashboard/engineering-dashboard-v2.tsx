@@ -6,23 +6,71 @@ import { DashboardEmptyState } from "@/components/widgets/v2/dashboard-empty-sta
 import { DashboardHeader } from "@/components/widgets/v2/dashboard-header";
 import { IcNeedsAttention } from "@/components/widgets/v2/ic-needs-attention";
 import { KpiTile, KpiTilePlaceholder } from "@/components/widgets/v2/kpi-tile";
+import { MetricGroupCard } from "@/components/widgets/metric-views/metric-group-card";
 import { SectionCard } from "@/components/widgets/v2/section-card";
-import { SectionDrilldownSheet } from "@/components/widgets/v2/section-drilldown-sheet";
+import { GroupDrilldownSheet } from "@/components/widgets/v2/group-drilldown-sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { usePeriod } from "@/hooks/use-period";
+import { useSettings } from "@/hooks/use-settings";
 import {
-  IC_HERO_SECTIONS,
-  IC_SECTIONS,
-  type IcSectionId,
-} from "@/lib/insight/v2/sections";
-import { IC_KPI_SECTION_BY_KEY, orderIcKpis } from "@/lib/insight/v2/kpi-defs";
+  legacyAttentionItems,
+  metricAttentionItems,
+} from "@/lib/insight/attention";
+import {
+  kpiRowTiles,
+  legacyKpiTiles,
+  metricKpiTiles,
+  type KpiTileData,
+} from "@/lib/insight/kpi-row";
+import {
+  GROUPS,
+  KPI_ROW,
+  KPI_ROW_COLLECTION,
+  metricGroups,
+  type GroupId,
+} from "@/lib/insight/groups";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
+import {
+  entityObserved,
+  projectViews,
+  type MetricCollectionConfig,
+} from "@/lib/metrics/collection";
+import { normalizePersonId } from "@/lib/metrics/entity";
 import { cn } from "@/lib/utils";
-import { useIcDashboardData } from "@/queries/ic-dashboard";
-import type { BulletMetric, IcKpi, IdentityPerson } from "@/types/insight";
+import { useIcDashboardData, type IcDashboardData } from "@/queries/ic-dashboard";
+import {
+  useMetricCollection,
+  useMetricCollectionSet,
+} from "@/queries/metric-results";
+import type { BulletMetric, IdentityPerson } from "@/types/insight";
 
 const IC_KPI_PREFIX = "ic_kpis.";
+
+// Stable references so the disabled drilldown query keeps a constant key.
+const EMPTY_COLLECTION: MetricCollectionConfig = { metrics: [] };
+const CLOSED_ENTITY = { type: "person" as const, ids: [] };
+// Placeholder for closed drilldown sheets; their body never renders.
+const CLOSED_DRILLDOWN_DATA = {
+  byKey: new Map(),
+  previousByKey: null,
+  isPending: true,
+  isFetching: false,
+  isError: false,
+  refetch: () => {},
+} as const;
+
+// The one per-key seam that survives coexistence: which legacy batch field
+// feeds each legacy group's rows. Dies with `LegacyGroup`.
+const LEGACY_GROUP_ROWS: Record<
+  string,
+  (data: IcDashboardData | undefined) => BulletMetric[]
+> = {
+  task_delivery: (data) => data?.taskDelivery ?? [],
+  git_output: (data) => data?.gitOutput ?? [],
+  collaboration: (data) => data?.collaboration ?? [],
+  wiki: (data) => data?.wiki ?? [],
+};
 
 export interface EngineeringDashboardV2Props {
   personId: string;
@@ -34,100 +82,155 @@ export function EngineeringDashboardV2({
   person,
 }: EngineeringDashboardV2Props) {
   const { period, dateRange, setPeriod } = usePeriod();
+  const { focusMode } = useSettings();
   const catalog = useCatalog();
   const dashQ = useIcDashboardData(personId, period, dateRange, {
     keepPrevious: true,
   });
-  const [openSection, setOpenSection] = useState<IcSectionId | null>(null);
-  const data = dashQ.data;
+  const entityId = normalizePersonId(personId);
+  const entity = { type: "person" as const, ids: [entityId] };
 
-  // KPI placeholder list driven by the wire catalog. Ordering is
-  // wire-response order; the backend's seed migration emits the rows
-  // deterministically. When the catalog is unavailable the placeholder
-  // list is empty and consumers render the empty/error state.
-  const kpiPlaceholders = useMemo(
-    () =>
-      orderIcKpis(
-        (catalog.data?.metrics ?? [])
-          .filter((m) => m.metric_key?.startsWith(IC_KPI_PREFIX))
-          .map((m) => ({
-            metric_key: (m.metric_key ?? "").slice(IC_KPI_PREFIX.length),
-            label: m.label,
-          }))
-      ),
-    [catalog.data]
+  const kpiData = useMetricCollection(KPI_ROW_COLLECTION, entity, dateRange, {
+    previousPeriod: period,
+  });
+  // Cards only render period + peer; the heavy timeseries/breakdown views
+  // exist for the drilldown. Fetch the light projection here so a card paints
+  // as fast as a KPI tile, and let the open drilldown fetch the full
+  // collection lazily below.
+  const groupData = useMetricCollectionSet(
+    metricGroups().map((def) => ({
+      key: def.id,
+      collection: projectViews(def.collection, ["period", "peer"]),
+    })),
+    entity,
+    dateRange,
   );
 
-  const rowsBySection: Record<IcSectionId, BulletMetric[]> = {
-    task_delivery: orderRowsForSection(
-      "task_delivery",
-      data?.taskDelivery ?? []
-    ),
-    git_output: orderRowsForSection("git_output", data?.gitOutput ?? []),
-    code_quality: orderRowsForSection("code_quality", data?.codeQuality ?? []),
-    collaboration: orderRowsForSection(
-      "collaboration",
-      data?.collaboration ?? []
-    ),
-    ai_adoption: orderRowsForSection("ai_adoption", data?.aiAdoption ?? []),
-    wiki: orderRowsForSection("wiki", data?.wiki ?? []),
-  };
+  const [openGroup, setOpenGroup] = useState<GroupId | null>(null);
+  const data = dashQ.data;
 
-  const heroSections = IC_HERO_SECTIONS.map((s) => ({
-    id: s.id,
-    label: s.label,
-    rows: rowsBySection[s.id],
-  }));
+  // Full collection for the open metrics group only (drives the drilldown's
+  // chart blocks + peer story). Disabled while nothing is open — empty ids
+  // gate the query off — so heavy views are never fetched for drilldowns the
+  // user doesn't open.
+  const openMetricDef =
+    openGroup != null
+      ? (metricGroups().find((def) => def.id === openGroup) ?? null)
+      : null;
+  const drilldownData = useMetricCollection(
+    openMetricDef?.collection ?? EMPTY_COLLECTION,
+    openMetricDef ? entity : CLOSED_ENTITY,
+    dateRange,
+  );
+
+  const legacyRowsByGroup: Record<string, BulletMetric[]> =
+    Object.fromEntries(
+      GROUPS.filter((def) => def.kind === "legacy").map((def) => [
+        def.id,
+        orderRowsForSection(def.id, LEGACY_GROUP_ROWS[def.id]?.(data) ?? []),
+      ]),
+    );
 
   const displayName = person?.display_name ?? personId;
   const role = person?.job_title;
 
-  const kpis = orderIcKpis(data?.kpis ?? []);
-  const kpiTiles: IcKpi[] =
-    kpis.length > 0
-      ? kpis
-      : kpiPlaceholders.map((d) => ({
-          period,
-          metric_key: d.metric_key,
-          label: d.label,
-          value: null,
-          raw_value: null,
-          unit: "",
-          sublabel: "",
-          delta: "",
-          delta_type: "neutral",
-          peer_median: null,
-          peer_n: null,
-        }));
-  const peerCount = Math.max(0, ...kpis.map((k) => k.peer_n ?? 0));
-  const hasKpiData = kpis.some((k) => k.raw_value !== null);
-  const kpiTileCount = data?.errors.kpis
-    ? kpiPlaceholders.length
-    : kpiTiles.length;
-  const hasSectionData = Object.values(rowsBySection).some((rows) =>
-    rows.some(hasBulletValue)
+  // KPI row: legacy tiles from the shared batch, metric tiles from the
+  // collection; placeholders per source while a tile has no data yet.
+  const legacyTiles = legacyKpiTiles(
+    data?.kpis ?? [],
+    catalog.byMetricKey,
+    focusMode,
   );
-  const isAllEmpty = Boolean(data) && !hasKpiData && !hasSectionData;
+  const metricTiles = metricKpiTiles(
+    kpiData.byKey,
+    kpiData.previousByKey,
+    entityId,
+    focusMode,
+  );
+  const tiles = kpiRowTiles(legacyTiles, metricTiles);
+  const tilesByKey = new Map<string, KpiTileData>(
+    tiles.map((tile) => [tile.key, tile]),
+  );
+  const legacyKpiLabels = useMemo(
+    () =>
+      new Map(
+        (catalog.data?.metrics ?? [])
+          .filter((m) => m.metric_key?.startsWith(IC_KPI_PREFIX))
+          .map((m) => [
+            (m.metric_key ?? "").slice(IC_KPI_PREFIX.length),
+            m.label,
+          ]),
+      ),
+    [catalog.data],
+  );
+
+  const attentionItems = [
+    ...legacyAttentionItems(
+      GROUPS.filter((def) => def.kind === "legacy").map((def) => ({
+        id: def.id,
+        rows: legacyRowsByGroup[def.id] ?? [],
+      })),
+      catalog.byMetricKey,
+    ),
+    ...metricGroups().flatMap((def) =>
+      metricAttentionItems(
+        def,
+        groupData.get(def.id)?.byKey ?? new Map(),
+        entityId,
+      ),
+    ),
+  ];
+
+  const hasLegacyKpiData = (data?.kpis ?? []).some((k) => k.raw_value !== null);
+  // Period views zero-fill sums, so "has data" means observed (peer
+  // target_value), not merely a non-null zero-filled total — otherwise the
+  // empty state becomes unreachable for fully unmeasured people.
+  const hasMetricKpiData = [...kpiData.byKey.values()].some((metric) =>
+    entityObserved(metric, entityId),
+  );
+  const hasLegacyGroupData = Object.values(legacyRowsByGroup).some((rows) =>
+    rows.some(hasBulletValue),
+  );
+  const hasMetricGroupData = [...groupData.values()].some((result) =>
+    [...result.byKey.values()].some((metric) =>
+      entityObserved(metric, entityId),
+    ),
+  );
+  const metricsSettled =
+    !kpiData.isPending &&
+    [...groupData.values()].every((result) => !result.isPending);
+  // Failed unified queries must surface as error cards with retry — never as
+  // "you have no data".
+  const anyMetricError =
+    kpiData.isError ||
+    [...groupData.values()].some((result) => result.isError);
+  const isAllEmpty =
+    Boolean(data) &&
+    metricsSettled &&
+    !anyMetricError &&
+    !hasLegacyKpiData &&
+    !hasMetricKpiData &&
+    !hasLegacyGroupData &&
+    !hasMetricGroupData;
+  // The page dim signals "the data you're already looking at is being
+  // replaced" (period/range change, where keepPreviousData shows the old
+  // values while new ones load). A collection's FIRST load must not dim the
+  // page — it has no prior data to replace and shows its own card spinner —
+  // so gate on revalidation (`isFetching && !isPending`), not bare fetching.
+  const isMetricsRevalidating =
+    (kpiData.isFetching && !kpiData.isPending) ||
+    [...groupData.values()].some(
+      (result) => result.isFetching && !result.isPending,
+    );
   const showFullSpinner = dashQ.isPending || (isAllEmpty && dashQ.isFetching);
+
   // Close any open drilldown when the viewed person changes. Render-phase
   // reset against the previous id rather than an effect (no cascading commit).
   const [prevPersonId, setPrevPersonId] = useState(personId);
   if (personId !== prevPersonId) {
     setPrevPersonId(personId);
-    setOpenSection(null);
+    setOpenGroup(null);
   }
-
-  const openSectionForMetric = (metricKey: string) => {
-    const kpiSection = IC_KPI_SECTION_BY_KEY.get(metricKey);
-    if (kpiSection) {
-      setOpenSection(kpiSection);
-      return;
-    }
-    const owner = IC_SECTIONS.find((s) =>
-      rowsBySection[s.id].some((r) => r.metric_key === metricKey)
-    );
-    if (owner) setOpenSection(owner.id);
-  };
 
   return (
     <div className="flex flex-col">
@@ -150,7 +253,7 @@ export function EngineeringDashboardV2({
           <div
             className={cn(
               "transition-opacity",
-              dashQ.isFetching && "opacity-60"
+              dashQ.isFetching && "opacity-60",
             )}
           >
             <DashboardEmptyState period={period} onSetPeriod={setPeriod} />
@@ -159,41 +262,54 @@ export function EngineeringDashboardV2({
           <div
             className={cn(
               "flex flex-col gap-8 transition-opacity",
-              dashQ.isFetching && "opacity-60"
+              (dashQ.isFetching || isMetricsRevalidating) && "opacity-60",
             )}
           >
-            {kpiTileCount > 0 && (
-              <section className="flex flex-col gap-3">
-                <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                  At a glance
-                  {peerCount > 0 ? (
-                    <span className="font-normal normal-case">
-                      · {peerCount} peers
-                    </span>
-                  ) : null}
-                </p>
-                <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
-                  {data?.errors.kpis
-                    ? kpiPlaceholders.map((d) => (
-                        <KpiTilePlaceholder
-                          key={d.metric_key}
-                          label={d.label}
-                        />
-                      ))
-                    : kpiTiles.map((kpi) => (
-                        <KpiTile
-                          key={kpi.metric_key}
-                          kpi={kpi}
-                          onClick={openSectionForMetric}
-                        />
-                      ))}
-                </div>
-              </section>
-            )}
+            <section className="flex flex-col gap-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                At a glance
+              </p>
+              <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
+                {KPI_ROW.map((source) => {
+                  const key =
+                    source.kind === "legacy" ? source.key : source.metricKey;
+                  const tile = tilesByKey.get(key);
+                  if (tile && (source.kind === "metric" || !data?.errors.kpis)) {
+                    return (
+                      <KpiTile
+                        key={key}
+                        tile={tile}
+                        onOpenGroup={setOpenGroup}
+                      />
+                    );
+                  }
+                  if (source.kind === "metric" && kpiData.isError) {
+                    return (
+                      <ComingSoon
+                        key={key}
+                        variant="card"
+                        state="error"
+                        onRetry={kpiData.refetch}
+                      />
+                    );
+                  }
+                  return (
+                    <KpiTilePlaceholder
+                      key={key}
+                      label={
+                        source.kind === "legacy"
+                          ? legacyKpiLabels.get(source.key)
+                          : undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </section>
 
             <IcNeedsAttention
-              sections={heroSections}
-              onSectionClick={setOpenSection}
+              items={attentionItems}
+              onOpenGroup={setOpenGroup}
             />
 
             <section className="flex flex-col gap-3">
@@ -201,13 +317,26 @@ export function EngineeringDashboardV2({
                 Sections
               </p>
               <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(18rem,1fr))]">
-                {IC_SECTIONS.map((s) => {
-                  if (data?.errors[s.id]) {
+                {GROUPS.map((def) => {
+                  if (def.kind === "metrics") {
+                    const result = groupData.get(def.id);
+                    if (!result) return null;
+                    return (
+                      <MetricGroupCard
+                        key={def.id}
+                        def={def}
+                        data={result}
+                        entityId={entityId}
+                        onOpen={() => setOpenGroup(def.id)}
+                      />
+                    );
+                  }
+                  if (data?.errors[def.id]) {
                     return (
                       <SectionCard
-                        key={s.id}
-                        title={s.label}
-                        sectionId={s.id}
+                        key={def.id}
+                        title={def.title}
+                        sectionId={def.id}
                         rows={[]}
                         onOpen={() => {}}
                         unavailable
@@ -216,11 +345,11 @@ export function EngineeringDashboardV2({
                   }
                   return (
                     <SectionCard
-                      key={s.id}
-                      title={s.label}
-                      sectionId={s.id}
-                      rows={rowsBySection[s.id]}
-                      onOpen={() => setOpenSection(s.id)}
+                      key={def.id}
+                      title={def.title}
+                      sectionId={def.id}
+                      rows={legacyRowsByGroup[def.id] ?? []}
+                      onOpen={() => setOpenGroup(def.id)}
                     />
                   );
                 })}
@@ -230,14 +359,25 @@ export function EngineeringDashboardV2({
         )}
       </main>
 
-      {IC_SECTIONS.map((s) => (
-        <SectionDrilldownSheet
-          key={s.id}
-          open={openSection === s.id}
-          onOpenChange={(o) => setOpenSection(o ? s.id : null)}
-          title={s.label}
-          rows={rowsBySection[s.id]}
-          sectionId={s.id}
+      {GROUPS.map((def) => (
+        <GroupDrilldownSheet
+          key={def.id}
+          open={openGroup === def.id}
+          onOpenChange={(o) => setOpenGroup(o ? def.id : null)}
+          def={def}
+          rows={legacyRowsByGroup[def.id] ?? []}
+          metricTarget={
+            def.kind === "metrics"
+              ? {
+                  kind: "person",
+                  entityId,
+                  // The drilldown for the open group reads the full-collection
+                  // query; closed sheets never render their body.
+                  data:
+                    def.id === openGroup ? drilldownData : CLOSED_DRILLDOWN_DATA,
+                }
+              : undefined
+          }
           personId={personId}
           range={dateRange}
           period={period}

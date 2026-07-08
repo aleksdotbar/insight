@@ -85,25 +85,8 @@ interface SectionTrendLongRow {
   value: number;
 }
 
-export interface AiToolSummaryRow {
-  person_id: string;
-  tool: string;
-  tool_name: string;
-  accepted_lines_added: number;
-  accepted_lines_removed: number;
-  cost_cents: number | null;
-  active_days: number;
-}
-
-export interface AiToolTrendRow {
-  person_id: string;
-  metric_date: string;
-  tool: string;
-  tool_name: string;
-  accepted_lines_added: number;
-}
-
-export interface AiPeerCounterRow {
+/** Long peer-counter row: per-person value + per-org_unit cohort bands. */
+export interface PeerCounterRow {
   person_id: string;
   org_unit_id: string | null;
   metric_key: string;
@@ -171,91 +154,9 @@ export function useIcSectionTrend(
   });
 }
 
-export function icAiToolSummaryQueryOptions(
-  personId: string,
-  range: DateRange,
-) {
-  const canonicalId = canonicalPersonId(personId);
-  return {
-    queryKey: ["v2", "ic-ai-tool-summary", canonicalId, range.from, range.to],
-    enabled: Boolean(canonicalId && range.from && range.to),
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const resp = await queryMetric<AiToolSummaryRow>(
-        METRIC_REGISTRY.V2_IC_AI_TOOL_SUMMARY,
-        range,
-        { $filter: personFilter(canonicalId) },
-      );
-      return resp.items;
-    },
-  };
-}
-
-export function useIcAiToolSummary(
-  personId: string,
-  range: DateRange,
-): UseQueryResult<AiToolSummaryRow[]> {
-  return useQuery(icAiToolSummaryQueryOptions(personId, range));
-}
-
-export function icAiToolTrendQueryOptions(
-  personId: string,
-  range: DateRange,
-) {
-  const canonicalId = canonicalPersonId(personId);
-  return {
-    queryKey: ["v2", "ic-ai-tool-trend", canonicalId, range.from, range.to],
-    enabled: Boolean(canonicalId && range.from && range.to),
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const resp = await queryMetric<AiToolTrendRow>(
-        METRIC_REGISTRY.V2_IC_AI_TOOL_TREND,
-        range,
-        { $filter: personFilter(canonicalId) },
-      );
-      return resp.items;
-    },
-  };
-}
-
-export function useIcAiToolTrend(
-  personId: string,
-  range: DateRange,
-): UseQueryResult<AiToolTrendRow[]> {
-  return useQuery(icAiToolTrendQueryOptions(personId, range));
-}
-
-export function icAiPeerCountersQueryOptions(
-  personId: string,
-  range: DateRange,
-) {
-  const canonicalId = canonicalPersonId(personId);
-  return {
-    queryKey: ["v2", "ic-ai-peer-counters", canonicalId, range.from, range.to],
-    enabled: Boolean(canonicalId && range.from && range.to),
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const resp = await queryMetric<AiPeerCounterRow>(
-        METRIC_REGISTRY.V2_IC_AI_PEER_COUNTERS,
-        range,
-        { $filter: personFilter(canonicalId) },
-      );
-      return resp.items;
-    },
-  };
-}
-
-export function useIcAiPeerCounters(
-  personId: string,
-  range: DateRange,
-): UseQueryResult<AiPeerCounterRow[]> {
-  return useQuery(icAiPeerCountersQueryOptions(personId, range));
-}
-
 /**
  * Per-person collaboration Messaging peer counters (#1527): messages_sent /
- * channel_posts with per-`org_unit_id` bands. Same row shape + wiring as the AI
- * peer counters (`icAiPeerCountersQueryOptions`), different metric id.
+ * channel_posts with per-`org_unit_id` bands. Long peer-counter rows over the shared `PeerCounterRow` shape.
  */
 export function icCollabPeerCountersQueryOptions(
   personId: string,
@@ -273,7 +174,7 @@ export function icCollabPeerCountersQueryOptions(
     enabled: Boolean(canonicalId && range.from && range.to),
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const resp = await queryMetric<AiPeerCounterRow>(
+      const resp = await queryMetric<PeerCounterRow>(
         METRIC_REGISTRY.V2_IC_COLLAB_PEER_COUNTERS,
         range,
         { $filter: personFilter(canonicalId) },
@@ -286,7 +187,7 @@ export function icCollabPeerCountersQueryOptions(
 export function useIcCollabPeerCounters(
   personId: string,
   range: DateRange,
-): UseQueryResult<AiPeerCounterRow[]> {
+): UseQueryResult<PeerCounterRow[]> {
   return useQuery(icCollabPeerCountersQueryOptions(personId, range));
 }
 

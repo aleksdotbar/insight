@@ -5,6 +5,7 @@ import { useCatalog } from "@/api/use-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useSettings } from "@/hooks/use-settings";
 import { memberMetricPeerStatus } from "@/lib/insight/v2/team-member-status";
+import { normalizePersonId } from "@/lib/metrics/entity";
 import { applyFocus, PEER_TEXT, type DeptCohorts } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 import type { BulletMetric, TeamMember } from "@/types/insight";
@@ -19,12 +20,19 @@ export interface TeamMembersAttentionProps {
    * cohort (`n < MIN_DEPT_COHORT_N`) is not counted.
    */
   deptCohorts?: DeptCohorts;
+  /**
+   * Additional per-member below-peer counts from metrics-backed groups
+   * (`metricBelowCounts` in `lib/insight/team-metrics.ts`), keyed by
+   * lowercased person id. Merged into the legacy bullet counts.
+   */
+  metricBelowByMember?: Map<string, number>;
 }
 
 export function TeamMembersAttention({
   members,
   bulletsByPerson,
   deptCohorts,
+  metricBelowByMember,
 }: TeamMembersAttentionProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
@@ -32,7 +40,8 @@ export function TeamMembersAttention({
   const attention = members
     .map((m) => {
       const bullets = bulletsByPerson?.get(m.person_id.toLowerCase()) ?? [];
-      let belowCount = 0;
+      let belowCount =
+        metricBelowByMember?.get(normalizePersonId(m.person_id)) ?? 0;
       for (const b of bullets) {
         if (
           memberMetricPeerStatus(m, b, deptCohorts, byMetricKey) === "bottom"
