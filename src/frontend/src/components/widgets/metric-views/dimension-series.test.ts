@@ -29,7 +29,7 @@ describe("dimension-series", () => {
   it("produces dataKey-safe, collision-proof series keys", () => {
     expect(dimensionSeriesKey(TOOL)).toMatch(/^tool_cursor_[a-z0-9]+$/);
     expect(dimensionSeriesKey(TOOL_SURFACE)).toMatch(
-      /^tool_claude__surface_chat_[a-z0-9]+$/,
+      /^tool_claude_surface_chat_[a-z0-9]+$/,
     );
     // Deterministic across calls.
     expect(dimensionSeriesKey(TOOL)).toBe(dimensionSeriesKey(TOOL));
@@ -37,5 +37,13 @@ describe("dimension-series", () => {
     // distinct raw values distinct so charts never merge series silently.
     expect(safeSeriesKey("cursor.ai")).not.toBe(safeSeriesKey("cursor_ai"));
     expect(safeSeriesKey("cursor.ai")).not.toBe(safeSeriesKey("cursor-ai"));
+  });
+
+  it("does not collide distinct dimension groups that share a sanitized form", () => {
+    // `:`/`|` composition keeps the raw strings distinct where a `_`/`__`
+    // scheme would have produced the identical raw string for both.
+    const a = dimensionSeriesKey([{ key: "tool_x", value: "y" }]);
+    const b = dimensionSeriesKey([{ key: "tool", value: "x_y" }]);
+    expect(a).not.toBe(b);
   });
 });

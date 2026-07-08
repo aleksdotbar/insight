@@ -125,3 +125,56 @@ describe("partitionPeerStory", () => {
     expect(focusedOutliers).toHaveLength(0);
   });
 });
+
+// When the cohort median is 0 the percentage gap is undefined, so severity
+// falls back to gap / peerSpread. This exercises all three peerSpread
+// branches (IQR, min–max range, constant 1) and the ordering they imply.
+describe("peerSpread fallback (median 0)", () => {
+  function metricWithStats(
+    key: string,
+    stats: { p25: number; p75: number; min: number; max: number },
+  ): MetricResult {
+    return {
+      metric_key: key,
+      label: key,
+      unit: null,
+      format: "integer",
+      direction: "higher_is_better",
+      computation: "sum",
+      views: [
+        { view: "period", values: [{ entity_id: "me@x.com", value: 5 }] },
+        {
+          view: "peer",
+          values: [
+            { entity_id: "me@x.com", target_value: 5, median: 0, n: 10, ...stats },
+          ],
+        },
+      ],
+    };
+  }
+
+  const collection: MetricCollectionConfig = {
+    metrics: ["iqr", "range", "constant"].map((key) => ({
+      key,
+      views: [{ view: "period" }, { view: "peer" }],
+    })),
+  };
+
+  it("scales severity by the widest available spread", () => {
+    const byKey = normalizeMetricResults([
+      metricWithStats("iqr", { p25: -5, p75: 5, min: -8, max: 8 }), // spread 10
+      metricWithStats("range", { p25: 0, p75: 0, min: -10, max: 10 }), // spread 20
+      metricWithStats("constant", { p25: 0, p75: 0, min: 0, max: 0 }), // spread 1
+    ]);
+    const byKeyMap = new Map(
+      buildPeerStoryEntries(collection, byKey, "me@x.com").map((e) => [
+        e.key,
+        e.severity,
+      ]),
+    );
+    // gap is 5 for all; severity = 5 / spread.
+    expect(byKeyMap.get("iqr")).toBeCloseTo(0.5);
+    expect(byKeyMap.get("range")).toBeCloseTo(0.25);
+    expect(byKeyMap.get("constant")).toBeCloseTo(5);
+  });
+});

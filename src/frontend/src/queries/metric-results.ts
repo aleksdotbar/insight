@@ -198,21 +198,20 @@ export function useMetricCollectionSet(
     maps.push(normalizeMetricResults(query.data?.metrics));
     chunkMaps.set(key, maps);
     const existing = out.get(key);
-    const refetches = [query.refetch];
+    const refetch = () => void query.refetch();
     out.set(key, {
       byKey: new Map(),
       previousByKey: null,
       isPending: (existing?.isPending ?? false) || (query.isPending && enabled),
       isFetching: (existing?.isFetching ?? false) || query.isFetching,
       isError: (existing?.isError ?? false) || query.isError,
+      // Chunks of the same collection share a key; refetch fans out to all.
       refetch: existing
         ? () => {
             existing.refetch();
-            for (const r of refetches) void r();
+            refetch();
           }
-        : () => {
-            for (const r of refetches) void r();
-          },
+        : refetch,
     });
   });
   for (const [key, maps] of chunkMaps) {

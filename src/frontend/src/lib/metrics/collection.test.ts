@@ -158,6 +158,38 @@ describe("row-limit chunking", () => {
     // Source maps untouched.
     expect(a.get("ai.accepted_lines")?.period?.values).toHaveLength(2);
   });
+
+  it("adopts a view from a later chunk when the accumulator lacks it", () => {
+    // First chunk: period only. Second chunk: peer only. The merged result
+    // must carry both (one-sided branches, not just both-present).
+    const periodOnly = structuredClone(SUM_METRIC_FIXTURE);
+    periodOnly.views = periodOnly.views.filter((v) => v.view === "period");
+    const peerOnly = structuredClone(SUM_METRIC_FIXTURE);
+    peerOnly.views = peerOnly.views.filter((v) => v.view === "peer");
+
+    const merged = mergeNormalizedResults([
+      normalizeMetricResults([periodOnly]),
+      normalizeMetricResults([peerOnly]),
+    ]);
+    const metric = merged.get("ai.accepted_lines")!;
+    expect(metric.period).toBeDefined();
+    expect(metric.peer).toBeDefined();
+  });
+
+  it("keeps the accumulator's view when a later chunk omits it", () => {
+    const full = normalizeMetricResults([SUM_METRIC_FIXTURE]);
+    const peerOnly = structuredClone(SUM_METRIC_FIXTURE);
+    peerOnly.views = peerOnly.views.filter((v) => v.view === "peer");
+
+    const merged = mergeNormalizedResults([
+      full,
+      normalizeMetricResults([peerOnly]),
+    ]);
+    const metric = merged.get("ai.accepted_lines")!;
+    // period survives (second chunk had none); peer values append.
+    expect(metric.period?.values.length).toBeGreaterThan(0);
+    expect((metric.peer?.values.length ?? 0)).toBeGreaterThan(1);
+  });
 });
 
 describe("resolveBucket", () => {

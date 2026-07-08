@@ -38,9 +38,12 @@ export function safeSeriesKey(raw: string): string {
 
 export function dimensionSeriesKey(dimensions: MetricDimension[]): string {
   if (dimensions.length === 0) return "total";
+  // Compose with `:`/`|` (as `dimensionColorSeed` does) so the raw string is
+  // unambiguous before `safeSeriesKey` sanitizes/hashes it — reusing `_` for
+  // both pairing and joining could collide distinct dimension groups.
   return safeSeriesKey(
     dimensions
-      .map((dimension) => `${dimension.key}_${dimension.value}`)
-      .join("__"),
+      .map((dimension) => `${dimension.key}:${dimension.value}`)
+      .join("|"),
   );
 }
