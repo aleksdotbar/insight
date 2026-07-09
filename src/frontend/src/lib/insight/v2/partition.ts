@@ -9,9 +9,6 @@ const DISTRIBUTION_KEYS = new Set([
   "task_dev_time",
   "mean_time_to_resolution",
   "pickup_time",
-  "pr_cycle_time_h",
-  "pr_cycle_time",
-  "pr_size",
 ]);
 
 export function partitionBullets(rows: BulletMetric[]): PartitionedBullets {

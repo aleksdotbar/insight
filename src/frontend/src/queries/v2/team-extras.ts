@@ -23,7 +23,6 @@ import type { BulletMetric, PeriodValue } from "@/types/insight";
 // flips to `kind: "metrics"`.
 const MEMBER_VALUE_METRIC_IDS: Partial<Record<string, string>> = {
   task_delivery: METRIC_REGISTRY.V2_MEMBER_VALUES_DELIVERY,
-  git_output: METRIC_REGISTRY.V2_MEMBER_VALUES_GIT,
   collaboration: METRIC_REGISTRY.V2_MEMBER_VALUES_COLLAB,
 };
 
@@ -148,7 +147,6 @@ export function useTeamMemberBullets(
 const DEPT_DIST_BULLET_BY_SECTION: Partial<Record<string, string>> = {
   task_delivery: METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY,
   collaboration: METRIC_REGISTRY.V2_DEPT_DIST_COLLAB,
-  git_output: METRIC_REGISTRY.V2_DEPT_DIST_GIT,
 };
 
 const DEPT_DIST_BULLET_IDS = legacyGroups().flatMap((def) => {

@@ -5,7 +5,6 @@ import { CollabMessagingPanel } from "@/components/widgets/v2/collab-messaging-p
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { CountersBlock } from "@/components/widgets/v2/counters-block";
 import { DistributionStrip } from "@/components/widgets/v2/distribution-strip";
-import { LocStackedBar } from "@/components/widgets/v2/loc-stacked-bar";
 import { CollectionDrilldown } from "@/components/widgets/metric-views/collection-drilldown";
 import {
   TeamCollectionDrilldown,
@@ -202,7 +201,6 @@ function LegacyDrilldownBody({
     distributions.length === 0 &&
     batch?.histograms.size === 0 &&
     !batch?.delivery?.length &&
-    !batch?.loc?.length &&
     !batch?.sectionTrend?.length;
   const showFullSpinner = isFirstLoad || (isBodyEmpty && batchQ.isFetching);
 
@@ -286,28 +284,6 @@ function DrilldownExtras({
         series={series}
         data={data}
       />
-    );
-  }
-  if (sectionId === "git_output") {
-    const data: SectionTrendPoint[] = (batch.delivery ?? []).map((d) => ({
-      date: d.label,
-      commits: d.commits,
-      prsMerged: d.prsMerged ?? 0,
-    }));
-    const series: SectionTrendSeries[] = [
-      { key: "commits", label: "Commits" },
-      { key: "prsMerged", label: "PRs merged" },
-    ];
-    return (
-      <div className="flex flex-col gap-4">
-        <LocStackedBar data={batch.loc ?? []} />
-        <SectionTrend
-          title="Commits & PRs merged"
-          description="Counts per day"
-          series={series}
-          data={data}
-        />
-      </div>
     );
   }
   if (sectionId === "collaboration") {

@@ -105,6 +105,21 @@ describe("PeerStory", () => {
     expect(screen.getByText("win")).toBeInTheDocument();
   });
 
+  it("shows a multiple for a gap at/above 2× the median", () => {
+    settings.focusMode = "rewards";
+    // 30 vs median 10 = 3× → "3×", not the exploding "+200%".
+    render(<PeerStory entries={entriesFrom([["win", 30]])} />);
+    expect(screen.getByText("3×")).toBeInTheDocument();
+    expect(screen.queryByText("+200%")).not.toBeInTheDocument();
+  });
+
+  it("keeps a signed percent for a gap under 2× the median", () => {
+    settings.focusMode = "rewards";
+    // 15 vs median 10 = 1.5× (< 2×) → "+50%".
+    render(<PeerStory entries={entriesFrom([["win", 15]])} />);
+    expect(screen.getByText("+50%")).toBeInTheDocument();
+  });
+
   it("overflow outliers beyond the hero and side cards become chips", () => {
     settings.focusMode = "critical";
     render(

@@ -12,17 +12,6 @@ export const METRIC_ORDER_BY_SECTION: Record<string, string[]> = {
     "worklog_logging_accuracy",
     "task_dev_time",
   ],
-  git_output: [
-    "commits",
-    "clean_loc",
-    "prs_merged",
-    "prs_created",
-    "merge_rate",
-    "pr_cycle_time_h",
-    "pr_size",
-    "lines_per_commit",
-    "commits_per_active_day",
-  ],
   code_quality: [
     "build_success",
     "bugs_fixed",

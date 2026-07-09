@@ -37,16 +37,6 @@ export const BULLET_DESCRIPTION_BY_KEY: ReadonlyMap<string, string> = new Map<
   flow_efficiency: "Dev time vs total lifetime",
   pickup_time: "Created to first dev status",
 
-  commits: "Distinct commits authored",
-  prs_created: "Pull requests authored",
-  prs_merged: "Authored PRs that merged",
-  clean_loc: "Lines added, excl. spec/config/generated",
-  pr_cycle_time_h: "Avg hours from PR open to merge",
-  pr_size: "Median lines changed per PR",
-  merge_rate: "PRs merged vs created",
-  lines_per_commit: "Average commit size",
-  commits_per_active_day: "Commits per committing day",
-
   prs_per_dev: "Merged PRs per developer",
   build_success: "CI runs passed vs total",
   pr_cycle_time: "Hours from PR open to merge",

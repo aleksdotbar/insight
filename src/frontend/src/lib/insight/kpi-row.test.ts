@@ -188,17 +188,17 @@ describe("metricKpiTiles", () => {
 });
 
 describe("kpiRowTiles", () => {
-  it("orders tiles by KPI_ROW display order", () => {
+  it("orders tiles by KPI_ROW display order across legacy and metric sources", () => {
     const legacy = legacyKpiTiles(
-      [
-        icKpi({ metric_key: "prs_merged", label: "PRs merged" }),
-        icKpi({ metric_key: "tasks_closed" }),
-      ],
+      [icKpi({ metric_key: "tasks_closed" })],
       () => CATALOG_ROW,
       "all",
     );
     const metric = metricKpiTiles(
-      normalizeMetricResults([metricResult("ai.active_days", 14)]),
+      normalizeMetricResults([
+        metricResult("git.prs_merged", 9),
+        metricResult("ai.active_days", 14),
+      ]),
       null,
       "me@x.com",
       "all",
@@ -207,8 +207,13 @@ describe("kpiRowTiles", () => {
     const expected = KPI_ROW.map((s) =>
       s.kind === "legacy" ? s.key : s.metricKey,
     ).filter((k) =>
-      ["tasks_closed", "prs_merged", "ai.active_days"].includes(k),
+      ["tasks_closed", "git.prs_merged", "ai.active_days"].includes(k),
     );
     expect(ordered).toEqual(expected);
+    expect(ordered).toEqual([
+      "tasks_closed",
+      "git.prs_merged",
+      "ai.active_days",
+    ]);
   });
 });

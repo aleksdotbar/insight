@@ -23,7 +23,18 @@ describe("groups registry", () => {
 
   it("groupIdForMetricKey resolves a metric to its owning group, null otherwise", () => {
     expect(groupIdForMetricKey("ai.active_days")).toBe("ai_adoption");
+    expect(groupIdForMetricKey("git.prs_merged")).toBe("git_output");
+    expect(groupIdForMetricKey("git.pr_cycle_time_h")).toBe("git_output");
     expect(groupIdForMetricKey("tasks_closed")).toBeNull();
     expect(groupIdForMetricKey("nope.unknown")).toBeNull();
+  });
+
+  it("exposes git_output as a metrics group with a histogram drilldown block", () => {
+    const git = groupById("git_output");
+    expect(git.kind).toBe("metrics");
+    if (git.kind === "metrics") {
+      expect(git.collection.metrics.length).toBeGreaterThan(0);
+      expect(git.drilldown.some((b) => b.view === "histogram")).toBe(true);
+    }
   });
 });

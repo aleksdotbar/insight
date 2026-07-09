@@ -113,6 +113,7 @@ ${colorConfig
 }
 
 const BarChart = RechartsPrimitive.BarChart
+const Cell = RechartsPrimitive.Cell
 const LineChart = RechartsPrimitive.LineChart
 const ComposedChart = RechartsPrimitive.ComposedChart
 const CartesianGrid = RechartsPrimitive.CartesianGrid
@@ -420,6 +421,7 @@ function getPayloadConfigFromPayload(
 export {
   BarChart,
   CartesianGrid,
+  Cell,
   ChartArea,
   ChartBar,
   ChartContainer,

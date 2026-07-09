@@ -1,4 +1,5 @@
 import type {
+  MedianMetricResult,
   MetricResult,
   MetricResultsResponse,
   RatioMetricResult,
@@ -144,8 +145,70 @@ export const RATIO_METRIC_FIXTURE: RatioMetricResult = {
   ],
 };
 
+export const MEDIAN_METRIC_FIXTURE: MedianMetricResult = {
+  metric_key: "git.pr_cycle_time_h",
+  label: "PR cycle time",
+  description: "Hours from a pull request's first commit to merge",
+  explanation:
+    "Median hours between a merged PR's first commit and its merge, over the person's PRs in the period.",
+  unit: "hours",
+  format: "decimal",
+  direction: "lower_is_better",
+  computation: "median",
+  views: [
+    {
+      view: "period",
+      values: [
+        { entity_id: "alice@example.com", value: 18.5 },
+        // Medians are never zero-filled: an unmeasured entity is null.
+        { entity_id: "bob@example.com", value: null },
+      ],
+    },
+    {
+      view: "peer",
+      values: [
+        {
+          entity_id: "alice@example.com",
+          target_value: 18.5,
+          p25: 9.2,
+          median: 22.4,
+          p75: 41.7,
+          min: 1.5,
+          max: 96.0,
+          n: 11,
+        },
+        {
+          entity_id: "bob@example.com",
+          target_value: null,
+          p25: null,
+          median: null,
+          p75: null,
+          min: null,
+          max: null,
+          n: 0,
+        },
+      ],
+    },
+    {
+      view: "histogram",
+      values: [
+        {
+          entity_id: "alice@example.com",
+          bins: [
+            { lo: 1.5, hi: 20.4, count: 6 },
+            { lo: 20.4, hi: 39.3, count: 3 },
+            { lo: 39.3, hi: 58.2, count: 2 },
+            { lo: 58.2, hi: 77.1, count: 0 },
+            { lo: 77.1, hi: 96.0, count: 1 },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 export const METRIC_RESULTS_RESPONSE_FIXTURE: MetricResultsResponse = {
-  metrics: [SUM_METRIC_FIXTURE, RATIO_METRIC_FIXTURE],
+  metrics: [SUM_METRIC_FIXTURE, RATIO_METRIC_FIXTURE, MEDIAN_METRIC_FIXTURE],
 };
 
 export function metricResultFixtureByKey(key: string): MetricResult | null {

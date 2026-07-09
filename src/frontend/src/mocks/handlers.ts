@@ -231,8 +231,6 @@ const metricHandlers: Record<string, Handler> = {
     wrap(memberValueRows("task_delivery", body)),
   [METRIC_REGISTRY.V2_MEMBER_VALUES_COLLAB]: (body) =>
     wrap(memberValueRows("collab", body)),
-  [METRIC_REGISTRY.V2_MEMBER_VALUES_GIT]: (body) =>
-    wrap(memberValueRows("git_output", body)),
   [METRIC_REGISTRY.V2_MEMBER_PRS]: (body) => {
     const { personIds, personId, periodDays } = parseFilter(body);
     const scale = periodScale(periodDays);
@@ -251,10 +249,6 @@ const metricHandlers: Record<string, Handler> = {
   [METRIC_REGISTRY.V2_DEPT_DIST_COLLAB]: (body) => {
     const { orgUnitIds, periodDays } = parseFilter(body);
     return wrap(mockDeptDistRows("collab", orgUnitIds ?? [], periodDays));
-  },
-  [METRIC_REGISTRY.V2_DEPT_DIST_GIT]: (body) => {
-    const { orgUnitIds, periodDays } = parseFilter(body);
-    return wrap(mockDeptDistRows("git", orgUnitIds ?? [], periodDays));
   },
   [METRIC_REGISTRY.V2_DEPT_DIST_KPIS]: (body) => {
     const { orgUnitIds, periodDays } = parseFilter(body);

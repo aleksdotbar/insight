@@ -16,7 +16,7 @@ import {
 } from "@/lib/metrics/collection";
 import { computeDelta, type MetricDelta } from "@/lib/metrics/delta";
 import type { FocusMode } from "@/lib/peers";
-import { applyFocusStatus, type Status } from "@/lib/status";
+import { applyFocusStatus, statusVsMedian, type Status } from "@/lib/status";
 import type { IcKpi } from "@/types/insight";
 
 /**
@@ -37,19 +37,6 @@ export interface KpiTileData {
 }
 
 const IC_KPI_PREFIX = "ic_kpis.";
-
-function statusVsMedian(
-  value: number,
-  median: number,
-  higherIsBetter: boolean,
-): Status {
-  if (!Number.isFinite(value) || !Number.isFinite(median) || median === 0) {
-    return "neutral";
-  }
-  return (higherIsBetter ? value >= median : value <= median)
-    ? "good"
-    : "bad";
-}
 
 /** Legacy KPI batch rows → tiles (logic lifted verbatim from the old tile). */
 export function legacyKpiTiles(

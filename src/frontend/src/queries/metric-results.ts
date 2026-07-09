@@ -1,4 +1,4 @@
-import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import {
@@ -86,7 +86,6 @@ export function useMetricCollection(
     queryKey: queryKeyFor(entity, ids, range, request.metrics),
     queryFn: () => queryMetricResults(request),
     enabled,
-    placeholderData: keepPreviousData,
   });
 
   const previousRange = options?.previousPeriod
@@ -107,7 +106,6 @@ export function useMetricCollection(
       : (["metric-results", "previous-disabled"] as const),
     queryFn: () => queryMetricResults(previousRequest ?? request),
     enabled: enabled && previousRequest !== null,
-    placeholderData: keepPreviousData,
   });
 
   const hasPrevious = previousRequest !== null;
@@ -115,14 +113,11 @@ export function useMetricCollection(
     () => normalizeMetricResults(current.data?.metrics),
     [current.data],
   );
-  // Deltas pair two periods; a failed or stale twin must yield "no delta"
-  // rather than a silently mispaired one (placeholderData keeps the OLD
-  // period's data around during a period switch).
-  const previousUsable =
-    hasPrevious &&
-    !previous.isError &&
-    !previous.isPlaceholderData &&
-    !current.isPlaceholderData;
+  // Deltas pair two periods; a failed twin yields "no delta" rather than a
+  // silently mispaired one. Both queries reset together on a period change, so
+  // the previous twin is absent (not stale) while it reloads — nothing to
+  // mispair against.
+  const previousUsable = hasPrevious && !previous.isError;
   const previousData = previousUsable ? previous.data : undefined;
   const previousByKey = useMemo(
     () => (previousData ? normalizeMetricResults(previousData.metrics) : null),
@@ -185,7 +180,6 @@ export function useMetricCollectionSet(
       queryKey: queryKeyFor(entity, chunkIds, range, request.metrics),
       queryFn: () => queryMetricResults(request),
       enabled,
-      placeholderData: keepPreviousData,
     })),
   });
 

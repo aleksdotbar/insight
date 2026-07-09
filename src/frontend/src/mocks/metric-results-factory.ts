@@ -135,6 +135,21 @@ export function buildMetricResultsResponse(
               })),
             ),
           };
+        case "histogram":
+          return {
+            view: "histogram",
+            values: ids.map((entityId) => {
+              const width = 10;
+              return {
+                entity_id: entityId,
+                bins: Array.from({ length: 6 }, (_, i) => ({
+                  lo: i * width,
+                  hi: (i + 1) * width,
+                  count: valueFor(entityId, key, `bin${i}`) % 40,
+                })),
+              };
+            }),
+          };
         default:
           return view satisfies never;
       }

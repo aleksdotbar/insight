@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 
-import type { MetricBucket } from "@/api/metric-results-client";
+import type { MetricBucket, MetricFormat } from "@/api/metric-results-client";
 import {
   Card,
   CardContent,
@@ -13,8 +13,6 @@ import {
   CartesianGrid,
   ChartBar,
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartLine,
   ChartTooltip,
   ChartTooltipContent,
@@ -29,7 +27,9 @@ import {
   dimensionSeriesKey,
   safeSeriesKey,
 } from "@/components/widgets/metric-views/dimension-series";
+import { formatMetricNumber } from "@/lib/format";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
+import { integerPercentShares } from "@/lib/metrics/shares";
 import { swatchPalette } from "@/lib/swatch-palette";
 
 export interface MetricTrendProps {
@@ -138,7 +138,12 @@ function flatten(
       flat.push({
         key: dimensionSeriesKey(item.dimensions),
         colorSeed: dimensionColorSeed(item.dimensions),
-        label: dimensionLabel(item.dimensions),
+        // A dimensionless single series would read "Total"; name it after the
+        // metric so the tooltip says "Commits", not "Total".
+        label:
+          item.dimensions.length > 0
+            ? dimensionLabel(item.dimensions)
+            : metric.label,
         points: item.points,
       });
     }
@@ -223,6 +228,21 @@ export function MetricTrend({ metrics, entityId, chart }: MetricTrendProps) {
       ? `${BUCKET_LABEL[bucket]} by ${dimensionKeys.join(" / ")}`
       : BUCKET_LABEL[bucket];
 
+  // A single metric split by a dimension is a composition — its series are
+  // parts of one whole, so the legend can carry each part's period total and
+  // share (folding in the standalone breakdown chart). Multiple metrics are
+  // not a whole (no honest %), so they get labels only.
+  const isComposition = metrics.length === 1 && dimensionKeys.length > 0;
+  const compositionTotal = series.reduce((sum, item) => sum + item.total, 0);
+  const legendFormat: MetricFormat = metrics[0]?.format ?? "integer";
+  const legendUnit = metrics[0]?.unit ? ` ${metrics[0].unit}` : "";
+  // For a composition, each part gets an integer share that sums to exactly
+  // 100 (largest-remainder rounding — the legend must never read 99%/101%);
+  // legendShares[i] is series[i]'s share. A non-composition has no whole → [].
+  const legendShares = isComposition
+    ? integerPercentShares(series.map((item) => item.total))
+    : [];
+
   const axes = (
     <>
       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -248,7 +268,6 @@ export function MetricTrend({ metrics, entityId, chart }: MetricTrendProps) {
           />
         }
       />
-      <ChartLegend content={<ChartLegendContent />} />
     </>
   );
 
@@ -297,6 +316,27 @@ export function MetricTrend({ metrics, entityId, chart }: MetricTrendProps) {
             </LineChart>
           )}
         </ChartContainer>
+        {series.length > 1 ? (
+          <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5">
+            {series.map((item, index) => (
+              <li key={item.key} className="flex items-center gap-2 text-xs">
+                <span
+                  aria-hidden
+                  className="size-2.5 shrink-0 rounded-[3px]"
+                  style={{ backgroundColor: colorsBySeed[item.colorSeed] }}
+                />
+                <span className="font-medium">{item.label}</span>
+                {isComposition ? (
+                  <span className="tabular-nums text-muted-foreground">
+                    {formatMetricNumber(item.total, legendFormat)}
+                    {legendUnit}
+                    {compositionTotal > 0 ? ` · ${legendShares[index]}%` : ""}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </CardContent>
     </Card>
   );

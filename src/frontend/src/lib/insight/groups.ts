@@ -17,7 +17,11 @@ import type { MetricCollectionConfig } from "@/lib/metrics/collection";
 
 export type TimeseriesChartKind = "line" | "stacked-bar";
 export type BreakdownChartKind = "bars";
-export type ChartKind = TimeseriesChartKind | BreakdownChartKind;
+export type HistogramChartKind = "histogram";
+export type ChartKind =
+  | TimeseriesChartKind
+  | BreakdownChartKind
+  | HistogramChartKind;
 
 /**
  * One chart in a group's drilldown. Blocks compose: a multi-metric chart
@@ -29,7 +33,8 @@ export type ChartKind = TimeseriesChartKind | BreakdownChartKind;
  */
 export type DrilldownBlock =
   | { view: "timeseries"; chart: TimeseriesChartKind; metrics: string[] }
-  | { view: "breakdown"; chart: BreakdownChartKind; metrics: string[] };
+  | { view: "breakdown"; chart: BreakdownChartKind; metrics: string[] }
+  | { view: "histogram"; chart: HistogramChartKind; metrics: string[] };
 
 export interface MetricGroup {
   kind: "metrics";
@@ -64,7 +69,6 @@ const AI_ADOPTION_COLLECTION: MetricCollectionConfig = {
         { view: "period" },
         { view: "peer" },
         { view: "timeseries", bucket: "auto", dimensions: ["tool"] },
-        { view: "breakdown", dimensions: ["tool"] },
       ],
     },
     { key: "ai.removed_lines", views: [{ view: "period" }, { view: "peer" }] },
@@ -97,9 +101,84 @@ const AI_ADOPTION_COLLECTION: MetricCollectionConfig = {
   ],
 };
 
+const GIT_OUTPUT_COLLECTION: MetricCollectionConfig = {
+  metrics: [
+    {
+      key: "git.commits",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "timeseries", bucket: "auto" },
+      ],
+    },
+    {
+      key: "git.prs_merged",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "timeseries", bucket: "auto" },
+      ],
+    },
+    {
+      key: "git.lines_added",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "timeseries", bucket: "auto", dimensions: ["category"] },
+      ],
+    },
+    {
+      key: "git.pr_cycle_time_h",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
+    {
+      key: "git.pr_size",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
+    {
+      key: "git.commit_size",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
+    { key: "git.code_lines", views: [{ view: "period" }, { view: "peer" }] },
+    { key: "git.prs_created", views: [{ view: "period" }, { view: "peer" }] },
+    { key: "git.merge_rate", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "git.commits_per_active_day",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+  ],
+};
+
 export const GROUPS: readonly GroupDef[] = [
   { kind: "legacy", id: "task_delivery", title: "Task delivery" },
-  { kind: "legacy", id: "git_output", title: "Git output" },
+  {
+    kind: "metrics",
+    id: "git_output",
+    title: "Git output",
+    collection: GIT_OUTPUT_COLLECTION,
+    card: {
+      preview: ["git.commits", "git.prs_merged", "git.pr_cycle_time_h"],
+    },
+    drilldown: [
+      {
+        chart: "line",
+        view: "timeseries",
+        metrics: ["git.commits", "git.prs_merged"],
+      },
+      {
+        chart: "stacked-bar",
+        view: "timeseries",
+        metrics: ["git.lines_added"],
+      },
+      {
+        chart: "histogram",
+        view: "histogram",
+        metrics: ["git.pr_cycle_time_h"],
+      },
+      { chart: "histogram", view: "histogram", metrics: ["git.pr_size"] },
+      { chart: "histogram", view: "histogram", metrics: ["git.commit_size"] },
+    ],
+  },
   { kind: "legacy", id: "collaboration", title: "Collaboration" },
   {
     kind: "metrics",
@@ -110,7 +189,6 @@ export const GROUPS: readonly GroupDef[] = [
       preview: ["ai.active_days", "ai.cost", "ai.tool_acceptance_rate"],
     },
     drilldown: [
-      { chart: "bars", view: "breakdown", metrics: ["ai.accepted_lines"] },
       {
         chart: "stacked-bar",
         view: "timeseries",
@@ -148,7 +226,7 @@ export type KpiTileSource =
 export const KPI_ROW: readonly KpiTileSource[] = [
   { kind: "legacy", key: "tasks_closed", groupId: "task_delivery" },
   { kind: "legacy", key: "focus_time_pct", groupId: "collaboration" },
-  { kind: "legacy", key: "prs_merged", groupId: "git_output" },
+  { kind: "metric", metricKey: "git.prs_merged" },
   { kind: "metric", metricKey: "ai.active_days" },
   { kind: "metric", metricKey: "ai.accepted_lines" },
 ];
