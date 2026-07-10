@@ -172,6 +172,9 @@ function buildPoints(
   bucket: MetricBucket,
 ): TrendPoint[] {
   const { tick, tooltip } = labelPatterns(bucket);
+  // A weekly bucket_start is the start of the week, not a single day — say so
+  // in the tooltip so "April 13" doesn't read as one day's total.
+  const tooltipPrefix = bucket === "week" ? "Week of " : "";
   const byDate = new Map<string, TrendPoint>();
   for (const item of flat) {
     for (const value of item.points) {
@@ -183,7 +186,7 @@ function buildPoints(
         point = {
           date: value.bucket_start,
           label: formatDateLabel(value.bucket_start, tick),
-          tooltipLabel: formatDateLabel(value.bucket_start, tooltip),
+          tooltipLabel: `${tooltipPrefix}${formatDateLabel(value.bucket_start, tooltip)}`,
         };
         byDate.set(value.bucket_start, point);
       }
