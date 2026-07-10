@@ -12,8 +12,8 @@ import {
 } from "@/components/widgets/metric-views/dimension-series";
 import { formatMetricValue } from "@/lib/format";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
-import { integerPercentShares } from "@/lib/metrics/shares";
-import { swatchPalette } from "@/lib/swatch-palette";
+import { percentShareLabels } from "@/lib/metrics/shares";
+import { seriesColors } from "@/lib/series-colors";
 
 export interface MetricBreakdownProps {
   metric: NormalizedMetricResult;
@@ -48,16 +48,17 @@ export function MetricBreakdown({ metric, entityId }: MetricBreakdownProps) {
   }
 
   const dimensions = metric.breakdown?.dimensions ?? [];
-  const colorsBySeed = swatchPalette(rows.map((row) => row.colorSeed));
+  const colorsBySeed = seriesColors(rows.map((row) => row.colorSeed));
   const total = rows.reduce((sum, row) => sum + row.value, 0);
-  // Ribbon widths use the exact fraction; displayed percents use integer
-  // shares that sum to exactly 100 (no 99%/101% in the legend).
-  const shares = integerPercentShares(rows.map((row) => row.value));
+  // Ribbon widths use the exact fraction; displayed percents use share
+  // labels that sum to exactly 100 (no 99%/101% in the legend, and a
+  // nonzero part never reads 0%).
+  const shares = percentShareLabels(rows.map((row) => row.value));
   const items = rows.map((row, index) => ({
     ...row,
     color: colorsBySeed[row.colorSeed],
     pct: total > 0 ? (row.value / total) * 100 : 0,
-    share: shares[index] ?? 0,
+    share: shares[index] ?? "0",
     formatted: formatMetricValue(row.value, metric.format, metric.unit),
   }));
 
