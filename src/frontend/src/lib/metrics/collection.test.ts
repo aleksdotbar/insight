@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MEDIAN_METRIC_FIXTURE,
   RATIO_METRIC_FIXTURE,
   SUM_METRIC_FIXTURE,
 } from "@/mocks/metric-results-fixtures";
@@ -91,7 +92,7 @@ describe("normalizeMetricResult forward-compat", () => {
       ...SUM_METRIC_FIXTURE,
       views: [
         ...SUM_METRIC_FIXTURE.views,
-        { view: "histogram", bins: [] } as never,
+        { view: "sparkline", points: [] } as never,
       ],
     };
     const normalized = normalizeMetricResult(withUnknown);
@@ -189,6 +190,51 @@ describe("row-limit chunking", () => {
     // period survives (second chunk had none); peer values append.
     expect(metric.period?.values.length).toBeGreaterThan(0);
     expect((metric.peer?.values.length ?? 0)).toBeGreaterThan(1);
+  });
+});
+
+describe("histogram view", () => {
+  const HISTOGRAM_COLLECTION: MetricCollectionConfig = {
+    metrics: [
+      {
+        key: "git.pr_cycle_time_h",
+        views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+      },
+    ],
+  };
+
+  it("derives the histogram wire view", () => {
+    const request = buildMetricCollectionRequest(
+      HISTOGRAM_COLLECTION,
+      { type: "person", ids: ["alice@example.com"] },
+      RANGE,
+    );
+    expect(request.metrics[0]?.views).toEqual([
+      { view: "period" },
+      { view: "peer" },
+      { view: "histogram" },
+    ]);
+  });
+
+  it("normalizes onto the histogram field", () => {
+    const normalized = normalizeMetricResult(MEDIAN_METRIC_FIXTURE);
+    expect(normalized.computation).toBe("median");
+    expect(normalized.histogram?.values).toHaveLength(1);
+  });
+
+  it("slices bins for the entity and returns none for others", () => {
+    const metric = normalizeMetricResults([MEDIAN_METRIC_FIXTURE]).get(
+      "git.pr_cycle_time_h",
+    )!;
+    expect(forEntity(metric, "alice@example.com").histogram).toHaveLength(1);
+    expect(
+      forEntity(metric, "alice@example.com").histogram[0]?.bins.length,
+    ).toBeGreaterThan(0);
+    expect(forEntity(metric, "bob@example.com").histogram).toHaveLength(0);
+  });
+
+  it("is not chunkable (single-entity drilldown view)", () => {
+    expect(entityChunkSize(HISTOGRAM_COLLECTION)).toBeNull();
   });
 });
 

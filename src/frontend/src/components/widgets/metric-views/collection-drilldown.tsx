@@ -1,6 +1,13 @@
 import { ComingSoon } from "@/components/widgets/coming-soon";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { MetricBreakdown } from "@/components/widgets/metric-views/metric-breakdown";
+import { MetricHistogram } from "@/components/widgets/metric-views/metric-histogram";
 import { MetricTrend } from "@/components/widgets/metric-views/metric-trend";
 import { PeerStory } from "@/components/widgets/metric-views/peer-story";
 import type { DrilldownBlock, MetricGroup } from "@/lib/insight/groups";
@@ -42,6 +49,8 @@ function Block({
   if (block.view === "timeseries") {
     return <MetricTrend metrics={metrics} entityId={entityId} chart={block.chart} />;
   }
+  // Histogram blocks render in the Distributions card, not here.
+  if (block.view !== "breakdown") return null;
   return (
     <>
       {metrics.map((metric) => (
@@ -98,6 +107,17 @@ export function CollectionDrilldown({
   }
 
   const entries = buildPeerStoryEntries(def.collection, data.byKey, entityId);
+  // Distribution (histogram) charts get their own labeled card below the peer
+  // story; everything else pairs into the top chart grid. Filter to blocks
+  // that actually have data so column counts (and full-width-when-alone) key
+  // off what renders, not what's declared.
+  const chartBlocks = def.drilldown.filter(
+    (block) =>
+      block.view !== "histogram" && blockMetrics(block, data.byKey).length > 0,
+  );
+  const distributionMetrics = def.drilldown
+    .filter((block) => block.view === "histogram")
+    .flatMap((block) => blockMetrics(block, data.byKey));
 
   return (
     <div
@@ -107,15 +127,53 @@ export function CollectionDrilldown({
         className,
       )}
     >
-      {def.drilldown.map((block, index) => (
-        <Block
-          key={`${block.view}-${block.chart}-${index}`}
-          block={block}
-          byKey={data.byKey}
-          entityId={entityId}
-        />
-      ))}
+      {chartBlocks.length > 0 ? (
+        // Pair charts into two columns; a lone chart spans the full width
+        // rather than leaving an empty column. Blocks return fragments, so
+        // each card is a direct grid item.
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            chartBlocks.length > 1 && "lg:grid-cols-2",
+          )}
+        >
+          {chartBlocks.map((block, index) => (
+            <Block
+              key={`${block.view}-${block.chart}-${index}`}
+              block={block}
+              byKey={data.byKey}
+              entityId={entityId}
+            />
+          ))}
+        </div>
+      ) : null}
       <PeerStory entries={entries} cohortLabel={cohortLabel} />
+      {distributionMetrics.length > 0 ? (
+        // One labeled card holds every distribution; the charts inside are
+        // un-carded so there are no nested borders and "distribution" isn't
+        // repeated per chart.
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold">
+              Distributions
+            </CardTitle>
+          </CardHeader>
+          <CardContent
+            className={cn(
+              "grid grid-cols-1 gap-x-8 gap-y-6",
+              distributionMetrics.length > 1 && "lg:grid-cols-2",
+            )}
+          >
+            {distributionMetrics.map((metric) => (
+              <MetricHistogram
+                key={metric.metric_key}
+                metric={metric}
+                entityId={entityId}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

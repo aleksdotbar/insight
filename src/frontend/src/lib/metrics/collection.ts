@@ -1,6 +1,7 @@
 import type { DateRange } from "@/api/period-to-date-range";
 import type {
   BreakdownView,
+  HistogramView,
   MetricBucket,
   MetricComputation,
   MetricDirection,
@@ -28,7 +29,8 @@ export type MetricCollectionViewConfig =
   | {
       view: "breakdown";
       dimensions: string[];
-    };
+    }
+  | { view: "histogram" };
 
 export interface MetricCollectionMetricConfig {
   key: string;
@@ -58,6 +60,7 @@ export type NormalizedMetricResult = {
   timeseries?: TimeseriesView;
   peer?: PeerView;
   breakdown?: BreakdownView;
+  histogram?: HistogramView;
 };
 
 export type PeerEntityStats = PeerView["values"][number];
@@ -68,6 +71,7 @@ export interface EntityMetricData {
   bucket: MetricBucket | null;
   series: TimeseriesView["series"];
   breakdown: BreakdownView["values"];
+  histogram: HistogramView["values"];
 }
 
 function exhaustive(value: never): never {
@@ -140,6 +144,9 @@ export function normalizeMetricResult(
       case "breakdown":
         normalized.breakdown = view;
         break;
+      case "histogram":
+        normalized.histogram = view;
+        break;
       default:
         // Forward-compat: the server may ship new view kinds before this
         // client knows them; an unknown view must not take down the whole
@@ -185,6 +192,8 @@ export function forEntity(
       result.timeseries?.series.filter((s) => s.entity_id === entityId) ?? [],
     breakdown:
       result.breakdown?.values.filter((v) => v.entity_id === entityId) ?? [],
+    histogram:
+      result.histogram?.values.filter((v) => v.entity_id === entityId) ?? [],
   };
 }
 
@@ -197,9 +206,11 @@ export const MAX_PROJECTED_ROWS = 4500;
 
 /**
  * How many entities fit in one request for this collection, or null when the
- * collection is not chunkable (timeseries/breakdown project rows per bucket
- * or dimension group, which the client cannot bound — those views are for
- * single-entity surfaces).
+ * collection is not chunkable. Timeseries/breakdown project rows per bucket
+ * or dimension group (unbounded client-side); histogram projects a fixed bin
+ * count per entity but is a drilldown-only single-entity view — all three are
+ * for single-entity surfaces and roster surfaces strip them via
+ * `projectViews(["period", "peer"])`, so none should ride a chunked request.
  */
 export function entityChunkSize(
   collection: MetricCollectionConfig,
@@ -207,7 +218,13 @@ export function entityChunkSize(
   let rowsPerEntity = 0;
   for (const metric of collection.metrics) {
     for (const view of metric.views) {
-      if (view.view === "timeseries" || view.view === "breakdown") return null;
+      if (
+        view.view === "timeseries" ||
+        view.view === "breakdown" ||
+        view.view === "histogram"
+      ) {
+        return null;
+      }
       rowsPerEntity += 1;
     }
   }
@@ -298,6 +315,8 @@ function toRequestView(
       };
     case "breakdown":
       return { view: "breakdown", dimensions: view.dimensions };
+    case "histogram":
+      return { view: "histogram" };
     default:
       exhaustive(view);
   }

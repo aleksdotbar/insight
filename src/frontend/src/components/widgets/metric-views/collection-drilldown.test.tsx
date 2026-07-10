@@ -6,6 +6,7 @@ import type { MetricGroup } from "@/lib/insight/groups";
 import { normalizeMetricResults } from "@/lib/metrics/collection";
 import type { MetricCollectionResult } from "@/queries/metric-results";
 import {
+  MEDIAN_METRIC_FIXTURE,
   RATIO_METRIC_FIXTURE,
   SUM_METRIC_FIXTURE,
 } from "@/mocks/metric-results-fixtures";
@@ -78,6 +79,45 @@ describe("CollectionDrilldown", () => {
     // story falls back to the flat grid with one card per metric.
     expect(screen.getByText("Tool acceptance rate")).toBeInTheDocument();
     expect(screen.getByText("77%")).toBeInTheDocument();
+  });
+
+  it("dispatches a histogram block to the histogram renderer", () => {
+    const histogramDef: MetricGroup = {
+      kind: "metrics",
+      id: "git_output",
+      title: "Git output",
+      collection: {
+        metrics: [
+          {
+            key: "git.pr_cycle_time_h",
+            views: [
+              { view: "period" },
+              { view: "peer" },
+              { view: "histogram" },
+            ],
+          },
+        ],
+      },
+      card: { preview: ["git.pr_cycle_time_h"] },
+      drilldown: [
+        {
+          chart: "histogram",
+          view: "histogram",
+          metrics: ["git.pr_cycle_time_h"],
+        },
+      ],
+    };
+    render(
+      <CollectionDrilldown
+        def={histogramDef}
+        data={result({ byKey: normalizeMetricResults([MEDIAN_METRIC_FIXTURE]) })}
+        entityId="alice@example.com"
+      />,
+    );
+    // Histograms live in a single labeled "Distributions" card, shaded vs the
+    // peer median (the subtitle proves the diverging render, not a bare chart).
+    expect(screen.getByText("Distributions")).toBeInTheDocument();
+    expect(screen.getByText(/vs peer median/)).toBeInTheDocument();
   });
 
   it("shows the error state with retry when the collection failed", () => {

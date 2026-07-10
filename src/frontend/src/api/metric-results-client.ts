@@ -13,9 +13,10 @@ export type MetricResultViewKind =
   | "period"
   | "timeseries"
   | "peer"
-  | "breakdown";
+  | "breakdown"
+  | "histogram";
 export type MetricBucket = "day" | "week" | "month";
-export type MetricComputation = "sum" | "ratio";
+export type MetricComputation = "sum" | "ratio" | "median";
 export type MetricEntityType = "person";
 
 export interface MetricResultsRequest {
@@ -40,7 +41,8 @@ export type MetricViewRequest =
   | {
       view: "breakdown";
       dimensions: string[];
-    };
+    }
+  | { view: "histogram" };
 
 export interface MetricDimension {
   key: string;
@@ -48,7 +50,10 @@ export interface MetricDimension {
   label?: string;
 }
 
-export type MetricResult = SumMetricResult | RatioMetricResult;
+export type MetricResult =
+  | SumMetricResult
+  | RatioMetricResult
+  | MedianMetricResult;
 
 interface MetricResultBase {
   metric_key: string;
@@ -70,11 +75,16 @@ export interface RatioMetricResult extends MetricResultBase {
   scale: number;
 }
 
+export interface MedianMetricResult extends MetricResultBase {
+  computation: "median";
+}
+
 export type MetricResultView =
   | PeriodView
   | TimeseriesView
   | PeerView
-  | BreakdownView;
+  | BreakdownView
+  | HistogramView;
 
 export interface PeriodView {
   view: "period";
@@ -112,6 +122,20 @@ export interface BreakdownView {
     entity_id: string;
     dimensions: MetricDimension[];
     value: number | null;
+  }>;
+}
+
+export interface HistogramBin {
+  lo: number;
+  hi: number;
+  count: number;
+}
+
+export interface HistogramView {
+  view: "histogram";
+  values: Array<{
+    entity_id: string;
+    bins: HistogramBin[];
   }>;
 }
 

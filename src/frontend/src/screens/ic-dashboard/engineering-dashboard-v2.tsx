@@ -5,7 +5,11 @@ import { ComingSoon } from "@/components/widgets/coming-soon";
 import { DashboardEmptyState } from "@/components/widgets/v2/dashboard-empty-state";
 import { DashboardHeader } from "@/components/widgets/v2/dashboard-header";
 import { IcNeedsAttention } from "@/components/widgets/v2/ic-needs-attention";
-import { KpiTile, KpiTilePlaceholder } from "@/components/widgets/v2/kpi-tile";
+import {
+  KpiTile,
+  KpiTileLoading,
+  KpiTilePlaceholder,
+} from "@/components/widgets/v2/kpi-tile";
 import { MetricGroupCard } from "@/components/widgets/metric-views/metric-group-card";
 import { SectionCard } from "@/components/widgets/v2/section-card";
 import { GroupDrilldownSheet } from "@/components/widgets/v2/group-drilldown-sheet";
@@ -67,7 +71,6 @@ const LEGACY_GROUP_ROWS: Record<
   (data: IcDashboardData | undefined) => BulletMetric[]
 > = {
   task_delivery: (data) => data?.taskDelivery ?? [],
-  git_output: (data) => data?.gitOutput ?? [],
   collaboration: (data) => data?.collaboration ?? [],
   wiki: (data) => data?.wiki ?? [],
 };
@@ -292,6 +295,11 @@ export function EngineeringDashboardV2({
                         onRetry={kpiData.refetch}
                       />
                     );
+                  }
+                  // Metric tiles reset to pending on a period change (no
+                  // placeholder retention); show a spinner, not "Coming soon".
+                  if (source.kind === "metric" && kpiData.isPending) {
+                    return <KpiTileLoading key={key} />;
                   }
                   return (
                     <KpiTilePlaceholder

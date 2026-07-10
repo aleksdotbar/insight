@@ -6,8 +6,10 @@
  *   daily cadence, so the same dashboard payload is byte-identical for
  *   long stretches. An hour is a safe ceiling that survives a normal work
  *   session without redundant fetches.
- * - `refetchOnWindowFocus: false` — re-querying every metric on tab-focus
- *   is noisy on a dashboard with 6+ panels.
+ * - `refetchOnWindowFocus` / `refetchOnReconnect: false` — the data changes
+ *   at most daily, so automatic refetches on tab-focus or network reconnect
+ *   only add noise to a dashboard with 6+ panels. Data still refreshes on an
+ *   explicit navigation or period change once past `staleTime`.
  * - `retry: 1` — analytics-api 5xx is occasional; one retry without a
  *   backoff multiplier is cheap and saves the user a manual refresh.
  *
@@ -22,6 +24,7 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 60 * 60_000,
       refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
       retry: 1,
     },
   },

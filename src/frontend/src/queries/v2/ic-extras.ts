@@ -9,19 +9,9 @@ import {
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import type { DateRange } from "@/api/period-to-date-range";
-import type {
-  RawDeliveryTrendRow,
-  RawLocTrendRow,
-} from "@/api/raw-types";
-import type {
-  DeliveryDataPoint,
-  LocDataPoint,
-  PeriodValue,
-} from "@/types/insight";
-import {
-  transformDeliveryTrend,
-  transformLocTrend,
-} from "@/api/transforms";
+import type { RawDeliveryTrendRow } from "@/api/raw-types";
+import type { DeliveryDataPoint, PeriodValue } from "@/types/insight";
+import { transformDeliveryTrend } from "@/api/transforms";
 
 function canonicalPersonId(personId: string): string {
   return personId.trim().toLowerCase();
@@ -194,7 +184,6 @@ export function useIcCollabPeerCounters(
 export interface DrilldownBatchData {
   histograms: Map<string, HistogramBin[]>;
   delivery: DeliveryDataPoint[] | null;
-  loc: LocDataPoint[] | null;
   sectionTrend: SectionTrendPointRow[] | null;
 }
 
@@ -235,7 +224,6 @@ export function icDrilldownBatchQueryOptions(opts: IcDrilldownBatchOpts) {
         return {
           histograms: new Map(),
           delivery: null,
-          loc: null,
           sectionTrend: null,
         };
       }
@@ -249,17 +237,10 @@ export function icDrilldownBatchQueryOptions(opts: IcDrilldownBatchOpts) {
         },
       ];
 
-      if (sectionId === "task_delivery" || sectionId === "git_output") {
+      if (sectionId === "task_delivery") {
         items.push({
           id: "delivery",
           metric_id: METRIC_REGISTRY.IC_CHART_DELIVERY,
-          $filter: pfilter,
-        });
-      }
-      if (sectionId === "git_output") {
-        items.push({
-          id: "loc",
-          metric_id: METRIC_REGISTRY.IC_CHART_LOC,
           $filter: pfilter,
         });
       }
@@ -290,13 +271,11 @@ export function icDrilldownBatchQueryOptions(opts: IcDrilldownBatchOpts) {
       }
 
       const deliveryRows = getItems<RawDeliveryTrendRow>(byId, "delivery");
-      const locRows = getItems<RawLocTrendRow>(byId, "loc");
       const sectionTrendRows = getItems<SectionTrendLongRow>(byId, "section_trend");
 
       return {
         histograms,
         delivery: deliveryRows ? transformDeliveryTrend(deliveryRows, period) : null,
-        loc: locRows ? transformLocTrend(locRows, period) : null,
         sectionTrend: sectionTrendRows
           ? pivotLongToWide(sectionTrendRows)
           : null,

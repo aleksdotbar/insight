@@ -12,6 +12,7 @@ import {
 } from "@/components/widgets/metric-views/dimension-series";
 import { formatMetricValue } from "@/lib/format";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
+import { integerPercentShares } from "@/lib/metrics/shares";
 import { swatchPalette } from "@/lib/swatch-palette";
 
 export interface MetricBreakdownProps {
@@ -49,6 +50,16 @@ export function MetricBreakdown({ metric, entityId }: MetricBreakdownProps) {
   const dimensions = metric.breakdown?.dimensions ?? [];
   const colorsBySeed = swatchPalette(rows.map((row) => row.colorSeed));
   const total = rows.reduce((sum, row) => sum + row.value, 0);
+  // Ribbon widths use the exact fraction; displayed percents use integer
+  // shares that sum to exactly 100 (no 99%/101% in the legend).
+  const shares = integerPercentShares(rows.map((row) => row.value));
+  const items = rows.map((row, index) => ({
+    ...row,
+    color: colorsBySeed[row.colorSeed],
+    pct: total > 0 ? (row.value / total) * 100 : 0,
+    share: shares[index] ?? 0,
+    formatted: formatMetricValue(row.value, metric.format, metric.unit),
+  }));
 
   return (
     <Card className="shrink-0">
@@ -61,34 +72,38 @@ export function MetricBreakdown({ metric, entityId }: MetricBreakdownProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex h-24 w-full overflow-hidden rounded-md bg-muted md:h-28">
-          {rows.map((row) => {
-            const pct = total > 0 ? (row.value / total) * 100 : 0;
-            const formatted = formatMetricValue(
-              row.value,
-              metric.format,
-              metric.unit,
-            );
-            return (
-              <div
-                key={row.key}
-                className="min-w-0 border-r-2 border-background p-3 last:border-r-0"
-                style={{
-                  width: `${pct}%`,
-                  backgroundColor: colorsBySeed[row.colorSeed],
-                  color: "var(--swatch-fg)",
-                }}
-                title={`${row.label}: ${formatted}`}
-              >
-                <div className="truncate text-sm font-semibold">{row.label}</div>
-                <div className="mt-1 text-xs leading-4 opacity-90">
-                  {Math.round(pct)}%
-                </div>
-                <div className="text-xs leading-4 opacity-90">{formatted}</div>
-              </div>
-            );
-          })}
+        {/* Proportional ribbon carries color only; every label/value/percent
+            lives in the legend below, so a narrow slice never clips its text. */}
+        <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted">
+          {items.map((item) => (
+            <div
+              key={item.key}
+              className="h-full min-w-[2px] border-r border-background last:border-r-0"
+              style={{ width: `${item.pct}%`, backgroundColor: item.color }}
+              title={`${item.label}: ${item.formatted} (${item.share}%)`}
+            />
+          ))}
         </div>
+        <ul className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+          {items.map((item) => (
+            <li key={item.key} className="flex items-center gap-2 text-xs">
+              <span
+                aria-hidden
+                className="size-2.5 shrink-0 rounded-[3px]"
+                style={{ backgroundColor: item.color }}
+              />
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {item.label}
+              </span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {item.formatted}
+              </span>
+              <span className="w-8 shrink-0 text-right tabular-nums text-muted-foreground">
+                {item.share}%
+              </span>
+            </li>
+          ))}
+        </ul>
       </CardContent>
     </Card>
   );

@@ -2,7 +2,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { KpiTile, KpiTilePlaceholder } from "@/components/widgets/v2/kpi-tile";
+import {
+  KpiTile,
+  KpiTileLoading,
+  KpiTilePlaceholder,
+} from "@/components/widgets/v2/kpi-tile";
 import type { KpiTileData } from "@/lib/insight/kpi-row";
 
 vi.mock("@/hooks/use-settings", () => ({
@@ -63,5 +67,13 @@ describe("KpiTilePlaceholder", () => {
   it("renders label-less while a metric tile has no data", () => {
     render(<KpiTilePlaceholder />);
     expect(screen.getByText("Coming soon")).toBeInTheDocument();
+  });
+});
+
+describe("KpiTileLoading", () => {
+  it("renders a spinner and not the 'Coming soon' state", () => {
+    const { container } = render(<KpiTileLoading />);
+    expect(container.querySelector("svg")).toBeInTheDocument();
+    expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
   });
 });

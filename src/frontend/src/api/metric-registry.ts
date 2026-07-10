@@ -32,7 +32,6 @@ export const METRIC_REGISTRY = {
   // long rows (person_id, metric_key, value) for a roster, no cohort.
   V2_MEMBER_VALUES_DELIVERY: "00000000-0000-0000-0001-000000000040",
   V2_MEMBER_VALUES_COLLAB: "00000000-0000-0000-0001-000000000041",
-  V2_MEMBER_VALUES_GIT: "00000000-0000-0000-0001-000000000042",
   // Per-person collaboration Messaging peer counters (#1527): long rows
   // (person_id, metric_key, value + per-org_unit bands) for messages_sent /
   // channel_posts.
@@ -48,7 +47,6 @@ export const METRIC_REGISTRY = {
   // needs-attention surfaces. One metric per bullet family.
   V2_DEPT_DIST_DELIVERY: "00000000-0000-0000-0001-000000000044",
   V2_DEPT_DIST_COLLAB: "00000000-0000-0000-0001-000000000045",
-  V2_DEPT_DIST_GIT: "00000000-0000-0000-0001-000000000046",
   V2_DEPT_DIST_KPIS: "00000000-0000-0000-0001-000000000047",
 } as const satisfies Record<string, string>;
 
