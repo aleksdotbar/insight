@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
 import type { AttentionItem } from "@/lib/insight/attention";
 import type { GroupId } from "@/lib/insight/groups";
@@ -41,13 +40,11 @@ export function IcNeedsAttention({
 
   return (
     <section>
-      <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <h2 className="mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">
         Needs attention
       </h2>
-      <Alert variant="destructive">
-        <AlertTriangle />
-        <AlertTitle>{attentionAll.length} metrics below peers</AlertTitle>
-        <AlertDescription>
+      <Card data-size="sm">
+        <CardContent className="text-sm">
           <ul className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
             {visible.map((item) => (
               <li key={`${item.group}-${item.key}`}>
@@ -61,16 +58,24 @@ export function IcNeedsAttention({
                   </span>
                   <span
                     className={cn(
-                      "shrink-0 font-mono font-bold tabular-nums",
-                      PEER_TEXT[badStatus],
+                      "shrink-0 font-semibold tabular-nums",
+                      PEER_TEXT[badStatus]
                     )}
                   >
                     {item.valueText}
                   </span>
                   {item.medianText ? (
-                    <span className="shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">
-                      {item.medianText}
-                    </span>
+                    <>
+                      <span
+                        aria-hidden
+                        className="shrink-0 text-xs text-muted-foreground"
+                      >
+                        ·
+                      </span>
+                      <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                        median {item.medianText}
+                      </span>
+                    </>
                   ) : null}
                 </button>
               </li>
@@ -89,8 +94,8 @@ export function IcNeedsAttention({
               </li>
             ) : null}
           </ul>
-        </AlertDescription>
-      </Alert>
+        </CardContent>
+      </Card>
     </section>
   );
 }

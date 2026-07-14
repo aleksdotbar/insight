@@ -1,8 +1,7 @@
-import { AlertTriangle } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 
 import { useCatalog } from "@/api/use-catalog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
 import { memberMetricPeerStatus } from "@/lib/insight/v2/team-member-status";
 import { normalizePersonId } from "@/lib/metrics/entity";
@@ -65,13 +64,11 @@ export function TeamMembersAttention({
 
   return (
     <section>
-      <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <h2 className="mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">
         Members needing attention
       </h2>
-      <Alert variant="destructive">
-        <AlertTriangle />
-        <AlertTitle>{attention.length} members below peers</AlertTitle>
-        <AlertDescription className="flex flex-col gap-2">
+      <Card data-size="sm">
+        <CardContent className="flex flex-col gap-2 text-sm">
           <span className="text-[11px] text-muted-foreground">{subtitle}</span>
           <ul className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
             {attention.map(({ member, belowCount }) => (
@@ -87,20 +84,20 @@ export function TeamMembersAttention({
                   <span
                     className={cn(
                       "shrink-0 font-mono font-bold tabular-nums",
-                      PEER_TEXT[badStatus],
+                      PEER_TEXT[badStatus]
                     )}
                   >
                     {belowCount}
                   </span>
                   <span className="shrink-0 whitespace-nowrap text-muted-foreground">
-                    below peers
+                    trailing
                   </span>
                 </Link>
               </li>
             ))}
           </ul>
-        </AlertDescription>
-      </Alert>
+        </CardContent>
+      </Card>
     </section>
   );
 }

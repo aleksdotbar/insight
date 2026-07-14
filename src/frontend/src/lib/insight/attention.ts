@@ -22,6 +22,7 @@ export interface AttentionItem {
   group: GroupId;
   label: string;
   valueText: string;
+  /** Formatted peer-median value only (no label); the view frames it. */
   medianText: string | null;
   relGap: number;
 }
@@ -34,7 +35,7 @@ export interface LegacyAttentionGroup {
 /** Legacy bullet rows + catalog direction → attention items. */
 export function legacyAttentionItems(
   groups: LegacyAttentionGroup[],
-  byMetricKey: CatalogByKey,
+  byMetricKey: CatalogByKey
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const group of groups) {
@@ -63,7 +64,7 @@ export function legacyAttentionItems(
         group: group.id,
         label: row.label,
         valueText: `${row.value}${row.unit ? ` ${row.unit}` : ""}`,
-        medianText: `Median ${Math.round(median * 10) / 10}${row.unit ? ` ${row.unit}` : ""}`,
+        medianText: `${Math.round(median * 10) / 10}${row.unit ? ` ${row.unit}` : ""}`,
         relGap,
       });
     }
@@ -75,7 +76,7 @@ export function legacyAttentionItems(
 export function metricAttentionItems(
   def: MetricGroup,
   byKey: Map<string, NormalizedMetricResult>,
-  entityId: string,
+  entityId: string
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const metricConfig of def.collection.metrics) {
@@ -103,7 +104,7 @@ export function metricAttentionItems(
       group: def.id,
       label: metric.label,
       valueText: formatMetricValue(value, metric.format, metric.unit),
-      medianText: `Median ${formatMetricValue(median, metric.format, metric.unit)}`,
+      medianText: formatMetricValue(median, metric.format, metric.unit),
       relGap,
     });
   }

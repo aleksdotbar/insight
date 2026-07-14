@@ -78,7 +78,7 @@ describe("legacyAttentionItems", () => {
       group: "collaboration",
       label: "Meeting hours",
       valueText: "22 h",
-      medianText: "Median 8 h",
+      medianText: "8 h",
     });
     expect(items[0]?.relGap).toBeGreaterThan(0);
   });
@@ -110,7 +110,7 @@ describe("metricAttentionItems", () => {
       group: "ai_adoption",
       label: "Active AI days",
       valueText: "2 days",
-      medianText: "Median 11 days",
+      medianText: "11 days",
     });
   });
 
