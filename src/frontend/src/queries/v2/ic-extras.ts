@@ -9,9 +9,7 @@ import {
 import { METRIC_REGISTRY } from "@/api/metric-registry";
 import { odataEscapeValue } from "@/api/odata";
 import type { DateRange } from "@/api/period-to-date-range";
-import type { RawDeliveryTrendRow } from "@/api/raw-types";
-import type { DeliveryDataPoint, PeriodValue } from "@/types/insight";
-import { transformDeliveryTrend } from "@/api/transforms";
+import type { PeriodValue } from "@/types/insight";
 
 function canonicalPersonId(personId: string): string {
   return personId.trim().toLowerCase();
@@ -129,7 +127,6 @@ export function useIcSectionTrend(
 
 export interface DrilldownBatchData {
   histograms: Map<string, HistogramBin[]>;
-  delivery: DeliveryDataPoint[] | null;
   sectionTrend: SectionTrendPointRow[] | null;
 }
 
@@ -169,7 +166,6 @@ export function icDrilldownBatchQueryOptions(opts: IcDrilldownBatchOpts) {
       if (!sectionId || !personId || !range || !period) {
         return {
           histograms: new Map(),
-          delivery: null,
           sectionTrend: null,
         };
       }
@@ -183,13 +179,6 @@ export function icDrilldownBatchQueryOptions(opts: IcDrilldownBatchOpts) {
         },
       ];
 
-      if (sectionId === "task_delivery") {
-        items.push({
-          id: "delivery",
-          metric_id: METRIC_REGISTRY.IC_CHART_DELIVERY,
-          $filter: pfilter,
-        });
-      }
       if (sectionId === "code_quality" || sectionId === "ai_adoption") {
         items.push({
           id: "section_trend",
@@ -216,12 +205,10 @@ export function icDrilldownBatchQueryOptions(opts: IcDrilldownBatchOpts) {
         }
       }
 
-      const deliveryRows = getItems<RawDeliveryTrendRow>(byId, "delivery");
       const sectionTrendRows = getItems<SectionTrendLongRow>(byId, "section_trend");
 
       return {
         histograms,
-        delivery: deliveryRows ? transformDeliveryTrend(deliveryRows, period) : null,
         sectionTrend: sectionTrendRows
           ? pivotLongToWide(sectionTrendRows)
           : null,

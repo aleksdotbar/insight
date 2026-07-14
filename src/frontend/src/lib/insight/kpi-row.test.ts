@@ -1,39 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { CatalogMetric } from "@/api/catalog-client";
 import type { MetricResult } from "@/api/metric-results-client";
-import {
-  kpiRowTiles,
-  legacyKpiTiles,
-  metricKpiTiles,
-} from "@/lib/insight/kpi-row";
+import { kpiRowTiles, metricKpiTiles } from "@/lib/insight/kpi-row";
 import { KPI_ROW } from "@/lib/insight/groups";
 import { normalizeMetricResults } from "@/lib/metrics/collection";
-import type { IcKpi } from "@/types/insight";
-
-function icKpi(overrides: Partial<IcKpi> = {}): IcKpi {
-  return {
-    period: "month",
-    metric_key: "tasks_closed",
-    label: "Tasks closed",
-    value: "12",
-    raw_value: 12,
-    unit: "",
-    sublabel: "",
-    delta: "+9%",
-    delta_type: "good",
-    peer_median: 10,
-    peer_n: 8,
-    ...overrides,
-  };
-}
-
-const CATALOG_ROW = {
-  higher_is_better: true,
-  schema_status: "ok",
-  format: "integer",
-  source_tags: ["jira"],
-} as unknown as CatalogMetric;
 
 function metricResult(
   key: string,
@@ -68,20 +38,6 @@ function metricResult(
     ...overrides,
   } as MetricResult;
 }
-
-describe("legacyKpiTiles", () => {
-  it("keeps legacy formatting/scoring semantics", () => {
-    const tiles = legacyKpiTiles([icKpi()], () => CATALOG_ROW, "all");
-    expect(tiles).toHaveLength(1);
-    const tile = tiles[0]!;
-    expect(tile.value).toBe("12");
-    expect(tile.valueStatus).toBe("good"); // 12 >= median 10
-    expect(tile.delta).toEqual({ text: "+9%", status: "good", down: false });
-    expect(tile.groupId).toBe("task_delivery");
-    expect(tile.context).toBe("jira");
-  });
-
-});
 
 describe("metricKpiTiles", () => {
   it("builds display-ready tiles with median status and delta", () => {
@@ -171,14 +127,10 @@ describe("metricKpiTiles", () => {
 });
 
 describe("kpiRowTiles", () => {
-  it("orders tiles by KPI_ROW display order across legacy and metric sources", () => {
-    const legacy = legacyKpiTiles(
-      [icKpi({ metric_key: "tasks_closed" })],
-      () => CATALOG_ROW,
-      "all",
-    );
+  it("orders tiles by KPI_ROW display order", () => {
     const metric = metricKpiTiles(
       normalizeMetricResults([
+        metricResult("tasks.closed", 12),
         metricResult("git.prs_merged", 9),
         metricResult("ai.active_days", 14),
       ]),
@@ -186,15 +138,15 @@ describe("kpiRowTiles", () => {
       "me@x.com",
       "all",
     );
-    const ordered = kpiRowTiles(legacy, metric).map((t) => t.key);
+    const ordered = kpiRowTiles([], metric).map((t) => t.key);
     const expected = KPI_ROW.map((s) =>
       s.kind === "legacy" ? s.key : s.metricKey,
     ).filter((k) =>
-      ["tasks_closed", "git.prs_merged", "ai.active_days"].includes(k),
+      ["tasks.closed", "git.prs_merged", "ai.active_days"].includes(k),
     );
     expect(ordered).toEqual(expected);
     expect(ordered).toEqual([
-      "tasks_closed",
+      "tasks.closed",
       "git.prs_merged",
       "ai.active_days",
     ]);

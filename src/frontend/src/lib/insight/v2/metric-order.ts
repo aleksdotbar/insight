@@ -1,17 +1,4 @@
 export const METRIC_ORDER_BY_SECTION: Record<string, string[]> = {
-  task_delivery: [
-    "tasks_completed",
-    "mean_time_to_resolution",
-    "pickup_time",
-    "stale_in_progress",
-    "task_reopen_rate",
-    "bugs_to_task_ratio",
-    "flow_efficiency",
-    "estimation_accuracy",
-    "due_date_compliance",
-    "worklog_logging_accuracy",
-    "task_dev_time",
-  ],
   code_quality: [
     "build_success",
     "bugs_fixed",

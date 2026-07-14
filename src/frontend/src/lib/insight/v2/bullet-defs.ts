@@ -27,16 +27,6 @@ export const BULLET_DESCRIPTION_BY_KEY: ReadonlyMap<string, string> = new Map<
   string,
   string
 >(Object.entries({
-  tasks_completed: "Closed tasks per developer",
-  task_dev_time: "Median time in development statuses",
-  task_reopen_rate: "Closed tasks reopened later",
-  due_date_compliance: "Tasks closed by their due date",
-  estimation_accuracy: "Estimate vs actual dev time",
-  bugs_to_task_ratio: "Bugs as a share of closed tasks",
-  mean_time_to_resolution: "Median issue lifetime, create to close",
-  flow_efficiency: "Dev time vs total lifetime",
-  pickup_time: "Created to first dev status",
-
   prs_per_dev: "Merged PRs per developer",
   build_success: "CI runs passed vs total",
   pr_cycle_time: "Hours from PR open to merge",

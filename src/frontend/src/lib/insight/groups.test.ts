@@ -25,7 +25,7 @@ describe("groups registry", () => {
     expect(groupIdForMetricKey("ai.active_days")).toBe("ai_adoption");
     expect(groupIdForMetricKey("git.prs_merged")).toBe("git_output");
     expect(groupIdForMetricKey("git.pr_cycle_time_h")).toBe("git_output");
-    expect(groupIdForMetricKey("tasks_closed")).toBeNull();
+    expect(groupIdForMetricKey("tasks.closed")).toBe("task_delivery");
     expect(groupIdForMetricKey("nope.unknown")).toBeNull();
   });
 

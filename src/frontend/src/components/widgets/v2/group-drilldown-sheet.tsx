@@ -10,11 +10,6 @@ import {
   type TeamMemberRef,
 } from "@/components/widgets/metric-views/team-collection-drilldown";
 import {
-  SectionTrend,
-  type SectionTrendPoint,
-  type SectionTrendSeries,
-} from "@/components/widgets/v2/section-trend";
-import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -26,10 +21,7 @@ import { Spinner } from "@/components/ui/spinner";
 import type { DateRange } from "@/api/period-to-date-range";
 import type { GroupDef } from "@/lib/insight/groups";
 import { partitionBullets } from "@/lib/insight/v2/partition";
-import {
-  useIcDrilldownBatch,
-  type DrilldownBatchData,
-} from "@/queries/v2/ic-extras";
+import { useIcDrilldownBatch } from "@/queries/v2/ic-extras";
 import type { PeerCohortLabel } from "@/lib/peers";
 import type { MetricCollectionResult } from "@/queries/metric-results";
 import { cn } from "@/lib/utils";
@@ -197,7 +189,6 @@ function LegacyDrilldownBody({
     counters.length === 0 &&
     distributions.length === 0 &&
     batch?.histograms.size === 0 &&
-    !batch?.delivery?.length &&
     !batch?.sectionTrend?.length;
   const showFullSpinner = isFirstLoad || (isBodyEmpty && batchQ.isFetching);
 
@@ -216,7 +207,6 @@ function LegacyDrilldownBody({
         batchQ.isFetching && "opacity-60",
       )}
     >
-      {batch ? <DrilldownExtras sectionId={sectionId} batch={batch} /> : null}
       {counters.length > 0 ? (
         <CountersBlock rows={counters} cohortLabel={cohortLabel} />
       ) : null}
@@ -250,31 +240,4 @@ function LegacyDrilldownBody({
       ) : null}
     </div>
   );
-}
-
-function DrilldownExtras({
-  sectionId,
-  batch,
-}: {
-  sectionId: string;
-  batch: DrilldownBatchData;
-}) {
-  if (sectionId === "task_delivery") {
-    const data: SectionTrendPoint[] = (batch.delivery ?? []).map((d) => ({
-      date: d.label,
-      tasksDone: d.tasksDone,
-    }));
-    const series: SectionTrendSeries[] = [
-      { key: "tasksDone", label: "Tasks closed" },
-    ];
-    return (
-      <SectionTrend
-        title="Daily task throughput"
-        description="Closed issues per day"
-        series={series}
-        data={data}
-      />
-    );
-  }
-  return null;
 }

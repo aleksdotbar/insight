@@ -29,11 +29,11 @@ export const METRIC_REGISTRY = {
   V2_IC_SECTION_TREND: "00000000-0000-0000-0001-000000000036",
 
   // Per-person "member values" for the team heatmap + needs-attention widgets:
-  // long rows (person_id, metric_key, value) for a roster, no cohort.
+  // long rows (person_id, metric_key, value) for a roster, no cohort. Task
+  // delivery and collaboration both flipped to unified IC metrics groups, but
+  // their per-member values still feed the legacy team heatmap bullet
+  // columns + needs-attention until that surface migrates to unified metrics.
   V2_MEMBER_VALUES_DELIVERY: "00000000-0000-0000-0001-000000000040",
-  // Collaboration flipped to a unified IC metrics group, but its per-member
-  // values still feed the legacy team heatmap meeting-hours bullet column +
-  // needs-attention until that surface migrates to unified metrics.
   V2_MEMBER_VALUES_COLLAB: "00000000-0000-0000-0001-000000000041",
 
   // Per-person PRs merged for a roster (period-bounded, from the weekly git

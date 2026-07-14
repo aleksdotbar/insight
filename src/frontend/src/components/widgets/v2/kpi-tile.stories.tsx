@@ -29,7 +29,7 @@ import { KpiTile } from "./kpi-tile";
 
 function makeTile(overrides: Partial<KpiTileData> = {}): KpiTileData {
   return {
-    key: "tasks_closed",
+    key: "tasks.closed",
     label: "Bugs Fixed",
     value: "12",
     valueStatus: "good",
