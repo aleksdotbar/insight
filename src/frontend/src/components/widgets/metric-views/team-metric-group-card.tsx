@@ -14,11 +14,14 @@ import {
   type TeamMetricStanding,
 } from "@/lib/insight/team-metrics";
 import {
-  SECTION_STRIPE,
   aggregateSectionStatus,
   sectionCounts,
 } from "@/lib/scoring";
-import { STATUS_BG_CLASS, applyFocusStatus } from "@/lib/status";
+import {
+  STATUS_BG_CLASS,
+  STATUS_STRIPE_LEFT,
+  applyFocusStatus,
+} from "@/lib/status";
 import type { MetricCollectionResult } from "@/queries/metric-results";
 import { cn } from "@/lib/utils";
 
@@ -48,7 +51,7 @@ export function TeamMetricGroupCard({
     // Keep the card's identity while it loads: the name in the header, a
     // spinner in the body. Not interactive — nothing to open yet.
     return (
-      <Card className="border-l-2 border-l-border">
+      <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
           {subtitle ? (
@@ -97,8 +100,7 @@ export function TeamMetricGroupCard({
   const preview: TeamMetricStanding[] = def.card.preview
     .map((key) => scored.find((s) => s.metric.metric_key === key))
     .filter((s): s is TeamMetricStanding => s != null);
-  const stripeClass =
-    status === "neutral" ? "border-l-border" : SECTION_STRIPE[status];
+  const stripeClass = STATUS_STRIPE_LEFT[status];
 
   return (
     <Card
@@ -110,7 +112,7 @@ export function TeamMetricGroupCard({
         />
       }
       className={cn(
-        "border-l-2 text-left transition-colors hover:bg-accent/50",
+        "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >

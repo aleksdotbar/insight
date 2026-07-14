@@ -2,12 +2,13 @@ import { ChevronRight } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
+import { peerStatusToStatus } from "@/lib/insight/v2/peer-status";
 import {
   applyFocus,
-  PEER_BORDER,
   PEER_TEXT,
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
+import { STATUS_STRIPE_LEFT } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { TeamMember } from "@/types/insight";
 
@@ -51,8 +52,8 @@ export function TriageList({ rows, onMemberClick }: TriageListProps) {
           <Card
             key={r.member.person_id}
             className={cn(
-              "border-l-2 transition-colors hover:bg-accent",
-              PEER_BORDER[status],
+              "transition-colors hover:bg-accent",
+              STATUS_STRIPE_LEFT[peerStatusToStatus(status)],
             )}
             onClick={() => onMemberClick(r.member)}
           >

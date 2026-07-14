@@ -51,9 +51,3 @@ export function pickSectionHeadline<T>(
   return best
 }
 
-export const SECTION_STRIPE: Record<Status, string> = {
-  good: "border-l-success",
-  warn: "border-l-warning",
-  bad: "border-l-destructive",
-  neutral: "border-l-border",
-}

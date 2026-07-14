@@ -24,6 +24,7 @@ import {
   type PeerStoryEntry,
 } from "@/lib/metrics/peer-story";
 import { PEER_FILL, PEER_TEXT, type PeerCohortLabel } from "@/lib/peers";
+import { STATUS_STRIPE_LEFT, STATUS_STRIPE_TOP } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
 interface PeerStoryProps {
@@ -88,9 +89,7 @@ function HeroCard({
     <Card
       className={cn(
         "flex h-full min-h-72 flex-col gap-0 p-0",
-        isBad
-          ? "shadow-[inset_0_3px_0_0_var(--destructive)]"
-          : "shadow-[inset_0_3px_0_0_var(--success)]",
+        STATUS_STRIPE_TOP[isBad ? "bad" : "good"],
       )}
     >
       <div className="flex flex-1 flex-col gap-3 p-5 sm:p-6">
@@ -113,7 +112,7 @@ function HeroCard({
             <p className="mt-1 text-sm text-muted-foreground">{entry.sublabel}</p>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1.5">
           <span className="flex items-baseline gap-1">
             <span
               className={cn(
@@ -130,16 +129,27 @@ function HeroCard({
             ) : null}
           </span>
           {entry.stats ? (
-            <span className="text-sm tabular-nums text-muted-foreground">
-              gap{" "}
-              <span className={cn("font-normal", PEER_TEXT[color])}>
-                {formatGap(entry)}
-              </span>{" "}
-              from {cohortLabel} median{" "}
-              <span className="text-foreground">
-                {formatMetricValue(entry.stats.p50, entry.format, entry.unit)}
+            <>
+              <span aria-hidden className="text-sm text-muted-foreground">
+                ·
               </span>
-            </span>
+              <span className="text-sm tabular-nums text-muted-foreground">
+                {Math.abs(entry.gapDelta) <= 1e-9 ? (
+                  <>at the {cohortLabel} median </>
+                ) : (
+                  <>
+                    gap{" "}
+                    <span className={cn("font-normal", PEER_TEXT[color])}>
+                      {formatGap(entry)}
+                    </span>{" "}
+                    from {cohortLabel} median{" "}
+                  </>
+                )}
+                <span className="text-foreground">
+                  {formatMetricValue(entry.stats.p50, entry.format, entry.unit)}
+                </span>
+              </span>
+            </>
           ) : null}
         </div>
         {entry.stats && entry.stats.max > entry.stats.min ? (
@@ -160,7 +170,13 @@ function HeroCard({
   );
 }
 
-function SideCards({ entries }: { entries: PeerStoryEntry[] }) {
+function SideCards({
+  entries,
+  cohortLabel,
+}: {
+  entries: PeerStoryEntry[];
+  cohortLabel: PeerCohortLabel;
+}) {
   if (entries.length === 0) return null;
   const stretchCards = entries.length > 1;
   return (
@@ -173,7 +189,12 @@ function SideCards({ entries }: { entries: PeerStoryEntry[] }) {
       )}
     >
       {entries.map((entry) => (
-        <SideCard key={entry.key} entry={entry} stretch={stretchCards} />
+        <SideCard
+          key={entry.key}
+          entry={entry}
+          stretch={stretchCards}
+          cohortLabel={cohortLabel}
+        />
       ))}
     </div>
   );
@@ -182,9 +203,11 @@ function SideCards({ entries }: { entries: PeerStoryEntry[] }) {
 function SideCard({
   entry,
   stretch,
+  cohortLabel,
 }: {
   entry: PeerStoryEntry;
   stretch: boolean;
+  cohortLabel: PeerCohortLabel;
 }) {
   const unit = metricDisplayUnit(entry.format, entry.unit);
   return (
@@ -196,9 +219,8 @@ function SideCard({
         PEER_TEXT[entry.status],
         entry.status === "top" && "bg-success/5",
         entry.status === "bottom" && "bg-destructive/5",
-        entry.status === "top" && "shadow-[inset_4px_0_0_0_var(--success)]",
-        entry.status === "bottom" &&
-          "shadow-[inset_4px_0_0_0_var(--destructive)]",
+        entry.status === "top" && STATUS_STRIPE_LEFT.good,
+        entry.status === "bottom" && STATUS_STRIPE_LEFT.bad,
       )}
     >
       <div className="flex h-full">
@@ -214,14 +236,45 @@ function SideCard({
             ) : null}
           </div>
           <div>
-            <div className="text-2xl font-semibold tabular-nums">
-              {entry.format === "percent"
-                ? formatMetricValue(entry.value, entry.format, entry.unit)
-                : formatMetricNumber(entry.value, entry.format)}
-              {unit ? (
-                <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  {unit}
-                </span>
+            {/* Mini-hero: value with the gap phrase beside it, rank as the
+                footer — the hero's facts at side-card size (minus the band,
+                which outgrows these cards), so chips are the only
+                tooltip-gated tier. */}
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="text-2xl font-semibold tabular-nums">
+                {entry.format === "percent"
+                  ? formatMetricValue(entry.value, entry.format, entry.unit)
+                  : formatMetricNumber(entry.value, entry.format)}
+                {unit ? (
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                    {unit}
+                  </span>
+                ) : null}
+              </span>
+              {entry.stats ? (
+                <>
+                  <span aria-hidden className="text-xs text-muted-foreground">
+                    ·
+                  </span>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {Math.abs(entry.gapDelta) <= 1e-9 ? (
+                      <>at the {cohortLabel} median </>
+                    ) : (
+                      <>
+                        gap{" "}
+                        <span
+                          className={cn("font-normal", PEER_TEXT[entry.status])}
+                        >
+                          {formatGap(entry)}
+                        </span>{" "}
+                        from {cohortLabel} median{" "}
+                      </>
+                    )}
+                    <span className="text-foreground">
+                      {formatMetricValue(entry.stats.p50, entry.format, entry.unit)}
+                    </span>
+                  </span>
+                </>
               ) : null}
             </div>
             <div className="mt-1 truncate text-[11px] text-muted-foreground">
@@ -253,7 +306,9 @@ function ChipTooltip({
       </span>
       {entry.stats ? (
         <span className="text-background/70">
-          gap {formatGap(entry)} · {cohortLabel} median{" "}
+          {Math.abs(entry.gapDelta) <= 1e-9
+            ? `at the ${cohortLabel} median `
+            : `gap ${formatGap(entry)} · ${cohortLabel} median `}
           {formatMetricValue(entry.stats.p50, entry.format, entry.unit)}
         </span>
       ) : null}
@@ -500,7 +555,7 @@ export function PeerStory({
       {hero ? (
         <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
           <HeroCard entry={hero} cohortLabel={cohortLabel} />
-          <SideCards entries={sideCards} />
+          <SideCards entries={sideCards} cohortLabel={cohortLabel} />
         </div>
       ) : focusMode === "critical" ? (
         <EmptyState label="No critical issues this period" />

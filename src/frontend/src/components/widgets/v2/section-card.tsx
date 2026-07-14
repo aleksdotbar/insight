@@ -13,12 +13,12 @@ import { hasBulletValue, rowStatus } from "@/lib/insight/v2/peer-status";
 import {
   aggregateSectionStatus,
   pickSectionHeadline,
-  SECTION_STRIPE,
   sectionCounts,
   type ScoredMetric,
 } from "@/lib/scoring";
 import {
   STATUS_BG_CLASS,
+  STATUS_STRIPE_LEFT,
   STATUS_TEXT_CLASS,
   applyFocusStatus,
   type Status,
@@ -26,22 +26,10 @@ import {
 import { cn } from "@/lib/utils";
 import type { BulletMetric } from "@/types/insight";
 
-const COLLAB_PREVIEW_KEYS = [
-  "meeting_hours",
-  "slack_messages_sent",
-  "m365_emails_sent",
-];
-
 function pickPreviewRows(
-  sectionId: string | undefined,
+  _sectionId: string | undefined,
   rows: BulletMetric[],
 ): BulletMetric[] {
-  if (sectionId === "collaboration") {
-    const byKey = new Map(rows.map((r) => [r.metric_key, r]));
-    return COLLAB_PREVIEW_KEYS.map((k) => byKey.get(k)).filter(
-      (r): r is BulletMetric => r != null && hasBulletValue(r),
-    );
-  }
   return rows.filter(hasBulletValue).slice(0, 3);
 }
 
@@ -79,7 +67,7 @@ export function SectionCard({
 
   if (unavailable) {
     return (
-      <Card className="border-l-2 border-l-border">
+      <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold">{title}</CardTitle>
           <CardDescription className="flex items-center gap-1.5 text-xs">
@@ -116,8 +104,7 @@ export function SectionCard({
 
   const preview = pickPreviewRows(sectionId, rows);
   const isEmpty = evaluated === 0 && preview.length === 0;
-  const stripeClass =
-    status === "neutral" ? "border-l-border" : SECTION_STRIPE[status];
+  const stripeClass = STATUS_STRIPE_LEFT[status];
 
   return (
     <Card
@@ -131,7 +118,7 @@ export function SectionCard({
         />
       }
       className={cn(
-        "border-l-2 text-left transition-colors hover:bg-accent/50",
+        "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >

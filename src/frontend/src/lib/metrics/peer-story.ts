@@ -1,18 +1,15 @@
-import type {
-  MetricDirection,
-  MetricFormat,
-} from "@/api/metric-results-client";
+import type { MetricFormat } from "@/api/metric-results-client";
 import {
   forEntity,
+  type EntityMetricData,
   type MetricCollectionConfig,
   type NormalizedMetricResult,
-  type PeerEntityStats,
 } from "@/lib/metrics/collection";
-import {
-  peerStatusVsQuartiles,
-  type FocusMode,
-  type PeerStats,
-  type PeerStatusWithNeutral,
+import { derivePeerStanding } from "@/lib/metrics/peer-standing";
+import type {
+  FocusMode,
+  PeerStats,
+  PeerStatusWithNeutral,
 } from "@/lib/peers";
 
 /**
@@ -39,52 +36,12 @@ export type PeerStoryEntry = {
   severity: number;
 };
 
-export function toPeerStats(row: PeerEntityStats | null): PeerStats | null {
-  if (
-    row?.p25 == null ||
-    row.median == null ||
-    row.p75 == null ||
-    row.min == null ||
-    row.max == null
-  ) {
-    return null;
-  }
-  return {
-    p25: row.p25,
-    p50: row.median,
-    p75: row.p75,
-    min: row.min,
-    max: row.max,
-    n: row.n,
-  };
-}
-
-function peerSpread(stats: PeerStats): number {
-  const iqr = Math.abs(stats.p75 - stats.p25);
-  if (iqr > 1e-9) return iqr;
-  const range = Math.abs(stats.max - stats.min);
-  if (range > 1e-9) return range;
-  return 1;
-}
-
 function toStoryEntry(
   metric: NormalizedMetricResult,
   value: number,
-  stats: PeerStats | null,
-  observed: boolean,
+  data: Pick<EntityMetricData, "value" | "peer">,
 ): PeerStoryEntry {
-  const direction: MetricDirection = metric.direction;
-  const neutral = direction === "neutral";
-  const higherIsBetter = direction !== "lower_is_better";
-  const usePeerRanking =
-    !neutral && observed && stats != null && Number.isFinite(value);
-  const status = usePeerRanking
-    ? peerStatusVsQuartiles(value, stats, higherIsBetter)
-    : "neutral";
-  const rawDelta = stats ? value - stats.p50 : 0;
-  const gapDelta = higherIsBetter ? rawDelta : -rawDelta;
-  const gapPct =
-    stats && Math.abs(stats.p50) > 1e-9 ? gapDelta / Math.abs(stats.p50) : null;
+  const standing = derivePeerStanding(metric.direction, data);
   return {
     key: metric.metric_key,
     label: metric.label,
@@ -92,27 +49,22 @@ function toStoryEntry(
     value,
     unit: metric.unit,
     format: metric.format,
-    higherIsBetter,
-    neutral,
-    observed,
-    stats,
-    status,
-    gapPct,
-    gapDelta,
-    severity:
-      usePeerRanking && stats
-        ? Math.abs(gapPct ?? gapDelta / peerSpread(stats))
-        : 0,
+    higherIsBetter: metric.direction !== "lower_is_better",
+    neutral: metric.direction === "neutral",
+    observed: standing.observed,
+    stats: standing.stats,
+    status: standing.rank,
+    gapPct: standing.gapPct,
+    gapDelta: standing.gapDelta,
+    severity: standing.severity,
   };
 }
 
 /**
  * Entries in collection order; metrics without a period value drop out.
- * Ranking additionally requires an OBSERVED value: the period view zero-fills
- * a person's own total, but `peer.target_value` is null when the person has
- * no observations (absence is indistinguishable from lack of source
- * coverage), and an unmeasured person has no peer standing — the entry stays
- * neutral instead of being branded a bottom-quartile outlier.
+ * All eligibility (observed / suppressed / flat pool / neutral direction)
+ * and both judgments come from `derivePeerStanding` — the story only lays
+ * the results out.
  */
 export function buildPeerStoryEntries(
   collection: MetricCollectionConfig,
@@ -124,10 +76,7 @@ export function buildPeerStoryEntries(
     if (!metric) return [];
     const data = forEntity(metric, entityId);
     if (data.value == null || !Number.isFinite(data.value)) return [];
-    const observed = data.peer == null || data.peer.target_value != null;
-    return [
-      toStoryEntry(metric, data.value, toPeerStats(data.peer), observed),
-    ];
+    return [toStoryEntry(metric, data.value, data)];
   });
 }
 
