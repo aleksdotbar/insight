@@ -99,47 +99,57 @@ export function MetricHistogram({ metric, entityId }: MetricHistogramProps) {
   const data = forEntity(metric, entityId);
   const bins = data.histogram[0]?.bins ?? [];
   const unit = metric.unit ? ` ${metric.unit}` : "";
+  const ownMedian = data.value;
+  const peerMedian = data.peer?.median ?? null;
+  const direction = directionText(metric);
+
+  // Shared header so an empty tile reads as the same chart, laid out to match
+  // its populated neighbours in the grid rather than collapsing to a corner.
+  const header = (
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate text-sm font-semibold">{metric.label}</span>
+        <span className="text-xs text-muted-foreground">
+          {[
+            direction,
+            peerMedian != null
+              ? `vs peer median ${formatMetricNumber(peerMedian, metric.format)}${unit}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </div>
+      {ownMedian != null ? (
+        <span className="shrink-0 text-xs text-muted-foreground">
+          Median{" "}
+          <span className="font-semibold text-foreground tabular-nums">
+            {formatMetricNumber(ownMedian, metric.format)}
+            {unit}
+          </span>
+        </span>
+      ) : null}
+    </div>
+  );
 
   if (bins.length === 0) {
     return (
-      <div className="flex min-h-40 flex-col gap-1">
-        <span className="text-sm font-semibold">{metric.label}</span>
-        <span className="text-xs text-muted-foreground">No distribution yet.</span>
+      <div className="flex min-w-0 flex-col gap-2">
+        {header}
+        <div className="flex h-48 min-h-48 w-full items-center justify-center rounded-md border border-dashed border-border/60">
+          <span className="text-xs text-muted-foreground">
+            No values in this period
+          </span>
+        </div>
       </div>
     );
   }
 
-  const ownMedian = data.value;
-  const peerMedian = data.peer?.median ?? null;
   const { rows, pivotLabel } = buildRows(bins, peerMedian, metric);
-  const direction = directionText(metric);
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-semibold">{metric.label}</span>
-          <span className="text-xs text-muted-foreground">
-            {[
-              direction,
-              peerMedian != null
-                ? `vs peer median ${formatMetricNumber(peerMedian, metric.format)}${unit}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        </div>
-        {ownMedian != null ? (
-          <span className="shrink-0 text-xs text-muted-foreground">
-            Median{" "}
-            <span className="font-semibold text-foreground tabular-nums">
-              {formatMetricNumber(ownMedian, metric.format)}
-              {unit}
-            </span>
-          </span>
-        ) : null}
-      </div>
+      {header}
 
       <ChartContainer config={CONFIG} className="h-48 min-h-48 w-full">
         <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>

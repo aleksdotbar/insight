@@ -12,7 +12,7 @@ import { MetricSummaryCard } from "@/components/widgets/metric-views/metric-summ
 import { MetricTrend } from "@/components/widgets/metric-views/metric-trend";
 import { PeerStory } from "@/components/widgets/metric-views/peer-story";
 import type { DrilldownBlock, MetricGroup } from "@/lib/insight/groups";
-import type { NormalizedMetricResult } from "@/lib/metrics/collection";
+import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
 import { buildPeerStoryEntries } from "@/lib/metrics/peer-story";
 import type { PeerCohortLabel } from "@/lib/peers";
 import type { MetricCollectionResult } from "@/queries/metric-results";
@@ -124,9 +124,18 @@ export function CollectionDrilldown({
       !isSummaryBlock(block) &&
       blockMetrics(block, data.byKey).length > 0,
   );
-  const distributionMetrics = def.drilldown
+  // Populated distributions lead; those with no events for this entity in the
+  // period sort to the end so the section doesn't open on an empty placeholder.
+  // Stable partition keeps declared order within each group.
+  const declaredDistributions = def.drilldown
     .filter((block) => block.view === "histogram")
     .flatMap((block) => blockMetrics(block, data.byKey));
+  const hasDistribution = (metric: NormalizedMetricResult) =>
+    (forEntity(metric, entityId).histogram[0]?.bins?.length ?? 0) > 0;
+  const distributionMetrics = [
+    ...declaredDistributions.filter(hasDistribution),
+    ...declaredDistributions.filter((metric) => !hasDistribution(metric)),
+  ];
 
   return (
     <div
