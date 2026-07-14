@@ -79,12 +79,18 @@ const TASK_DELIVERY_COLLECTION: MetricCollectionConfig = {
         { view: "timeseries", bucket: "auto" },
       ],
     },
-    { key: "tasks.dev_time", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "tasks.dev_time",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
     {
       key: "tasks.resolution_time",
-      views: [{ view: "period" }, { view: "peer" }],
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
     },
-    { key: "tasks.pickup_time", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "tasks.pickup_time",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
     {
       key: "tasks.flow_efficiency",
       views: [{ view: "period" }, { view: "peer" }],
@@ -294,6 +300,17 @@ export const GROUPS: readonly GroupDef[] = [
         view: "timeseries",
         metrics: ["tasks.closed", "tasks.bugs_fixed"],
       },
+      {
+        chart: "histogram",
+        view: "histogram",
+        metrics: ["tasks.resolution_time"],
+      },
+      {
+        chart: "histogram",
+        view: "histogram",
+        metrics: ["tasks.pickup_time"],
+      },
+      { chart: "histogram", view: "histogram", metrics: ["tasks.dev_time"] },
     ],
   },
   {
