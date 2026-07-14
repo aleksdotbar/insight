@@ -8,7 +8,7 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
-import { toPeerStats } from "@/lib/metrics/peer-story";
+import { toPeerStats } from "@/lib/metrics/peer-standing";
 import { peerStatusVsQuartiles } from "@/lib/peers";
 import type { BulletMetric } from "@/types/insight";
 

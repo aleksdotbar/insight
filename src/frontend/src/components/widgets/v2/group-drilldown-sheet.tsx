@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Maximize2, Minimize2, XIcon } from "lucide-react";
 
-import { CollabMessagingPanel } from "@/components/widgets/v2/collab-messaging-panel";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { CountersBlock } from "@/components/widgets/v2/counters-block";
 import { DistributionStrip } from "@/components/widgets/v2/distribution-strip";
@@ -15,7 +14,6 @@ import {
   type SectionTrendPoint,
   type SectionTrendSeries,
 } from "@/components/widgets/v2/section-trend";
-import { SummaryWithBreakdown } from "@/components/widgets/v2/summary-with-breakdown";
 import {
   Dialog,
   DialogClose,
@@ -32,7 +30,6 @@ import {
   useIcDrilldownBatch,
   type DrilldownBatchData,
 } from "@/queries/v2/ic-extras";
-import { deriveCollabActivities } from "@/lib/insight/v2/derivations";
 import type { PeerCohortLabel } from "@/lib/peers";
 import type { MetricCollectionResult } from "@/queries/metric-results";
 import { cn } from "@/lib/utils";
@@ -219,9 +216,7 @@ function LegacyDrilldownBody({
         batchQ.isFetching && "opacity-60",
       )}
     >
-      {batch ? (
-        <DrilldownExtras sectionId={sectionId} batch={batch} rows={rows} />
-      ) : null}
+      {batch ? <DrilldownExtras sectionId={sectionId} batch={batch} /> : null}
       {counters.length > 0 ? (
         <CountersBlock rows={counters} cohortLabel={cohortLabel} />
       ) : null}
@@ -248,9 +243,6 @@ function LegacyDrilldownBody({
           />
         )
       ) : null}
-      {sectionId === "collaboration" ? (
-        <CollabMessagingPanel personId={personId} range={range} />
-      ) : null}
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
           No data for this section in the selected period.
@@ -263,11 +255,9 @@ function LegacyDrilldownBody({
 function DrilldownExtras({
   sectionId,
   batch,
-  rows,
 }: {
   sectionId: string;
   batch: DrilldownBatchData;
-  rows: BulletMetric[];
 }) {
   if (sectionId === "task_delivery") {
     const data: SectionTrendPoint[] = (batch.delivery ?? []).map((d) => ({
@@ -284,24 +274,6 @@ function DrilldownExtras({
         series={series}
         data={data}
       />
-    );
-  }
-  if (sectionId === "collaboration") {
-    const activities = deriveCollabActivities(rows);
-    return (
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {activities.map((a) => (
-          <SummaryWithBreakdown
-            key={a.category}
-            label={a.label}
-            description={a.description}
-            value={a.value}
-            unit={a.unit}
-            sources={a.sources}
-            breakdown={[]}
-          />
-        ))}
-      </div>
     );
   }
   return null;

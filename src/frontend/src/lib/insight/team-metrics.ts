@@ -5,9 +5,9 @@ import {
 } from "@/lib/metrics/collection";
 import {
   buildPeerStoryEntries,
-  toPeerStats,
   type PeerStoryEntry,
 } from "@/lib/metrics/peer-story";
+import { toPeerStats } from "@/lib/metrics/peer-standing";
 import {
   peerStatusVsQuartiles,
   type PeerStatusWithNeutral,

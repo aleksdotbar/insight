@@ -58,10 +58,7 @@ export function useIcHistogram(
   return useQuery(icHistogramQueryOptions(personId, metricKey, range));
 }
 
-export type {
-  CompositionRow,
-  CollabActivityRow,
-} from "@/lib/insight/v2/derivations";
+export type { CompositionRow } from "@/lib/insight/v2/derivations";
 
 export interface SectionTrendPointRow {
   date: string;
@@ -73,20 +70,6 @@ interface SectionTrendLongRow {
   date?: string;
   series_key: string;
   value: number;
-}
-
-/** Long peer-counter row: per-person value + per-org_unit cohort bands. */
-export interface PeerCounterRow {
-  person_id: string;
-  org_unit_id: string | null;
-  metric_key: string;
-  value: number | null;
-  median: number | null;
-  p25: number | null;
-  p75: number | null;
-  n: number | null;
-  range_min: number | null;
-  range_max: number | null;
 }
 
 function pivotLongToWide(
@@ -142,43 +125,6 @@ export function useIcSectionTrend(
       return pivotLongToWide(resp.items);
     },
   });
-}
-
-/**
- * Per-person collaboration Messaging peer counters (#1527): messages_sent /
- * channel_posts with per-`org_unit_id` bands. Long peer-counter rows over the shared `PeerCounterRow` shape.
- */
-export function icCollabPeerCountersQueryOptions(
-  personId: string,
-  range: DateRange,
-) {
-  const canonicalId = canonicalPersonId(personId);
-  return {
-    queryKey: [
-      "v2",
-      "ic-collab-peer-counters",
-      canonicalId,
-      range.from,
-      range.to,
-    ],
-    enabled: Boolean(canonicalId && range.from && range.to),
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const resp = await queryMetric<PeerCounterRow>(
-        METRIC_REGISTRY.V2_IC_COLLAB_PEER_COUNTERS,
-        range,
-        { $filter: personFilter(canonicalId) },
-      );
-      return resp.items;
-    },
-  };
-}
-
-export function useIcCollabPeerCounters(
-  personId: string,
-  range: DateRange,
-): UseQueryResult<PeerCounterRow[]> {
-  return useQuery(icCollabPeerCountersQueryOptions(personId, range));
 }
 
 export interface DrilldownBatchData {

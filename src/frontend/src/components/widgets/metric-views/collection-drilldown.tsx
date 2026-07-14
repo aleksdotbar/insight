@@ -8,6 +8,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { MetricBreakdown } from "@/components/widgets/metric-views/metric-breakdown";
 import { MetricHistogram } from "@/components/widgets/metric-views/metric-histogram";
+import { MetricSummaryCard } from "@/components/widgets/metric-views/metric-summary-card";
 import { MetricTrend } from "@/components/widgets/metric-views/metric-trend";
 import { PeerStory } from "@/components/widgets/metric-views/peer-story";
 import type { DrilldownBlock, MetricGroup } from "@/lib/insight/groups";
@@ -107,13 +108,21 @@ export function CollectionDrilldown({
   }
 
   const entries = buildPeerStoryEntries(def.collection, data.byKey, entityId);
-  // Distribution (histogram) charts get their own labeled card below the peer
-  // story; everything else pairs into the top chart grid. Filter to blocks
-  // that actually have data so column counts (and full-width-when-alone) key
-  // off what renders, not what's declared.
+  // Summary cards get their own wider grid row above the charts;
+  // distribution (histogram) charts get their own labeled card below the
+  // peer story; everything else pairs into the top chart grid. Filter to
+  // blocks that actually have data so column counts (and
+  // full-width-when-alone) key off what renders, not what's declared.
+  const isSummaryBlock = (block: DrilldownBlock) =>
+    block.view === "breakdown" && block.chart === "summary-card";
+  const summaryMetrics = def.drilldown
+    .filter(isSummaryBlock)
+    .flatMap((block) => blockMetrics(block, data.byKey));
   const chartBlocks = def.drilldown.filter(
     (block) =>
-      block.view !== "histogram" && blockMetrics(block, data.byKey).length > 0,
+      block.view !== "histogram" &&
+      !isSummaryBlock(block) &&
+      blockMetrics(block, data.byKey).length > 0,
   );
   const distributionMetrics = def.drilldown
     .filter((block) => block.view === "histogram")
@@ -127,6 +136,22 @@ export function CollectionDrilldown({
         className,
       )}
     >
+      {summaryMetrics.length > 0 ? (
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4 sm:grid-cols-2",
+            summaryMetrics.length > 2 && "xl:grid-cols-4",
+          )}
+        >
+          {summaryMetrics.map((metric) => (
+            <MetricSummaryCard
+              key={metric.metric_key}
+              metric={metric}
+              entityId={entityId}
+            />
+          ))}
+        </div>
+      ) : null}
       {chartBlocks.length > 0 ? (
         // Pair charts into two columns; a lone chart spans the full width
         // rather than leaving an empty column. Blocks return fragments, so

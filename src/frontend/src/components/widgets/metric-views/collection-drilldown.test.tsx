@@ -120,6 +120,45 @@ describe("CollectionDrilldown", () => {
     expect(screen.getByText(/vs peer median/)).toBeInTheDocument();
   });
 
+  it("renders a summary-card block as headline cards", () => {
+    const summaryDef: MetricGroup = {
+      kind: "metrics",
+      id: "collaboration",
+      title: "Collaboration",
+      collection: {
+        metrics: [
+          {
+            key: "ai.accepted_lines",
+            views: [
+              { view: "period" },
+              { view: "peer" },
+              { view: "breakdown", dimensions: ["tool"] },
+            ],
+          },
+        ],
+      },
+      card: { preview: ["ai.accepted_lines"] },
+      drilldown: [
+        {
+          chart: "summary-card",
+          view: "breakdown",
+          metrics: ["ai.accepted_lines"],
+        },
+      ],
+    };
+    render(
+      <CollectionDrilldown
+        def={summaryDef}
+        data={result()}
+        entityId="alice@example.com"
+      />,
+    );
+    expect(screen.getAllByText("Accepted lines").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: /By tool/ }),
+    ).toBeInTheDocument();
+  });
+
   it("shows the error state with retry when the collection failed", () => {
     const refetch = vi.fn();
     render(

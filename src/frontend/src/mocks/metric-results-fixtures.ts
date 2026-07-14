@@ -211,10 +211,113 @@ export const METRIC_RESULTS_RESPONSE_FIXTURE: MetricResultsResponse = {
   metrics: [SUM_METRIC_FIXTURE, RATIO_METRIC_FIXTURE, MEDIAN_METRIC_FIXTURE],
 };
 
+/**
+ * Collaboration metric metadata for the MSW factory. Only meta is consumed
+ * (the factory strips `views` and synthesizes them per request), so `views`
+ * here is a minimal placeholder. Covers the collab metrics whose
+ * format/direction/computation differ from the factory's sum/integer/
+ * higher-is-better default; the rest synthesize correctly without a fixture.
+ * Kept out of `METRIC_RESULTS_RESPONSE_FIXTURE` so that canonical response
+ * fixture stays stable.
+ */
+export const COLLAB_METRIC_FIXTURES: MetricResult[] = [
+  {
+    metric_key: "collab.messages_sent",
+    label: "Messages Sent",
+    unit: "messages",
+    format: "integer",
+    direction: "higher_is_better",
+    computation: "sum",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 320 }] },
+    ],
+  },
+  {
+    metric_key: "collab.meeting_hours",
+    label: "Meeting Hours",
+    unit: "h",
+    format: "decimal",
+    direction: "lower_is_better",
+    computation: "sum",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 18.5 }] },
+    ],
+  },
+  {
+    metric_key: "collab.dm_ratio",
+    label: "DM Ratio",
+    unit: "%",
+    format: "percent",
+    direction: "lower_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 28.4 }] },
+    ],
+  },
+  {
+    metric_key: "collab.msgs_per_active_day",
+    label: "Messages per Active Day",
+    unit: "messages/day",
+    format: "decimal",
+    direction: "higher_is_better",
+    computation: "ratio",
+    scale: 1,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 16 }] },
+    ],
+  },
+  {
+    metric_key: "collab.focus_time_pct",
+    label: "Focus Time",
+    unit: "%",
+    format: "percent",
+    direction: "higher_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 62.5 }] },
+    ],
+  },
+  {
+    metric_key: "collab.active_days",
+    label: "Active Days",
+    unit: "days",
+    format: "integer",
+    direction: "higher_is_better",
+    computation: "distinct_count",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 17 }] },
+    ],
+  },
+  {
+    metric_key: "collab.files_shared",
+    label: "Files Shared",
+    unit: "files",
+    format: "integer",
+    direction: "higher_is_better",
+    computation: "sum",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 22 }] },
+    ],
+  },
+  {
+    metric_key: "collab.breadth",
+    label: "Collaboration Breadth",
+    unit: "modalities",
+    format: "integer",
+    direction: "neutral",
+    computation: "distinct_count",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 3 }] },
+    ],
+  },
+];
+
 export function metricResultFixtureByKey(key: string): MetricResult | null {
   return (
-    METRIC_RESULTS_RESPONSE_FIXTURE.metrics.find(
-      (m) => m.metric_key === key,
-    ) ?? null
+    METRIC_RESULTS_RESPONSE_FIXTURE.metrics.find((m) => m.metric_key === key) ??
+    COLLAB_METRIC_FIXTURES.find((m) => m.metric_key === key) ??
+    null
   );
 }

@@ -31,11 +31,10 @@ export const METRIC_REGISTRY = {
   // Per-person "member values" for the team heatmap + needs-attention widgets:
   // long rows (person_id, metric_key, value) for a roster, no cohort.
   V2_MEMBER_VALUES_DELIVERY: "00000000-0000-0000-0001-000000000040",
+  // Collaboration flipped to a unified IC metrics group, but its per-member
+  // values still feed the legacy team heatmap meeting-hours bullet column +
+  // needs-attention until that surface migrates to unified metrics.
   V2_MEMBER_VALUES_COLLAB: "00000000-0000-0000-0001-000000000041",
-  // Per-person collaboration Messaging peer counters (#1527): long rows
-  // (person_id, metric_key, value + per-org_unit bands) for messages_sent /
-  // channel_posts.
-  V2_IC_COLLAB_PEER_COUNTERS: "00000000-0000-0000-0001-000000000053",
 
   // Per-person PRs merged for a roster (period-bounded, from the weekly git
   // silver). Merged into the team_member rows for the heatmap PRs column.

@@ -42,16 +42,6 @@ export const BULLET_DESCRIPTION_BY_KEY: ReadonlyMap<string, string> = new Map<
   pr_cycle_time: "Hours from PR open to merge",
   bugs_fixed: "Bug-type issues closed",
 
-  slack_messages_sent: "Chat messages authored",
-  slack_active_days: "Days with a chat message",
-  slack_dm_ratio: "Direct messages as a share of all",
-  m365_emails_sent: "Emails sent",
-  m365_emails_received: "Inbox email volume",
-  m365_teams_chats: "Direct and group chats sent",
-  meeting_hours: "Hours in scheduled meetings",
-  meetings_count: "Distinct meetings attended",
-  meeting_free: "Working days with no meetings",
-
   wiki_pages_created: "Wiki pages authored (Confluence/Outline)",
   wiki_edits: "Wiki page revisions authored",
   wiki_comments: "Comments received on the person's wiki pages",

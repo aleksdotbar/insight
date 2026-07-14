@@ -16,7 +16,7 @@ import type { MetricCollectionConfig } from "@/lib/metrics/collection";
  */
 
 export type TimeseriesChartKind = "line" | "stacked-bar";
-export type BreakdownChartKind = "bars";
+export type BreakdownChartKind = "bars" | "summary-card";
 export type HistogramChartKind = "histogram";
 export type ChartKind =
   | TimeseriesChartKind
@@ -149,6 +149,82 @@ const GIT_OUTPUT_COLLECTION: MetricCollectionConfig = {
   ],
 };
 
+const COLLABORATION_COLLECTION: MetricCollectionConfig = {
+  metrics: [
+    {
+      key: "collab.messages_sent",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "breakdown", dimensions: ["tool"] },
+      ],
+    },
+    { key: "collab.channel_posts", views: [{ view: "period" }, { view: "peer" }] },
+    { key: "collab.dm_ratio", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.msgs_per_active_day",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    { key: "collab.active_days", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.meeting_hours",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "breakdown", dimensions: ["tool"] },
+      ],
+    },
+    {
+      key: "collab.meetings_count",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "collab.meeting_free_days",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "collab.meetings_organized",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    { key: "collab.adhoc_meetings", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.scheduled_meetings",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    { key: "collab.focus_time_pct", views: [{ view: "period" }, { view: "peer" }] },
+    { key: "collab.breadth", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.emails_sent",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        // Single-tool today; the summary card hides its breakdown section
+        // below two groups, so this lights up if a second mail source lands.
+        { view: "breakdown", dimensions: ["tool"] },
+      ],
+    },
+    { key: "collab.emails_received", views: [{ view: "period" }, { view: "peer" }] },
+    { key: "collab.emails_read", views: [{ view: "period" }, { view: "peer" }] },
+    { key: "collab.files_engaged", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.files_shared_internal",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "collab.files_shared_external",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "collab.files_shared",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "breakdown", dimensions: ["scope"] },
+      ],
+    },
+  ],
+};
+
 export const GROUPS: readonly GroupDef[] = [
   { kind: "legacy", id: "task_delivery", title: "Task delivery" },
   {
@@ -179,7 +255,35 @@ export const GROUPS: readonly GroupDef[] = [
       { chart: "histogram", view: "histogram", metrics: ["git.commit_size"] },
     ],
   },
-  { kind: "legacy", id: "collaboration", title: "Collaboration" },
+  {
+    kind: "metrics",
+    id: "collaboration",
+    title: "Collaboration",
+    collection: COLLABORATION_COLLECTION,
+    card: {
+      preview: [
+        "collab.messages_sent",
+        "collab.meeting_hours",
+        "collab.focus_time_pct",
+      ],
+    },
+    drilldown: [
+      // Modality headline cards (period total + dimension breakdown) instead
+      // of trend charts — one card per modality. Everything else takes its
+      // standing in the peer story below; a second card row echoed the
+      // story's outliers.
+      {
+        chart: "summary-card",
+        view: "breakdown",
+        metrics: [
+          "collab.meeting_hours",
+          "collab.messages_sent",
+          "collab.emails_sent",
+          "collab.files_shared",
+        ],
+      },
+    ],
+  },
   {
     kind: "metrics",
     id: "ai_adoption",
@@ -225,7 +329,7 @@ export type KpiTileSource =
 
 export const KPI_ROW: readonly KpiTileSource[] = [
   { kind: "legacy", key: "tasks_closed", groupId: "task_delivery" },
-  { kind: "legacy", key: "focus_time_pct", groupId: "collaboration" },
+  { kind: "metric", metricKey: "collab.focus_time_pct" },
   { kind: "metric", metricKey: "git.prs_merged" },
   { kind: "metric", metricKey: "ai.active_days" },
   { kind: "metric", metricKey: "ai.accepted_lines" },

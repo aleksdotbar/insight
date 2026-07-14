@@ -18,18 +18,26 @@ import { useCatalog } from "@/api/use-catalog";
 import type { DeptCohorts, DeptStatsMap, PeerStats } from "@/lib/peers";
 import type { BulletMetric, PeriodValue } from "@/types/insight";
 
-// Member-value queries exist only for groups still on the legacy path;
-// deriving from the registry drops a group's fetch automatically when it
-// flips to `kind: "metrics"`.
+// Member-value queries feed the legacy-fed team heatmap + needs-attention.
+// Legacy groups derive from the registry (a group's fetch drops when it flips
+// to `kind: "metrics"`). Collaboration is the exception below: it flipped to a
+// unified IC group, but the heatmap's `meeting_hours` bullet column has no
+// unified replacement yet, so its per-member feed is retained explicitly
+// until that surface migrates.
 const MEMBER_VALUE_METRIC_IDS: Partial<Record<string, string>> = {
   task_delivery: METRIC_REGISTRY.V2_MEMBER_VALUES_DELIVERY,
-  collaboration: METRIC_REGISTRY.V2_MEMBER_VALUES_COLLAB,
 };
 
-const SECTION_METRIC_IDS = legacyGroups().flatMap((def) => {
-  const metricId = MEMBER_VALUE_METRIC_IDS[def.id];
-  return metricId ? [{ sectionId: def.id, metricId }] : [];
-});
+const SECTION_METRIC_IDS = [
+  ...legacyGroups().flatMap((def) => {
+    const metricId = MEMBER_VALUE_METRIC_IDS[def.id];
+    return metricId ? [{ sectionId: def.id, metricId }] : [];
+  }),
+  {
+    sectionId: "collaboration",
+    metricId: METRIC_REGISTRY.V2_MEMBER_VALUES_COLLAB,
+  },
+];
 
 /** Per-person long row from a `V2_MEMBER_VALUES_*` metric. */
 type RawMemberValueRow = {
@@ -143,16 +151,19 @@ export function useTeamMemberBullets(
 
 // Dept-distribution queries mirror the legacy member-value groups; a
 // group that flips to `kind: "metrics"` gets cohorts from the unified peer
-// view instead.
+// view instead. Collaboration is the exception (see SECTION_METRIC_IDS): its
+// dept distribution still colors the heatmap `meeting_hours` bullet column.
 const DEPT_DIST_BULLET_BY_SECTION: Partial<Record<string, string>> = {
   task_delivery: METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY,
-  collaboration: METRIC_REGISTRY.V2_DEPT_DIST_COLLAB,
 };
 
-const DEPT_DIST_BULLET_IDS = legacyGroups().flatMap((def) => {
-  const metricId = DEPT_DIST_BULLET_BY_SECTION[def.id];
-  return metricId ? [metricId] : [];
-});
+const DEPT_DIST_BULLET_IDS = [
+  ...legacyGroups().flatMap((def) => {
+    const metricId = DEPT_DIST_BULLET_BY_SECTION[def.id];
+    return metricId ? [metricId] : [];
+  }),
+  METRIC_REGISTRY.V2_DEPT_DIST_COLLAB,
+];
 
 const DEPT_DIST_METRIC_IDS = [
   ...DEPT_DIST_BULLET_IDS,

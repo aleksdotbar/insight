@@ -81,23 +81,6 @@ describe("legacyKpiTiles", () => {
     expect(tile.context).toBe("jira");
   });
 
-  it("drops the trailing % from percent-point deltas", () => {
-    const tiles = legacyKpiTiles(
-      [
-        icKpi({
-          metric_key: "focus_time_pct",
-          unit: "%",
-          value: "62",
-          raw_value: 62,
-          delta: "+5%",
-        }),
-      ],
-      () => ({ ...CATALOG_ROW, format: "percent" }) as CatalogMetric,
-      "all",
-    );
-    expect(tiles[0]?.delta?.text).toBe("+5");
-    expect(tiles[0]?.value).toBe("62%");
-  });
 });
 
 describe("metricKpiTiles", () => {
@@ -165,14 +148,14 @@ describe("metricKpiTiles", () => {
     expect(tiles[0]?.valueStatus).toBe("neutral");
   });
 
-  it("computes pp deltas for percent ratios (pinned until a ratio reaches the row)", () => {
-    const current = metricResult("ai.active_days", 77, {
-      metric_key: "ai.active_days",
+  it("computes pp deltas for percent-ratio tiles (focus time)", () => {
+    const current = metricResult("collab.focus_time_pct", 77, {
+      metric_key: "collab.focus_time_pct",
       format: "percent",
       computation: "ratio",
       scale: 100,
     } as Partial<MetricResult>);
-    const previous = metricResult("ai.active_days", 72, {
+    const previous = metricResult("collab.focus_time_pct", 72, {
       format: "percent",
       computation: "ratio",
       scale: 100,

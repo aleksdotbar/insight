@@ -16,7 +16,11 @@ export type MetricResultViewKind =
   | "breakdown"
   | "histogram";
 export type MetricBucket = "day" | "week" | "month";
-export type MetricComputation = "sum" | "ratio" | "median";
+export type MetricComputation =
+  | "sum"
+  | "ratio"
+  | "median"
+  | "distinct_count";
 export type MetricEntityType = "person";
 
 export interface MetricResultsRequest {
@@ -53,7 +57,8 @@ export interface MetricDimension {
 export type MetricResult =
   | SumMetricResult
   | RatioMetricResult
-  | MedianMetricResult;
+  | MedianMetricResult
+  | DistinctCountMetricResult;
 
 interface MetricResultBase {
   metric_key: string;
@@ -77,6 +82,10 @@ export interface RatioMetricResult extends MetricResultBase {
 
 export interface MedianMetricResult extends MetricResultBase {
   computation: "median";
+}
+
+export interface DistinctCountMetricResult extends MetricResultBase {
+  computation: "distinct_count";
 }
 
 export type MetricResultView =
