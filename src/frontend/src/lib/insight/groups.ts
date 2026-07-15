@@ -292,7 +292,7 @@ export const GROUPS: readonly GroupDef[] = [
     title: "Task delivery",
     collection: TASK_DELIVERY_COLLECTION,
     card: {
-      preview: ["tasks.closed", "tasks.resolution_time", "tasks.reopen_rate"],
+      preview: ["tasks.closed", "tasks.resolution_time", "tasks.pickup_time"],
     },
     drilldown: [
       {
@@ -319,7 +319,7 @@ export const GROUPS: readonly GroupDef[] = [
     title: "Git output",
     collection: GIT_OUTPUT_COLLECTION,
     card: {
-      preview: ["git.commits", "git.prs_merged", "git.pr_cycle_time_h"],
+      preview: ["git.commits", "git.prs_merged", "git.code_lines"],
     },
     drilldown: [
       {
@@ -376,7 +376,7 @@ export const GROUPS: readonly GroupDef[] = [
     title: "AI adoption",
     collection: AI_ADOPTION_COLLECTION,
     card: {
-      preview: ["ai.active_days", "ai.cost", "ai.tool_acceptance_rate"],
+      preview: ["ai.active_days", "ai.accepted_lines", "ai.cost"],
     },
     drilldown: [
       {

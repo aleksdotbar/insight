@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ComingSoon } from "@/components/widgets/coming-soon";
+import { GroupCardEmpty } from "@/components/widgets/group-card-empty";
 import { useSettings } from "@/hooks/use-settings";
 import { formatMetricValue } from "@/lib/format";
 import type { MetricGroup } from "@/lib/insight/groups";
@@ -21,7 +22,6 @@ import type { PeerStatusWithNeutral } from "@/lib/peers";
 import {
   gradeSectionStanding,
   rankCounts,
-  rankableCount,
   sectionStandingPhrase,
 } from "@/lib/scoring";
 import {
@@ -123,7 +123,6 @@ export function MetricGroupCard({
   });
 
   const counts = rankCounts(rows.map((row) => ({ row, rank: row.rank })));
-  const evaluated = rankableCount(counts);
   const status = applyFocusStatus(gradeSectionStanding(counts), focusMode);
   const badgeText = sectionStandingPhrase(counts);
 
@@ -132,10 +131,14 @@ export function MetricGroupCard({
     ? headlineSummary(headlineRow)
     : "No data for this period.";
 
+  // The preview is a FIXED set of keys — the card's stable identity. Keep a
+  // key even when its value is null (renders "—"); only drop a key the
+  // response never carried. A present-but-empty metric still belongs on the
+  // card.
   const preview = def.card.preview
     .map((key) => rows.find((row) => row.metric.metric_key === key))
-    .filter((row): row is CardRow => row != null && row.value != null);
-  const isEmpty = evaluated === 0 && preview.length === 0;
+    .filter((row): row is CardRow => row != null);
+  const isEmpty = !rows.some((row) => row.value != null);
   const stripeClass = STATUS_STRIPE_LEFT[status];
 
   return (
@@ -156,27 +159,31 @@ export function MetricGroupCard({
     >
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
-        <CardDescription className="flex flex-col gap-1 text-xs">
-          {subtitle ? (
-            <span className="text-muted-foreground">{subtitle}</span>
-          ) : null}
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                STATUS_BG_CLASS[status],
-              )}
-              aria-hidden
-            />
-            <span className="tabular-nums">{badgeText}</span>
-          </span>
-        </CardDescription>
+        {subtitle || !isEmpty ? (
+          <CardDescription className="flex flex-col gap-1 text-xs">
+            {subtitle ? (
+              <span className="text-muted-foreground">{subtitle}</span>
+            ) : null}
+            {/* An empty card carries no standing — the badge would only
+                restate the empty state below. */}
+            {!isEmpty ? (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    STATUS_BG_CLASS[status],
+                  )}
+                  aria-hidden
+                />
+                <span className="tabular-nums">{badgeText}</span>
+              </span>
+            ) : null}
+          </CardDescription>
+        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-3 pt-0">
         {isEmpty ? (
-          <p className="text-sm text-muted-foreground">
-            No metrics with data for this period.
-          </p>
+          <GroupCardEmpty />
         ) : (
           <>
             <p className="text-sm text-foreground/80">{summary}</p>

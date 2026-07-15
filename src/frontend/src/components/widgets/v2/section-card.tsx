@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { GroupCardEmpty } from "@/components/widgets/group-card-empty";
 import { useSettings } from "@/hooks/use-settings";
 import {
   hasBulletValue,
@@ -126,24 +127,31 @@ export function SectionCard({
     >
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-semibold">{title}</CardTitle>
-        <CardDescription className="flex flex-col gap-1 text-xs">
-          {subtitle ? (
-            <span className="text-muted-foreground">{subtitle}</span>
-          ) : null}
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn("size-1.5 shrink-0 rounded-full", STATUS_BG_CLASS[status])}
-              aria-hidden
-            />
-            <span className="tabular-nums">{badgeText}</span>
-          </span>
-        </CardDescription>
+        {subtitle || !isEmpty ? (
+          <CardDescription className="flex flex-col gap-1 text-xs">
+            {subtitle ? (
+              <span className="text-muted-foreground">{subtitle}</span>
+            ) : null}
+            {/* An empty card carries no standing — the badge would only
+                restate the empty state below. */}
+            {!isEmpty ? (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    STATUS_BG_CLASS[status],
+                  )}
+                  aria-hidden
+                />
+                <span className="tabular-nums">{badgeText}</span>
+              </span>
+            ) : null}
+          </CardDescription>
+        ) : null}
       </CardHeader>
       <CardContent className="flex flex-col gap-3 pt-0">
         {isEmpty ? (
-          <p className="text-sm text-muted-foreground">
-            No metrics with data for this period.
-          </p>
+          <GroupCardEmpty />
         ) : (
           <>
             <p className="text-sm text-foreground/80">{summary}</p>

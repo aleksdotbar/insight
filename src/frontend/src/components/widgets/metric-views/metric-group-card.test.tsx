@@ -89,6 +89,44 @@ describe("MetricGroupCard", () => {
     expect(screen.getByText("3 days")).toBeInTheDocument();
   });
 
+  it("shows a single empty state without a standing badge when no metric has data", () => {
+    render(
+      <MetricGroupCard
+        def={DEF}
+        data={result([
+          aiMetric("ai.active_days", null),
+          aiMetric("ai.cost", null),
+        ])}
+        entityId="me@x.com"
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("No metrics with data for this period."),
+    ).toBeInTheDocument();
+    // The badge would only restate the absence — one message, not two.
+    expect(screen.queryByText("no peer data")).not.toBeInTheDocument();
+  });
+
+  it("keeps a fixed preview key with no value, rendering an em dash", () => {
+    render(
+      <MetricGroupCard
+        def={DEF}
+        data={result([
+          aiMetric("ai.active_days", 20),
+          aiMetric("ai.cost", null),
+        ])}
+        entityId="me@x.com"
+        onOpen={vi.fn()}
+      />,
+    );
+    // Both preview rows stay on the card — the valueless one shows "—", not
+    // dropped, so the card's identity is stable across periods.
+    expect(screen.getByText("ai.active_days")).toBeInTheDocument();
+    expect(screen.getByText("ai.cost")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
   it("keeps the card name and shows a spinner while loading", () => {
     render(
       <MetricGroupCard
