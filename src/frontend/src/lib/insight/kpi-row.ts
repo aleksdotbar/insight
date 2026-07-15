@@ -14,6 +14,7 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
+import { peerStatusToStatus } from "@/lib/insight/v2/peer-status";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
 import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import { computeDelta, type MetricDelta } from "@/lib/metrics/delta";
@@ -151,17 +152,12 @@ export function metricKpiTiles(
     const value = data.value;
     const median = data.peer?.median ?? null;
     // Eligibility (observed / suppressed / flat pool / neutral direction)
-    // and the median judgment come from the shared standing derivation.
-    // Only a strictly favorable/unfavorable median side earns a color —
-    // at-median is "on par", not praise (an all-idle cohort must not paint
-    // idleness green).
+    // and the quartile rank come from the shared standing derivation; the
+    // color follows the same rank mapping as every card and the peer story
+    // — red means bottom quartile, in-pack is normal and stays uncolored.
     const standing = derivePeerStanding(metric.direction, data);
     const valueStatus = applyFocusStatus(
-      standing.medianSide === "favorable"
-        ? "good"
-        : standing.medianSide === "unfavorable"
-          ? "bad"
-          : "neutral",
+      peerStatusToStatus(standing.rank),
       focusMode,
     );
 

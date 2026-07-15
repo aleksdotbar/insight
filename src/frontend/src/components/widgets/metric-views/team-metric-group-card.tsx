@@ -9,13 +9,15 @@ import { Spinner } from "@/components/ui/spinner";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { useSettings } from "@/hooks/use-settings";
 import type { MetricGroup } from "@/lib/insight/groups";
+import { peerStatusToStatus } from "@/lib/insight/v2/peer-status";
 import {
   teamMetricStandings,
   type TeamMetricStanding,
 } from "@/lib/insight/team-metrics";
 import {
-  aggregateSectionStatus,
-  sectionCounts,
+  gradeSectionStanding,
+  rankCounts,
+  sectionStandingPhrase,
 } from "@/lib/scoring";
 import {
   STATUS_BG_CLASS,
@@ -82,20 +84,11 @@ export function TeamMetricGroupCard({
 
   const standings = teamMetricStandings(def, data.byKey, memberIds);
   const scored = standings.filter((s) => s.scored > 0);
-  const scoredMetrics = standings.map((standing) => ({
-    row: standing,
-    status: standing.status,
-  }));
-  const status = applyFocusStatus(
-    aggregateSectionStatus(scoredMetrics),
-    focusMode,
+  const counts = rankCounts(
+    standings.map((standing) => ({ row: standing, rank: standing.verdict })),
   );
-  const counts = sectionCounts(scoredMetrics);
-  const evaluated = counts.good + counts.warn + counts.bad;
-  const badgeText =
-    evaluated === 0
-      ? "No peer data"
-      : `${counts.good} of ${evaluated} metrics ahead`;
+  const status = applyFocusStatus(gradeSectionStanding(counts), focusMode);
+  const badgeText = sectionStandingPhrase(counts);
 
   const preview: TeamMetricStanding[] = def.card.preview
     .map((key) => scored.find((s) => s.metric.metric_key === key))
@@ -143,7 +136,10 @@ export function TeamMetricGroupCard({
           <ul className="flex flex-col gap-1.5">
             {(preview.length > 0 ? preview : scored.slice(0, 3)).map(
               (standing) => {
-                const rowStatus = applyFocusStatus(standing.status, focusMode);
+                const rowStatus = applyFocusStatus(
+                  peerStatusToStatus(standing.verdict),
+                  focusMode,
+                );
                 return (
                   <li
                     key={standing.metric.metric_key}

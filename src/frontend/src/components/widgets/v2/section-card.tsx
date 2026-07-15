@@ -9,19 +9,25 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
-import { hasBulletValue, rowStatus } from "@/lib/insight/v2/peer-status";
 import {
-  aggregateSectionStatus,
+  hasBulletValue,
+  peerStatusForRow,
+  peerStatusToStatus,
+} from "@/lib/insight/v2/peer-status";
+import type { PeerStatusWithNeutral } from "@/lib/peers";
+import {
+  gradeSectionStanding,
   pickSectionHeadline,
-  sectionCounts,
-  type ScoredMetric,
+  rankCounts,
+  rankableCount,
+  sectionStandingPhrase,
+  type RankedMetric,
 } from "@/lib/scoring";
 import {
   STATUS_BG_CLASS,
   STATUS_STRIPE_LEFT,
   STATUS_TEXT_CLASS,
   applyFocusStatus,
-  type Status,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { BulletMetric } from "@/types/insight";
@@ -42,12 +48,13 @@ export interface SectionCardProps {
   subtitle?: string;
   unavailable?: boolean;
   /**
-   * Per-metric status override. When supplied (team view), it replaces the
-   * single-row `rowStatus` scoring — the team card rolls up each metric from
+   * Per-metric rank override. When supplied (team view), it replaces the
+   * single-row quartile scoring — the team card rolls up each metric from
    * per-member-vs-own-department standings instead of comparing a team
-   * aggregate against an individual band. Absent (IC view) → `rowStatus`.
+   * aggregate against an individual band. Absent (IC view) → the row's own
+   * cohort rank.
    */
-  statusByMetricKey?: Map<string, Status>;
+  rankByMetricKey?: Map<string, PeerStatusWithNeutral>;
 }
 
 export function SectionCard({
@@ -58,12 +65,12 @@ export function SectionCard({
   sectionId,
   subtitle,
   unavailable,
-  statusByMetricKey,
+  rankByMetricKey,
 }: SectionCardProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
-  const metricStatus = (r: BulletMetric): Status =>
-    statusByMetricKey?.get(r.metric_key) ?? rowStatus(r, byMetricKey);
+  const metricRank = (r: BulletMetric): PeerStatusWithNeutral =>
+    rankByMetricKey?.get(r.metric_key) ?? peerStatusForRow(r, byMetricKey);
 
   if (unavailable) {
     return (
@@ -82,21 +89,16 @@ export function SectionCard({
     );
   }
 
-  const scored: ScoredMetric<BulletMetric>[] = rows.map((r) => ({
+  const ranked: RankedMetric<BulletMetric>[] = rows.map((r) => ({
     row: r,
-    status: metricStatus(r),
+    rank: metricRank(r),
   }));
-  const rawStatus = aggregateSectionStatus(scored);
-  const status = applyFocusStatus(rawStatus, focusMode);
-  const counts = sectionCounts(scored);
-  const evaluated = counts.good + counts.warn + counts.bad;
-  const topCount = counts.good;
-  const badgeText =
-    evaluated === 0
-      ? "No peer data"
-      : `${topCount} of ${evaluated} in top`;
+  const counts = rankCounts(ranked);
+  const evaluated = rankableCount(counts);
+  const status = applyFocusStatus(gradeSectionStanding(counts), focusMode);
+  const badgeText = sectionStandingPhrase(counts);
 
-  const headline = pickSectionHeadline(scored);
+  const headline = pickSectionHeadline(ranked);
   const unit = headline?.row.unit ?? "";
   const summary = headline
     ? `${headline.row.label}: ${headline.row.value}${unit ? ` ${unit}` : ""}`
@@ -149,7 +151,7 @@ export function SectionCard({
               <ul className="flex flex-col gap-1.5">
                 {preview.map((r) => {
                   const previewStatus = applyFocusStatus(
-                    metricStatus(r),
+                    peerStatusToStatus(metricRank(r)),
                     focusMode,
                   );
                   return (

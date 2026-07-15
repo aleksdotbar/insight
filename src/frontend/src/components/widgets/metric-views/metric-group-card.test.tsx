@@ -120,8 +120,8 @@ describe("MetricGroupCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    // No metric is scorable → no "in top" tally.
-    expect(screen.getByText("No peer data")).toBeInTheDocument();
+    // No metric is scorable → no rankable peers.
+    expect(screen.getByText("no peer data")).toBeInTheDocument();
   });
 
   it("scores measured people against quartiles", () => {
@@ -136,8 +136,9 @@ describe("MetricGroupCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    // active_days 20 ≥ p75 15 → top; cost 2 ≤ p25 5 → bottom → 1 of 2 in top.
-    expect(screen.getByText("1 of 2 in top")).toBeInTheDocument();
+    // active_days 20 ≥ p75 15 → top; cost 2 ≤ p25 5 → bottom → 1 bottom wins
+    // the phrase (behind beats ahead), single bottom below the red bar → amber.
+    expect(screen.getByText("1 behind peers")).toBeInTheDocument();
   });
 
   it("owns its error state with retry", () => {

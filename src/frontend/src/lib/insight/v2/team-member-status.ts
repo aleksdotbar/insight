@@ -4,7 +4,6 @@ import {
   type DeptCohorts,
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
-import type { Status } from "@/lib/status";
 import type { BulletMetric, TeamMember } from "@/types/insight";
 
 // A department cohort must hold at least this many people before a member is
@@ -39,20 +38,21 @@ export function memberMetricPeerStatus(
 }
 
 /**
- * Team section-card status per metric, rolled up from per-member standings
+ * Team section-card rank per metric, rolled up from per-member standings
  * rather than the (statistically miscalibrated) team-aggregate-vs-individual-
- * band comparison. Each metric takes the PLURALITY direction across the roster:
- * more members below their own department than above → `bad`; more above →
- * `good`; a tie or an on-par majority → `warn`; none scorable → `neutral`.
+ * band comparison. Each metric takes the PLURALITY direction across the
+ * roster: more members below their own department than in any other band →
+ * `bottom`; more above → `top`; a tie or an on-par majority → `in_pack` (no
+ * plurality means no pattern); none scorable → `neutral`.
  */
-export function teamSectionStatusByMetric(
+export function teamSectionRankByMetric(
   rows: BulletMetric[],
   members: TeamMember[],
   bulletsByPerson: Map<string, BulletMetric[]> | undefined,
   deptCohorts: DeptCohorts | undefined,
   byMetricKey: CatalogByKey,
-): Map<string, Status> {
-  const out = new Map<string, Status>();
+): Map<string, PeerStatusWithNeutral> {
+  const out = new Map<string, PeerStatusWithNeutral>();
   for (const row of rows) {
     let top = 0;
     let inPack = 0;
@@ -70,15 +70,15 @@ export function teamSectionStatusByMetric(
       else if (ps === "bottom") bottom += 1;
       else if (ps === "in_pack") inPack += 1;
     }
-    const status: Status =
+    const rank: PeerStatusWithNeutral =
       scored === 0
         ? "neutral"
         : bottom > top && bottom > inPack
-          ? "bad"
+          ? "bottom"
           : top > bottom && top > inPack
-            ? "good"
-            : "warn";
-    out.set(row.metric_key, status);
+            ? "top"
+            : "in_pack";
+    out.set(row.metric_key, rank);
   }
   return out;
 }

@@ -12,7 +12,6 @@ import {
   peerStatusVsQuartiles,
   type PeerStatusWithNeutral,
 } from "@/lib/peers";
-import type { Status } from "@/lib/status";
 
 /**
  * One member's standing on one collection metric vs their OWN cohort (the
@@ -46,15 +45,16 @@ export interface TeamMetricStanding {
   inPack: number;
   bottom: number;
   scored: number;
-  status: Status;
+  /**
+   * Plurality rank across the roster: more members below their own cohort
+   * than in any other band → `bottom`; more above → `top`; a tie or an
+   * on-par majority → `in_pack` (no plurality means no pattern); none
+   * scorable → `neutral`.
+   */
+  verdict: PeerStatusWithNeutral;
 }
 
-/**
- * Roster rollup per collection metric — the same plurality rule as the
- * legacy team card's `teamSectionStatusByMetric`: more members below
- * their own cohort than above → `bad`; more above → `good`; tie or on-par
- * majority → `warn`; none scorable → `neutral`.
- */
+/** Roster rollup per collection metric. */
 export function teamMetricStandings(
   def: MetricGroup,
   byKey: Map<string, NormalizedMetricResult>,
@@ -73,15 +73,15 @@ export function teamMetricStandings(
       else if (standing === "in_pack") inPack += 1;
     }
     const scored = top + inPack + bottom;
-    const status: Status =
+    const verdict: PeerStatusWithNeutral =
       scored === 0
         ? "neutral"
         : bottom > top && bottom > inPack
-          ? "bad"
+          ? "bottom"
           : top > bottom && top > inPack
-            ? "good"
-            : "warn";
-    return [{ metric, top, inPack, bottom, scored, status }];
+            ? "top"
+            : "in_pack";
+    return [{ metric, top, inPack, bottom, scored, verdict }];
   });
 }
 

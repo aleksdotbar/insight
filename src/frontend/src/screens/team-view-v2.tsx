@@ -32,7 +32,7 @@ import {
 } from "@/lib/insight/team-metrics";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
 import { hasBulletValue } from "@/lib/insight/v2/peer-status";
-import { teamSectionStatusByMetric } from "@/lib/insight/v2/team-member-status";
+import { teamSectionRankByMetric } from "@/lib/insight/v2/team-member-status";
 import { projectViews } from "@/lib/metrics/collection";
 import { normalizePersonId } from "@/lib/metrics/entity";
 import { useIcPerson } from "@/queries/ic-dashboard";
@@ -315,7 +315,7 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
                       title={def.title}
                       sectionId={def.id}
                       rows={legacyRowsByGroup[def.id] ?? []}
-                      statusByMetricKey={teamSectionStatusByMetric(
+                      rankByMetricKey={teamSectionRankByMetric(
                         legacyRowsByGroup[def.id] ?? [],
                         members,
                         bulletsQ.data,

@@ -14,6 +14,7 @@ import {
   formatMetricValue,
   metricDisplayUnit,
 } from "@/lib/format";
+import { peerStatusToStatus } from "@/lib/insight/v2/peer-status";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
 import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import { seriesColors } from "@/lib/series-colors";
@@ -43,19 +44,11 @@ export function MetricSummaryCard({ metric, entityId }: MetricSummaryCardProps) 
   const data = forEntity(metric, entityId);
   const value = data.value;
   // Eligibility (observed / suppressed / flat pool / neutral direction) and
-  // the median judgment come from the shared standing derivation — same
-  // verdict as the KPI tiles by construction. Only a strictly favorable /
-  // unfavorable median side earns a color; at-median is "on par", exactly
-  // the peer story's vocabulary for the same fact.
+  // the quartile rank come from the shared standing derivation — same
+  // verdict as the KPI tiles and the peer story by construction: red means
+  // bottom quartile, in-pack is normal and stays uncolored.
   const standing = derivePeerStanding(metric.direction, data);
-  const status = applyFocusStatus(
-    standing.medianSide === "favorable"
-      ? "good"
-      : standing.medianSide === "unfavorable"
-        ? "bad"
-        : "neutral",
-    focusMode,
-  );
+  const status = applyFocusStatus(peerStatusToStatus(standing.rank), focusMode);
   // The status is carried by the stripe and the value color alone — no
   // status words on the card.
   const stripeClass = STATUS_STRIPE_LEFT[status];

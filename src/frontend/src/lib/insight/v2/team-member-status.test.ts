@@ -4,7 +4,7 @@ import type { CatalogByKey } from "@/lib/insight/v2/peer-status";
 import {
   MIN_DEPT_COHORT_N,
   memberMetricPeerStatus,
-  teamSectionStatusByMetric,
+  teamSectionRankByMetric,
 } from "@/lib/insight/v2/team-member-status";
 import type { DeptCohorts, PeerStats } from "@/lib/peers";
 import type { CatalogMetric } from "@/api/catalog-client";
@@ -102,11 +102,11 @@ function rosterBullets(
   return m;
 }
 
-describe("teamSectionStatusByMetric", () => {
+describe("teamSectionRankByMetric", () => {
   const dept = deptMap([["eng", "tasks", stats()]]);
   const members = [member("a", "eng"), member("b", "eng"), member("c", "eng")];
 
-  it("flags 'bad' when more members are below their department than above", () => {
+  it("flags 'bottom' when more members are below their department than above", () => {
     // a,b below p25 (bottom); c above p75 (top) → bottom 2 > top 1 → bad.
     const bullets = rosterBullets(
       [
@@ -116,17 +116,17 @@ describe("teamSectionStatusByMetric", () => {
       ],
       "tasks",
     );
-    const map = teamSectionStatusByMetric(
+    const map = teamSectionRankByMetric(
       [bullet("tasks", 0)],
       members,
       bullets,
       dept,
       byMetricKey,
     );
-    expect(map.get("tasks")).toBe("bad");
+    expect(map.get("tasks")).toBe("bottom");
   });
 
-  it("flags 'good' when more members are above than below", () => {
+  it("flags 'top' when more members are above than below", () => {
     const bullets = rosterBullets(
       [
         ["a", 15],
@@ -135,17 +135,17 @@ describe("teamSectionStatusByMetric", () => {
       ],
       "tasks",
     );
-    const map = teamSectionStatusByMetric(
+    const map = teamSectionRankByMetric(
       [bullet("tasks", 0)],
       members,
       bullets,
       dept,
       byMetricKey,
     );
-    expect(map.get("tasks")).toBe("good");
+    expect(map.get("tasks")).toBe("top");
   });
 
-  it("falls to 'warn' on a top/bottom tie", () => {
+  it("falls to 'in_pack' on a top/bottom tie", () => {
     // one top, one bottom, one on-par → no plurality → warn.
     const bullets = rosterBullets(
       [
@@ -155,17 +155,17 @@ describe("teamSectionStatusByMetric", () => {
       ],
       "tasks",
     );
-    const map = teamSectionStatusByMetric(
+    const map = teamSectionRankByMetric(
       [bullet("tasks", 0)],
       members,
       bullets,
       dept,
       byMetricKey,
     );
-    expect(map.get("tasks")).toBe("warn");
+    expect(map.get("tasks")).toBe("in_pack");
   });
 
-  it("falls to 'warn' when most members are on-par (in_pack majority)", () => {
+  it("falls to 'in_pack' when most members are on-par (in_pack majority)", () => {
     // two on-par, one below → bottom(1) not > in_pack(2) → warn, not bad.
     const bullets = rosterBullets(
       [
@@ -175,14 +175,14 @@ describe("teamSectionStatusByMetric", () => {
       ],
       "tasks",
     );
-    const map = teamSectionStatusByMetric(
+    const map = teamSectionRankByMetric(
       [bullet("tasks", 0)],
       members,
       bullets,
       dept,
       byMetricKey,
     );
-    expect(map.get("tasks")).toBe("warn");
+    expect(map.get("tasks")).toBe("in_pack");
   });
 
   it("returns 'neutral' when no member has a usable department cohort", () => {
@@ -195,7 +195,7 @@ describe("teamSectionStatusByMetric", () => {
       ],
       "tasks",
     );
-    const map = teamSectionStatusByMetric(
+    const map = teamSectionRankByMetric(
       [bullet("tasks", 0)],
       members,
       bullets,

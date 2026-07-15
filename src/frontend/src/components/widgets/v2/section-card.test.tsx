@@ -1,10 +1,10 @@
 /**
  * Component-render coverage for `<SectionCard>` status coloring.
  *
- * Two status sources:
- *   - IC view (no override): `rowStatus` colors each row off its own `peer`
+ * Two rank sources:
+ *   - IC view (no override): each row ranks off its own `peer`
  *     (p25/p50/p75) + the catalog's `higher_is_better` — no FE math.
- *   - Team view: a `statusByMetricKey` override replaces that per-row scoring,
+ *   - Team view: a `rankByMetricKey` override replaces that per-row scoring,
  *     so the card rolls up per-member-vs-own-department standings instead of
  *     comparing a team aggregate against an individual band.
  * The headline always reflects the row's own label/value (the aggregate),
@@ -74,7 +74,7 @@ describe("<SectionCard> peer-driven coloring", () => {
         },
       ]),
     );
-    // value 12 ≥ peer.p75 (8), higher_is_better ⇒ 'top' ⇒ good ⇒ "1 of 1 in top".
+    // value 12 ≥ peer.p75 (8), higher_is_better ⇒ 'top' ⇒ good ⇒ "1 ahead of peers".
     const row = makeBullet({
       value: "12",
       peer: { p25: 4, p50: 6, p75: 8, min: 2, max: 15, n: 12 },
@@ -89,7 +89,7 @@ describe("<SectionCard> peer-driven coloring", () => {
       />,
     );
     await waitFor(() => {
-      expect(screen.getByText("1 of 1 in top")).toBeInTheDocument();
+      expect(screen.getByText("1 ahead of peers")).toBeInTheDocument();
     });
     // Headline reflects the team aggregate row, not the cohort.
     expect(screen.getByText("Tasks Closed: 12 tasks")).toBeInTheDocument();
@@ -98,7 +98,7 @@ describe("<SectionCard> peer-driven coloring", () => {
     ).toBeInTheDocument();
   });
 
-  it("statusByMetricKey override drives the badge, overriding the row's own peer", async () => {
+  it("rankByMetricKey override drives the badge, overriding the row's own peer", async () => {
     fetchCatalog.mockResolvedValue(
       buildCatalogResponse([
         {
@@ -108,8 +108,8 @@ describe("<SectionCard> peer-driven coloring", () => {
         },
       ]),
     );
-    // No peer on the row ⇒ rowStatus would be neutral ("No peer data"). The
-    // team override says 'good' ⇒ badge becomes "1 of 1 in top".
+    // No peer on the row ⇒ its own rank would be neutral ("no peer data").
+    // The team override says 'top' ⇒ badge becomes "1 ahead of peers".
     const row = makeBullet({ value: "12", peer: undefined });
     renderWithCatalogClient(
       <SectionCard
@@ -118,18 +118,18 @@ describe("<SectionCard> peer-driven coloring", () => {
         rows={[row]}
         onOpen={() => {}}
         subtitle="vs department peers"
-        statusByMetricKey={new Map([["tasks_completed", "good"]])}
+        rankByMetricKey={new Map([["tasks_completed", "top"]])}
       />,
     );
     await waitFor(() => {
-      expect(screen.getByText("1 of 1 in top")).toBeInTheDocument();
+      expect(screen.getByText("1 ahead of peers")).toBeInTheDocument();
     });
-    expect(screen.queryByText("No peer data")).not.toBeInTheDocument();
+    expect(screen.queryByText("no peer data")).not.toBeInTheDocument();
     // Headline still the aggregate row.
     expect(screen.getByText("Tasks Closed: 12 tasks")).toBeInTheDocument();
   });
 
-  it("a row with no peer scores neutral — 'No peer data' badge", async () => {
+  it("a row with no peer scores neutral — 'no peer data' badge", async () => {
     fetchCatalog.mockResolvedValue(
       buildCatalogResponse([
         {
@@ -149,7 +149,7 @@ describe("<SectionCard> peer-driven coloring", () => {
       />,
     );
     await waitFor(() => {
-      expect(screen.getByText("No peer data")).toBeInTheDocument();
+      expect(screen.getByText("no peer data")).toBeInTheDocument();
     });
   });
 });

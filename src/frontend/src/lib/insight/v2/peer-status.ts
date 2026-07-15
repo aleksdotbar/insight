@@ -57,16 +57,15 @@ export function peerStatusForRow(
   return peerStatusVsQuartiles(value, row.peer, m.higher_is_better);
 }
 
+/**
+ * THE rank → display-status mapping, shared by every surface that paints a
+ * peer standing. Red means bottom quartile, green means top quartile, and
+ * being with the pack is the normal state — it renders calm (neutral), never
+ * amber. Amber is reserved for aggregate judgments that earn it (section
+ * grading).
+ */
 export function peerStatusToStatus(p: PeerStatusWithNeutral): Status {
   if (p === "top") return "good";
   if (p === "bottom") return "bad";
-  if (p === "in_pack") return "warn";
   return "neutral";
-}
-
-export function rowStatus(
-  row: BulletMetric,
-  byMetricKey: CatalogByKey,
-): Status {
-  return peerStatusToStatus(peerStatusForRow(row, byMetricKey));
 }
