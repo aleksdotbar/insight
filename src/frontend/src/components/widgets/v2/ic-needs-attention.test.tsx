@@ -70,10 +70,10 @@ describe("IcNeedsAttention", () => {
   });
 
   it("collapses beyond the threshold with a show-more toggle", () => {
-    const items = Array.from({ length: 7 }, (_, i) =>
+    const items = Array.from({ length: 9 }, (_, i) =>
       item({ key: `m${i}`, label: `Metric ${i}`, relGap: i }),
     );
     render(<IcNeedsAttention items={items} onOpenGroup={vi.fn()} />);
-    expect(screen.getByText("Show 4 more")).toBeInTheDocument();
+    expect(screen.getByText("Show 3 more")).toBeInTheDocument();
   });
 });

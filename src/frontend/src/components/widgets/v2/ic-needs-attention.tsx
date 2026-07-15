@@ -7,8 +7,8 @@ import type { GroupId } from "@/lib/insight/groups";
 import { PEER_TEXT, applyFocus } from "@/lib/peers";
 import { cn } from "@/lib/utils";
 
-const COLLAPSED_ATTENTION = 3;
-const COLLAPSE_THRESHOLD = 6;
+const COLLAPSED_ATTENTION = 6;
+const COLLAPSE_THRESHOLD = 7;
 
 export interface IcNeedsAttentionProps {
   items: AttentionItem[];
