@@ -76,7 +76,7 @@ export function SectionCard({
   if (unavailable) {
     return (
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardTitle className="text-base font-semibold">{title}</CardTitle>
           <CardDescription className="flex items-center gap-1.5 text-xs">
             <Sparkles className="size-3.5 shrink-0" aria-hidden />
@@ -125,11 +125,14 @@ export function SectionCard({
         )
       }
       className={cn(
+        // Header→content on the card's own 12px rhythm (the preview stack's
+        // gap-3), not the default 24px section gap.
+        "gap-3",
         !isEmpty && "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle className="text-base font-semibold">{title}</CardTitle>
         {subtitle || !isEmpty ? (
           <CardDescription className="flex flex-col gap-1 text-xs">
@@ -153,7 +156,7 @@ export function SectionCard({
           </CardDescription>
         ) : null}
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
+      <CardContent className="flex flex-1 flex-col gap-3">
         {isEmpty ? (
           <GroupCardEmpty />
         ) : (

@@ -54,7 +54,7 @@ export function TeamMetricGroupCard({
     // spinner in the body. Not interactive — nothing to open yet.
     return (
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
           {subtitle ? (
             <CardDescription className="text-xs text-muted-foreground">
@@ -109,7 +109,7 @@ export function TeamMetricGroupCard({
         stripeClass,
       )}
     >
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
         <CardDescription className="flex flex-col gap-1 text-xs">
           {subtitle ? (

@@ -77,7 +77,7 @@ export function MetricGroupCard({
     // spinner in the body. Not interactive — nothing to open yet.
     return (
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
           {subtitle ? (
             <CardDescription className="text-xs text-muted-foreground">
@@ -157,11 +157,14 @@ export function MetricGroupCard({
         )
       }
       className={cn(
+        // Header→content on the card's own 12px rhythm (the preview stack's
+        // gap-3), not the default 24px section gap.
+        "gap-3",
         !isEmpty && "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
         {subtitle || !isEmpty ? (
           <CardDescription className="flex flex-col gap-1 text-xs">
@@ -185,7 +188,7 @@ export function MetricGroupCard({
           </CardDescription>
         ) : null}
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
+      <CardContent className="flex flex-1 flex-col gap-3">
         {isEmpty ? (
           <GroupCardEmpty />
         ) : (
