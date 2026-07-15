@@ -51,25 +51,11 @@ export function KpiTile({ tile, onOpenGroup }: KpiTileProps) {
       }
     >
       <CardHeader>
-        <CardDescription className="flex flex-col gap-0.5">
-          <span className="truncate">{tile.label}</span>
-          {showExplanations && tile.context ? (
-            <span className="truncate font-normal text-muted-foreground/70">
-              {tile.context}
-            </span>
-          ) : null}
+        <CardDescription className="min-w-0 truncate">
+          {tile.label}
         </CardDescription>
-        <CardTitle
-          className={cn(
-            "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl",
-            tile.valueStatus !== "neutral" &&
-              STATUS_TEXT_CLASS[tile.valueStatus],
-          )}
-        >
-          {tile.value}
-        </CardTitle>
         {tile.delta ? (
-          <CardAction>
+          <CardAction className="row-span-1">
             <Badge
               variant="outline"
               className={STATUS_TEXT_CLASS[tile.delta.status]}
@@ -79,6 +65,20 @@ export function KpiTile({ tile, onOpenGroup }: KpiTileProps) {
             </Badge>
           </CardAction>
         ) : null}
+        {showExplanations ? (
+          <CardDescription className="col-span-full line-clamp-2 min-h-[2lh] min-w-0 font-normal text-muted-foreground/70">
+            {tile.context}
+          </CardDescription>
+        ) : null}
+        <CardTitle
+          className={cn(
+            "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl",
+            tile.valueStatus !== "neutral" &&
+              STATUS_TEXT_CLASS[tile.valueStatus],
+          )}
+        >
+          {tile.value}
+        </CardTitle>
       </CardHeader>
       <CardFooter className="text-sm text-muted-foreground">
         {tile.medianLabel ?? "No peer data"}
@@ -97,12 +97,16 @@ export function KpiTileLoading() {
 }
 
 export function KpiTilePlaceholder({ label }: { label?: string }) {
+  const { showExplanations } = useSettings();
   return (
     <Card className={CARD_SURFACE}>
       <CardHeader>
-        <CardDescription className="truncate">
+        <CardDescription className="min-w-0 truncate">
           {label ?? " "}
         </CardDescription>
+        {showExplanations ? (
+          <CardDescription className="col-span-full min-h-[2lh]" />
+        ) : null}
         <CardTitle className="text-2xl font-semibold tabular-nums">—</CardTitle>
       </CardHeader>
       <CardFooter className="gap-1.5 text-sm text-muted-foreground">
