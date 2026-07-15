@@ -114,9 +114,9 @@ describe("CollectionDrilldown", () => {
         entityId="alice@example.com"
       />,
     );
-    // Histograms live in a single labeled "Distributions" card, shaded vs the
-    // peer median (the subtitle proves the diverging render, not a bare chart).
-    expect(screen.getByText("Distributions")).toBeInTheDocument();
+    // Each histogram is its own card in the grid (no wrapping "Distributions"
+    // card), shaded vs the peer median (the subtitle proves the diverging
+    // render, not a bare chart).
     expect(screen.getByText(/vs peer median/)).toBeInTheDocument();
   });
 

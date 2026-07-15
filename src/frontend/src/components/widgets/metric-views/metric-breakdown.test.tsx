@@ -61,6 +61,6 @@ describe("MetricBreakdown", () => {
         entityId="me@x.com"
       />,
     );
-    expect(screen.getByText("No composition data yet.")).toBeInTheDocument();
+    expect(screen.getByText("No composition data yet")).toBeInTheDocument();
   });
 });

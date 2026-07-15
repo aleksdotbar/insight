@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartEmpty } from "@/components/widgets/metric-views/chart-empty";
 import {
   BarChart,
   CartesianGrid,
@@ -210,11 +211,13 @@ export function MetricTrend({ metrics, entityId, chart }: MetricTrendProps) {
 
   if (data.length === 0 || series.length === 0) {
     return (
-      <Card className="min-h-80 shrink-0">
-        <CardHeader>
+      <Card className="shrink-0">
+        <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-          <CardDescription>No trend data yet.</CardDescription>
         </CardHeader>
+        <CardContent>
+          <ChartEmpty message="No trend data yet" className="h-56 min-h-56" />
+        </CardContent>
       </Card>
     );
   }
