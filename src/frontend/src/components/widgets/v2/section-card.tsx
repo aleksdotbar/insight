@@ -111,17 +111,21 @@ export function SectionCard({
 
   return (
     <Card
+      // An empty card has nothing to drill into: render a plain, unfocusable
+      // div instead of a button, and drop the interactive affordances.
       render={
-        <button
-          type="button"
-          onClick={onOpen}
-          onMouseEnter={onHover}
-          onFocus={onHover}
-          aria-label={`Open ${title} details`}
-        />
+        isEmpty ? undefined : (
+          <button
+            type="button"
+            onClick={onOpen}
+            onMouseEnter={onHover}
+            onFocus={onHover}
+            aria-label={`Open ${title} details`}
+          />
+        )
       }
       className={cn(
-        "text-left transition-colors hover:bg-accent/50",
+        !isEmpty && "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >

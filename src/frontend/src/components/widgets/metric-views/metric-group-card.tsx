@@ -143,17 +143,21 @@ export function MetricGroupCard({
 
   return (
     <Card
+      // An empty card has nothing to drill into: render a plain, unfocusable
+      // div instead of a button, and drop the interactive affordances.
       render={
-        <button
-          type="button"
-          onClick={onOpen}
-          onMouseEnter={onHover}
-          onFocus={onHover}
-          aria-label={`Open ${def.title} details`}
-        />
+        isEmpty ? undefined : (
+          <button
+            type="button"
+            onClick={onOpen}
+            onMouseEnter={onHover}
+            onFocus={onHover}
+            aria-label={`Open ${def.title} details`}
+          />
+        )
       }
       className={cn(
-        "text-left transition-colors hover:bg-accent/50",
+        !isEmpty && "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >

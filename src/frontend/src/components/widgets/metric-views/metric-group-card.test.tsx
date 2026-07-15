@@ -106,6 +106,8 @@ describe("MetricGroupCard", () => {
     ).toBeInTheDocument();
     // The badge would only restate the absence — one message, not two.
     expect(screen.queryByText("no peer data")).not.toBeInTheDocument();
+    // Nothing to drill into — the card is not an interactive button.
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("keeps a fixed preview key with no value, rendering an em dash", () => {
