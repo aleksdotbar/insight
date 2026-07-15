@@ -18,12 +18,6 @@ export const METRIC_ORDER_BY_SECTION: Record<string, string[]> = {
     "pr_cycle_time",
     "prs_per_dev",
   ],
-  collaboration: [
-    "meeting_free",
-    "slack_dm_ratio",
-    "m365_emails_received",
-    "m365_emails_read",
-  ],
   wiki: [
     "wiki_active_authors",
     "wiki_pages_created",

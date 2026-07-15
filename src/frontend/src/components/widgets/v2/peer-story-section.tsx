@@ -73,8 +73,7 @@ function storyEntries(entries: PeerStoryInput[]): PeerStoryEntry[] {
     const status = usePeerRanking
       ? peerStatusVsQuartiles(entry.value, stats, entry.higherIsBetter)
       : "neutral";
-    const rawDelta = stats ? entry.value - stats.p50 : 0;
-    const gapDelta = entry.higherIsBetter ? rawDelta : -rawDelta;
+    const gapDelta = stats ? entry.value - stats.p50 : 0;
     const gapPct =
       stats && Math.abs(stats.p50) > 1e-9
         ? gapDelta / Math.abs(stats.p50)

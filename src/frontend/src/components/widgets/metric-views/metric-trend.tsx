@@ -29,8 +29,8 @@ import {
 } from "@/components/widgets/metric-views/dimension-series";
 import { formatMetricNumber } from "@/lib/format";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
-import { integerPercentShares } from "@/lib/metrics/shares";
-import { swatchPalette } from "@/lib/swatch-palette";
+import { percentShareLabels } from "@/lib/metrics/shares";
+import { seriesColors } from "@/lib/series-colors";
 
 export interface MetricTrendProps {
   /** One metric → one series per dimension group; several → one per metric. */
@@ -219,7 +219,7 @@ export function MetricTrend({ metrics, entityId, chart }: MetricTrendProps) {
     );
   }
 
-  const colorsBySeed = swatchPalette(series.map((item) => item.colorSeed));
+  const colorsBySeed = seriesColors(series.map((item) => item.colorSeed));
   const config: ChartConfig = Object.fromEntries(
     series.map((item) => [
       item.key,
@@ -239,11 +239,12 @@ export function MetricTrend({ metrics, entityId, chart }: MetricTrendProps) {
   const compositionTotal = series.reduce((sum, item) => sum + item.total, 0);
   const legendFormat: MetricFormat = metrics[0]?.format ?? "integer";
   const legendUnit = metrics[0]?.unit ? ` ${metrics[0].unit}` : "";
-  // For a composition, each part gets an integer share that sums to exactly
-  // 100 (largest-remainder rounding — the legend must never read 99%/101%);
-  // legendShares[i] is series[i]'s share. A non-composition has no whole → [].
+  // For a composition, each part gets a share label summing to exactly 100
+  // (largest-remainder rounding — the legend must never read 99%/101%; a
+  // nonzero part never reads 0%, gaining a decimal instead). legendShares[i]
+  // labels series[i]. A non-composition has no whole → [].
   const legendShares = isComposition
-    ? integerPercentShares(series.map((item) => item.total))
+    ? percentShareLabels(series.map((item) => item.total))
     : [];
 
   const axes = (

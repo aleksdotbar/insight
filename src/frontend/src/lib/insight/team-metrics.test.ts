@@ -12,6 +12,7 @@ import {
 } from "@/lib/insight/groups";
 import {
   buildMetricCollectionRequest,
+  entityChunkSize,
   normalizeMetricResults,
   projectViews,
   type NormalizedMetricResult,
@@ -164,32 +165,40 @@ describe("memberMetricEntries", () => {
 });
 
 describe("team request row-limit projection", () => {
-  it("stays under the backend all-or-nothing limit for a 200-person roster", () => {
+  it("chunks each metrics group so no request exceeds the backend row limit", () => {
     // Backend caps projected rows at 5000 per request and rejects the WHOLE
     // request beyond it. Projection: period/peer → one row per entity per
-    // metric-view; timeseries → entities × buckets. The team surface must
-    // therefore request period+peer only.
+    // metric-view. The team surface requests period+peer only and
+    // `useMetricCollectionSet` chunks the roster by `entityChunkSize`, so a
+    // group larger than the unchunked budget (e.g. collaboration's 19 metrics)
+    // is split across requests rather than rejected.
     const ROW_LIMIT = 5000;
     const roster = 200;
     for (const def of metricGroups()) {
       const projected = projectViews(def.collection, ["period", "peer"]);
+      // Roster surfaces carry no per-bucket / per-dimension views.
+      expect(
+        projected.metrics.flatMap((m) => m.views).some(
+          (v) =>
+            v.view === "timeseries" ||
+            v.view === "breakdown" ||
+            v.view === "histogram",
+        ),
+      ).toBe(false);
+      const chunkSize = entityChunkSize(projected) ?? roster;
+      const chunkIds = Array.from(
+        { length: Math.min(chunkSize, roster) },
+        (_, i) => `person${i}@x.com`,
+      );
       const request = buildMetricCollectionRequest(
         projected,
-        {
-          type: "person",
-          ids: Array.from({ length: roster }, (_, i) => `person${i}@x.com`),
-        },
+        { type: "person", ids: chunkIds },
         { from: "2026-06-01", to: "2026-06-30" },
       );
       const projectedRows = request.metrics.reduce(
-        (sum, metric) => sum + metric.views.length * roster,
+        (sum, metric) => sum + metric.views.length * chunkIds.length,
         0,
       );
-      expect(
-        request.metrics.flatMap((m) => m.views).some(
-          (v) => v.view === "timeseries" || v.view === "breakdown",
-        ),
-      ).toBe(false);
       expect(projectedRows).toBeLessThanOrEqual(ROW_LIMIT);
     }
   });

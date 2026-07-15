@@ -57,12 +57,6 @@ export const PEER_TEXT: Record<PeerStatusWithNeutral, string> = {
   neutral: "text-muted-foreground",
 }
 
-export const PEER_BORDER: Record<PeerStatusWithNeutral, string> = {
-  top: "border-success",
-  bottom: "border-destructive",
-  in_pack: "border-border",
-  neutral: "border-muted",
-}
 
 export const PEER_LABEL: Record<PeerStatusWithNeutral, string> = {
   top: "Top 25%",
@@ -104,38 +98,23 @@ export function peerStatsFor(values: number[]): PeerStats | null {
 
 export function peerStatusVsQuartiles(
   value: number,
-  stats: Pick<PeerStats, "p25" | "p75">,
+  stats: Pick<PeerStats, "p25" | "p50" | "p75">,
   higherIsBetter: boolean
 ): PeerStatus {
+  // An outlier must sit strictly on the outlier side of the MEDIAN as well
+  // as beyond the quartile. Quartile boundaries alone overclaim on tie-heavy
+  // pools: in an all-zero cohort everyone satisfies `value >= p75`, and in a
+  // zero-inflated one (p25 == median == 0, a few sharers above) everyone at
+  // zero satisfies `value <= p25` — branding half the pack "Top/Bottom 25%".
+  // Requiring the median side also keeps quartile ranks consistent with the
+  // median-based scorers (a "bottom" here is always below-median there).
   if (higherIsBetter) {
-    if (value >= stats.p75) return "top"
-    if (value <= stats.p25) return "bottom"
+    if (value >= stats.p75 && value > stats.p50) return "top"
+    if (value <= stats.p25 && value < stats.p50) return "bottom"
     return "in_pack"
   }
-  if (value <= stats.p25) return "top"
-  if (value >= stats.p75) return "bottom"
+  if (value <= stats.p25 && value < stats.p50) return "top"
+  if (value >= stats.p75 && value > stats.p50) return "bottom"
   return "in_pack"
 }
 
-export function peerStatusVsMedian(
-  value: number,
-  median: number,
-  higherIsBetter: boolean,
-  toleranceFrac = 0.1
-): PeerStatus {
-  const tolerance = Math.abs(median) * toleranceFrac
-  const diff = value - median
-  if (Math.abs(diff) <= tolerance) return "in_pack"
-  const aboveMedian = diff > 0
-  if (aboveMedian === higherIsBetter) return "top"
-  return "bottom"
-}
-
-export function relativeGap(
-  value: number,
-  median: number,
-  higherIsBetter: boolean
-): number {
-  const denom = Math.abs(median) > 1e-9 ? Math.abs(median) : 1
-  return higherIsBetter ? (median - value) / denom : (value - median) / denom
-}

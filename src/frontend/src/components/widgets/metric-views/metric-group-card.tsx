@@ -12,10 +12,8 @@ import { formatMetricValue } from "@/lib/format";
 import type { MetricGroup } from "@/lib/insight/groups";
 import { peerStatusToStatus } from "@/lib/insight/v2/peer-status";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
-import { toPeerStats } from "@/lib/metrics/peer-story";
-import { peerStatusVsQuartiles } from "@/lib/peers";
+import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import {
-  SECTION_STRIPE,
   aggregateSectionStatus,
   pickSectionHeadline,
   sectionCounts,
@@ -23,6 +21,7 @@ import {
 } from "@/lib/scoring";
 import {
   STATUS_BG_CLASS,
+  STATUS_STRIPE_LEFT,
   STATUS_TEXT_CLASS,
   applyFocusStatus,
   type Status,
@@ -65,7 +64,7 @@ export function MetricGroupCard({
     // Keep the card's identity while it loads: the name in the header, a
     // spinner in the body. Not interactive — nothing to open yet.
     return (
-      <Card className="border-l-2 border-l-border">
+      <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
           {subtitle ? (
@@ -128,8 +127,7 @@ export function MetricGroupCard({
     .map((key) => rows.find((row) => row.metric.metric_key === key))
     .filter((row): row is CardRow => row != null && row.value != null);
   const isEmpty = evaluated === 0 && preview.length === 0;
-  const stripeClass =
-    status === "neutral" ? "border-l-border" : SECTION_STRIPE[status];
+  const stripeClass = STATUS_STRIPE_LEFT[status];
 
   return (
     <Card
@@ -143,7 +141,7 @@ export function MetricGroupCard({
         />
       }
       className={cn(
-        "border-l-2 text-left transition-colors hover:bg-accent/50",
+        "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >
@@ -223,16 +221,13 @@ function rowStatusFromPeer(
   value: number | null,
   entityId: string,
 ): Status {
-  if (metric.direction === "neutral" || value == null) return "neutral";
   const peerRow =
     metric.peer?.values.find((v) => v.entity_id === entityId) ?? null;
-  // Unmeasured people take no standing: the period value is zero-filled,
-  // but a null peer target_value means no observations (same gate as
-  // kpi-row, attention, team-metrics, and the peer story).
-  if (metric.peer && peerRow?.target_value == null) return "neutral";
-  const stats = toPeerStats(peerRow);
-  if (!stats) return "neutral";
-  return peerStatusToStatus(
-    peerStatusVsQuartiles(value, stats, metric.direction !== "lower_is_better"),
-  );
+  // All eligibility gates (observed / suppressed / flat pool / neutral
+  // direction) live in the shared standing derivation.
+  const standing = derivePeerStanding(metric.direction, {
+    value,
+    peer: peerRow,
+  });
+  return peerStatusToStatus(standing.rank);
 }

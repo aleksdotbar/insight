@@ -81,7 +81,7 @@ describe("buildPeerStoryEntries", () => {
     expect(entries[0]?.severity).toBe(0);
   });
 
-  it("inverts the gap for lower-is-better metrics", () => {
+  it("ranks lower-is-better below-median as top while the gap stays arithmetic", () => {
     const byKey = normalizeMetricResults([
       metric("m.win", 2, { direction: "lower_is_better" }),
     ]);
@@ -90,7 +90,7 @@ describe("buildPeerStoryEntries", () => {
     };
     const entries = buildPeerStoryEntries(collection, byKey, "me@x.com");
     expect(entries[0]?.status).toBe("top");
-    expect(entries[0]?.gapDelta).toBeGreaterThan(0);
+    expect(entries[0]?.gapDelta).toBe(-8);
   });
 });
 
@@ -127,8 +127,9 @@ describe("partitionPeerStory", () => {
 });
 
 // When the cohort median is 0 the percentage gap is undefined, so severity
-// falls back to gap / peerSpread. This exercises all three peerSpread
-// branches (IQR, min–max range, constant 1) and the ordering they imply.
+// falls back to gap / peerSpread. This exercises the IQR and min–max range
+// branches plus the flat-pool gate (a zero-spread cohort ranks nobody, so it
+// carries no severity at all).
 describe("peerSpread fallback (median 0)", () => {
   function metricWithStats(
     key: string,
@@ -164,7 +165,7 @@ describe("peerSpread fallback (median 0)", () => {
     const byKey = normalizeMetricResults([
       metricWithStats("iqr", { p25: -5, p75: 5, min: -8, max: 8 }), // spread 10
       metricWithStats("range", { p25: 0, p75: 0, min: -10, max: 10 }), // spread 20
-      metricWithStats("constant", { p25: 0, p75: 0, min: 0, max: 0 }), // spread 1
+      metricWithStats("constant", { p25: 0, p75: 0, min: 0, max: 0 }), // flat
     ]);
     const byKeyMap = new Map(
       buildPeerStoryEntries(collection, byKey, "me@x.com").map((e) => [
@@ -172,9 +173,10 @@ describe("peerSpread fallback (median 0)", () => {
         e.severity,
       ]),
     );
-    // gap is 5 for all; severity = 5 / spread.
+    // gap is 5 for both spread pools; severity = 5 / spread. A flat pool
+    // (zero spread) is ineligible for ranking — severity 0, never an outlier.
     expect(byKeyMap.get("iqr")).toBeCloseTo(0.5);
     expect(byKeyMap.get("range")).toBeCloseTo(0.25);
-    expect(byKeyMap.get("constant")).toBeCloseTo(5);
+    expect(byKeyMap.get("constant")).toBe(0);
   });
 });

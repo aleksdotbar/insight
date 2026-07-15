@@ -14,6 +14,7 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
+import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import { computeDelta, type MetricDelta } from "@/lib/metrics/delta";
 import type { FocusMode } from "@/lib/peers";
 import { applyFocusStatus, statusVsMedian, type Status } from "@/lib/status";
@@ -137,24 +138,19 @@ export function metricKpiTiles(
 
     const data = forEntity(metric, entityId);
     const value = data.value;
-    // Thin-cohort suppression is server-side: below the backend's disclosure
-    // floor the peer view returns null percentiles, so `median` is null here.
     const median = data.peer?.median ?? null;
-    // A null peer target_value means no observations — the zero-filled own
-    // total is not a measured value, so it takes no standing vs the median.
-    const observed = data.peer?.target_value != null;
-
+    // Eligibility (observed / suppressed / flat pool / neutral direction)
+    // and the median judgment come from the shared standing derivation.
+    // Only a strictly favorable/unfavorable median side earns a color —
+    // at-median is "on par", not praise (an all-idle cohort must not paint
+    // idleness green).
+    const standing = derivePeerStanding(metric.direction, data);
     const valueStatus = applyFocusStatus(
-      value != null &&
-        median != null &&
-        observed &&
-        metric.direction !== "neutral"
-        ? statusVsMedian(
-            value,
-            median,
-            metric.direction !== "lower_is_better",
-          )
-        : "neutral",
+      standing.medianSide === "favorable"
+        ? "good"
+        : standing.medianSide === "unfavorable"
+          ? "bad"
+          : "neutral",
       focusMode,
     );
 
