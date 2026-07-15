@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp } from "lucide-react";
 
 import { useCatalog } from "@/api/use-catalog";
@@ -20,7 +21,6 @@ import {
   bulletCatalogKey,
   type CatalogByKey,
 } from "@/lib/insight/v2/peer-status";
-import type { MetricFormat } from "@/api/metric-results-client";
 import type { PeerStoryEntry } from "@/lib/metrics/peer-story";
 import { MIN_DEPT_COHORT_N } from "@/lib/insight/v2/team-member-status";
 import {
@@ -102,13 +102,7 @@ interface BulletColumn extends BaseColumn {
   metricKey: string;
 }
 
-interface MetricColumn extends BaseColumn {
-  source: "metric";
-  entryKey: string;
-  format: MetricFormat;
-}
-
-type ColumnDef = TeamRowColumn | BulletColumn | MetricColumn;
+type ColumnDef = TeamRowColumn | BulletColumn;
 
 // FE-controlled column layout: `label`/`short`/`unit`/`mobile`/`source`
 // are display concerns the wire response doesn't carry, and the
@@ -119,12 +113,7 @@ type ColumnDef = TeamRowColumn | BulletColumn | MetricColumn;
 // A future wave can fold the bullet-source `higher_is_better` entries
 // into a catalog lookup once team_row policy thresholds also move to
 // the wire.
-//
-// These are only the CURATED core columns (stable order, mobile flags,
-// hand-picked short labels). The full column set is derived at render
-// time: every legacy bullet and unified-path (git/ai) entry present in
-// the roster's data becomes an additional column (#1729).
-const CORE_COLUMNS: ColumnDef[] = [
+const COLUMNS: ColumnDef[] = [
   {
     key: "tasks_closed",
     label: "Tasks closed",
@@ -197,16 +186,6 @@ const CORE_COLUMNS: ColumnDef[] = [
   },
 ];
 
-/**
- * Compact one-letter units ("d", "h", "%") glue to the number the way the
- * curated columns always rendered; word units from bullet rows ("meetings",
- * "files") get a separating space.
- */
-function unitSuffix(unit: string | undefined | null): string {
-  if (!unit) return "";
-  return unit.length > 1 ? ` ${unit}` : unit;
-}
-
 function getNumericTeamRow(m: TeamMember, key: TeamRowKey): number | null {
   const raw = m[key];
   return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
@@ -223,7 +202,7 @@ function getNumericBullet(
 }
 
 function valueForColumn(
-  col: TeamRowColumn | BulletColumn,
+  col: ColumnDef,
   member: TeamMember,
   bullets: BulletMetric[] | undefined,
 ): number | null {
@@ -233,16 +212,9 @@ function valueForColumn(
   return getNumericBullet(bullets, col.metricKey);
 }
 
-/** The `metric_key` a heatmap column is identified / colored by. */
+/** The dept-distribution `metric_key` a heatmap column is colored against. */
 function metricKeyForColumn(col: ColumnDef): string {
-  switch (col.source) {
-    case "team_row":
-      return col.teamRowField;
-    case "bullet":
-      return col.metricKey;
-    case "metric":
-      return col.entryKey;
-  }
+  return col.source === "team_row" ? col.teamRowField : col.metricKey;
 }
 
 /**
@@ -304,71 +276,11 @@ export function MembersHeatmap({
   const { byMetricKey } = useCatalog();
   const [sortKey, setSortKey] = useState<SortKey>("issues");
   const [sheetMember, setSheetMember] = useState<TeamMember | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Cohort = each member's OWN department distribution (per-(org_unit_id,
   // metric_key) quartiles fetched by the screen). A member's cell colour =
   // their position vs department peers, not vs the displayed roster.
   const cohorts: DeptCohorts = deptCohorts ?? EMPTY_DEPT_COHORTS;
-
-  // Full column set (#1729): the curated core columns first, then a column
-  // for every legacy bullet and unified-path (git/ai) entry seen anywhere in
-  // the roster. Deduped by metric key; unified entries additionally dedupe
-  // against earlier columns by dot-suffix key and display label (the
-  // `git.prs_merged` ≈ `prs_merged` overlap). Members missing a metric
-  // render "—" in that cell.
-  const columns = useMemo(() => {
-    const cols: ColumnDef[] = [...CORE_COLUMNS];
-    const seenKeys = new Set(cols.map(metricKeyForColumn));
-    const seenLabels = new Set(cols.map((c) => c.label.toLowerCase()));
-    for (const m of members) {
-      const bullets = bulletsByPerson?.get(m.person_id.toLowerCase()) ?? [];
-      for (const b of bullets) {
-        if (seenKeys.has(b.metric_key)) continue;
-        seenKeys.add(b.metric_key);
-        seenLabels.add(b.label.toLowerCase());
-        cols.push({
-          key: b.metric_key,
-          label: b.label,
-          short: b.label,
-          unit: b.unit ?? "",
-          higher_is_better:
-            byMetricKey(bulletCatalogKey(b))?.higher_is_better ?? true,
-          mobile: false,
-          source: "bullet",
-          metricKey: b.metric_key,
-        });
-      }
-    }
-    for (const m of members) {
-      const entries =
-        metricEntriesByPerson?.get(m.person_id.toLowerCase()) ?? [];
-      for (const e of entries) {
-        const suffix = e.key.split(".").pop() ?? e.key;
-        if (
-          seenKeys.has(e.key) ||
-          seenKeys.has(suffix) ||
-          seenLabels.has(e.label.toLowerCase())
-        ) {
-          continue;
-        }
-        seenKeys.add(e.key);
-        seenLabels.add(e.label.toLowerCase());
-        cols.push({
-          key: e.key,
-          label: e.label,
-          short: e.label,
-          unit: e.unit ?? "",
-          higher_is_better: e.higherIsBetter,
-          mobile: false,
-          source: "metric",
-          entryKey: e.key,
-          format: e.format,
-        });
-      }
-    }
-    return cols;
-  }, [members, bulletsByPerson, metricEntriesByPerson, byMetricKey]);
 
   const rows = useMemo(() => {
     const built = members.map((m) => {
@@ -376,22 +288,7 @@ export function MembersHeatmap({
       const bullets = bulletsByPerson?.get(personIdKey);
       const prevBullets = previousBulletsByPerson?.get(personIdKey);
       const prevMember = previousMembers?.get(personIdKey);
-      const entries = metricEntriesByPerson?.get(personIdKey) ?? [];
-      const cells = columns.map((col): CellShape => {
-        // Unified-path columns carry their own cohort: the entry's status is
-        // already resolved vs the person's own org unit by the peer view.
-        if (col.source === "metric") {
-          const entry = entries.find((e) => e.key === col.entryKey);
-          return {
-            col,
-            value: entry?.value ?? null,
-            previous: null,
-            status: entry?.status ?? "neutral",
-            median: entry?.stats?.p50 ?? null,
-            unit: entry?.unit ?? col.unit,
-            format: col.format,
-          };
-        }
+      const cells = COLUMNS.map((col) => {
         const value = valueForColumn(col, m, bullets);
         const previous = prevMember
           ? valueForColumn(col, prevMember, prevBullets)
@@ -473,7 +370,7 @@ export function MembersHeatmap({
       };
     });
     return built;
-  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, metricEntriesByPerson, columns, cohorts, byMetricKey]);
+  }, [members, bulletsByPerson, previousBulletsByPerson, previousMembers, cohorts, byMetricKey]);
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -486,8 +383,8 @@ export function MembersHeatmap({
           a.member.name.localeCompare(b.member.name),
       );
     } else {
-      const colIdx = columns.findIndex((c) => c.key === sortKey);
-      const col = columns[colIdx];
+      const colIdx = COLUMNS.findIndex((c) => c.key === sortKey);
+      const col = COLUMNS[colIdx];
       if (col) {
         copy.sort((a, b) => {
           const av = a.cells[colIdx]?.value ?? Number.POSITIVE_INFINITY;
@@ -497,10 +394,10 @@ export function MembersHeatmap({
       }
     }
     return copy;
-  }, [rows, sortKey, columns]);
+  }, [rows, sortKey]);
 
   const gridStyle = {
-    gridTemplateColumns: `minmax(140px, max-content) repeat(${columns.length}, minmax(56px, max-content))`,
+    gridTemplateColumns: `minmax(140px, max-content) repeat(${COLUMNS.length}, minmax(56px, 1fr))`,
   };
 
   const triageRows: TriageRow[] = sortedRows.map((r) => ({
@@ -515,31 +412,24 @@ export function MembersHeatmap({
     topCount: r.topCount,
   }));
 
-  // The sheet shows the member's FULL metric set (#1729). The grid columns
-  // now cover that set themselves, so the sheet is mostly a linear read of
-  // the row's cells; the bullet/entry passes below only catch stragglers the
-  // column dedup dropped (e.g. a label collision with a curated column).
+  // The sheet shows the member's FULL metric set, not just the 7 grid
+  // columns (#1729): grid cells first (they carry WoW/dept context the
+  // user just clicked through), then the remaining legacy bullets, then
+  // the unified-path (git/ai) entries. Bullets and entries that a column
+  // already covers are deduped — team_row columns overlap unified keys by
+  // dot-suffix (`git.prs_merged` ≈ `prs_merged`) and by display label.
   const sheetRows: MemberDetailRow[] = useMemo(() => {
     if (!sheetMember) return [];
     const row = rows.find((r) => r.member.person_id === sheetMember.person_id);
     if (!row) return [];
-    const columnKeys = new Set(columns.map(metricKeyForColumn));
-    const columnLabels = new Set(columns.map((c) => c.label.toLowerCase()));
+    const columnKeys = new Set(COLUMNS.map(metricKeyForColumn));
+    const columnLabels = new Set(COLUMNS.map((c) => c.label.toLowerCase()));
     const fromCells: MemberDetailRow[] = row.cells.map((c) => ({
       key: c.col.key,
       label: c.col.label,
-      display:
-        c.value == null
-          ? "—"
-          : c.format
-            ? formatMetricValue(c.value, c.format, c.unit || null)
-            : `${Math.round(c.value)}${unitSuffix(c.unit)}`,
+      display: c.value == null ? "—" : `${Math.round(c.value)}${c.unit ?? ""}`,
       medianDisplay:
-        c.median == null
-          ? null
-          : c.format
-            ? formatMetricValue(c.median, c.format, c.unit || null)
-            : `${Math.round(c.median)}${unitSuffix(c.unit)}`,
+        c.median != null ? `${Math.round(c.median)}${c.unit ?? ""}` : null,
       status: c.status,
     }));
     const fromBullets: MemberDetailRow[] = row.bullets
@@ -563,7 +453,6 @@ export function MembersHeatmap({
     )
       .filter(
         (e) =>
-          !columnKeys.has(e.key) &&
           !columnKeys.has(e.key.split(".").pop() ?? e.key) &&
           !columnLabels.has(e.label.toLowerCase()),
       )
@@ -577,7 +466,7 @@ export function MembersHeatmap({
         status: e.status,
       }));
     return [...fromCells, ...fromBullets, ...fromMetrics];
-  }, [rows, columns, sheetMember, cohorts.bullet, byMetricKey, metricEntriesByPerson]);
+  }, [rows, sheetMember, cohorts.bullet, byMetricKey, metricEntriesByPerson]);
 
   const handleMemberClick = (m: TeamMember) => {
     setSheetMember(m);
@@ -615,7 +504,7 @@ export function MembersHeatmap({
         <div className="hidden overflow-x-auto sm:block">
           <div className="inline-grid min-w-full gap-1" style={gridStyle}>
             <div aria-hidden />
-            {columns.map((c) => (
+            {COLUMNS.map((c) => (
               <ColumnHeader
                 key={c.key}
                 col={c}
@@ -628,14 +517,6 @@ export function MembersHeatmap({
                 key={row.member.person_id}
                 row={row}
                 focusMode={focusMode}
-                bulletStats={cohorts.bullet}
-                byMetricKey={byMetricKey}
-                expanded={expandedId === row.member.person_id}
-                onToggleExpand={() =>
-                  setExpandedId((cur) =>
-                    cur === row.member.person_id ? null : row.member.person_id,
-                  )
-                }
                 onOpenSheet={() => handleMemberClick(row.member)}
               />
             ))}
@@ -661,8 +542,6 @@ interface CellShape {
   status: PeerStatusWithNeutral;
   median: number | null;
   unit: string;
-  /** Set on unified-path cells — display goes through `formatMetricValue`. */
-  format?: MetricFormat;
 }
 
 interface RowShape {
@@ -685,7 +564,7 @@ function HeatmapCell({
   focusMode: FocusMode;
 }) {
   const focused = applyFocus(cell.status, focusMode);
-  const { col, value, previous, median, unit, format } = cell;
+  const { col, value, previous, median, unit } = cell;
   const wowPct = computeWowPct(value, previous);
   const showWow = wowPct != null && Math.abs(wowPct) >= WOW_THRESHOLD;
   const wowUp = wowPct != null && wowPct > 0;
@@ -697,9 +576,7 @@ function HeatmapCell({
   const display =
     value == null
       ? "—"
-      : format
-        ? formatMetricValue(value, format, unit || null)
-        : `${Math.round(value)}${unitSuffix(unit)}`;
+      : `${Math.round(value)}${unit ?? ""}`;
   return (
     <Popover>
       <PopoverTrigger
@@ -732,11 +609,9 @@ function HeatmapCell({
             {display}
           </p>
           <p className="text-xs text-muted-foreground">
-            {median == null
-              ? "No peer data"
-              : format
-                ? `Cohort median: ${formatMetricValue(median, format, unit || null)}`
-                : `Dept median: ${Math.round(median * 10) / 10}${unitSuffix(unit)}`}
+            {median != null
+              ? `Dept median: ${Math.round(median * 10) / 10}${unit ?? ""}`
+              : "No peer data"}
           </p>
           <p className={cn("mt-1 text-xs font-medium", PEER_TEXT[focused])}>
             {PEER_LABEL[focused]}
@@ -761,22 +636,13 @@ function HeatmapCell({
 function MemberRow({
   row,
   focusMode,
-  bulletStats,
-  byMetricKey,
-  expanded,
-  onToggleExpand,
   onOpenSheet,
 }: {
   row: RowShape;
   focusMode: FocusMode;
-  bulletStats: DeptStatsMap;
-  byMetricKey: CatalogByKey;
-  expanded: boolean;
-  onToggleExpand: () => void;
   onOpenSheet: () => void;
 }) {
-  const { member, cells, belowCount, topCount, worstMetricLabel, bullets, orgUnitId } =
-    row;
+  const { member, cells, belowCount, topCount, worstMetricLabel } = row;
   const issueText =
     belowCount > 0
       ? `${belowCount} issue${belowCount === 1 ? "" : "s"}`
@@ -791,7 +657,6 @@ function MemberRow({
                 <button
                   type="button"
                   className="truncate text-left text-sm font-medium leading-tight hover:underline"
-                  aria-expanded={expanded}
                 >
                   {member.name}
                 </button>
@@ -808,11 +673,19 @@ function MemberRow({
                 {belowCount} below department peers · {topCount} in top
               </p>
               <div className="mt-3 flex flex-col gap-1.5">
-                <Button size="sm" onClick={onOpenSheet}>
+                <Button
+                  size="sm"
+                  render={
+                    <Link
+                      to="/ic/$person/personal"
+                      params={{ person: member.person_id }}
+                    />
+                  }
+                >
                   Open in IC view
                 </Button>
-                <Button size="sm" variant="outline" onClick={onToggleExpand}>
-                  {expanded ? "Collapse details" : "Expand details"}
+                <Button size="sm" variant="outline" onClick={onOpenSheet}>
+                  Expand details
                 </Button>
               </div>
             </PopoverContent>
@@ -842,77 +715,7 @@ function MemberRow({
           focusMode={focusMode}
         />
       ))}
-      {expanded ? (
-        <ExpandedBullets
-          bullets={bullets}
-          columnCount={cells.length}
-          focusMode={focusMode}
-          bulletStats={bulletStats}
-          orgUnitId={orgUnitId}
-          byMetricKey={byMetricKey}
-        />
-      ) : null}
     </>
-  );
-}
-
-function ExpandedBullets({
-  bullets,
-  columnCount,
-  focusMode,
-  bulletStats,
-  orgUnitId,
-  byMetricKey,
-}: {
-  bullets: BulletMetric[];
-  columnCount: number;
-  focusMode: FocusMode;
-  bulletStats: DeptStatsMap;
-  orgUnitId: string | null;
-  byMetricKey: CatalogByKey;
-}) {
-  const RANK: Record<PeerStatusWithNeutral, number> = {
-    bottom: 0,
-    in_pack: 1,
-    top: 2,
-    neutral: 3,
-  };
-  const annotated = bullets.map((b) => ({
-    bullet: b,
-    status: deptBulletStatus(b, bulletStats, orgUnitId, byMetricKey),
-  }));
-  annotated.sort((a, b) => RANK[a.status] - RANK[b.status]);
-  return (
-    <div
-      className="border-t border-border/60 px-3 py-3"
-      style={{ gridColumn: `1 / span ${columnCount + 1}` }}
-    >
-      <p className="mb-2 text-xs font-medium text-muted-foreground">
-        All metrics
-      </p>
-      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {annotated.map(({ bullet: b, status }) => {
-          const focused = applyFocus(status, focusMode);
-          return (
-            <span
-              key={b.metric_key}
-              className={cn(
-                "flex items-center justify-between gap-2 rounded-sm border border-border/40 px-2 py-1.5 text-xs",
-                PEER_CELL[focused],
-              )}
-            >
-              <span className="truncate font-medium" title={b.label}>
-                {b.label}
-              </span>
-              <span className="shrink-0 font-mono tabular-nums">
-                {b.value}
-                {b.unit ? ` ${b.unit}` : ""}
-              </span>
-            </span>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

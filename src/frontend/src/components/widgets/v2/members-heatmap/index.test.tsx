@@ -26,6 +26,38 @@ vi.mock("@/api/catalog-client", async () => {
   return { ...actual, fetchCatalog: vi.fn() };
 });
 
+// The member popup renders a router `<Link>` to the IC page; these tests
+// don't exercise navigation, so stub Link to a plain anchor (with the
+// `$person` param interpolated so the href is assertable) rather than
+// standing up a full router context.
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    Link: ({
+      to,
+      params,
+      children,
+      ...rest
+    }: {
+      to?: string;
+      params?: Record<string, string>;
+      children?: React.ReactNode;
+    }) => (
+      <a
+        href={(to ?? "").replace(
+          "$person",
+          encodeURIComponent(params?.person ?? ""),
+        )}
+        {...rest}
+      >
+        {children}
+      </a>
+    ),
+  };
+});
+
 import * as catalogClient from "@/api/catalog-client";
 import {
   buildCatalogResponse,
@@ -268,84 +300,6 @@ describe("<MembersHeatmap>", () => {
     expect(screen.queryByText(/^\d+ issues?$/)).not.toBeInTheDocument();
   });
 
-  it("grid grows a column per roster bullet and unified entry, deduped against the curated set (#1729)", async () => {
-    fetchCatalog.mockResolvedValue(
-      buildCatalogResponse([
-        {
-          metric_key: "task_delivery_bullet_rows.mean_time_to_resolution",
-          higher_is_better: false,
-          schema_status: "ok",
-        },
-        {
-          metric_key: "collaboration_bullet_rows.code_review_speed",
-          higher_is_better: true,
-          schema_status: "ok",
-        },
-      ]),
-    );
-    const bulletsByPerson = new Map<string, BulletMetric[]>([
-      [
-        "alice@example.com",
-        [
-          // Covered by the curated MTTR column → no second column.
-          makeBullet({ value: "30" }),
-          makeBullet({
-            section: "collaboration",
-            metric_key: "code_review_speed",
-            label: "Code review speed",
-            value: "9",
-            unit: "",
-          }),
-        ],
-      ],
-    ]);
-    const metricEntriesByPerson = new Map<string, PeerStoryEntry[]>([
-      [
-        "alice@example.com",
-        [
-          makeEntry(),
-          // Dot-suffix collides with the team_row `prs_merged` column → deduped.
-          makeEntry({ key: "git.prs_merged", label: "PRs merged", value: 99 }),
-        ],
-      ],
-    ]);
-    renderWithCatalogClient(
-      <MembersHeatmap
-        members={[makeMember()]}
-        bulletsByPerson={bulletsByPerson}
-        deptCohorts={deptMap([
-          ["Engineering", "mean_time_to_resolution", stats()],
-        ])}
-        metricEntriesByPerson={metricEntriesByPerson}
-      />,
-    );
-
-    // Non-curated bullet and unified entries become sortable columns.
-    expect(
-      await screen.findByRole("button", {
-        name: "Code review speed — sort by this column",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Commits — sort by this column" }),
-    ).toBeInTheDocument();
-    // Key/label collisions collapse into the curated columns.
-    expect(
-      screen.getAllByRole("button", {
-        name: "Mean time to resolution — sort by this column",
-      }),
-    ).toHaveLength(1);
-    expect(
-      screen.getAllByRole("button", {
-        name: "PRs merged — sort by this column",
-      }),
-    ).toHaveLength(1);
-    // Unified cell renders the entry's value with its own-cohort status.
-    expect(
-      screen.getByRole("button", { name: "Alice — Commits: 12 — Top 25%" }),
-    ).toBeInTheDocument();
-  });
-
   it("details sheet shows the full metric set: grid columns + remaining bullets + unified entries, deduped", async () => {
     const user = userEvent.setup();
     fetchCatalog.mockResolvedValue(
@@ -405,8 +359,13 @@ describe("<MembersHeatmap>", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "Alice" }));
+    // "Open in IC view" navigates to the member's page; the sheet opens via
+    // "Expand details".
+    expect(
+      await screen.findByRole("link", { name: "Open in IC view" }),
+    ).toHaveAttribute("href", "/ic/alice%40example.com/personal");
     await user.click(
-      await screen.findByRole("button", { name: "Open in IC view" }),
+      screen.getByRole("button", { name: "Expand details" }),
     );
 
     const sheet = within(await screen.findByRole("dialog", { name: "Alice" }));
