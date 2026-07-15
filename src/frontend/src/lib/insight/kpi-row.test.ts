@@ -126,7 +126,7 @@ describe("metricKpiTiles", () => {
       "me@x.com",
       "all",
     );
-    expect(tiles[0]?.delta?.text).toBe("+5.0 pp");
+    expect(tiles[0]?.delta?.text).toBe("+5 pp");
   });
 });
 

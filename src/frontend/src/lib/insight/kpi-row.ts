@@ -129,7 +129,9 @@ function deltaStatus(
 /** Display-rounded delta; null when it rounds to zero (no "+0%" badges). */
 function formatTileDelta(delta: MetricDelta): string | null {
   if (delta.kind === "pp_change") {
-    return Math.abs(delta.value) < 0.05 ? null : formatPp(delta.value);
+    return Math.round(Math.abs(delta.value)) === 0
+      ? null
+      : formatPp(delta.value, 0);
   }
   const rounded = Math.round(delta.value);
   if (rounded === 0) return null;
