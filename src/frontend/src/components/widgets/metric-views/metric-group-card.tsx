@@ -263,5 +263,5 @@ function headlineSummary(row: CardRow): string {
     format: metric.format,
     unit: metric.unit,
   });
-  return `${base} · ${gap} vs median`;
+  return gap == null ? base : `${base} · ${gap} vs median`;
 }

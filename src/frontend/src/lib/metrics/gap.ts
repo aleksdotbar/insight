@@ -21,9 +21,9 @@ function formatMultiple(ratio: number): string {
   return `${rounded}×`;
 }
 
-function formatGapPct(gap: number): string {
+function formatGapPct(gap: number): string | null {
   const pct = Math.round(Math.abs(gap) * 100);
-  if (pct === 0) return "0%";
+  if (pct === 0) return null;
   return `${gap >= 0 ? "+" : "-"}${pct}%`;
 }
 
@@ -39,6 +39,11 @@ export interface GapInput {
   unit: string | null;
 }
 
+/**
+ * Returns `null` when the magnitude would render as zero — a "0 pp" or "0%"
+ * beside two visibly equal numbers reads as a bug, so callers drop the gap
+ * text (or say "at the median") instead.
+ */
 export function formatGapMagnitude({
   value,
   median,
@@ -46,13 +51,19 @@ export function formatGapMagnitude({
   gapDelta,
   format,
   unit,
-}: GapInput): string {
+}: GapInput): string | null {
   // Percentage metrics diverge in percentage POINTS, not a ratio: a relative
   // "−39%" beside a "90%" median reads as points and misstates the gap, and a
-  // multiple ("0.6×") is meaningless. gapDelta is already the point spread —
-  // render it like the period delta pill.
+  // multiple ("0.6×") is meaningless. The value and median render as rounded
+  // percents beside this gap, and points are the one form readers reconcile
+  // by addition — so the spread is computed from the DISPLAYED (rounded)
+  // operands, not the raw fractions, to make the on-screen arithmetic close.
   if (format === "percent") {
-    return formatPp(gapDelta);
+    const displayGap =
+      median != null
+        ? Math.round(value) - Math.round(median)
+        : Math.round(gapDelta);
+    return displayGap === 0 ? null : formatPp(displayGap, 0);
   }
   if (
     median != null &&
@@ -62,6 +73,8 @@ export function formatGapMagnitude({
     return formatMultiple(value / median);
   }
   if (gapPct != null) return formatGapPct(gapPct);
+  const magnitude = formatMetricValue(Math.abs(gapDelta), format, unit);
+  if (/^0(?:\.0)?(?:\D|$)/.test(magnitude)) return null;
   const sign = gapDelta >= 0 ? "+" : "-";
-  return `${sign}${formatMetricValue(Math.abs(gapDelta), format, unit)}`;
+  return `${sign}${magnitude}`;
 }

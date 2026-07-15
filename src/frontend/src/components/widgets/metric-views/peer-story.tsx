@@ -35,7 +35,8 @@ interface PeerStoryProps {
   className?: string;
 }
 
-function formatGap(entry: PeerStoryEntry): string {
+/** Null when the gap collapses at display precision — render "at the median". */
+function formatGap(entry: PeerStoryEntry): string | null {
   return formatGapMagnitude({
     value: entry.value,
     median: entry.stats?.p50 ?? null,
@@ -109,7 +110,7 @@ function HeroCard({
                 ·
               </span>
               <span className="text-sm tabular-nums text-muted-foreground">
-                {Math.abs(entry.gapDelta) <= 1e-9 ? (
+                {formatGap(entry) == null ? (
                   <>at the {cohortLabel} median </>
                 ) : (
                   <>
@@ -232,7 +233,7 @@ function SideCard({
                     ·
                   </span>
                   <span className="text-xs tabular-nums text-muted-foreground">
-                    {Math.abs(entry.gapDelta) <= 1e-9 ? (
+                    {formatGap(entry) == null ? (
                       <>at the {cohortLabel} median </>
                     ) : (
                       <>
@@ -281,7 +282,7 @@ function ChipTooltip({
       </span>
       {entry.stats ? (
         <span className="text-background/70">
-          {Math.abs(entry.gapDelta) <= 1e-9
+          {formatGap(entry) == null
             ? `at the ${cohortLabel} median `
             : `gap ${formatGap(entry)} · ${cohortLabel} median `}
           {formatMetricValue(entry.stats.p50, entry.format, entry.unit)}
