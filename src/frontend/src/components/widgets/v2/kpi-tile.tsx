@@ -81,7 +81,18 @@ export function KpiTile({ tile, onOpenGroup }: KpiTileProps) {
         </CardTitle>
       </CardHeader>
       <CardFooter className="text-sm text-muted-foreground">
-        {tile.medianLabel ?? "No peer data"}
+        {tile.gapText && tile.medianLabel ? (
+          <span>
+            <span
+              className={cn("font-medium", STATUS_TEXT_CLASS[tile.gapStatus])}
+            >
+              {tile.gapText}
+            </span>{" "}
+            vs {tile.medianLabel}
+          </span>
+        ) : (
+          (tile.medianLabel ?? "No peer data")
+        )}
       </CardFooter>
     </Card>
   );

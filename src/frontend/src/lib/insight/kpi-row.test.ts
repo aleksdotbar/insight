@@ -58,7 +58,7 @@ describe("metricKpiTiles", () => {
     expect(active.value).toBe("14");
     expect(active.valueStatus).toBe("good"); // >= median 10
     expect(active.delta?.text).toBe("+17%");
-    expect(active.medianLabel).toBe("Median 10");
+    expect(active.medianLabel).toBe("median 10");
     expect(active.groupId).toBe("ai_adoption");
     const lines = tiles[1]!;
     expect(lines.delta).toEqual({ text: "-10%", status: "bad", down: true });

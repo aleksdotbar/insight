@@ -14,6 +14,7 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
+import { formatGapMagnitude } from "@/lib/metrics/gap";
 import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import { computeDelta, type MetricDelta } from "@/lib/metrics/delta";
 import type { FocusMode } from "@/lib/peers";
@@ -32,6 +33,13 @@ export interface KpiTileData {
   valueStatus: Status;
   delta: { text: string; status: Status; down: boolean } | null;
   medianLabel: string | null;
+  /**
+   * Scale of divergence from the peer median ("3.5×", "−39%", "−35 pp"), shown
+   * beside the median; null at the median or without an honest comparison.
+   * Colored by `gapStatus`.
+   */
+  gapText: string | null;
+  gapStatus: Status;
   /** Secondary context line, shown when explanations are enabled. */
   context: string | null;
   groupId: GroupId | null;
@@ -84,7 +92,7 @@ export function legacyKpiTiles(
 
     const medianLabel =
       hasMedian && catalogRow !== undefined && !isSchemaError
-        ? `Median ${formatKpiValue(peerMedian, catalogRow.format)}${isPercent ? "%" : ""}`
+        ? `median ${formatKpiValue(peerMedian, catalogRow.format)}${isPercent ? "%" : ""}`
         : null;
 
     return [
@@ -95,6 +103,9 @@ export function legacyKpiTiles(
         valueStatus,
         delta,
         medianLabel,
+        // The legacy batch reconstructs no arithmetic gap; median alone shows.
+        gapText: null,
+        gapStatus: "neutral",
         context: catalogRow?.source_tags.length
           ? catalogRow.source_tags.join(", ")
           : null,
@@ -177,6 +188,20 @@ export function metricKpiTiles(
           }
         : null;
 
+    // Divergence magnitude vs the median — only for an eligible standing with
+    // a real gap (at the median there's nothing to scream about).
+    const gapText =
+      standing.eligible && value != null && Math.abs(standing.gapDelta) > 1e-9
+        ? formatGapMagnitude({
+            value,
+            median,
+            gapPct: standing.gapPct,
+            gapDelta: standing.gapDelta,
+            format: metric.format,
+            unit: metric.unit,
+          })
+        : null;
+
     return [
       {
         key: metric.metric_key,
@@ -191,12 +216,14 @@ export function metricKpiTiles(
         delta,
         medianLabel:
           median != null
-            ? `Median ${
+            ? `median ${
                 metric.format === "percent"
                   ? formatMetricValue(median, metric.format, metric.unit)
                   : formatMetricNumber(median, metric.format)
               }`
             : null,
+        gapText,
+        gapStatus: valueStatus,
         context: metric.description ?? null,
         groupId: groupIdForMetricKey(metric.metric_key),
       },

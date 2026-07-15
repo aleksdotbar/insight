@@ -23,6 +23,7 @@ import {
   partitionPeerStory,
   type PeerStoryEntry,
 } from "@/lib/metrics/peer-story";
+import { formatGapMagnitude } from "@/lib/metrics/gap";
 import { PEER_FILL, PEER_TEXT, type PeerCohortLabel } from "@/lib/peers";
 import { STATUS_STRIPE_LEFT, STATUS_STRIPE_TOP } from "@/lib/status";
 import { cn } from "@/lib/utils";
@@ -34,41 +35,15 @@ interface PeerStoryProps {
   className?: string;
 }
 
-/**
- * At/above this multiple of the cohort median a signed percent runs past
- * ±100% and reads as noise ("-1500%"), so show "N×" instead. Only the
- * above-median side explodes; below-median gaps are bounded to −100% and
- * stay as a percent.
- */
-const GAP_MULTIPLE_THRESHOLD = 2;
-
-function formatMultiple(ratio: number): string {
-  const rounded = ratio >= 10 ? Math.round(ratio) : Math.round(ratio * 10) / 10;
-  return `${rounded}×`;
-}
-
-function formatGapPct(gap: number): string {
-  const pct = Math.round(Math.abs(gap) * 100);
-  if (pct === 0) return "0%";
-  return `${gap >= 0 ? "+" : "-"}${pct}%`;
-}
-
 function formatGap(entry: PeerStoryEntry): string {
-  const median = entry.stats?.p50;
-  if (
-    median != null &&
-    Math.abs(median) > 1e-9 &&
-    entry.value / median >= GAP_MULTIPLE_THRESHOLD
-  ) {
-    return formatMultiple(entry.value / median);
-  }
-  if (entry.gapPct != null) return formatGapPct(entry.gapPct);
-  const sign = entry.gapDelta >= 0 ? "+" : "-";
-  return `${sign}${formatMetricValue(
-    Math.abs(entry.gapDelta),
-    entry.format,
-    entry.unit,
-  )}`;
+  return formatGapMagnitude({
+    value: entry.value,
+    median: entry.stats?.p50 ?? null,
+    gapPct: entry.gapPct,
+    gapDelta: entry.gapDelta,
+    format: entry.format,
+    unit: entry.unit,
+  });
 }
 
 function outlierText(status: PeerStoryEntry["status"]): string {

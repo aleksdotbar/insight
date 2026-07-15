@@ -79,6 +79,7 @@ describe("legacyAttentionItems", () => {
       label: "Meeting hours",
       valueText: "22 h",
       medianText: "8 h",
+      gapText: "2.8×",
     });
     expect(items[0]?.relGap).toBeGreaterThan(0);
   });
@@ -111,6 +112,7 @@ describe("metricAttentionItems", () => {
       label: "Active AI days",
       valueText: "2 days",
       medianText: "11 days",
+      gapText: "-82%",
     });
   });
 

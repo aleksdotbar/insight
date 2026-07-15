@@ -73,6 +73,16 @@ export function IcNeedsAttention({
                         ·
                       </span>
                       <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                        {item.gapText ? (
+                          <>
+                            <span
+                              className={cn("font-medium", PEER_TEXT[badStatus])}
+                            >
+                              {item.gapText}
+                            </span>{" "}
+                            vs{" "}
+                          </>
+                        ) : null}
                         median {item.medianText}
                       </span>
                     </>
