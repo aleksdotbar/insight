@@ -137,10 +137,13 @@ const TEAM_BULLET_SECTIONS = {
   estimation: METRIC_REGISTRY.TEAM_BULLET_DELIVERY,
   collaboration: METRIC_REGISTRY.TEAM_BULLET_COLLAB,
   ai_adoption: METRIC_REGISTRY.TEAM_BULLET_AI,
-  wiki: METRIC_REGISTRY.TEAM_BULLET_WIKI,
 } as const;
 
 export type TeamBulletSectionId = keyof typeof TEAM_BULLET_SECTIONS;
+
+export function isTeamBulletSectionId(id: string): id is TeamBulletSectionId {
+  return id in TEAM_BULLET_SECTIONS;
+}
 
 /**
  * Scope a team bullet aggregate to the members actually shown — the
@@ -237,7 +240,11 @@ export function useTeamBulletSections(
       range.to,
       catalogKey,
     ],
-    enabled: Boolean(teamId) && Boolean(options?.roster?.length) && Boolean(catalog),
+    enabled:
+      sectionIds.length > 0 &&
+      Boolean(teamId) &&
+      Boolean(options?.roster?.length) &&
+      Boolean(catalog),
     placeholderData: options?.keepPrevious ? keepPreviousData : undefined,
     queryFn: async () => {
       const roster = options?.roster;

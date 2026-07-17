@@ -31,9 +31,4 @@ export const BULLET_DESCRIPTION_BY_KEY: ReadonlyMap<string, string> = new Map<
   build_success: "CI runs passed vs total",
   pr_cycle_time: "Hours from PR open to merge",
   bugs_fixed: "Bug-type issues closed",
-
-  wiki_pages_created: "Wiki pages authored (Confluence/Outline)",
-  wiki_edits: "Wiki page revisions authored",
-  wiki_comments: "Comments received on the person's wiki pages",
-  wiki_active_authors: "Members who authored or edited the wiki this period",
 }));

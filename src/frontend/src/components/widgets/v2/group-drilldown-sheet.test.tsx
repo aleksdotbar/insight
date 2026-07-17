@@ -31,7 +31,11 @@ const METRIC_DEF: GroupDef = {
   card: { preview: [] },
   drilldown: [],
 };
-const LEGACY_DEF: GroupDef = { kind: "legacy", id: "wiki", title: "Wiki" };
+const LEGACY_DEF: GroupDef = {
+  kind: "legacy",
+  id: "wiki",
+  title: "Legacy section",
+};
 
 const EMPTY_RESULT: MetricCollectionResult = {
   byKey: new Map(),
@@ -84,7 +88,7 @@ describe("GroupDrilldownSheet", () => {
 
   it("routes a legacy group to the legacy body", () => {
     renderSheet(LEGACY_DEF);
-    expect(screen.getByText("Wiki")).toBeInTheDocument();
+    expect(screen.getByText("Legacy section")).toBeInTheDocument();
     expect(
       screen.getByText(/No data for this section/i),
     ).toBeInTheDocument();

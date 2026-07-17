@@ -38,8 +38,10 @@ import { normalizePersonId } from "@/lib/metrics/entity";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import { useMetricCollectionSet } from "@/queries/metric-results";
 import {
+  isTeamBulletSectionId,
   useTeamBulletSections,
   useTeamMembers,
+  type TeamBulletSectionId,
 } from "@/queries/team-view";
 import {
   useDeptDistributions,
@@ -48,7 +50,11 @@ import {
 } from "@/queries/v2/team-extras";
 import type { BulletMetric } from "@/types/insight";
 
-const LEGACY_GROUP_IDS = legacyGroups().map((def) => def.id);
+const LEGACY_GROUP_IDS = legacyGroups()
+  .map((def) => def.id)
+  .filter((id): id is Extract<GroupId, TeamBulletSectionId> =>
+    isTeamBulletSectionId(id),
+  );
 
 // Team surfaces request period + peer only: a per-member timeseries over a
 // large roster would exceed the backend's all-or-nothing row limit and fail
@@ -181,8 +187,11 @@ export function TeamViewV2Screen({ teamId, viewerEmail }: TeamViewV2ScreenProps)
     memberEntityIds,
   );
 
-  const sectionsPending = sectionsQ.isPending;
-  const sectionsFetching = sectionsQ.isFetching;
+  // With no legacy groups the bullet query is disabled and never leaves
+  // TanStack's "pending" state — an empty section set is settled, not loading.
+  const hasLegacySections = LEGACY_GROUP_IDS.length > 0;
+  const sectionsPending = hasLegacySections && sectionsQ.isPending;
+  const sectionsFetching = hasLegacySections && sectionsQ.isFetching;
   // Only a metric group's revalidation dims the page (replacing data already
   // shown); its first load has no prior data and shows its own card spinner.
   const isMetricsRevalidating = [...metricGroupData.values()].some(
