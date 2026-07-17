@@ -1,9 +1,9 @@
 services:
   insight-front:
+    # Serves the static SPA only. Auth (/auth/*) and the API (/api/*) are
+    # fronted by the nginx `gateway` in front of this container, so no OIDC
+    # env is needed here anymore.
     build: .
     ports:
       - "8080:80"
-    environment:
-      OIDC_ISSUER: ${OIDC_ISSUER:-}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
     restart: unless-stopped

@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { OidcManager, useAuth } from "@/auth";
-import { AuthError } from "@/components/auth-error";
+import { useAuth } from "@/auth";
 import { FullScreenLoading } from "@/components/full-screen-loading";
 
 type AuthGateProps = {
@@ -9,31 +8,20 @@ type AuthGateProps = {
 };
 
 /**
- * Presents the runtime auth state. The redirect itself is owned by
- * `OidcManager.requireReauth()` (called from the 401 path and the silent-renew
- * failure), so this gate only renders:
- *   - `reauth_required` → the redirect overlay, rendered instead of `children`
- *     so the 401'd subtree never enters the tree and no error cells paint.
- *   - `reauth_failed`   → a recoverable error with a retry, so a failed
- *     redirect never pins the app behind a permanent overlay.
+ * Renders the cookie/BFF auth state. The redirect into the login flow is owned
+ * by the root `beforeLoad` (and the 401 path in `fetchWithAuth`); this gate only
+ * withholds the app subtree until a session is confirmed:
+ *   - `loading`         → the boot `/auth/me` probe is in flight.
+ *   - `unauthenticated` → a full-page redirect to `/auth/login` is in flight,
+ *     so keep showing the overlay rather than painting a 401'd tree.
+ *   - `authenticated`   → render the app.
  */
 export function AuthGate({ children }: AuthGateProps): React.ReactNode {
   const { t } = useTranslation();
   const { status } = useAuth();
 
-  if (status === "reauth_required") {
-    return <FullScreenLoading message={t("auth.reauth.redirecting")} />;
+  if (status !== "authenticated") {
+    return <FullScreenLoading message={t("auth.redirecting")} />;
   }
-
-  if (status === "reauth_failed") {
-    return (
-      <AuthError
-        title={t("auth.reauth.failed_title")}
-        message={t("auth.reauth.failed_message")}
-        onRetry={() => void OidcManager.requireReauth()}
-      />
-    );
-  }
-
   return children;
 }

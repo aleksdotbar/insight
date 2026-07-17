@@ -37,12 +37,22 @@ import { useCatalogLinkMap } from "./use-catalog-link-map";
 
 const fetchCatalog = catalogClient.fetchCatalog as ReturnType<typeof vi.fn>;
 
+/** Seed an authenticated session scoped to a single tenant. */
+function signInTenant(tenantId: string): void {
+  authStore.setAuthenticated({
+    personId: "p-1",
+    email: "bob.park@example.com",
+    tenants: [tenantId],
+    roles: ["user"],
+  });
+}
+
 function makeOkResponse(
   metrics: Array<Partial<catalogClient.CatalogMetric>> = [],
   links: catalogClient.MetricQueryLink[] = [],
 ): catalogClient.CatalogResponse {
   return {
-    tenant_id: authStore.getSnapshot().tenantId ?? "t-fallback",
+    tenant_id: authStore.getSnapshot().session?.tenants[0] ?? "t-fallback",
     generated_at: "2026-06-01T00:00:00Z",
     metrics: metrics.map((m, i) => ({
       id: m.id ?? `id-${i}`,
@@ -84,7 +94,7 @@ function withClient(): {
 describe("useCatalog", () => {
   beforeEach(() => {
     authStore.reset();
-    authStore.setTenantId("t-1");
+    signInTenant("t-1");
     fetchCatalog.mockReset();
   });
   afterEach(() => {
@@ -226,7 +236,7 @@ describe("useCatalog", () => {
     // Simulate the CatalogProvider's behavior: a tenant switch removes
     // every catalog-keyed query.
     act(() => {
-      authStore.setTenantId("t-2");
+      signInTenant("t-2");
       client.removeQueries({ queryKey: ["catalog"] });
     });
 
@@ -239,7 +249,7 @@ describe("useCatalog", () => {
 describe("useCatalogLinkMap", () => {
   beforeEach(() => {
     authStore.reset();
-    authStore.setTenantId("t-1");
+    signInTenant("t-1");
     fetchCatalog.mockReset();
   });
   afterEach(() => {

@@ -10,7 +10,6 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useViewer } from "@/auth";
-import { DevImpersonationHint } from "@/components/dev-impersonation-hint";
 import { SidebarV2Settings } from "@/components/sidebar-v2-settings";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -119,9 +118,7 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            {!viewerEmail ? (
-              <DevImpersonationHint />
-            ) : viewer ? (
+            {viewer ? (
               <SidebarMenu>
                 <PersonNode node={viewer} depth={0} activeEmail={activeEmail} />
               </SidebarMenu>

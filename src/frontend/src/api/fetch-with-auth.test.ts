@@ -1,29 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getDevBearerEmail } = vi.hoisted(() => ({
-  getDevBearerEmail: vi.fn<() => string | null>(),
-}));
-vi.mock("@/auth/use-viewer", () => ({ getDevBearerEmail }));
-
 import { authStore } from "@/auth/auth-store";
-import { OidcManager } from "@/auth/oidc-manager";
 import { fetchWithAuth } from "./fetch-with-auth";
 
 const fetchMock = () => globalThis.fetch as ReturnType<typeof vi.fn>;
 
-function authHeaderOfLastCall(): string | null {
+function initOfLastCall(): RequestInit {
   const calls = fetchMock().mock.calls;
-  const init = calls[calls.length - 1]?.[1] as RequestInit;
-  return new Headers(init.headers).get("Authorization");
+  return (calls[calls.length - 1]?.[1] ?? {}) as RequestInit;
 }
 
 describe("fetchWithAuth", () => {
+  let assign: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     authStore.reset();
-    authStore.setToken("tok");
-    getDevBearerEmail.mockReset();
-    getDevBearerEmail.mockReturnValue(null);
+    authStore.setAuthenticated({
+      personId: "p-1",
+      email: "bob.park@example.com",
+      tenants: ["t-1"],
+      roles: ["user"],
+    });
     vi.stubGlobal("fetch", vi.fn());
+    // jsdom's `window.location.assign` is a non-configurable no-op; replace
+    // the whole location object so the full-page login bounce is observable.
+    assign = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign, pathname: "/dash", search: "?q=1" },
+    });
   });
 
   afterEach(() => {
@@ -32,73 +37,32 @@ describe("fetchWithAuth", () => {
     authStore.reset();
   });
 
+  it("sends credentials:'include' and no Authorization / X-Tenant-ID header", async () => {
+    fetchMock().mockResolvedValue(new Response(null, { status: 200 }));
+    await fetchWithAuth("/x", { headers: { Accept: "application/json" } });
+    const init = initOfLastCall();
+    expect(init.credentials).toBe("include");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("X-Tenant-ID")).toBeNull();
+  });
+
   it("returns non-401 responses unchanged without touching auth", async () => {
     const ok = new Response(null, { status: 200 });
     fetchMock().mockResolvedValue(ok);
-    const refresh = vi.spyOn(OidcManager, "refresh");
     const res = await fetchWithAuth("/x");
     expect(res).toBe(ok);
-    expect(refresh).not.toHaveBeenCalled();
+    expect(authStore.getSnapshot().status).toBe("authenticated");
+    expect(assign).not.toHaveBeenCalled();
   });
 
-  it("retries with the refreshed token on a 401", async () => {
-    const r200 = new Response(null, { status: 200 });
-    fetchMock()
-      .mockResolvedValueOnce(new Response(null, { status: 401 }))
-      .mockResolvedValueOnce(r200);
-    vi.spyOn(OidcManager, "refresh").mockResolvedValue("newtok");
-    const res = await fetchWithAuth("/x");
-    expect(res).toBe(r200);
-    expect(fetchMock()).toHaveBeenCalledTimes(2);
-  });
-
-  it("requires reauth and returns the 401 when refresh fails", async () => {
+  it("on a 401 marks the session unauthenticated and bounces into the login flow", async () => {
     const r401 = new Response(null, { status: 401 });
     fetchMock().mockResolvedValue(r401);
-    vi.spyOn(OidcManager, "refresh").mockResolvedValue(null);
-    const requireReauth = vi
-      .spyOn(OidcManager, "requireReauth")
-      .mockResolvedValue(undefined);
     const res = await fetchWithAuth("/x");
     expect(res).toBe(r401);
-    expect(requireReauth).toHaveBeenCalledWith("refresh_failed");
-  });
-
-  it("requires reauth when the retry is still 401", async () => {
-    fetchMock().mockResolvedValue(new Response(null, { status: 401 }));
-    vi.spyOn(OidcManager, "refresh").mockResolvedValue("newtok");
-    const requireReauth = vi
-      .spyOn(OidcManager, "requireReauth")
-      .mockResolvedValue(undefined);
-    const res = await fetchWithAuth("/x");
-    expect(res.status).toBe(401);
-    expect(requireReauth).toHaveBeenCalledWith("token_rejected");
-  });
-
-  it("mints a dev bearer only for the disabled + dev_bypass state", async () => {
-    authStore.reset();
-    authStore.setStatus("disabled", "dev_bypass");
-    getDevBearerEmail.mockReturnValue("dev@example.com");
-    fetchMock().mockResolvedValue(new Response(null, { status: 200 }));
-    await fetchWithAuth("/x");
-    expect(authHeaderOfLastCall()).toMatch(/^Bearer \S+\.\S+\./);
-  });
-
-  it("never mints an unsigned bearer while renewing under OIDC", async () => {
-    authStore.reset();
-    authStore.setStatus("renewing");
-    getDevBearerEmail.mockReturnValue("dev@example.com");
-    fetchMock().mockResolvedValue(new Response(null, { status: 200 }));
-    await fetchWithAuth("/x");
-    expect(authHeaderOfLastCall()).toBeNull();
-  });
-
-  it("fails closed on an unconfigured deploy (missing_oidc_config)", async () => {
-    authStore.reset();
-    authStore.setStatus("disabled", "missing_oidc_config");
-    getDevBearerEmail.mockReturnValue("dev@example.com");
-    fetchMock().mockResolvedValue(new Response(null, { status: 200 }));
-    await fetchWithAuth("/x");
-    expect(authHeaderOfLastCall()).toBeNull();
+    expect(authStore.getSnapshot().status).toBe("unauthenticated");
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign.mock.calls[0][0]).toMatch(/^\/auth\/login\?return_to=/);
   });
 });

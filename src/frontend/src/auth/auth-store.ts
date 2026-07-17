@@ -1,12 +1,6 @@
-import type { AuthReason, AuthSnapshot, AuthStatus, AuthUser } from "./types";
+import type { AuthSnapshot, Session } from "./types";
 
-let snapshot: AuthSnapshot = {
-  status: "initializing",
-  token: null,
-  user: null,
-  tenantId: null,
-  reason: null,
-};
+let snapshot: AuthSnapshot = { status: "loading", session: null };
 
 const listeners = new Set<() => void>();
 
@@ -26,37 +20,19 @@ export const authStore = {
     return snapshot;
   },
 
-  setStatus(status: AuthStatus, reason: AuthReason | null = null): void {
-    if (snapshot.status === status && snapshot.reason === reason) return;
-    snapshot = { ...snapshot, status, reason };
+  setAuthenticated(session: Session): void {
+    snapshot = { status: "authenticated", session };
     emit();
   },
 
-  setToken(token: string | null): void {
-    if (snapshot.token === token) return;
-    snapshot = { ...snapshot, token };
-    emit();
-  },
-
-  setUser(user: AuthUser | null): void {
-    snapshot = { ...snapshot, user };
-    emit();
-  },
-
-  setTenantId(tenantId: string | null): void {
-    if (snapshot.tenantId === tenantId) return;
-    snapshot = { ...snapshot, tenantId };
+  setUnauthenticated(): void {
+    if (snapshot.status === "unauthenticated" && snapshot.session === null) return;
+    snapshot = { status: "unauthenticated", session: null };
     emit();
   },
 
   reset(): void {
-    snapshot = {
-      status: "initializing",
-      token: null,
-      user: null,
-      tenantId: null,
-      reason: null,
-    };
+    snapshot = { status: "loading", session: null };
     emit();
   },
 };

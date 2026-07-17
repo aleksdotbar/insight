@@ -2,10 +2,9 @@ import { Outlet, createRootRoute } from "@tanstack/react-router";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getPerson } from "@/api/identity-client";
-import { OidcManager, authStore, getViewerEmail } from "@/auth";
+import { authStore, getViewerEmail, signIn } from "@/auth";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGate } from "@/components/auth-gate";
-import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { MockBanner } from "@/components/mock-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { queryClient } from "@/query-client";
@@ -21,23 +20,16 @@ async function prefetchViewerIdentity(): Promise<void> {
 }
 
 export const Route = createRootRoute({
-  beforeLoad: async ({ location }) => {
-    if (location.pathname === "/callback") return;
-    await OidcManager.init();
-
+  beforeLoad: async () => {
+    // The session was probed once at boot (main.tsx → loadSession), so the
+    // store is already resolved here. No client-side token dance — an absent
+    // session means a full-page bounce to the gateway's login flow.
     const { status } = authStore.getSnapshot();
     if (status === "authenticated") {
       await prefetchViewerIdentity();
       return;
     }
-    // No interactive login to perform when OIDC is inactive — let the app
-    // render (dev bypass works; an unconfigured deploy fails closed downstream).
-    if (status === "disabled") return;
-
-    // requireReauth never rejects: a redirect that can't start lands in
-    // `reauth_failed` and the route still mounts, so AuthGate shows the retry
-    // UI instead of throwing an unhandled error out of beforeLoad.
-    await OidcManager.requireReauth();
+    signIn(window.location.pathname + window.location.search);
   },
   component: RootLayout,
 });
@@ -49,7 +41,6 @@ function RootLayout() {
         <SidebarProvider>
           <AppSidebar />
           <SidebarInset className="min-w-0 overflow-x-clip">
-            <ImpersonationBanner />
             <MockBanner />
             <Outlet />
           </SidebarInset>

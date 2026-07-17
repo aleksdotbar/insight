@@ -310,7 +310,20 @@ interface BatchQueryRequest {
   }>;
 }
 
+// Stable synthetic session for mock/Storybook runs. The old in-code
+// MOCKS_ENABLED viewer path is gone; an authenticated viewer now comes from
+// the same `/auth/me` probe the real app uses, so the boot `loadSession()`
+// call resolves to `authenticated` against these handlers.
+const MOCK_SESSION = {
+  user: "00000000-0000-0000-0000-0000000000bb",
+  email: defaultPersonId,
+  tenants: ["00000000-0000-0000-0000-000000000001"],
+  roles: ["user"],
+};
+
 export const handlers = [
+  http.get("/auth/me", () => HttpResponse.json(MOCK_SESSION)),
+  http.post("/auth/logout", () => HttpResponse.json({ rp_logout_url: null })),
   http.post("/api/analytics/v1/metric-results", async ({ request }) => {
     const body = (await request
       .json()
@@ -367,10 +380,13 @@ export const handlers = [
       return HttpResponse.json(buildMockCatalogResponse(tenantId));
     },
   ),
-  http.get(
-    "/api/identity/v1/persons/:email",
-    ({ params }) => {
-      const email = decodeURIComponent(params.email as string);
+  http.post(
+    "/api/identity/v1/profiles",
+    async ({ request }) => {
+      const body = (await request.json().catch(() => null)) as
+        | { value_type?: string; value?: string }
+        | null;
+      const email = body?.value ?? "";
       const tree = buildIdentityTree(email);
       if (!tree) {
         return HttpResponse.json(
