@@ -7,24 +7,28 @@ import {
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ComingSoon } from "@/components/widgets/coming-soon";
+import { GroupCardEmpty } from "@/components/widgets/group-card-empty";
 import { useSettings } from "@/hooks/use-settings";
 import { formatMetricValue } from "@/lib/format";
 import type { MetricGroup } from "@/lib/insight/groups";
 import { peerStatusToStatus } from "@/lib/insight/v2/peer-status";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
-import { derivePeerStanding } from "@/lib/metrics/peer-standing";
+import { formatGapMagnitude } from "@/lib/metrics/gap";
 import {
-  aggregateSectionStatus,
-  pickSectionHeadline,
-  sectionCounts,
-  type ScoredMetric,
+  derivePeerStanding,
+  type PeerStanding,
+} from "@/lib/metrics/peer-standing";
+import type { PeerStatusWithNeutral } from "@/lib/peers";
+import {
+  gradeSectionStanding,
+  rankCounts,
+  sectionStandingPhrase,
 } from "@/lib/scoring";
 import {
   STATUS_BG_CLASS,
   STATUS_STRIPE_LEFT,
   STATUS_TEXT_CLASS,
   applyFocusStatus,
-  type Status,
 } from "@/lib/status";
 import type { MetricCollectionResult } from "@/queries/metric-results";
 import { cn } from "@/lib/utils";
@@ -37,17 +41,25 @@ export interface MetricGroupCardProps {
   onHover?: () => void;
   subtitle?: string;
   /**
-   * Per-metric status override (team view): replaces the single-entity
+   * Per-metric rank override (team view): replaces the single-entity
    * quartile scoring with a roster rollup computed by the caller.
    */
-  statusByMetricKey?: Map<string, Status>;
+  rankByMetricKey?: Map<string, PeerStatusWithNeutral>;
 }
 
 interface CardRow {
   metric: NormalizedMetricResult;
   value: number | null;
-  status: Status;
+  rank: PeerStatusWithNeutral;
+  standing: PeerStanding;
 }
+
+const HEADLINE_TIER: Record<PeerStatusWithNeutral, number> = {
+  bottom: 3,
+  in_pack: 2,
+  top: 1,
+  neutral: 0,
+};
 
 export function MetricGroupCard({
   def,
@@ -56,7 +68,7 @@ export function MetricGroupCard({
   onOpen,
   onHover,
   subtitle,
-  statusByMetricKey,
+  rankByMetricKey,
 }: MetricGroupCardProps) {
   const { focusMode } = useSettings();
 
@@ -65,7 +77,7 @@ export function MetricGroupCard({
     // spinner in the body. Not interactive — nothing to open yet.
     return (
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
           {subtitle ? (
             <CardDescription className="text-xs text-muted-foreground">
@@ -97,84 +109,98 @@ export function MetricGroupCard({
     const metric = data.byKey.get(metricConfig.key);
     if (!metric) return [];
     const entityData = forEntity(metric, entityId);
-    const status =
-      statusByMetricKey?.get(metric.metric_key) ??
-      rowStatusFromPeer(metric, entityData.value, entityId);
-    return [{ metric, value: entityData.value, status }];
+    const peerRow =
+      metric.peer?.values.find((v) => v.entity_id === entityId) ?? null;
+    // All eligibility gates (observed / suppressed / flat pool / neutral
+    // direction) live in the shared standing derivation, reused for the
+    // headline's severity ordering and gap.
+    const standing = derivePeerStanding(metric.direction, {
+      value: entityData.value,
+      peer: peerRow,
+    });
+    const rank = rankByMetricKey?.get(metric.metric_key) ?? standing.rank;
+    return [{ metric, value: entityData.value, rank, standing }];
   });
 
-  const scored: ScoredMetric<CardRow>[] = rows.map((row) => ({
-    row,
-    status: row.status,
-  }));
-  const status = applyFocusStatus(aggregateSectionStatus(scored), focusMode);
-  const counts = sectionCounts(scored);
-  const evaluated = counts.good + counts.warn + counts.bad;
-  const badgeText =
-    evaluated === 0 ? "No peer data" : `${counts.good} of ${evaluated} in top`;
+  const counts = rankCounts(rows.map((row) => ({ row, rank: row.rank })));
+  const status = applyFocusStatus(gradeSectionStanding(counts), focusMode);
+  const badgeText = sectionStandingPhrase(counts);
 
-  const headline = pickSectionHeadline(scored);
-  const summary =
-    headline && headline.row.value != null
-      ? `${headline.row.metric.label}: ${formatMetricValue(
-          headline.row.value,
-          headline.row.metric.format,
-          headline.row.metric.unit,
-        )}`
-      : "No data for this period.";
+  const headlineRow = pickHeadlineRow(rows);
+  const summary = headlineRow
+    ? headlineSummary(headlineRow)
+    : "No data for this period.";
 
+  // The preview is a FIXED set of keys — the card's stable identity. Keep a
+  // key even when its value is null (renders "—"); only drop a key the
+  // response never carried. A present-but-empty metric still belongs on the
+  // card.
   const preview = def.card.preview
     .map((key) => rows.find((row) => row.metric.metric_key === key))
-    .filter((row): row is CardRow => row != null && row.value != null);
-  const isEmpty = evaluated === 0 && preview.length === 0;
+    .filter((row): row is CardRow => row != null);
+  const isEmpty = !rows.some((row) => row.value != null);
   const stripeClass = STATUS_STRIPE_LEFT[status];
 
   return (
     <Card
+      // An empty card has nothing to drill into: render a plain, unfocusable
+      // div instead of a button, and drop the interactive affordances.
       render={
-        <button
-          type="button"
-          onClick={onOpen}
-          onMouseEnter={onHover}
-          onFocus={onHover}
-          aria-label={`Open ${def.title} details`}
-        />
+        isEmpty ? undefined : (
+          <button
+            type="button"
+            onClick={onOpen}
+            onMouseEnter={onHover}
+            onFocus={onHover}
+            aria-label={`Open ${def.title} details`}
+          />
+        )
       }
       className={cn(
-        "text-left transition-colors hover:bg-accent/50",
+        // Header→content on the card's own 12px rhythm (the preview stack's
+        // gap-3), not the default 24px section gap.
+        "gap-3",
+        !isEmpty && "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
-        <CardDescription className="flex flex-col gap-1 text-xs">
-          {subtitle ? (
-            <span className="text-muted-foreground">{subtitle}</span>
-          ) : null}
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                STATUS_BG_CLASS[status],
-              )}
-              aria-hidden
-            />
-            <span className="tabular-nums">{badgeText}</span>
-          </span>
-        </CardDescription>
+        {subtitle || !isEmpty ? (
+          <CardDescription className="flex flex-col gap-1 text-xs">
+            {subtitle ? (
+              <span className="text-muted-foreground">{subtitle}</span>
+            ) : null}
+            {/* An empty card carries no standing — the badge would only
+                restate the empty state below. */}
+            {!isEmpty ? (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    STATUS_BG_CLASS[status],
+                  )}
+                  aria-hidden
+                />
+                <span className="tabular-nums">{badgeText}</span>
+              </span>
+            ) : null}
+          </CardDescription>
+        ) : null}
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
+      <CardContent className="flex flex-1 flex-col gap-3">
         {isEmpty ? (
-          <p className="text-sm text-muted-foreground">
-            No metrics with data for this period.
-          </p>
+          <GroupCardEmpty />
         ) : (
           <>
             <p className="text-sm text-foreground/80">{summary}</p>
             {preview.length > 0 ? (
               <ul className="flex flex-col gap-1.5">
                 {preview.map((row) => {
-                  const previewStatus = applyFocusStatus(row.status, focusMode);
+                  const previewStatus = applyFocusStatus(
+                    peerStatusToStatus(row.rank),
+                    focusMode,
+                  );
                   return (
                     <li
                       key={row.metric.metric_key}
@@ -216,18 +242,40 @@ export function MetricGroupCard({
   );
 }
 
-function rowStatusFromPeer(
-  metric: NormalizedMetricResult,
-  value: number | null,
-  entityId: string,
-): Status {
-  const peerRow =
-    metric.peer?.values.find((v) => v.entity_id === entityId) ?? null;
-  // All eligibility gates (observed / suppressed / flat pool / neutral
-  // direction) live in the shared standing derivation.
-  const standing = derivePeerStanding(metric.direction, {
+/**
+ * The card's spotlight metric: the worst-ranked row, breaking ties by the
+ * largest peer divergence so the number the header shows is the one most
+ * worth explaining. Falls back to any row with a value when nothing ranks,
+ * so a data-bearing card never headlines "No data".
+ */
+function pickHeadlineRow(rows: CardRow[]): CardRow | null {
+  const ranked = rows
+    .filter((row) => row.rank !== "neutral")
+    .reduce<CardRow | null>((best, row) => {
+      if (!best) return row;
+      if (HEADLINE_TIER[row.rank] !== HEADLINE_TIER[best.rank])
+        return HEADLINE_TIER[row.rank] > HEADLINE_TIER[best.rank]
+          ? row
+          : best;
+      return row.standing.severity > best.standing.severity ? row : best;
+    }, null);
+  return ranked ?? rows.find((row) => row.value != null) ?? null;
+}
+
+function headlineSummary(row: CardRow): string {
+  const { metric, value, standing } = row;
+  if (value == null) return "No data for this period.";
+  const base = `${metric.label}: ${formatMetricValue(value, metric.format, metric.unit)}`;
+  const stats = standing.stats;
+  if (!standing.eligible || stats == null || Math.abs(standing.gapDelta) <= 1e-9)
+    return base;
+  const gap = formatGapMagnitude({
     value,
-    peer: peerRow,
+    median: stats.p50,
+    gapPct: standing.gapPct,
+    gapDelta: standing.gapDelta,
+    format: metric.format,
+    unit: metric.unit,
   });
-  return peerStatusToStatus(standing.rank);
+  return gap == null ? base : `${base} · ${gap} vs median`;
 }

@@ -314,10 +314,163 @@ export const COLLAB_METRIC_FIXTURES: MetricResult[] = [
   },
 ];
 
+/**
+ * Task-delivery metric metadata for the MSW factory. Only meta is consumed
+ * (the factory strips `views` and synthesizes them per request), so `views`
+ * here is a minimal placeholder. Covers the task metrics whose
+ * format/direction/computation differ from the factory's sum/integer/
+ * higher-is-better default; the rest synthesize correctly without a fixture.
+ * Kept out of `METRIC_RESULTS_RESPONSE_FIXTURE` so that canonical response
+ * fixture stays stable.
+ */
+export const TASK_METRIC_FIXTURES: MetricResult[] = [
+  {
+    metric_key: "tasks.dev_time",
+    label: "Dev Time",
+    unit: "h",
+    format: "decimal",
+    direction: "lower_is_better",
+    computation: "median",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 14.2 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.resolution_time",
+    label: "Resolution Time",
+    unit: "d",
+    format: "decimal",
+    direction: "lower_is_better",
+    computation: "median",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 3.5 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.pickup_time",
+    label: "Pickup Time",
+    unit: "d",
+    format: "decimal",
+    direction: "lower_is_better",
+    computation: "median",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 1.2 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.flow_efficiency",
+    label: "Flow Efficiency",
+    unit: "%",
+    format: "percent",
+    direction: "higher_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 54.0 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.reopen_rate",
+    label: "Reopen Rate",
+    unit: "%",
+    format: "percent",
+    direction: "lower_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 6.5 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.due_date_compliance",
+    label: "Due Date Compliance",
+    unit: "%",
+    format: "percent",
+    direction: "higher_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 88.0 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.on_time_delivery",
+    label: "On-Time Delivery",
+    unit: "%",
+    format: "percent",
+    direction: "higher_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 91.5 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.avg_slip",
+    label: "Average Slip",
+    unit: "d",
+    format: "decimal",
+    direction: "lower_is_better",
+    computation: "ratio",
+    scale: 1,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 0.8 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.estimation_accuracy",
+    label: "Estimation Accuracy",
+    unit: "%",
+    format: "percent",
+    direction: "higher_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 82.0 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.worklog_accuracy",
+    label: "Worklog Accuracy",
+    unit: "%",
+    format: "percent",
+    direction: "higher_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 95.0 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.bugs_ratio",
+    label: "Bugs Ratio",
+    unit: "%",
+    format: "percent",
+    direction: "lower_is_better",
+    computation: "ratio",
+    scale: 100,
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 12.0 }] },
+    ],
+  },
+  {
+    metric_key: "tasks.stale_in_progress",
+    label: "Stale In Progress",
+    unit: "tasks",
+    format: "integer",
+    direction: "lower_is_better",
+    computation: "sum",
+    views: [
+      { view: "period", values: [{ entity_id: "alice@example.com", value: 4 }] },
+    ],
+  },
+];
+
 export function metricResultFixtureByKey(key: string): MetricResult | null {
   return (
     METRIC_RESULTS_RESPONSE_FIXTURE.metrics.find((m) => m.metric_key === key) ??
     COLLAB_METRIC_FIXTURES.find((m) => m.metric_key === key) ??
+    TASK_METRIC_FIXTURES.find((m) => m.metric_key === key) ??
     null
   );
 }

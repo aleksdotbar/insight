@@ -20,19 +20,21 @@ import type { BulletMetric, PeriodValue } from "@/types/insight";
 
 // Member-value queries feed the legacy-fed team heatmap + needs-attention.
 // Legacy groups derive from the registry (a group's fetch drops when it flips
-// to `kind: "metrics"`). Collaboration is the exception below: it flipped to a
-// unified IC group, but the heatmap's `meeting_hours` bullet column has no
-// unified replacement yet, so its per-member feed is retained explicitly
-// until that surface migrates.
-const MEMBER_VALUE_METRIC_IDS: Partial<Record<string, string>> = {
-  task_delivery: METRIC_REGISTRY.V2_MEMBER_VALUES_DELIVERY,
-};
+// to `kind: "metrics"`). Task delivery and collaboration are the exceptions
+// below: both flipped to unified IC groups, but the heatmap's bullet columns
+// have no unified replacement yet, so their per-member feeds are retained
+// explicitly until those surfaces migrate.
+const MEMBER_VALUE_METRIC_IDS: Partial<Record<string, string>> = {};
 
 const SECTION_METRIC_IDS = [
   ...legacyGroups().flatMap((def) => {
     const metricId = MEMBER_VALUE_METRIC_IDS[def.id];
     return metricId ? [{ sectionId: def.id, metricId }] : [];
   }),
+  {
+    sectionId: "task_delivery",
+    metricId: METRIC_REGISTRY.V2_MEMBER_VALUES_DELIVERY,
+  },
   {
     sectionId: "collaboration",
     metricId: METRIC_REGISTRY.V2_MEMBER_VALUES_COLLAB,
@@ -151,17 +153,17 @@ export function useTeamMemberBullets(
 
 // Dept-distribution queries mirror the legacy member-value groups; a
 // group that flips to `kind: "metrics"` gets cohorts from the unified peer
-// view instead. Collaboration is the exception (see SECTION_METRIC_IDS): its
-// dept distribution still colors the heatmap `meeting_hours` bullet column.
-const DEPT_DIST_BULLET_BY_SECTION: Partial<Record<string, string>> = {
-  task_delivery: METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY,
-};
+// view instead. Task delivery and collaboration are the exceptions (see
+// SECTION_METRIC_IDS): their dept distributions still color the heatmap
+// bullet columns.
+const DEPT_DIST_BULLET_BY_SECTION: Partial<Record<string, string>> = {};
 
 const DEPT_DIST_BULLET_IDS = [
   ...legacyGroups().flatMap((def) => {
     const metricId = DEPT_DIST_BULLET_BY_SECTION[def.id];
     return metricId ? [metricId] : [];
   }),
+  METRIC_REGISTRY.V2_DEPT_DIST_DELIVERY,
   METRIC_REGISTRY.V2_DEPT_DIST_COLLAB,
 ];
 

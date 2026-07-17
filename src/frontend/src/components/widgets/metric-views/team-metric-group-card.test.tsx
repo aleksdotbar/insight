@@ -119,8 +119,8 @@ describe("TeamMetricGroupCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    // Metric scores good (plurality top) → 1 of 1 metrics ahead.
-    expect(screen.getByText("1 of 1 metrics ahead")).toBeInTheDocument();
+    // Metric scores good (plurality top) → 1 ahead of peers.
+    expect(screen.getByText("1 ahead of peers")).toBeInTheDocument();
     // Preview row reports the top/scored split.
     expect(screen.getByText("2 of 3 in top")).toBeInTheDocument();
   });
@@ -140,7 +140,7 @@ describe("TeamMetricGroupCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    expect(screen.getByText("No peer data")).toBeInTheDocument();
+    expect(screen.getByText("no peer data")).toBeInTheDocument();
     expect(
       screen.getByText(/No metrics with peer data/i),
     ).toBeInTheDocument();

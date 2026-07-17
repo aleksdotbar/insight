@@ -78,11 +78,11 @@ describe("MetricHistogram", () => {
 
   it("shows the empty state for an entity with no bins", () => {
     render(<MetricHistogram metric={medianMetric([])} entityId="me@x.com" />);
-    expect(screen.getByText("No distribution yet.")).toBeInTheDocument();
+    expect(screen.getByText("No values in this period")).toBeInTheDocument();
   });
 
   it("shows the empty state for an entity absent from the view", () => {
     render(<MetricHistogram metric={medianMetric(BINS)} entityId="nobody@x.com" />);
-    expect(screen.getByText("No distribution yet.")).toBeInTheDocument();
+    expect(screen.getByText("No values in this period")).toBeInTheDocument();
   });
 });

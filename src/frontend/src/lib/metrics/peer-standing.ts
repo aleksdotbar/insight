@@ -9,16 +9,16 @@ import {
 /**
  * The single judgment layer for a person's standing against their peer
  * cohort on the unified metric-results path. Every eligibility guard and
- * both judgments (quartile rank, median side) are derived HERE, once —
- * display surfaces (KPI tiles, summary cards, group cards, the peer story)
- * only map the result to their own vocabulary. Surfaces re-deriving
- * standings from raw stats is how contradictory verdicts ("Bottom 25%" on
- * one widget, "GOOD" on another, for the same number) crept in.
+ * the quartile-rank judgment are derived HERE, once — display surfaces
+ * (KPI tiles, summary cards, group cards, the peer story) only map the
+ * result to their own vocabulary. Surfaces re-deriving standings from raw
+ * stats is how contradictory verdicts ("Bottom 25%" on one widget, "GOOD"
+ * on another, for the same number) crept in.
  */
 
 /** Why a standing is (in)eligible, most specific reason wins. */
 export type StandingReason =
-  /** Rankable — `rank` and `medianSide` are meaningful. */
+  /** Rankable — `rank` is meaningful. */
   | "ok"
   /** No period value for the entity. */
   | "no_value"
@@ -39,12 +39,10 @@ export interface PeerStanding {
   reason: StandingReason;
   /** Quartile rank; "neutral" when ineligible. */
   rank: PeerStatusWithNeutral;
-  /** Direction-adjusted side of the cohort median; null when ineligible. */
-  medianSide: "favorable" | "at" | "unfavorable" | null;
   /**
    * Signed arithmetic distance from the median (positive = above). Display
    * renders this next to "from median" so the sign must track position, not
-   * favorability — good/bad is `medianSide`'s (and the color's) job.
+   * favorability — good/bad is `rank`'s (and the color's) job.
    */
   gapDelta: number;
   gapPct: number | null;
@@ -91,7 +89,6 @@ export function derivePeerStanding(
   const higherIsBetter = direction !== "lower_is_better";
 
   const gapDelta = stats != null && value != null ? value - stats.p50 : 0;
-  const favorableDelta = higherIsBetter ? gapDelta : -gapDelta;
   const gapPct =
     stats != null && Math.abs(stats.p50) > 1e-9
       ? gapDelta / Math.abs(stats.p50)
@@ -103,7 +100,6 @@ export function derivePeerStanding(
     eligible: false,
     reason,
     rank: "neutral",
-    medianSide: null,
     gapDelta,
     gapPct,
     severity: 0,
@@ -121,12 +117,6 @@ export function derivePeerStanding(
     eligible: true,
     reason: "ok",
     rank: peerStatusVsQuartiles(value, stats, higherIsBetter),
-    medianSide:
-      Math.abs(favorableDelta) <= 1e-9
-        ? "at"
-        : favorableDelta > 0
-          ? "favorable"
-          : "unfavorable",
     gapDelta,
     gapPct,
     severity: Math.abs(gapPct ?? gapDelta / peerSpread(stats)),

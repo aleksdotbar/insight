@@ -70,7 +70,6 @@ const LEGACY_GROUP_ROWS: Record<
   string,
   (data: IcDashboardData | undefined) => BulletMetric[]
 > = {
-  task_delivery: (data) => data?.taskDelivery ?? [],
   wiki: (data) => data?.wiki ?? [],
 };
 

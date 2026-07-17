@@ -1,39 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { CatalogMetric } from "@/api/catalog-client";
 import type { MetricResult } from "@/api/metric-results-client";
-import {
-  kpiRowTiles,
-  legacyKpiTiles,
-  metricKpiTiles,
-} from "@/lib/insight/kpi-row";
+import { kpiRowTiles, metricKpiTiles } from "@/lib/insight/kpi-row";
 import { KPI_ROW } from "@/lib/insight/groups";
 import { normalizeMetricResults } from "@/lib/metrics/collection";
-import type { IcKpi } from "@/types/insight";
-
-function icKpi(overrides: Partial<IcKpi> = {}): IcKpi {
-  return {
-    period: "month",
-    metric_key: "tasks_closed",
-    label: "Tasks closed",
-    value: "12",
-    raw_value: 12,
-    unit: "",
-    sublabel: "",
-    delta: "+9%",
-    delta_type: "good",
-    peer_median: 10,
-    peer_n: 8,
-    ...overrides,
-  };
-}
-
-const CATALOG_ROW = {
-  higher_is_better: true,
-  schema_status: "ok",
-  format: "integer",
-  source_tags: ["jira"],
-} as unknown as CatalogMetric;
 
 function metricResult(
   key: string,
@@ -69,22 +39,8 @@ function metricResult(
   } as MetricResult;
 }
 
-describe("legacyKpiTiles", () => {
-  it("keeps legacy formatting/scoring semantics", () => {
-    const tiles = legacyKpiTiles([icKpi()], () => CATALOG_ROW, "all");
-    expect(tiles).toHaveLength(1);
-    const tile = tiles[0]!;
-    expect(tile.value).toBe("12");
-    expect(tile.valueStatus).toBe("good"); // 12 >= median 10
-    expect(tile.delta).toEqual({ text: "+9%", status: "good", down: false });
-    expect(tile.groupId).toBe("task_delivery");
-    expect(tile.context).toBe("jira");
-  });
-
-});
-
 describe("metricKpiTiles", () => {
-  it("builds display-ready tiles with median status and delta", () => {
+  it("builds display-ready tiles with rank status and delta", () => {
     const byKey = normalizeMetricResults([
       metricResult("ai.active_days", 14),
       metricResult("ai.accepted_lines", 900),
@@ -100,11 +56,15 @@ describe("metricKpiTiles", () => {
     ]);
     const active = tiles[0]!;
     expect(active.value).toBe("14");
-    expect(active.valueStatus).toBe("good"); // >= median 10
+    // 14 sits inside the IQR (5..15) — with the pack, so no color even
+    // though it's above the median.
+    expect(active.valueStatus).toBe("neutral");
     expect(active.delta?.text).toBe("+17%");
-    expect(active.medianLabel).toBe("Median 10");
+    expect(active.medianLabel).toBe("median 10");
     expect(active.groupId).toBe("ai_adoption");
     const lines = tiles[1]!;
+    // 900 ≥ p75 15 — top quartile earns the color.
+    expect(lines.valueStatus).toBe("good");
     expect(lines.delta).toEqual({ text: "-10%", status: "bad", down: true });
   });
 
@@ -166,19 +126,15 @@ describe("metricKpiTiles", () => {
       "me@x.com",
       "all",
     );
-    expect(tiles[0]?.delta?.text).toBe("+5.0 pp");
+    expect(tiles[0]?.delta?.text).toBe("+5 pp");
   });
 });
 
 describe("kpiRowTiles", () => {
-  it("orders tiles by KPI_ROW display order across legacy and metric sources", () => {
-    const legacy = legacyKpiTiles(
-      [icKpi({ metric_key: "tasks_closed" })],
-      () => CATALOG_ROW,
-      "all",
-    );
+  it("orders tiles by KPI_ROW display order", () => {
     const metric = metricKpiTiles(
       normalizeMetricResults([
+        metricResult("tasks.closed", 12),
         metricResult("git.prs_merged", 9),
         metricResult("ai.active_days", 14),
       ]),
@@ -186,15 +142,15 @@ describe("kpiRowTiles", () => {
       "me@x.com",
       "all",
     );
-    const ordered = kpiRowTiles(legacy, metric).map((t) => t.key);
+    const ordered = kpiRowTiles([], metric).map((t) => t.key);
     const expected = KPI_ROW.map((s) =>
       s.kind === "legacy" ? s.key : s.metricKey,
     ).filter((k) =>
-      ["tasks_closed", "git.prs_merged", "ai.active_days"].includes(k),
+      ["tasks.closed", "git.prs_merged", "ai.active_days"].includes(k),
     );
     expect(ordered).toEqual(expected);
     expect(ordered).toEqual([
-      "tasks_closed",
+      "tasks.closed",
       "git.prs_merged",
       "ai.active_days",
     ]);

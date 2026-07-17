@@ -61,6 +61,66 @@ export type GroupId =
   | "ai_adoption"
   | "wiki";
 
+const TASK_DELIVERY_COLLECTION: MetricCollectionConfig = {
+  metrics: [
+    {
+      key: "tasks.closed",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "timeseries", bucket: "auto" },
+      ],
+    },
+    {
+      key: "tasks.bugs_fixed",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "timeseries", bucket: "auto" },
+      ],
+    },
+    {
+      key: "tasks.dev_time",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
+    {
+      key: "tasks.resolution_time",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
+    {
+      key: "tasks.pickup_time",
+      views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
+    },
+    {
+      key: "tasks.flow_efficiency",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    { key: "tasks.reopen_rate", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "tasks.due_date_compliance",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "tasks.on_time_delivery",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    { key: "tasks.avg_slip", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "tasks.estimation_accuracy",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "tasks.worklog_accuracy",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    { key: "tasks.bugs_ratio", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "tasks.stale_in_progress",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+  ],
+};
+
 const AI_ADOPTION_COLLECTION: MetricCollectionConfig = {
   metrics: [
     {
@@ -226,14 +286,40 @@ const COLLABORATION_COLLECTION: MetricCollectionConfig = {
 };
 
 export const GROUPS: readonly GroupDef[] = [
-  { kind: "legacy", id: "task_delivery", title: "Task delivery" },
+  {
+    kind: "metrics",
+    id: "task_delivery",
+    title: "Task delivery",
+    collection: TASK_DELIVERY_COLLECTION,
+    card: {
+      preview: ["tasks.closed", "tasks.resolution_time", "tasks.pickup_time"],
+    },
+    drilldown: [
+      {
+        chart: "line",
+        view: "timeseries",
+        metrics: ["tasks.closed", "tasks.bugs_fixed"],
+      },
+      {
+        chart: "histogram",
+        view: "histogram",
+        metrics: ["tasks.resolution_time"],
+      },
+      {
+        chart: "histogram",
+        view: "histogram",
+        metrics: ["tasks.pickup_time"],
+      },
+      { chart: "histogram", view: "histogram", metrics: ["tasks.dev_time"] },
+    ],
+  },
   {
     kind: "metrics",
     id: "git_output",
     title: "Git output",
     collection: GIT_OUTPUT_COLLECTION,
     card: {
-      preview: ["git.commits", "git.prs_merged", "git.pr_cycle_time_h"],
+      preview: ["git.commits", "git.prs_merged", "git.code_lines"],
     },
     drilldown: [
       {
@@ -290,7 +376,7 @@ export const GROUPS: readonly GroupDef[] = [
     title: "AI adoption",
     collection: AI_ADOPTION_COLLECTION,
     card: {
-      preview: ["ai.active_days", "ai.cost", "ai.tool_acceptance_rate"],
+      preview: ["ai.active_days", "ai.accepted_lines", "ai.cost"],
     },
     drilldown: [
       {
@@ -328,7 +414,7 @@ export type KpiTileSource =
   | { kind: "metric"; metricKey: string };
 
 export const KPI_ROW: readonly KpiTileSource[] = [
-  { kind: "legacy", key: "tasks_closed", groupId: "task_delivery" },
+  { kind: "metric", metricKey: "tasks.closed" },
   { kind: "metric", metricKey: "collab.focus_time_pct" },
   { kind: "metric", metricKey: "git.prs_merged" },
   { kind: "metric", metricKey: "ai.active_days" },

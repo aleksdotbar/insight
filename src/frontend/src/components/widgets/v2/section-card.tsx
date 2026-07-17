@@ -8,20 +8,27 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { GroupCardEmpty } from "@/components/widgets/group-card-empty";
 import { useSettings } from "@/hooks/use-settings";
-import { hasBulletValue, rowStatus } from "@/lib/insight/v2/peer-status";
 import {
-  aggregateSectionStatus,
+  hasBulletValue,
+  peerStatusForRow,
+  peerStatusToStatus,
+} from "@/lib/insight/v2/peer-status";
+import type { PeerStatusWithNeutral } from "@/lib/peers";
+import {
+  gradeSectionStanding,
   pickSectionHeadline,
-  sectionCounts,
-  type ScoredMetric,
+  rankCounts,
+  rankableCount,
+  sectionStandingPhrase,
+  type RankedMetric,
 } from "@/lib/scoring";
 import {
   STATUS_BG_CLASS,
   STATUS_STRIPE_LEFT,
   STATUS_TEXT_CLASS,
   applyFocusStatus,
-  type Status,
 } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { BulletMetric } from "@/types/insight";
@@ -42,12 +49,13 @@ export interface SectionCardProps {
   subtitle?: string;
   unavailable?: boolean;
   /**
-   * Per-metric status override. When supplied (team view), it replaces the
-   * single-row `rowStatus` scoring — the team card rolls up each metric from
+   * Per-metric rank override. When supplied (team view), it replaces the
+   * single-row quartile scoring — the team card rolls up each metric from
    * per-member-vs-own-department standings instead of comparing a team
-   * aggregate against an individual band. Absent (IC view) → `rowStatus`.
+   * aggregate against an individual band. Absent (IC view) → the row's own
+   * cohort rank.
    */
-  statusByMetricKey?: Map<string, Status>;
+  rankByMetricKey?: Map<string, PeerStatusWithNeutral>;
 }
 
 export function SectionCard({
@@ -58,17 +66,17 @@ export function SectionCard({
   sectionId,
   subtitle,
   unavailable,
-  statusByMetricKey,
+  rankByMetricKey,
 }: SectionCardProps) {
   const { focusMode } = useSettings();
   const { byMetricKey } = useCatalog();
-  const metricStatus = (r: BulletMetric): Status =>
-    statusByMetricKey?.get(r.metric_key) ?? rowStatus(r, byMetricKey);
+  const metricRank = (r: BulletMetric): PeerStatusWithNeutral =>
+    rankByMetricKey?.get(r.metric_key) ?? peerStatusForRow(r, byMetricKey);
 
   if (unavailable) {
     return (
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader>
           <CardTitle className="text-base font-semibold">{title}</CardTitle>
           <CardDescription className="flex items-center gap-1.5 text-xs">
             <Sparkles className="size-3.5 shrink-0" aria-hidden />
@@ -82,21 +90,16 @@ export function SectionCard({
     );
   }
 
-  const scored: ScoredMetric<BulletMetric>[] = rows.map((r) => ({
+  const ranked: RankedMetric<BulletMetric>[] = rows.map((r) => ({
     row: r,
-    status: metricStatus(r),
+    rank: metricRank(r),
   }));
-  const rawStatus = aggregateSectionStatus(scored);
-  const status = applyFocusStatus(rawStatus, focusMode);
-  const counts = sectionCounts(scored);
-  const evaluated = counts.good + counts.warn + counts.bad;
-  const topCount = counts.good;
-  const badgeText =
-    evaluated === 0
-      ? "No peer data"
-      : `${topCount} of ${evaluated} in top`;
+  const counts = rankCounts(ranked);
+  const evaluated = rankableCount(counts);
+  const status = applyFocusStatus(gradeSectionStanding(counts), focusMode);
+  const badgeText = sectionStandingPhrase(counts);
 
-  const headline = pickSectionHeadline(scored);
+  const headline = pickSectionHeadline(ranked);
   const unit = headline?.row.unit ?? "";
   const summary = headline
     ? `${headline.row.label}: ${headline.row.value}${unit ? ` ${unit}` : ""}`
@@ -108,40 +111,54 @@ export function SectionCard({
 
   return (
     <Card
+      // An empty card has nothing to drill into: render a plain, unfocusable
+      // div instead of a button, and drop the interactive affordances.
       render={
-        <button
-          type="button"
-          onClick={onOpen}
-          onMouseEnter={onHover}
-          onFocus={onHover}
-          aria-label={`Open ${title} details`}
-        />
+        isEmpty ? undefined : (
+          <button
+            type="button"
+            onClick={onOpen}
+            onMouseEnter={onHover}
+            onFocus={onHover}
+            aria-label={`Open ${title} details`}
+          />
+        )
       }
       className={cn(
-        "text-left transition-colors hover:bg-accent/50",
+        // Header→content on the card's own 12px rhythm (the preview stack's
+        // gap-3), not the default 24px section gap.
+        "gap-3",
+        !isEmpty && "text-left transition-colors hover:bg-accent/50",
         stripeClass,
       )}
     >
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle className="text-base font-semibold">{title}</CardTitle>
-        <CardDescription className="flex flex-col gap-1 text-xs">
-          {subtitle ? (
-            <span className="text-muted-foreground">{subtitle}</span>
-          ) : null}
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn("size-1.5 shrink-0 rounded-full", STATUS_BG_CLASS[status])}
-              aria-hidden
-            />
-            <span className="tabular-nums">{badgeText}</span>
-          </span>
-        </CardDescription>
+        {subtitle || !isEmpty ? (
+          <CardDescription className="flex flex-col gap-1 text-xs">
+            {subtitle ? (
+              <span className="text-muted-foreground">{subtitle}</span>
+            ) : null}
+            {/* An empty card carries no standing — the badge would only
+                restate the empty state below. */}
+            {!isEmpty ? (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    STATUS_BG_CLASS[status],
+                  )}
+                  aria-hidden
+                />
+                <span className="tabular-nums">{badgeText}</span>
+              </span>
+            ) : null}
+          </CardDescription>
+        ) : null}
       </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
+      <CardContent className="flex flex-1 flex-col gap-3">
         {isEmpty ? (
-          <p className="text-sm text-muted-foreground">
-            No metrics with data for this period.
-          </p>
+          <GroupCardEmpty />
         ) : (
           <>
             <p className="text-sm text-foreground/80">{summary}</p>
@@ -149,7 +166,7 @@ export function SectionCard({
               <ul className="flex flex-col gap-1.5">
                 {preview.map((r) => {
                   const previewStatus = applyFocusStatus(
-                    metricStatus(r),
+                    peerStatusToStatus(metricRank(r)),
                     focusMode,
                   );
                   return (

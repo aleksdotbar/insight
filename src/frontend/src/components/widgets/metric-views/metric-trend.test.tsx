@@ -70,7 +70,7 @@ describe("MetricTrend", () => {
         chart="line"
       />,
     );
-    expect(screen.getByText("No trend data yet.")).toBeInTheDocument();
+    expect(screen.getByText("No trend data yet")).toBeInTheDocument();
   });
 
   it("puts each part's total and share in the legend for a composition", () => {

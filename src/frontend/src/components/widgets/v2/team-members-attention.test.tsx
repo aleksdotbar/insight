@@ -5,7 +5,7 @@
  * department distribution (`deptCohorts` keyed by `org_unit_id → metric_key
  * → PeerStats`). Covers the wave-1 DESIGN §3.3 rendering rules:
  *   - bullet that lands in the bottom quartile of the member's dept counts
- *     toward "N below peers".
+ *     toward the attention count (subtitle + per-row "trailing").
  *   - `schema_status='error'` bullets are filtered out of the count.
  *   - Missing-id bullets (no catalog row) are filtered out.
  *   - A degenerate department cohort (`n < MIN_DEPT_COHORT_N`) is not counted.
@@ -159,7 +159,7 @@ describe("<TeamMembersAttention>", () => {
     );
     await waitFor(() => {
       expect(
-        screen.getByText("1 members below peers"),
+        screen.getByText("1 members · vs department peers"),
       ).toBeInTheDocument();
     });
     expect(screen.getByText("Alice")).toBeInTheDocument();
@@ -211,7 +211,7 @@ describe("<TeamMembersAttention>", () => {
       />,
     );
     await waitFor(() => {
-      expect(screen.getByText("1 members below peers")).toBeInTheDocument();
+      expect(screen.getByText("1 members · vs department peers")).toBeInTheDocument();
     });
     expect(screen.getByText("Alice")).toBeInTheDocument();
   });

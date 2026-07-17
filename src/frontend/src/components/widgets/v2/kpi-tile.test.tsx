@@ -20,7 +20,9 @@ function tile(overrides: Partial<KpiTileData> = {}): KpiTileData {
     value: "14",
     valueStatus: "good",
     delta: { text: "+17%", status: "good", down: false },
-    medianLabel: "Median 11",
+    medianLabel: "median 11",
+    gapText: null,
+    gapStatus: "neutral",
     context: "Days with any AI tool activity",
     groupId: "ai_adoption",
     ...overrides,
@@ -32,10 +34,24 @@ describe("KpiTile", () => {
     render(<KpiTile tile={tile()} />);
     expect(screen.getByText("14")).toBeInTheDocument();
     expect(screen.getByText("+17%")).toBeInTheDocument();
-    expect(screen.getByText("Median 11")).toBeInTheDocument();
+    expect(screen.getByText("median 11")).toBeInTheDocument();
     expect(
       screen.getByText("Days with any AI tool activity"),
     ).toBeInTheDocument();
+  });
+
+  it("shows the divergence gap next to the median", () => {
+    render(
+      <KpiTile
+        tile={tile({
+          gapText: "3.5×",
+          gapStatus: "good",
+          medianLabel: "median 3,563",
+        })}
+      />,
+    );
+    expect(screen.getByText("3.5×")).toBeInTheDocument();
+    expect(screen.getByText(/vs median 3,563/)).toBeInTheDocument();
   });
 
   it("falls back to 'No peer data' without a median label", () => {

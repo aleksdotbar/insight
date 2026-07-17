@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartEmpty } from "@/components/widgets/metric-views/chart-empty";
 import {
   dimensionColorSeed,
   dimensionLabel,
@@ -38,11 +39,13 @@ export function MetricBreakdown({ metric, entityId }: MetricBreakdownProps) {
 
   if (rows.length === 0) {
     return (
-      <Card className="min-h-40 shrink-0">
-        <CardHeader>
+      <Card className="shrink-0">
+        <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">{metric.label}</CardTitle>
-          <CardDescription>No composition data yet.</CardDescription>
         </CardHeader>
+        <CardContent>
+          <ChartEmpty message="No composition data yet" className="min-h-32" />
+        </CardContent>
       </Card>
     );
   }

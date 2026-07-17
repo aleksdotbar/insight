@@ -15,7 +15,8 @@ function item(overrides: Partial<AttentionItem> = {}): AttentionItem {
     group: "ai_adoption",
     label: "Active AI days",
     valueText: "2 days",
-    medianText: "Median 11 days",
+    medianText: "11 days",
+    gapText: "-82%",
     relGap: 0.8,
     ...overrides,
   };
@@ -44,6 +45,18 @@ describe("IcNeedsAttention", () => {
     expect(rows[1]).toHaveTextContent("Small gap");
   });
 
+  it("shows the divergence gap next to the median", () => {
+    render(
+      <IcNeedsAttention
+        items={[item({ gapText: "-82%", medianText: "11 days" })]}
+        onOpenGroup={vi.fn()}
+      />,
+    );
+    const row = screen.getByRole("button");
+    expect(row).toHaveTextContent("-82%");
+    expect(row).toHaveTextContent("vs median 11 days");
+  });
+
   it("routes clicks to the owning group", async () => {
     const onOpenGroup = vi.fn();
     render(
@@ -57,10 +70,10 @@ describe("IcNeedsAttention", () => {
   });
 
   it("collapses beyond the threshold with a show-more toggle", () => {
-    const items = Array.from({ length: 7 }, (_, i) =>
+    const items = Array.from({ length: 9 }, (_, i) =>
       item({ key: `m${i}`, label: `Metric ${i}`, relGap: i }),
     );
     render(<IcNeedsAttention items={items} onOpenGroup={vi.fn()} />);
-    expect(screen.getByText("Show 4 more")).toBeInTheDocument();
+    expect(screen.getByText("Show 3 more")).toBeInTheDocument();
   });
 });

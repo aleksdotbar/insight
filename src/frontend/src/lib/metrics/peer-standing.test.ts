@@ -18,7 +18,7 @@ function peer(overrides: Partial<PeerEntityStats> = {}): PeerEntityStats {
 }
 
 describe("derivePeerStanding", () => {
-  it("ranks an eligible value and takes the direction-adjusted median side", () => {
+  it("ranks an eligible value against the quartiles", () => {
     const standing = derivePeerStanding("higher_is_better", {
       value: 14,
       peer: peer(),
@@ -27,7 +27,6 @@ describe("derivePeerStanding", () => {
       eligible: true,
       reason: "ok",
       rank: "in_pack",
-      medianSide: "favorable",
       observed: true,
     });
     expect(standing.gapDelta).toBe(4);
@@ -38,7 +37,6 @@ describe("derivePeerStanding", () => {
       value: 14,
       peer: peer(),
     });
-    expect(lower.medianSide).toBe("unfavorable");
     expect(lower.gapDelta).toBe(4);
     expect(lower.gapPct).toBeCloseTo(0.4);
 
@@ -46,7 +44,6 @@ describe("derivePeerStanding", () => {
       value: 6,
       peer: peer(),
     });
-    expect(below.medianSide).toBe("favorable");
     expect(below.gapDelta).toBe(-4);
   });
 
@@ -108,11 +105,10 @@ describe("derivePeerStanding", () => {
       eligible: false,
       reason: "flat_pool",
       rank: "neutral",
-      medianSide: null,
     });
   });
 
-  it("marks a median tie as at, never an outlier", () => {
+  it("marks a median tie as in-pack, never an outlier", () => {
     const standing = derivePeerStanding("higher_is_better", {
       value: 0,
       peer: peer({ target_value: 0, p25: 0, median: 0, p75: 4, min: 0, max: 9 }),
@@ -120,7 +116,6 @@ describe("derivePeerStanding", () => {
     expect(standing).toMatchObject({
       eligible: true,
       rank: "in_pack",
-      medianSide: "at",
     });
   });
 

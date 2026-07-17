@@ -1,4 +1,5 @@
 import { formatMetricValue } from "@/lib/format";
+import { formatGapMagnitude } from "@/lib/metrics/gap";
 import type { MetricGroup, GroupId } from "@/lib/insight/groups";
 import {
   bulletCatalogKey,
@@ -22,7 +23,10 @@ export interface AttentionItem {
   group: GroupId;
   label: string;
   valueText: string;
+  /** Formatted peer-median value only (no label); the view frames it. */
   medianText: string | null;
+  /** Scale of divergence from the median ("16×", "−40%"); null at the median. */
+  gapText: string | null;
   relGap: number;
 }
 
@@ -34,7 +38,7 @@ export interface LegacyAttentionGroup {
 /** Legacy bullet rows + catalog direction → attention items. */
 export function legacyAttentionItems(
   groups: LegacyAttentionGroup[],
-  byMetricKey: CatalogByKey,
+  byMetricKey: CatalogByKey
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const group of groups) {
@@ -58,12 +62,21 @@ export function legacyAttentionItems(
       const relGap = higherIsBetter
         ? (median - value) / denom
         : (value - median) / denom;
+      const gapDelta = value - median;
       items.push({
         key: row.metric_key,
         group: group.id,
         label: row.label,
         valueText: `${row.value}${row.unit ? ` ${row.unit}` : ""}`,
-        medianText: `Median ${Math.round(median * 10) / 10}${row.unit ? ` ${row.unit}` : ""}`,
+        medianText: `${Math.round(median * 10) / 10}${row.unit ? ` ${row.unit}` : ""}`,
+        gapText: formatGapMagnitude({
+          value,
+          median,
+          gapPct: Math.abs(median) > 1e-9 ? gapDelta / Math.abs(median) : null,
+          gapDelta,
+          format: "decimal",
+          unit: row.unit ?? null,
+        }),
         relGap,
       });
     }
@@ -75,7 +88,7 @@ export function legacyAttentionItems(
 export function metricAttentionItems(
   def: MetricGroup,
   byKey: Map<string, NormalizedMetricResult>,
-  entityId: string,
+  entityId: string
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const metricConfig of def.collection.metrics) {
@@ -98,12 +111,21 @@ export function metricAttentionItems(
     const relGap = higherIsBetter
       ? (median - value) / denom
       : (value - median) / denom;
+    const gapDelta = value - median;
     items.push({
       key: metric.metric_key,
       group: def.id,
       label: metric.label,
       valueText: formatMetricValue(value, metric.format, metric.unit),
-      medianText: `Median ${formatMetricValue(median, metric.format, metric.unit)}`,
+      medianText: formatMetricValue(median, metric.format, metric.unit),
+      gapText: formatGapMagnitude({
+        value,
+        median,
+        gapPct: Math.abs(median) > 1e-9 ? gapDelta / Math.abs(median) : null,
+        gapDelta,
+        format: metric.format,
+        unit: metric.unit,
+      }),
       relGap,
     });
   }

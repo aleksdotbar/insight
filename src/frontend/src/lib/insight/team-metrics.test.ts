@@ -117,10 +117,10 @@ describe("teamMetricStandings / metricBelowCounts", () => {
   const def = defWith(byKey.get("ai.active_days")!);
   const members = ["a@x.com", "b@x.com", "c@x.com"];
 
-  it("rolls up by plurality: more bottom than top → bad", () => {
+  it("rolls up by plurality: more bottom than top → bottom", () => {
     const standings = teamMetricStandings(def, byKey, members);
     expect(standings).toHaveLength(1);
-    expect(standings[0]?.status).toBe("bad");
+    expect(standings[0]?.verdict).toBe("bottom");
     expect(standings[0]?.bottom).toBe(2);
     expect(standings[0]?.top).toBe(1);
   });

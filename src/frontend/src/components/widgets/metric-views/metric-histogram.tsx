@@ -11,6 +11,8 @@ import {
   YAxis,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ChartEmpty } from "@/components/widgets/metric-views/chart-empty";
 import { formatMetricNumber } from "@/lib/format";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
 import { STATUS_COLOR_VAR, statusVsMedian, type Status } from "@/lib/status";
@@ -99,23 +101,14 @@ export function MetricHistogram({ metric, entityId }: MetricHistogramProps) {
   const data = forEntity(metric, entityId);
   const bins = data.histogram[0]?.bins ?? [];
   const unit = metric.unit ? ` ${metric.unit}` : "";
-
-  if (bins.length === 0) {
-    return (
-      <div className="flex min-h-40 flex-col gap-1">
-        <span className="text-sm font-semibold">{metric.label}</span>
-        <span className="text-xs text-muted-foreground">No distribution yet.</span>
-      </div>
-    );
-  }
-
   const ownMedian = data.value;
   const peerMedian = data.peer?.median ?? null;
-  const { rows, pivotLabel } = buildRows(bins, peerMedian, metric);
   const direction = directionText(metric);
 
-  return (
-    <div className="flex min-w-0 flex-col gap-2">
+  // Shared header so an empty tile reads as the same chart, laid out to match
+  // its populated neighbours in the grid rather than collapsing to a corner.
+  const header = (
+    <CardHeader className="pb-2">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-semibold">{metric.label}</span>
@@ -140,46 +133,73 @@ export function MetricHistogram({ metric, entityId }: MetricHistogramProps) {
           </span>
         ) : null}
       </div>
+    </CardHeader>
+  );
 
-      <ChartContainer config={CONFIG} className="h-48 min-h-48 w-full">
-        <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis
-            dataKey="label"
-            tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-            tickLine={false}
-            axisLine={false}
-            interval="preserveStartEnd"
-          />
-          <YAxis
-            allowDecimals={false}
-            width={28}
-            tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-            tickLine={false}
-            axisLine={false}
-          />
-          <ChartTooltip content={<ChartTooltipContent className="min-w-40" />} />
-          <ChartBar dataKey={COUNT_KEY} name="Count" radius={[2, 2, 0, 0]}>
-            {rows.map((row) => (
-              <Cell
-                key={row.label}
-                fill={STATUS_COLOR_VAR[row.status]}
-                fillOpacity={row.opacity}
-              />
-            ))}
-          </ChartBar>
-          {pivotLabel ? (
-            // The peer median: named in the subtitle ("vs peer median …") and
-            // the only dashed line on the chart, so it needs no on-chart label
-            // (which clipped at the top edge).
-            <ReferenceLine
-              x={pivotLabel}
-              stroke="var(--foreground)"
-              strokeDasharray="4 3"
+  if (bins.length === 0) {
+    return (
+      <Card className="shrink-0">
+        {header}
+        <CardContent>
+          <ChartEmpty message="No values in this period" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { rows, pivotLabel } = buildRows(bins, peerMedian, metric);
+
+  return (
+    <Card className="shrink-0">
+      {header}
+      <CardContent>
+        <ChartContainer config={CONFIG} className="h-48 min-h-48 w-full">
+          <BarChart
+            data={rows}
+            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          >
+            <CartesianGrid
+              vertical={false}
+              strokeDasharray="3 3"
+              stroke="var(--border)"
             />
-          ) : null}
-        </BarChart>
-      </ChartContainer>
-    </div>
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              allowDecimals={false}
+              width={28}
+              tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <ChartTooltip content={<ChartTooltipContent className="min-w-40" />} />
+            <ChartBar dataKey={COUNT_KEY} name="Count" radius={[2, 2, 0, 0]}>
+              {rows.map((row) => (
+                <Cell
+                  key={row.label}
+                  fill={STATUS_COLOR_VAR[row.status]}
+                  fillOpacity={row.opacity}
+                />
+              ))}
+            </ChartBar>
+            {pivotLabel ? (
+              // The peer median: named in the subtitle ("vs peer median …")
+              // and the only dashed line on the chart, so it needs no
+              // on-chart label (which clipped at the top edge).
+              <ReferenceLine
+                x={pivotLabel}
+                stroke="var(--foreground)"
+                strokeDasharray="4 3"
+              />
+            ) : null}
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
   );
 }

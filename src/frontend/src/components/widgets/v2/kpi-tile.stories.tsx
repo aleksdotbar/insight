@@ -29,12 +29,14 @@ import { KpiTile } from "./kpi-tile";
 
 function makeTile(overrides: Partial<KpiTileData> = {}): KpiTileData {
   return {
-    key: "tasks_closed",
+    key: "tasks.closed",
     label: "Bugs Fixed",
     value: "12",
     valueStatus: "good",
     delta: { text: "+9%", status: "good", down: false },
-    medianLabel: "Median 6",
+    medianLabel: "median 6",
+    gapText: null,
+    gapStatus: "neutral",
     context: "Jira",
     groupId: "task_delivery",
     ...overrides,

@@ -1,10 +1,4 @@
 import { ComingSoon } from "@/components/widgets/coming-soon";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { MetricBreakdown } from "@/components/widgets/metric-views/metric-breakdown";
 import { MetricHistogram } from "@/components/widgets/metric-views/metric-histogram";
@@ -12,7 +6,7 @@ import { MetricSummaryCard } from "@/components/widgets/metric-views/metric-summ
 import { MetricTrend } from "@/components/widgets/metric-views/metric-trend";
 import { PeerStory } from "@/components/widgets/metric-views/peer-story";
 import type { DrilldownBlock, MetricGroup } from "@/lib/insight/groups";
-import type { NormalizedMetricResult } from "@/lib/metrics/collection";
+import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
 import { buildPeerStoryEntries } from "@/lib/metrics/peer-story";
 import type { PeerCohortLabel } from "@/lib/peers";
 import type { MetricCollectionResult } from "@/queries/metric-results";
@@ -124,9 +118,18 @@ export function CollectionDrilldown({
       !isSummaryBlock(block) &&
       blockMetrics(block, data.byKey).length > 0,
   );
-  const distributionMetrics = def.drilldown
+  // Populated distributions lead; those with no events for this entity in the
+  // period sort to the end so the section doesn't open on an empty placeholder.
+  // Stable partition keeps declared order within each group.
+  const declaredDistributions = def.drilldown
     .filter((block) => block.view === "histogram")
     .flatMap((block) => blockMetrics(block, data.byKey));
+  const hasDistribution = (metric: NormalizedMetricResult) =>
+    (forEntity(metric, entityId).histogram[0]?.bins?.length ?? 0) > 0;
+  const distributionMetrics = [
+    ...declaredDistributions.filter(hasDistribution),
+    ...declaredDistributions.filter((metric) => !hasDistribution(metric)),
+  ];
 
   return (
     <div
@@ -174,30 +177,22 @@ export function CollectionDrilldown({
       ) : null}
       <PeerStory entries={entries} cohortLabel={cohortLabel} />
       {distributionMetrics.length > 0 ? (
-        // One labeled card holds every distribution; the charts inside are
-        // un-carded so there are no nested borders and "distribution" isn't
-        // repeated per chart.
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">
-              Distributions
-            </CardTitle>
-          </CardHeader>
-          <CardContent
-            className={cn(
-              "grid grid-cols-1 gap-x-8 gap-y-6",
-              distributionMetrics.length > 1 && "lg:grid-cols-2",
-            )}
-          >
-            {distributionMetrics.map((metric) => (
-              <MetricHistogram
-                key={metric.metric_key}
-                metric={metric}
-                entityId={entityId}
-              />
-            ))}
-          </CardContent>
-        </Card>
+        // Each histogram is its own card, dropped straight into the grid like
+        // the chart blocks above — no wrapping "Distributions" card.
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            distributionMetrics.length > 1 && "lg:grid-cols-2",
+          )}
+        >
+          {distributionMetrics.map((metric) => (
+            <MetricHistogram
+              key={metric.metric_key}
+              metric={metric}
+              entityId={entityId}
+            />
+          ))}
+        </div>
       ) : null}
     </div>
   );

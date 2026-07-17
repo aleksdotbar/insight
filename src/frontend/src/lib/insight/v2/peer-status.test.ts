@@ -22,7 +22,7 @@ import {
   bulletCatalogKey,
   hasBulletValue,
   peerStatusForRow,
-  rowStatus,
+  peerStatusToStatus,
   type CatalogByKey,
 } from "./peer-status";
 
@@ -196,17 +196,11 @@ describe("peerStatusForRow — rendering rules", () => {
   });
 });
 
-describe("rowStatus — maps peer status to display status", () => {
-  const byKey = makeByMetricKey([
-    makeCatalogMetric({ higher_is_better: true }),
-  ]);
-
-  it("top → good, bottom → bad, in_pack → warn, neutral → neutral", () => {
-    expect(rowStatus(makeRow({ value: "12", peer: STATS }), byKey)).toBe("good");
-    expect(rowStatus(makeRow({ value: "2", peer: STATS }), byKey)).toBe("bad");
-    expect(rowStatus(makeRow({ value: "6", peer: STATS }), byKey)).toBe("warn");
-    expect(rowStatus(makeRow({ value: "—", peer: STATS }), byKey)).toBe(
-      "neutral",
-    );
+describe("peerStatusToStatus — maps rank to display status", () => {
+  it("top → good, bottom → bad, in_pack and neutral stay calm", () => {
+    expect(peerStatusToStatus("top")).toBe("good");
+    expect(peerStatusToStatus("bottom")).toBe("bad");
+    expect(peerStatusToStatus("in_pack")).toBe("neutral");
+    expect(peerStatusToStatus("neutral")).toBe("neutral");
   });
 });

@@ -89,6 +89,46 @@ describe("MetricGroupCard", () => {
     expect(screen.getByText("3 days")).toBeInTheDocument();
   });
 
+  it("shows a single empty state without a standing badge when no metric has data", () => {
+    render(
+      <MetricGroupCard
+        def={DEF}
+        data={result([
+          aiMetric("ai.active_days", null),
+          aiMetric("ai.cost", null),
+        ])}
+        entityId="me@x.com"
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("No metrics with data for this period."),
+    ).toBeInTheDocument();
+    // The badge would only restate the absence — one message, not two.
+    expect(screen.queryByText("no peer data")).not.toBeInTheDocument();
+    // Nothing to drill into — the card is not an interactive button.
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("keeps a fixed preview key with no value, rendering an em dash", () => {
+    render(
+      <MetricGroupCard
+        def={DEF}
+        data={result([
+          aiMetric("ai.active_days", 20),
+          aiMetric("ai.cost", null),
+        ])}
+        entityId="me@x.com"
+        onOpen={vi.fn()}
+      />,
+    );
+    // Both preview rows stay on the card — the valueless one shows "—", not
+    // dropped, so the card's identity is stable across periods.
+    expect(screen.getByText("ai.active_days")).toBeInTheDocument();
+    expect(screen.getByText("ai.cost")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
   it("keeps the card name and shows a spinner while loading", () => {
     render(
       <MetricGroupCard
@@ -120,8 +160,8 @@ describe("MetricGroupCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    // No metric is scorable → no "in top" tally.
-    expect(screen.getByText("No peer data")).toBeInTheDocument();
+    // No metric is scorable → no rankable peers.
+    expect(screen.getByText("no peer data")).toBeInTheDocument();
   });
 
   it("scores measured people against quartiles", () => {
@@ -136,8 +176,9 @@ describe("MetricGroupCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    // active_days 20 ≥ p75 15 → top; cost 2 ≤ p25 5 → bottom → 1 of 2 in top.
-    expect(screen.getByText("1 of 2 in top")).toBeInTheDocument();
+    // active_days 20 ≥ p75 15 → top; cost 2 ≤ p25 5 → bottom → 1 bottom wins
+    // the phrase (behind beats ahead), single bottom below the red bar → amber.
+    expect(screen.getByText("1 behind peers")).toBeInTheDocument();
   });
 
   it("owns its error state with retry", () => {
