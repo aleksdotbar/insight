@@ -285,6 +285,29 @@ const COLLABORATION_COLLECTION: MetricCollectionConfig = {
   ],
 };
 
+const WIKI_COLLECTION: MetricCollectionConfig = {
+  metrics: [
+    {
+      key: "wiki.pages_created",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "timeseries", bucket: "auto" },
+      ],
+    },
+    {
+      key: "wiki.edits",
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "timeseries", bucket: "auto" },
+      ],
+    },
+    { key: "wiki.pages_edited", views: [{ view: "period" }, { view: "peer" }] },
+    { key: "wiki.comments", views: [{ view: "period" }, { view: "peer" }] },
+  ],
+};
+
 export const GROUPS: readonly GroupDef[] = [
   {
     kind: "metrics",
@@ -386,7 +409,22 @@ export const GROUPS: readonly GroupDef[] = [
       },
     ],
   },
-  { kind: "legacy", id: "wiki", title: "Wiki" },
+  {
+    kind: "metrics",
+    id: "wiki",
+    title: "Wiki",
+    collection: WIKI_COLLECTION,
+    card: {
+      preview: ["wiki.pages_created", "wiki.edits", "wiki.comments"],
+    },
+    drilldown: [
+      {
+        chart: "line",
+        view: "timeseries",
+        metrics: ["wiki.pages_created", "wiki.edits"],
+      },
+    ],
+  },
 ];
 
 export function groupById(id: GroupId): GroupDef {

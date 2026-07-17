@@ -64,14 +64,18 @@ const CLOSED_DRILLDOWN_DATA = {
   refetch: () => {},
 } as const;
 
-// The one per-key seam that survives coexistence: which legacy batch field
-// feeds each legacy group's rows. Dies with `LegacyGroup`.
-const LEGACY_GROUP_ROWS: Record<
+// The one per-key seam that survives coexistence: which legacy batch fields
+// feed each legacy group's rows and error flag. Empty while no group is
+// `kind: "legacy"`; dies with `LegacyGroup`.
+/* v8 ignore start -- inert seam, populated only when a legacy group returns */
+const LEGACY_GROUP_FEEDS: Record<
   string,
-  (data: IcDashboardData | undefined) => BulletMetric[]
-> = {
-  wiki: (data) => data?.wiki ?? [],
-};
+  {
+    rows: (data: IcDashboardData | undefined) => BulletMetric[];
+    errored: (data: IcDashboardData | undefined) => boolean;
+  }
+> = {};
+/* v8 ignore stop */
 
 export interface EngineeringDashboardV2Props {
   personId: string;
@@ -128,7 +132,10 @@ export function EngineeringDashboardV2({
     Object.fromEntries(
       GROUPS.filter((def) => def.kind === "legacy").map((def) => [
         def.id,
-        orderRowsForSection(def.id, LEGACY_GROUP_ROWS[def.id]?.(data) ?? []),
+        orderRowsForSection(
+          def.id,
+          LEGACY_GROUP_FEEDS[def.id]?.rows(data) ?? [],
+        ),
       ]),
     );
 
@@ -337,7 +344,8 @@ export function EngineeringDashboardV2({
                       />
                     );
                   }
-                  if (data?.errors[def.id]) {
+                  /* v8 ignore next -- unreachable while no legacy group exists */
+                  if (LEGACY_GROUP_FEEDS[def.id]?.errored(data)) {
                     return (
                       <SectionCard
                         key={def.id}
