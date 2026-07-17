@@ -50,11 +50,16 @@ import {
 } from "@/queries/v2/team-extras";
 import type { BulletMetric } from "@/types/insight";
 
+// The map/filter callbacks are inert while no group is `kind: "legacy"`
+// (the array is empty) — retained so the legacy team-bullet path lights up
+// again if a legacy group returns.
+/* v8 ignore start -- map/filter callbacks run only when a legacy group exists */
 const LEGACY_GROUP_IDS = legacyGroups()
   .map((def) => def.id)
   .filter((id): id is Extract<GroupId, TeamBulletSectionId> =>
     isTeamBulletSectionId(id),
   );
+/* v8 ignore stop */
 
 // Team surfaces request period + peer only: a per-member timeseries over a
 // large roster would exceed the backend's all-or-nothing row limit and fail

@@ -65,7 +65,9 @@ const CLOSED_DRILLDOWN_DATA = {
 } as const;
 
 // The one per-key seam that survives coexistence: which legacy batch fields
-// feed each legacy group's rows and error flag. Dies with `LegacyGroup`.
+// feed each legacy group's rows and error flag. Empty while no group is
+// `kind: "legacy"`; dies with `LegacyGroup`.
+/* v8 ignore start -- inert seam, populated only when a legacy group returns */
 const LEGACY_GROUP_FEEDS: Record<
   string,
   {
@@ -73,6 +75,7 @@ const LEGACY_GROUP_FEEDS: Record<
     errored: (data: IcDashboardData | undefined) => boolean;
   }
 > = {};
+/* v8 ignore stop */
 
 export interface EngineeringDashboardV2Props {
   personId: string;
@@ -341,6 +344,7 @@ export function EngineeringDashboardV2({
                       />
                     );
                   }
+                  /* v8 ignore next -- unreachable while no legacy group exists */
                   if (LEGACY_GROUP_FEEDS[def.id]?.errored(data)) {
                     return (
                       <SectionCard
