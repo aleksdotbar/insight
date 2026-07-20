@@ -31,6 +31,7 @@ import {
   KPI_ROW,
   KPI_ROW_COLLECTION,
   metricGroups,
+  supplementalCollections,
   type GroupId,
 } from "@/lib/insight/groups";
 import { orderRowsForSection } from "@/lib/insight/v2/metric-order";
@@ -124,6 +125,11 @@ export function EngineeringDashboardV2({
       : null;
   const drilldownData = useMetricCollection(
     openMetricDef?.collection ?? EMPTY_COLLECTION,
+    openMetricDef ? entity : CLOSED_ENTITY,
+    dateRange,
+  );
+  const supplementalDrilldownData = useMetricCollectionSet(
+    openMetricDef ? supplementalCollections(openMetricDef) : [],
     openMetricDef ? entity : CLOSED_ENTITY,
     dateRange,
   );
@@ -388,7 +394,13 @@ export function EngineeringDashboardV2({
                   // The drilldown for the open group reads the full-collection
                   // query; closed sheets never render their body.
                   data:
-                    def.id === openGroup ? drilldownData : CLOSED_DRILLDOWN_DATA,
+                    def.id === openGroup
+                      ? drilldownData
+                      : CLOSED_DRILLDOWN_DATA,
+                  supplementalData:
+                    def.id === openGroup
+                      ? supplementalDrilldownData
+                      : undefined,
                 }
               : undefined
           }

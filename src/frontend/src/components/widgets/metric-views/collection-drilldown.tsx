@@ -5,6 +5,8 @@ import { MetricHistogram } from "@/components/widgets/metric-views/metric-histog
 import { MetricSummaryCard } from "@/components/widgets/metric-views/metric-summary-card";
 import { MetricTrend } from "@/components/widgets/metric-views/metric-trend";
 import { PeerStory } from "@/components/widgets/metric-views/peer-story";
+import { WeeklyRepositoryActivityTable } from "@/components/widgets/metric-views/weekly-repository-activity-table";
+import type { DateRange } from "@/api/period-to-date-range";
 import type { DrilldownBlock, MetricGroup } from "@/lib/insight/groups";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
 import { buildPeerStoryEntries } from "@/lib/metrics/peer-story";
@@ -16,6 +18,8 @@ export interface CollectionDrilldownProps {
   def: MetricGroup;
   data: MetricCollectionResult;
   entityId: string;
+  range?: DateRange;
+  supplementalData?: Map<string, MetricCollectionResult>;
   cohortLabel?: PeerCohortLabel;
   className?: string;
 }
@@ -24,6 +28,7 @@ function blockMetrics(
   block: DrilldownBlock,
   byKey: Map<string, NormalizedMetricResult>,
 ): NormalizedMetricResult[] {
+  if (block.view === "weekly-repository-table") return [];
   return block.metrics.flatMap((key) => {
     const metric = byKey.get(key);
     return metric ? [metric] : [];
@@ -68,6 +73,8 @@ export function CollectionDrilldown({
   def,
   data,
   entityId,
+  range,
+  supplementalData,
   cohortLabel = "department",
   className,
 }: CollectionDrilldownProps) {
@@ -113,7 +120,13 @@ export function CollectionDrilldown({
     .filter(isSummaryBlock)
     .flatMap((block) => blockMetrics(block, data.byKey));
   const chartBlocks = def.drilldown.filter(
-    (block) =>
+    (
+      block,
+    ): block is Exclude<
+      DrilldownBlock,
+      { view: "weekly-repository-table" } | { view: "histogram" }
+    > =>
+      block.view !== "weekly-repository-table" &&
       block.view !== "histogram" &&
       !isSummaryBlock(block) &&
       blockMetrics(block, data.byKey).length > 0,
@@ -130,6 +143,9 @@ export function CollectionDrilldown({
     ...declaredDistributions.filter(hasDistribution),
     ...declaredDistributions.filter((metric) => !hasDistribution(metric)),
   ];
+  const weeklyTables = def.drilldown.filter(
+    (block) => block.view === "weekly-repository-table",
+  );
 
   return (
     <div
@@ -139,6 +155,20 @@ export function CollectionDrilldown({
         className,
       )}
     >
+      {range
+        ? weeklyTables.map((block) => {
+            const supplemental = supplementalData?.get(block.view);
+            return supplemental ? (
+              <WeeklyRepositoryActivityTable
+                key={block.view}
+                data={supplemental}
+                entityId={entityId}
+                range={range}
+                metrics={block.metrics}
+              />
+            ) : null;
+          })
+        : null}
       {summaryMetrics.length > 0 ? (
         <div
           className={cn(

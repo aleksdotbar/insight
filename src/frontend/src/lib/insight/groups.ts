@@ -34,7 +34,11 @@ export type ChartKind =
 export type DrilldownBlock =
   | { view: "timeseries"; chart: TimeseriesChartKind; metrics: string[] }
   | { view: "breakdown"; chart: BreakdownChartKind; metrics: string[] }
-  | { view: "histogram"; chart: HistogramChartKind; metrics: string[] };
+  | { view: "histogram"; chart: HistogramChartKind; metrics: string[] }
+  | {
+      view: "weekly-repository-table";
+      metrics: { commits: string; linesAdded: string; linesRemoved: string };
+    };
 
 export interface MetricGroup {
   kind: "metrics";
@@ -351,6 +355,14 @@ export const GROUPS: readonly GroupDef[] = [
         metrics: ["git.commits", "git.prs_merged"],
       },
       {
+        view: "weekly-repository-table",
+        metrics: {
+          commits: "git.commits",
+          linesAdded: "git.lines_added",
+          linesRemoved: "git.lines_removed",
+        },
+      },
+      {
         chart: "stacked-bar",
         view: "timeseries",
         metrics: ["git.lines_added"],
@@ -435,6 +447,55 @@ export function groupById(id: GroupId): GroupDef {
 
 export function metricGroups(): MetricGroup[] {
   return GROUPS.filter((g): g is MetricGroup => g.kind === "metrics");
+}
+
+export function supplementalCollections(def: MetricGroup): Array<{
+  key: string;
+  collection: MetricCollectionConfig;
+}> {
+  return def.drilldown.flatMap((block) =>
+    block.view === "weekly-repository-table"
+      ? [
+          {
+            key: block.view,
+            collection: {
+              metrics: [
+                {
+                  key: block.metrics.commits,
+                  views: [
+                    {
+                      view: "timeseries" as const,
+                      bucket: "week" as const,
+                      dimensions: ["repository"],
+                    },
+                  ],
+                },
+                {
+                  key: block.metrics.linesAdded,
+                  views: [
+                    {
+                      view: "timeseries" as const,
+                      bucket: "week" as const,
+                      dimensions: ["repository"],
+                    },
+                  ],
+                },
+                {
+                  key: block.metrics.linesRemoved,
+                  views: [
+                    {
+                      view: "timeseries" as const,
+                      bucket: "week" as const,
+                      dimensions: ["repository"],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ]
+      : [],
+  );
 }
 
 export function legacyGroups(): LegacyGroup[] {

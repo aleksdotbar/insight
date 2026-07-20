@@ -29,7 +29,12 @@ import type { BulletMetric, PeriodValue } from "@/types/insight";
 
 /** Data target for a metrics-backed group's drilldown body. */
 export type MetricDrilldownTarget =
-  | { kind: "person"; entityId: string; data: MetricCollectionResult }
+  | {
+      kind: "person";
+      entityId: string;
+      data: MetricCollectionResult;
+      supplementalData?: Map<string, MetricCollectionResult>;
+    }
   | { kind: "team"; members: TeamMemberRef[]; data: MetricCollectionResult };
 
 export interface GroupDrilldownSheetProps {
@@ -130,6 +135,8 @@ function DrilldownPanel({
               def={def}
               data={metricTarget.data}
               entityId={metricTarget.entityId}
+              range={range}
+              supplementalData={metricTarget.supplementalData}
               cohortLabel={cohortLabel}
             />
           ) : metricTarget?.kind === "team" ? (
