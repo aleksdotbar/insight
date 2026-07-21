@@ -40,15 +40,16 @@ const DEF: MetricGroup = {
   drilldown: [
     { chart: "bars", view: "breakdown", metrics: ["ai.accepted_lines"] },
     {
-      chart: "stacked-bar",
+      id: "accepted-lines-by-tool",
       view: "timeseries",
       metrics: ["ai.accepted_lines"],
+      groupBy: { default: "tool" },
     },
   ],
 };
 
 function result(
-  overrides: Partial<MetricCollectionResult> = {},
+  overrides: Partial<MetricCollectionResult> = {}
 ): MetricCollectionResult {
   return {
     byKey: normalizeMetricResults([SUM_METRIC_FIXTURE, RATIO_METRIC_FIXTURE]),
@@ -68,13 +69,11 @@ describe("CollectionDrilldown", () => {
         def={DEF}
         data={result()}
         entityId="alice@example.com"
-      />,
+      />
     );
     // Breakdown block: composition by tool with response-provided labels.
     expect(screen.getByText("Period total by tool")).toBeInTheDocument();
     expect(screen.getAllByText("Claude Code").length).toBeGreaterThan(0);
-    // Timeseries block.
-    expect(screen.getByText("Accepted lines over time")).toBeInTheDocument();
     // Peer story: both fixture metrics are in-pack (no outlier hero), so the
     // story falls back to the flat grid with one card per metric.
     expect(screen.getByText("Tool acceptance rate")).toBeInTheDocument();
@@ -110,9 +109,11 @@ describe("CollectionDrilldown", () => {
     render(
       <CollectionDrilldown
         def={histogramDef}
-        data={result({ byKey: normalizeMetricResults([MEDIAN_METRIC_FIXTURE]) })}
+        data={result({
+          byKey: normalizeMetricResults([MEDIAN_METRIC_FIXTURE]),
+        })}
         entityId="alice@example.com"
-      />,
+      />
     );
     // Each histogram is its own card in the grid (no wrapping "Distributions"
     // card), shaded vs the peer median (the subtitle proves the diverging
@@ -151,12 +152,10 @@ describe("CollectionDrilldown", () => {
         def={summaryDef}
         data={result()}
         entityId="alice@example.com"
-      />,
+      />
     );
     expect(screen.getAllByText("Accepted lines").length).toBeGreaterThan(0);
-    expect(
-      screen.getByRole("button", { name: /By tool/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /By tool/ })).toBeInTheDocument();
   });
 
   it("shows the error state with retry when the collection failed", () => {
@@ -166,7 +165,7 @@ describe("CollectionDrilldown", () => {
         def={DEF}
         data={result({ isError: true, refetch })}
         entityId="alice@example.com"
-      />,
+      />
     );
     expect(screen.getByText("Unable to load metrics")).toBeInTheDocument();
   });
@@ -177,7 +176,7 @@ describe("CollectionDrilldown", () => {
         def={DEF}
         data={result({ isPending: true })}
         entityId="alice@example.com"
-      />,
+      />
     );
     expect(container.querySelector("svg")).toBeInTheDocument();
   });

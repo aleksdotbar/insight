@@ -7,9 +7,9 @@
  * connector in the platform's documented inventory; families that are not
  * built yet use their anticipated dimension value (snake_case vendor name)
  * and simply fall back to chart tokens until the value matches. Unknown
- * seeds fall back to the theme's categorical chart tokens (`--chart-1..5`),
+ * seeds fall back to the theme's categorical chart tokens (`--chart-1..12`),
  * assigned in sorted seed order so a given seed set always maps the same
- * way; past five they cycle.
+ * way; past twelve they cycle.
  *
  * A `Map` (not a `Record`) so a malformed seed like `"__proto__"` or
  * `"constructor"` falls through to the chart-token path instead of leaking
@@ -66,6 +66,13 @@ const CHART_TOKENS = [
   "var(--chart-3)",
   "var(--chart-4)",
   "var(--chart-5)",
+  "var(--chart-6)",
+  "var(--chart-7)",
+  "var(--chart-8)",
+  "var(--chart-9)",
+  "var(--chart-10)",
+  "var(--chart-11)",
+  "var(--chart-12)",
 ] as const;
 
 export function seriesColors(seeds: string[]): Record<string, string> {

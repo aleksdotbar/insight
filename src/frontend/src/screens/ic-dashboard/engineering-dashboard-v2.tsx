@@ -42,7 +42,10 @@ import {
 } from "@/lib/metrics/collection";
 import { normalizePersonId } from "@/lib/metrics/entity";
 import { cn } from "@/lib/utils";
-import { useIcDashboardData, type IcDashboardData } from "@/queries/ic-dashboard";
+import {
+  useIcDashboardData,
+  type IcDashboardData,
+} from "@/queries/ic-dashboard";
 import {
   useMetricCollection,
   useMetricCollectionSet,
@@ -108,7 +111,7 @@ export function EngineeringDashboardV2({
       collection: projectViews(def.collection, ["period", "peer"]),
     })),
     entity,
-    dateRange,
+    dateRange
   );
 
   const [openGroup, setOpenGroup] = useState<GroupId | null>(null);
@@ -125,19 +128,14 @@ export function EngineeringDashboardV2({
   const drilldownData = useMetricCollection(
     openMetricDef?.collection ?? EMPTY_COLLECTION,
     openMetricDef ? entity : CLOSED_ENTITY,
-    dateRange,
+    dateRange
   );
-
-  const legacyRowsByGroup: Record<string, BulletMetric[]> =
-    Object.fromEntries(
-      GROUPS.filter((def) => def.kind === "legacy").map((def) => [
-        def.id,
-        orderRowsForSection(
-          def.id,
-          LEGACY_GROUP_FEEDS[def.id]?.rows(data) ?? [],
-        ),
-      ]),
-    );
+  const legacyRowsByGroup: Record<string, BulletMetric[]> = Object.fromEntries(
+    GROUPS.filter((def) => def.kind === "legacy").map((def) => [
+      def.id,
+      orderRowsForSection(def.id, LEGACY_GROUP_FEEDS[def.id]?.rows(data) ?? []),
+    ])
+  );
 
   const displayName = person?.display_name ?? personId;
   const role = person?.job_title;
@@ -147,17 +145,17 @@ export function EngineeringDashboardV2({
   const legacyTiles = legacyKpiTiles(
     data?.kpis ?? [],
     catalog.byMetricKey,
-    focusMode,
+    focusMode
   );
   const metricTiles = metricKpiTiles(
     kpiData.byKey,
     kpiData.previousByKey,
     entityId,
-    focusMode,
+    focusMode
   );
   const tiles = kpiRowTiles(legacyTiles, metricTiles);
   const tilesByKey = new Map<string, KpiTileData>(
-    tiles.map((tile) => [tile.key, tile]),
+    tiles.map((tile) => [tile.key, tile])
   );
   const legacyKpiLabels = useMemo(
     () =>
@@ -167,9 +165,9 @@ export function EngineeringDashboardV2({
           .map((m) => [
             (m.metric_key ?? "").slice(IC_KPI_PREFIX.length),
             m.label,
-          ]),
+          ])
       ),
-    [catalog.data],
+    [catalog.data]
   );
 
   const attentionItems = [
@@ -178,14 +176,14 @@ export function EngineeringDashboardV2({
         id: def.id,
         rows: legacyRowsByGroup[def.id] ?? [],
       })),
-      catalog.byMetricKey,
+      catalog.byMetricKey
     ),
     ...metricGroups().flatMap((def) =>
       metricAttentionItems(
         def,
         groupData.get(def.id)?.byKey ?? new Map(),
-        entityId,
-      ),
+        entityId
+      )
     ),
   ];
 
@@ -194,15 +192,15 @@ export function EngineeringDashboardV2({
   // target_value), not merely a non-null zero-filled total — otherwise the
   // empty state becomes unreachable for fully unmeasured people.
   const hasMetricKpiData = [...kpiData.byKey.values()].some((metric) =>
-    entityObserved(metric, entityId),
+    entityObserved(metric, entityId)
   );
   const hasLegacyGroupData = Object.values(legacyRowsByGroup).some((rows) =>
-    rows.some(hasBulletValue),
+    rows.some(hasBulletValue)
   );
   const hasMetricGroupData = [...groupData.values()].some((result) =>
     [...result.byKey.values()].some((metric) =>
-      entityObserved(metric, entityId),
-    ),
+      entityObserved(metric, entityId)
+    )
   );
   const metricsSettled =
     !kpiData.isPending &&
@@ -210,8 +208,7 @@ export function EngineeringDashboardV2({
   // Failed unified queries must surface as error cards with retry — never as
   // "you have no data".
   const anyMetricError =
-    kpiData.isError ||
-    [...groupData.values()].some((result) => result.isError);
+    kpiData.isError || [...groupData.values()].some((result) => result.isError);
   const isAllEmpty =
     Boolean(data) &&
     metricsSettled &&
@@ -228,7 +225,7 @@ export function EngineeringDashboardV2({
   const isMetricsRevalidating =
     (kpiData.isFetching && !kpiData.isPending) ||
     [...groupData.values()].some(
-      (result) => result.isFetching && !result.isPending,
+      (result) => result.isFetching && !result.isPending
     );
   const showFullSpinner = dashQ.isPending || (isAllEmpty && dashQ.isFetching);
 
@@ -261,7 +258,7 @@ export function EngineeringDashboardV2({
           <div
             className={cn(
               "transition-opacity",
-              dashQ.isFetching && "opacity-60",
+              dashQ.isFetching && "opacity-60"
             )}
           >
             <DashboardEmptyState period={period} onSetPeriod={setPeriod} />
@@ -270,19 +267,22 @@ export function EngineeringDashboardV2({
           <div
             className={cn(
               "flex flex-col gap-8 transition-opacity",
-              (dashQ.isFetching || isMetricsRevalidating) && "opacity-60",
+              (dashQ.isFetching || isMetricsRevalidating) && "opacity-60"
             )}
           >
             <section className="flex flex-col gap-3">
               <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 At a glance
               </p>
-              <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
                 {KPI_ROW.map((source) => {
                   const key =
                     source.kind === "legacy" ? source.key : source.metricKey;
                   const tile = tilesByKey.get(key);
-                  if (tile && (source.kind === "metric" || !data?.errors.kpis)) {
+                  if (
+                    tile &&
+                    (source.kind === "metric" || !data?.errors.kpis)
+                  ) {
                     return (
                       <KpiTile
                         key={key}
@@ -329,7 +329,7 @@ export function EngineeringDashboardV2({
               <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 Sections
               </p>
-              <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(18rem,1fr))]">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-3">
                 {GROUPS.map((def) => {
                   if (def.kind === "metrics") {
                     const result = groupData.get(def.id);
@@ -388,7 +388,9 @@ export function EngineeringDashboardV2({
                   // The drilldown for the open group reads the full-collection
                   // query; closed sheets never render their body.
                   data:
-                    def.id === openGroup ? drilldownData : CLOSED_DRILLDOWN_DATA,
+                    def.id === openGroup
+                      ? drilldownData
+                      : CLOSED_DRILLDOWN_DATA,
                 }
               : undefined
           }

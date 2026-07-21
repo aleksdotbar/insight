@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import {
@@ -30,6 +30,7 @@ export interface MetricCollectionOptions {
    * `previousByKey`.
    */
   previousPeriod?: PeriodValue;
+  keepPreviousData?: boolean;
 }
 
 export interface MetricCollectionResult {
@@ -53,7 +54,7 @@ function queryKeyFor(
   entity: MetricCollectionEntity,
   ids: string[],
   range: DateRange,
-  metrics: MetricRequest[],
+  metrics: MetricRequest[]
 ) {
   // The derived `metrics` array rides in the key, so key and payload are
   // provably coherent — no hand-maintained collection identity to forget to
@@ -72,13 +73,13 @@ export function useMetricCollection(
   collection: MetricCollectionConfig,
   entity: MetricCollectionEntity,
   range: DateRange,
-  options?: MetricCollectionOptions,
+  options?: MetricCollectionOptions
 ): MetricCollectionResult {
   const ids = canonicalEntityIds(entity);
   const request = buildMetricCollectionRequest(
     collection,
     { type: entity.type, ids },
-    range,
+    range
   );
   const enabled = ids.length > 0 && Boolean(range.from && range.to);
 
@@ -86,6 +87,7 @@ export function useMetricCollection(
     queryKey: queryKeyFor(entity, ids, range, request.metrics),
     queryFn: () => queryMetricResults(request),
     enabled,
+    placeholderData: options?.keepPreviousData ? keepPreviousData : undefined,
   });
 
   const previousRange = options?.previousPeriod
@@ -95,14 +97,19 @@ export function useMetricCollection(
     ? buildMetricCollectionRequest(
         collection,
         { type: entity.type, ids },
-        previousRange,
+        previousRange
       )
     : null;
   const previous = useQuery({
     // Sentinel key when no previous period is requested: the disabled twin
     // must never alias the current query's cache entry.
     queryKey: previousRequest
-      ? queryKeyFor(entity, ids, previousRange ?? range, previousRequest.metrics)
+      ? queryKeyFor(
+          entity,
+          ids,
+          previousRange ?? range,
+          previousRequest.metrics
+        )
       : (["metric-results", "previous-disabled"] as const),
     queryFn: () => queryMetricResults(previousRequest ?? request),
     enabled: enabled && previousRequest !== null,
@@ -111,7 +118,7 @@ export function useMetricCollection(
   const hasPrevious = previousRequest !== null;
   const byKey = useMemo(
     () => normalizeMetricResults(current.data?.metrics),
-    [current.data],
+    [current.data]
   );
   // Deltas pair two periods; a failed twin yields "no delta" rather than a
   // silently mispaired one. Both queries reset together on a period change, so
@@ -121,15 +128,14 @@ export function useMetricCollection(
   const previousData = previousUsable ? previous.data : undefined;
   const previousByKey = useMemo(
     () => (previousData ? normalizeMetricResults(previousData.metrics) : null),
-    [previousData],
+    [previousData]
   );
 
   return {
     byKey,
     previousByKey,
     isPending: current.isPending && enabled,
-    isFetching:
-      current.isFetching || (hasPrevious && previous.isFetching),
+    isFetching: current.isFetching || (hasPrevious && previous.isFetching),
     isError: current.isError,
     refetch: () => {
       void current.refetch();
@@ -152,7 +158,7 @@ export interface KeyedCollection {
 export function useMetricCollectionSet(
   collections: readonly KeyedCollection[],
   entity: MetricCollectionEntity,
-  range: DateRange,
+  range: DateRange
 ): Map<string, MetricCollectionResult> {
   const ids = canonicalEntityIds(entity);
   const enabled = ids.length > 0 && Boolean(range.from && range.to);
@@ -162,14 +168,13 @@ export function useMetricCollectionSet(
   // results merge back into one collection result per key.
   const requests = collections.flatMap(({ key, collection }) => {
     const chunkSize = entityChunkSize(collection);
-    const chunks =
-      chunkSize === null ? [ids] : chunkEntityIds(ids, chunkSize);
+    const chunks = chunkSize === null ? [ids] : chunkEntityIds(ids, chunkSize);
     return chunks.map((chunkIds) => ({
       key,
       request: buildMetricCollectionRequest(
         collection,
         { type: entity.type, ids: chunkIds },
-        range,
+        range
       ),
       chunkIds,
     }));
@@ -184,7 +189,10 @@ export function useMetricCollectionSet(
   });
 
   const out = new Map<string, MetricCollectionResult>();
-  const chunkMaps = new Map<string, Array<Map<string, NormalizedMetricResult>>>();
+  const chunkMaps = new Map<
+    string,
+    Array<Map<string, NormalizedMetricResult>>
+  >();
   requests.forEach(({ key }, index) => {
     const query = results[index];
     if (!query) return;

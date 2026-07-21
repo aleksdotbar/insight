@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 
 export interface CollapsibleSectionProps {
   title: string;
@@ -14,21 +15,14 @@ export interface CollapsibleSectionProps {
   children: ReactNode;
 }
 
-function readLs(storageKey: string | undefined, fallback: boolean): boolean {
-  if (!storageKey || typeof window === "undefined") return fallback;
-  const raw = window.localStorage.getItem(storageKey);
+function parseOpen(raw: string): boolean | undefined {
   if (raw === "1") return true;
   if (raw === "0") return false;
-  return fallback;
+  return undefined;
 }
 
-function writeLs(storageKey: string | undefined, value: boolean): void {
-  if (!storageKey || typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey, value ? "1" : "0");
-  } catch {
-    /* ignore */
-  }
+function serializeOpen(value: boolean): string {
+  return value ? "1" : "0";
 }
 
 export function CollapsibleSection({
@@ -38,48 +32,47 @@ export function CollapsibleSection({
   storageKey,
   children,
 }: CollapsibleSectionProps) {
-  const [open, setOpen] = useState<boolean>(() =>
-    readLs(storageKey, defaultOpen),
-  );
-
-  useEffect(() => {
-    writeLs(storageKey, open);
-  }, [storageKey, open]);
+  const [open, setOpen] = useLocalStorageState({
+    key: storageKey,
+    defaultValue: defaultOpen,
+    parse: parseOpen,
+    serialize: serializeOpen,
+  });
 
   return (
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      className="border-border overflow-hidden rounded-lg border"
+      className="overflow-hidden rounded-lg border border-border"
     >
       <CollapsibleTrigger
         render={
           <button
             type="button"
-            className="bg-card hover:bg-accent/40 flex w-full cursor-pointer items-start justify-between border-none px-4 py-3 text-left transition-colors"
+            className="flex w-full cursor-pointer items-start justify-between border-none bg-card px-4 py-3 text-left transition-colors hover:bg-accent/40"
           >
             <span className="flex flex-col">
-              <span className="text-foreground text-sm font-semibold">
+              <span className="text-sm font-semibold text-foreground">
                 {title}
               </span>
               {subtitle ? (
-                <span className="text-muted-foreground mt-0.5 text-xs">
+                <span className="mt-0.5 text-xs text-muted-foreground">
                   {subtitle}
                 </span>
               ) : null}
             </span>
             <span className="flex shrink-0 items-center gap-1.5">
-              <span className="bg-muted text-muted-foreground rounded px-1.5 py-px text-xs">
+              <span className="rounded bg-muted px-1.5 py-px text-xs text-muted-foreground">
                 {open ? "Expanded" : "Collapsed"}
               </span>
-              <span className="text-muted-foreground text-xs">
+              <span className="text-xs text-muted-foreground">
                 {open ? "▴" : "▾"}
               </span>
             </span>
           </button>
         }
       />
-      <CollapsibleContent className="border-border bg-card border-t">
+      <CollapsibleContent className="border-t border-border bg-card">
         {children}
       </CollapsibleContent>
     </Collapsible>

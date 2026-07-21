@@ -5,13 +5,13 @@ import { seriesColors } from "@/lib/series-colors";
 describe("seriesColors", () => {
   it("is deterministic regardless of duplicate seed inputs", () => {
     expect(seriesColors(["cursor", "claude_code", "cursor"])).toEqual(
-      seriesColors(["claude_code", "cursor"]),
+      seriesColors(["claude_code", "cursor"])
     );
   });
 
   it("returns one color per unique seed", () => {
     expect(
-      Object.keys(seriesColors(["cursor", "cursor", "codex"])).sort(),
+      Object.keys(seriesColors(["cursor", "cursor", "codex"])).sort()
     ).toEqual(["codex", "cursor"]);
   });
 
@@ -35,12 +35,26 @@ describe("seriesColors", () => {
     expect(palette.unknown_tool).toBe("var(--chart-1)");
   });
 
-  it("cycles chart tokens past five unknown seeds", () => {
-    const seeds = ["a", "b", "c", "d", "e", "f"];
+  it("cycles chart tokens past twelve unknown seeds", () => {
+    const seeds = [
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+      "g",
+      "h",
+      "i",
+      "j",
+      "k",
+      "l",
+      "m",
+    ];
     const palette = seriesColors(seeds);
     expect(palette.a).toBe("var(--chart-1)");
-    expect(palette.f).toBe("var(--chart-1)");
-    expect(palette.e).toBe("var(--chart-5)");
+    expect(palette.l).toBe("var(--chart-12)");
+    expect(palette.m).toBe("var(--chart-1)");
   });
 
   it("treats prototype-member seeds as unknown, never as brand colors", () => {

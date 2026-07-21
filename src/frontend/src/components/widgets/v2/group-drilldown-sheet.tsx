@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Maximize2, Minimize2, XIcon } from "lucide-react";
 
 import { ComingSoon } from "@/components/widgets/coming-soon";
@@ -25,11 +24,20 @@ import { useIcDrilldownBatch } from "@/queries/v2/ic-extras";
 import type { PeerCohortLabel } from "@/lib/peers";
 import type { MetricCollectionResult } from "@/queries/metric-results";
 import { cn } from "@/lib/utils";
+import {
+  parseLocalStorageBoolean,
+  serializeLocalStorageBoolean,
+  useLocalStorageState,
+} from "@/hooks/use-local-storage-state";
 import type { BulletMetric, PeriodValue } from "@/types/insight";
 
 /** Data target for a metrics-backed group's drilldown body. */
 export type MetricDrilldownTarget =
-  | { kind: "person"; entityId: string; data: MetricCollectionResult }
+  | {
+      kind: "person";
+      entityId: string;
+      data: MetricCollectionResult;
+    }
   | { kind: "team"; members: TeamMemberRef[]; data: MetricCollectionResult };
 
 export interface GroupDrilldownSheetProps {
@@ -94,13 +102,18 @@ function DrilldownPanel({
   period?: PeriodValue;
   cohortLabel: PeerCohortLabel;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useLocalStorageState<boolean>({
+    key: "insight.drilldown.expanded",
+    defaultValue: true,
+    parse: parseLocalStorageBoolean,
+    serialize: serializeLocalStorageBoolean,
+  });
 
   return (
     <div
       className={cn(
         "flex min-h-0 flex-col overflow-hidden",
-        expanded ? "h-[95vh] w-[95vw]" : "h-[70vh] w-[80vw]",
+        expanded ? "h-[95vh] w-[95vw]" : "h-[70vh] w-[80vw]"
       )}
     >
       <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-2 border-b p-4">
@@ -130,6 +143,7 @@ function DrilldownPanel({
               def={def}
               data={metricTarget.data}
               entityId={metricTarget.entityId}
+              range={range}
               cohortLabel={cohortLabel}
             />
           ) : metricTarget?.kind === "team" ? (
@@ -204,7 +218,7 @@ function LegacyDrilldownBody({
     <div
       className={cn(
         "flex flex-col gap-6 p-4 transition-opacity sm:p-6",
-        batchQ.isFetching && "opacity-60",
+        batchQ.isFetching && "opacity-60"
       )}
     >
       {counters.length > 0 ? (
