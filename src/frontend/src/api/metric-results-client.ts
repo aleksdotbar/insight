@@ -1,8 +1,8 @@
 import { fetchWithAuth } from "@/api/fetch-with-auth";
 import { AnalyticsApiError } from "@/api/analytics-client";
 
-const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ??
-  "/api/analytics/v1";
+const BASE =
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api/analytics/v1";
 
 export type MetricFormat = "integer" | "decimal" | "currency" | "percent";
 export type MetricDirection =
@@ -16,11 +16,7 @@ export type MetricResultViewKind =
   | "breakdown"
   | "histogram";
 export type MetricBucket = "day" | "week" | "month";
-export type MetricComputation =
-  | "sum"
-  | "ratio"
-  | "median"
-  | "distinct_count";
+export type MetricComputation = "sum" | "ratio" | "median" | "distinct_count";
 export type MetricEntityType = "person";
 
 export interface MetricResultsRequest {
@@ -31,7 +27,13 @@ export interface MetricResultsRequest {
 
 export interface MetricRequest {
   metric_key: string;
+  filters?: MetricDimensionFilter[];
   views: MetricViewRequest[];
+}
+
+export interface MetricDimensionFilter {
+  dimension: string;
+  values: string[];
 }
 
 export type MetricViewRequest =
@@ -153,7 +155,7 @@ export interface MetricResultsResponse {
 }
 
 export async function queryMetricResults(
-  body: MetricResultsRequest,
+  body: MetricResultsRequest
 ): Promise<MetricResultsResponse> {
   const res = await fetchWithAuth(`${BASE}/metric-results`, {
     method: "POST",

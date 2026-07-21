@@ -15,13 +15,8 @@ import type { MetricCollectionConfig } from "@/lib/metrics/collection";
  * dashboard composition, so they live here.
  */
 
-export type TimeseriesChartKind = "line" | "stacked-bar";
 export type BreakdownChartKind = "bars" | "summary-card";
 export type HistogramChartKind = "histogram";
-export type ChartKind =
-  | TimeseriesChartKind
-  | BreakdownChartKind
-  | HistogramChartKind;
 
 /**
  * One chart in a group's drilldown. Blocks compose: a multi-metric chart
@@ -32,13 +27,18 @@ export type ChartKind =
  * timeseries payload.
  */
 export type DrilldownBlock =
-  | { view: "timeseries"; chart: TimeseriesChartKind; metrics: string[] }
-  | { view: "breakdown"; chart: BreakdownChartKind; metrics: string[] }
-  | { view: "histogram"; chart: HistogramChartKind; metrics: string[] }
   | {
-      view: "weekly-repository-table";
-      metrics: { commits: string; linesAdded: string; linesRemoved: string };
-    };
+      id: string;
+      view: "timeseries";
+      metrics: string[];
+      defaultPresentation?: "chart" | "table";
+      groupBy?: {
+        default: string;
+        options?: string[];
+      };
+    }
+  | { view: "breakdown"; chart: BreakdownChartKind; metrics: string[] }
+  | { view: "histogram"; chart: HistogramChartKind; metrics: string[] };
 
 export interface MetricGroup {
   kind: "metrics";
@@ -69,19 +69,11 @@ const TASK_DELIVERY_COLLECTION: MetricCollectionConfig = {
   metrics: [
     {
       key: "tasks.closed",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto" },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     {
       key: "tasks.bugs_fixed",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto" },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     {
       key: "tasks.dev_time",
@@ -129,11 +121,7 @@ const AI_ADOPTION_COLLECTION: MetricCollectionConfig = {
   metrics: [
     {
       key: "ai.accepted_lines",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto", dimensions: ["tool"] },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     { key: "ai.removed_lines", views: [{ view: "period" }, { view: "peer" }] },
     { key: "ai.active_days", views: [{ view: "period" }, { view: "peer" }] },
@@ -169,27 +157,15 @@ const GIT_OUTPUT_COLLECTION: MetricCollectionConfig = {
   metrics: [
     {
       key: "git.commits",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto" },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     {
       key: "git.prs_merged",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto" },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     {
       key: "git.lines_added",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto", dimensions: ["category"] },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     {
       key: "git.pr_cycle_time_h",
@@ -223,13 +199,19 @@ const COLLABORATION_COLLECTION: MetricCollectionConfig = {
         { view: "breakdown", dimensions: ["tool"] },
       ],
     },
-    { key: "collab.channel_posts", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.channel_posts",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
     { key: "collab.dm_ratio", views: [{ view: "period" }, { view: "peer" }] },
     {
       key: "collab.msgs_per_active_day",
       views: [{ view: "period" }, { view: "peer" }],
     },
-    { key: "collab.active_days", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.active_days",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
     {
       key: "collab.meeting_hours",
       views: [
@@ -250,12 +232,18 @@ const COLLABORATION_COLLECTION: MetricCollectionConfig = {
       key: "collab.meetings_organized",
       views: [{ view: "period" }, { view: "peer" }],
     },
-    { key: "collab.adhoc_meetings", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.adhoc_meetings",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
     {
       key: "collab.scheduled_meetings",
       views: [{ view: "period" }, { view: "peer" }],
     },
-    { key: "collab.focus_time_pct", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.focus_time_pct",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
     { key: "collab.breadth", views: [{ view: "period" }, { view: "peer" }] },
     {
       key: "collab.emails_sent",
@@ -267,9 +255,18 @@ const COLLABORATION_COLLECTION: MetricCollectionConfig = {
         { view: "breakdown", dimensions: ["tool"] },
       ],
     },
-    { key: "collab.emails_received", views: [{ view: "period" }, { view: "peer" }] },
-    { key: "collab.emails_read", views: [{ view: "period" }, { view: "peer" }] },
-    { key: "collab.files_engaged", views: [{ view: "period" }, { view: "peer" }] },
+    {
+      key: "collab.emails_received",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "collab.emails_read",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "collab.files_engaged",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
     {
       key: "collab.files_shared_internal",
       views: [{ view: "period" }, { view: "peer" }],
@@ -293,19 +290,11 @@ const WIKI_COLLECTION: MetricCollectionConfig = {
   metrics: [
     {
       key: "wiki.pages_created",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto" },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     {
       key: "wiki.edits",
-      views: [
-        { view: "period" },
-        { view: "peer" },
-        { view: "timeseries", bucket: "auto" },
-      ],
+      views: [{ view: "period" }, { view: "peer" }],
     },
     { key: "wiki.pages_edited", views: [{ view: "period" }, { view: "peer" }] },
     { key: "wiki.comments", views: [{ view: "period" }, { view: "peer" }] },
@@ -323,7 +312,7 @@ export const GROUPS: readonly GroupDef[] = [
     },
     drilldown: [
       {
-        chart: "line",
+        id: "task-throughput",
         view: "timeseries",
         metrics: ["tasks.closed", "tasks.bugs_fixed"],
       },
@@ -350,22 +339,25 @@ export const GROUPS: readonly GroupDef[] = [
     },
     drilldown: [
       {
-        chart: "line",
+        id: "output-by-repository",
         view: "timeseries",
-        metrics: ["git.commits", "git.prs_merged"],
+        metrics: [
+          "git.commits",
+          "git.prs_merged",
+          "git.lines_added",
+          "git.lines_removed",
+        ],
+        defaultPresentation: "table",
+        groupBy: { default: "repository" },
       },
       {
-        view: "weekly-repository-table",
-        metrics: {
-          commits: "git.commits",
-          linesAdded: "git.lines_added",
-          linesRemoved: "git.lines_removed",
+        id: "lines-added-by-category",
+        view: "timeseries",
+        metrics: ["git.lines_added", "git.lines_removed"],
+        groupBy: {
+          default: "category",
+          options: ["category", "repository"],
         },
-      },
-      {
-        chart: "stacked-bar",
-        view: "timeseries",
-        metrics: ["git.lines_added"],
       },
       {
         chart: "histogram",
@@ -415,9 +407,10 @@ export const GROUPS: readonly GroupDef[] = [
     },
     drilldown: [
       {
-        chart: "stacked-bar",
+        id: "accepted-lines-by-tool",
         view: "timeseries",
         metrics: ["ai.accepted_lines"],
+        groupBy: { default: "tool" },
       },
     ],
   },
@@ -431,7 +424,7 @@ export const GROUPS: readonly GroupDef[] = [
     },
     drilldown: [
       {
-        chart: "line",
+        id: "wiki-activity",
         view: "timeseries",
         metrics: ["wiki.pages_created", "wiki.edits"],
       },
@@ -447,55 +440,6 @@ export function groupById(id: GroupId): GroupDef {
 
 export function metricGroups(): MetricGroup[] {
   return GROUPS.filter((g): g is MetricGroup => g.kind === "metrics");
-}
-
-export function supplementalCollections(def: MetricGroup): Array<{
-  key: string;
-  collection: MetricCollectionConfig;
-}> {
-  return def.drilldown.flatMap((block) =>
-    block.view === "weekly-repository-table"
-      ? [
-          {
-            key: block.view,
-            collection: {
-              metrics: [
-                {
-                  key: block.metrics.commits,
-                  views: [
-                    {
-                      view: "timeseries" as const,
-                      bucket: "week" as const,
-                      dimensions: ["repository"],
-                    },
-                  ],
-                },
-                {
-                  key: block.metrics.linesAdded,
-                  views: [
-                    {
-                      view: "timeseries" as const,
-                      bucket: "week" as const,
-                      dimensions: ["repository"],
-                    },
-                  ],
-                },
-                {
-                  key: block.metrics.linesRemoved,
-                  views: [
-                    {
-                      view: "timeseries" as const,
-                      bucket: "week" as const,
-                      dimensions: ["repository"],
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        ]
-      : [],
-  );
 }
 
 export function legacyGroups(): LegacyGroup[] {
@@ -522,8 +466,7 @@ export const KPI_ROW: readonly KpiTileSource[] = [
 
 export const KPI_ROW_COLLECTION: MetricCollectionConfig = {
   metrics: KPI_ROW.filter(
-    (t): t is Extract<KpiTileSource, { kind: "metric" }> =>
-      t.kind === "metric",
+    (t): t is Extract<KpiTileSource, { kind: "metric" }> => t.kind === "metric"
   ).map((t) => ({
     key: t.metricKey,
     views: [{ view: "period" }, { view: "peer" }],

@@ -5,6 +5,7 @@ import type {
   MetricBucket,
   MetricComputation,
   MetricDirection,
+  MetricDimensionFilter,
   MetricEntityType,
   MetricFormat,
   MetricResult,
@@ -34,6 +35,7 @@ export type MetricCollectionViewConfig =
 
 export interface MetricCollectionMetricConfig {
   key: string;
+  filters?: MetricDimensionFilter[];
   views: MetricCollectionViewConfig[];
 }
 
@@ -75,19 +77,22 @@ export interface EntityMetricData {
 }
 
 function exhaustive(value: never): never {
-  throw new Error(`Unhandled metric collection variant: ${JSON.stringify(value)}`);
+  throw new Error(
+    `Unhandled metric collection variant: ${JSON.stringify(value)}`
+  );
 }
 
 export function buildMetricCollectionRequest(
   collection: MetricCollectionConfig,
   entity: MetricCollectionEntity,
-  period: DateRange,
+  period: DateRange
 ): MetricResultsRequest {
   return {
     entity: { type: entity.type, ids: entity.ids },
     period,
     metrics: collection.metrics.map((metric) => ({
       metric_key: metric.key,
+      ...(metric.filters?.length ? { filters: metric.filters } : {}),
       views: metric.views.map((view) => toRequestView(view, period)),
     })),
   };
@@ -101,12 +106,13 @@ export function buildMetricCollectionRequest(
  */
 export function projectViews(
   collection: MetricCollectionConfig,
-  kinds: readonly MetricResultViewKind[],
+  kinds: readonly MetricResultViewKind[]
 ): MetricCollectionConfig {
   return {
     metrics: collection.metrics
       .map((metric) => ({
         key: metric.key,
+        filters: metric.filters,
         views: metric.views.filter((view) => kinds.includes(view.view)),
       }))
       // The backend rejects a metric with no views (invalid_argument) and
@@ -116,7 +122,7 @@ export function projectViews(
 }
 
 export function normalizeMetricResult(
-  metric: MetricResult,
+  metric: MetricResult
 ): NormalizedMetricResult {
   const normalized: NormalizedMetricResult = {
     metric_key: metric.metric_key,
@@ -162,13 +168,13 @@ export function normalizeMetricResult(
 }
 
 export function normalizeMetricResults(
-  metrics: MetricResult[] | undefined,
+  metrics: MetricResult[] | undefined
 ): Map<string, NormalizedMetricResult> {
   return new Map(
     (metrics ?? []).map((metric) => {
       const normalized = normalizeMetricResult(metric);
       return [normalized.metric_key, normalized];
-    }),
+    })
   );
 }
 
@@ -179,14 +185,13 @@ export function normalizeMetricResults(
  */
 export function forEntity(
   result: NormalizedMetricResult,
-  entityId: string,
+  entityId: string
 ): EntityMetricData {
   return {
     value:
       result.period?.values.find((v) => v.entity_id === entityId)?.value ??
       null,
-    peer:
-      result.peer?.values.find((v) => v.entity_id === entityId) ?? null,
+    peer: result.peer?.values.find((v) => v.entity_id === entityId) ?? null,
     bucket: result.timeseries?.bucket ?? null,
     series:
       result.timeseries?.series.filter((s) => s.entity_id === entityId) ?? [],
@@ -213,7 +218,7 @@ export const MAX_PROJECTED_ROWS = 4500;
  * `projectViews(["period", "peer"])`, so none should ride a chunked request.
  */
 export function entityChunkSize(
-  collection: MetricCollectionConfig,
+  collection: MetricCollectionConfig
 ): number | null {
   let rowsPerEntity = 0;
   for (const metric of collection.metrics) {
@@ -248,7 +253,7 @@ export function chunkEntityIds(ids: string[], size: number): string[][] {
  * timeseries/breakdown views.
  */
 export function mergeNormalizedResults(
-  maps: Array<Map<string, NormalizedMetricResult>>,
+  maps: Array<Map<string, NormalizedMetricResult>>
 ): Map<string, NormalizedMetricResult> {
   const out = new Map<string, NormalizedMetricResult>();
   for (const map of maps) {
@@ -269,7 +274,10 @@ export function mergeNormalizedResults(
       if (existing.period && result.period) {
         existing.period.values.push(...result.period.values);
       } else if (result.period) {
-        existing.period = { ...result.period, values: [...result.period.values] };
+        existing.period = {
+          ...result.period,
+          values: [...result.period.values],
+        };
       }
       if (existing.peer && result.peer) {
         existing.peer.values.push(...result.peer.values);
@@ -291,7 +299,7 @@ export function mergeNormalizedResults(
  */
 export function entityObserved(
   result: NormalizedMetricResult,
-  entityId: string,
+  entityId: string
 ): boolean {
   const data = forEntity(result, entityId);
   if (data.peer) return data.peer.target_value != null;
@@ -300,7 +308,7 @@ export function entityObserved(
 
 function toRequestView(
   view: MetricCollectionViewConfig,
-  period: DateRange,
+  period: DateRange
 ): MetricViewRequest {
   switch (view.view) {
     case "period":
@@ -327,13 +335,17 @@ const MAX_WEEK_BUCKET_DAYS = 182;
 
 export function resolveBucket(
   bucket: MetricCollectionBucket,
-  period: DateRange,
+  period: DateRange
 ): MetricBucket {
   if (bucket !== "auto") return bucket;
   const days = daysInRange(period);
   if (days <= MAX_DAY_BUCKET_DAYS) return "day";
   if (days <= MAX_WEEK_BUCKET_DAYS) return "week";
   return "month";
+}
+
+export function resolveTimeseriesBucket(period: DateRange): MetricBucket {
+  return daysInRange(period) <= 7 ? "day" : "week";
 }
 
 function daysInRange(period: DateRange): number {

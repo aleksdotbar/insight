@@ -3,12 +3,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { MetricBreakdown } from "@/components/widgets/metric-views/metric-breakdown";
 import { MetricHistogram } from "@/components/widgets/metric-views/metric-histogram";
 import { MetricSummaryCard } from "@/components/widgets/metric-views/metric-summary-card";
-import { MetricTrend } from "@/components/widgets/metric-views/metric-trend";
+import { MetricTimeseriesView } from "@/components/widgets/metric-views/metric-timeseries-view";
 import { PeerStory } from "@/components/widgets/metric-views/peer-story";
-import { WeeklyRepositoryActivityTable } from "@/components/widgets/metric-views/weekly-repository-activity-table";
 import type { DateRange } from "@/api/period-to-date-range";
 import type { DrilldownBlock, MetricGroup } from "@/lib/insight/groups";
-import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
+import {
+  forEntity,
+  type NormalizedMetricResult,
+} from "@/lib/metrics/collection";
 import { buildPeerStoryEntries } from "@/lib/metrics/peer-story";
 import type { PeerCohortLabel } from "@/lib/peers";
 import type { MetricCollectionResult } from "@/queries/metric-results";
@@ -19,16 +21,15 @@ export interface CollectionDrilldownProps {
   data: MetricCollectionResult;
   entityId: string;
   range?: DateRange;
-  supplementalData?: Map<string, MetricCollectionResult>;
   cohortLabel?: PeerCohortLabel;
   className?: string;
 }
 
 function blockMetrics(
   block: DrilldownBlock,
-  byKey: Map<string, NormalizedMetricResult>,
+  byKey: Map<string, NormalizedMetricResult>
 ): NormalizedMetricResult[] {
-  if (block.view === "weekly-repository-table") return [];
+  if (block.view === "timeseries") return [];
   return block.metrics.flatMap((key) => {
     const metric = byKey.get(key);
     return metric ? [metric] : [];
@@ -46,9 +47,6 @@ function Block({
 }) {
   const metrics = blockMetrics(block, byKey);
   if (metrics.length === 0) return null;
-  if (block.view === "timeseries") {
-    return <MetricTrend metrics={metrics} entityId={entityId} chart={block.chart} />;
-  }
   // Histogram blocks render in the Distributions card, not here.
   if (block.view !== "breakdown") return null;
   return (
@@ -74,7 +72,6 @@ export function CollectionDrilldown({
   data,
   entityId,
   range,
-  supplementalData,
   cohortLabel = "department",
   className,
 }: CollectionDrilldownProps) {
@@ -83,7 +80,7 @@ export function CollectionDrilldown({
       <div
         className={cn(
           "flex h-full min-h-96 w-full items-center justify-center p-10",
-          className,
+          className
         )}
       >
         <Spinner className="size-12 text-muted-foreground" />
@@ -96,7 +93,7 @@ export function CollectionDrilldown({
       <div
         className={cn(
           "flex h-full min-h-96 w-full items-center justify-center p-10",
-          className,
+          className
         )}
       >
         <ComingSoon
@@ -121,15 +118,15 @@ export function CollectionDrilldown({
     .flatMap((block) => blockMetrics(block, data.byKey));
   const chartBlocks = def.drilldown.filter(
     (
-      block,
+      block
     ): block is Exclude<
       DrilldownBlock,
-      { view: "weekly-repository-table" } | { view: "histogram" }
+      { view: "timeseries" } | { view: "histogram" }
     > =>
-      block.view !== "weekly-repository-table" &&
+      block.view !== "timeseries" &&
       block.view !== "histogram" &&
       !isSummaryBlock(block) &&
-      blockMetrics(block, data.byKey).length > 0,
+      blockMetrics(block, data.byKey).length > 0
   );
   // Populated distributions lead; those with no events for this entity in the
   // period sort to the end so the section doesn't open on an empty placeholder.
@@ -143,8 +140,9 @@ export function CollectionDrilldown({
     ...declaredDistributions.filter(hasDistribution),
     ...declaredDistributions.filter((metric) => !hasDistribution(metric)),
   ];
-  const weeklyTables = def.drilldown.filter(
-    (block) => block.view === "weekly-repository-table",
+  const timeseries = def.drilldown.filter(
+    (block): block is Extract<DrilldownBlock, { view: "timeseries" }> =>
+      block.view === "timeseries"
   );
 
   return (
@@ -152,28 +150,29 @@ export function CollectionDrilldown({
       className={cn(
         "flex min-h-full flex-col gap-4 p-4 transition-opacity sm:p-6",
         data.isFetching && "opacity-60",
-        className,
+        className
       )}
     >
-      {range
-        ? weeklyTables.map((block) => {
-            const supplemental = supplementalData?.get(block.view);
-            return supplemental ? (
-              <WeeklyRepositoryActivityTable
-                key={block.view}
-                data={supplemental}
-                entityId={entityId}
-                range={range}
-                metrics={block.metrics}
-              />
-            ) : null;
-          })
-        : null}
+      {range && timeseries.length > 0 ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {timeseries.map((block) => (
+            <MetricTimeseriesView
+              key={block.id}
+              id={block.id}
+              entityId={entityId}
+              range={range}
+              metricKeys={block.metrics}
+              defaultPresentation={block.defaultPresentation}
+              groupBy={block.groupBy}
+            />
+          ))}
+        </div>
+      ) : null}
       {summaryMetrics.length > 0 ? (
         <div
           className={cn(
             "grid grid-cols-1 gap-4 sm:grid-cols-2",
-            summaryMetrics.length > 2 && "xl:grid-cols-4",
+            summaryMetrics.length > 2 && "xl:grid-cols-4"
           )}
         >
           {summaryMetrics.map((metric) => (
@@ -192,7 +191,7 @@ export function CollectionDrilldown({
         <div
           className={cn(
             "grid grid-cols-1 gap-4",
-            chartBlocks.length > 1 && "lg:grid-cols-2",
+            chartBlocks.length > 1 && "lg:grid-cols-2"
           )}
         >
           {chartBlocks.map((block, index) => (
@@ -212,7 +211,7 @@ export function CollectionDrilldown({
         <div
           className={cn(
             "grid grid-cols-1 gap-4",
-            distributionMetrics.length > 1 && "lg:grid-cols-2",
+            distributionMetrics.length > 1 && "lg:grid-cols-2"
           )}
         >
           {distributionMetrics.map((metric) => (
