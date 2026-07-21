@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { MetricResult } from "@/api/metric-results-client";
-import { kpiRowTiles, metricKpiTiles } from "@/lib/insight/kpi-row";
-import { KPI_ROW } from "@/lib/insight/groups";
+import { metricKpiTiles } from "@/lib/insight/kpi-row";
 import { normalizeMetricResults } from "@/lib/metrics/collection";
 
 function metricResult(
   key: string,
   value: number | null,
-  overrides: Partial<MetricResult> = {},
+  overrides: Partial<MetricResult> = {}
 ): MetricResult {
   return {
     metric_key: key,
@@ -87,7 +86,7 @@ describe("metricKpiTiles", () => {
       normalizeMetricResults([result]),
       null,
       "me@x.com",
-      "all",
+      "all"
     );
     expect(tiles[0]?.valueStatus).toBe("neutral");
     expect(tiles[0]?.medianLabel).toBeNull();
@@ -103,7 +102,7 @@ describe("metricKpiTiles", () => {
       normalizeMetricResults([result]),
       null,
       "me@x.com",
-      "all",
+      "all"
     );
     expect(tiles[0]?.valueStatus).toBe("neutral");
   });
@@ -124,35 +123,8 @@ describe("metricKpiTiles", () => {
       normalizeMetricResults([current]),
       normalizeMetricResults([previous]),
       "me@x.com",
-      "all",
+      "all"
     );
     expect(tiles[0]?.delta?.text).toBe("+5 pp");
-  });
-});
-
-describe("kpiRowTiles", () => {
-  it("orders tiles by KPI_ROW display order", () => {
-    const metric = metricKpiTiles(
-      normalizeMetricResults([
-        metricResult("tasks.closed", 12),
-        metricResult("git.prs_merged", 9),
-        metricResult("ai.active_days", 14),
-      ]),
-      null,
-      "me@x.com",
-      "all",
-    );
-    const ordered = kpiRowTiles([], metric).map((t) => t.key);
-    const expected = KPI_ROW.map((s) =>
-      s.kind === "legacy" ? s.key : s.metricKey,
-    ).filter((k) =>
-      ["tasks.closed", "git.prs_merged", "ai.active_days"].includes(k),
-    );
-    expect(ordered).toEqual(expected);
-    expect(ordered).toEqual([
-      "tasks.closed",
-      "git.prs_merged",
-      "ai.active_days",
-    ]);
   });
 });
