@@ -1,15 +1,9 @@
-import { formatKpiValue } from "@/api/transforms";
-import {
-  formatMetricNumber,
-  formatMetricValue,
-  formatPp,
-} from "@/lib/format";
+import { formatMetricNumber, formatMetricValue, formatPp } from "@/lib/format";
 import {
   KPI_ROW,
   groupIdForMetricKey,
   type GroupId,
 } from "@/lib/insight/groups";
-import type { CatalogByKey } from "@/lib/insight/v2/peer-status";
 import {
   forEntity,
   type NormalizedMetricResult,
@@ -19,13 +13,11 @@ import { formatGapMagnitude } from "@/lib/metrics/gap";
 import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import { computeDelta, type MetricDelta } from "@/lib/metrics/delta";
 import type { FocusMode } from "@/lib/peers";
-import { applyFocusStatus, statusVsMedian, type Status } from "@/lib/status";
-import type { IcKpi } from "@/types/insight";
+import { applyFocusStatus, type Status } from "@/lib/status";
 
 /**
  * Display-ready KPI tile input: selectors own all formatting and scoring, so
- * the tile renders both legacy-batch and metric-collection KPIs without
- * knowing which is which.
+ * the tile renders a value without knowing how it was computed.
  */
 export interface KpiTileData {
   key: string;
@@ -46,79 +38,9 @@ export interface KpiTileData {
   groupId: GroupId | null;
 }
 
-const IC_KPI_PREFIX = "ic_kpis.";
-
-/** Legacy KPI batch rows → tiles (logic lifted verbatim from the old tile). */
-export function legacyKpiTiles(
-  kpis: IcKpi[],
-  byMetricKey: CatalogByKey,
-  focusMode: FocusMode,
-): KpiTileData[] {
-  const byKey = new Map(kpis.map((kpi) => [kpi.metric_key, kpi]));
-  return KPI_ROW.flatMap((source) => {
-    if (source.kind !== "legacy") return [];
-    const kpi = byKey.get(source.key);
-    if (!kpi) return [];
-
-    const catalogRow = byMetricKey(`${IC_KPI_PREFIX}${kpi.metric_key}`);
-    const isSchemaError = catalogRow?.schema_status === "error";
-    const fmt = catalogRow?.format;
-    const isCountMetric =
-      catalogRow !== undefined && fmt !== "percent" && fmt !== "hours";
-    const rawValue = kpi.raw_value ?? (isCountMetric ? 0 : null);
-    const peerMedian = kpi.peer_median ?? null;
-    const hasMedian =
-      peerMedian != null && Number.isFinite(peerMedian) && peerMedian > 0;
-    const isPercent = kpi.unit === "%";
-    const value =
-      kpi.value ?? (isCountMetric ? formatKpiValue(0, fmt) : "—");
-
-    const valueStatus = applyFocusStatus(
-      !isSchemaError && catalogRow && rawValue !== null && hasMedian
-        ? statusVsMedian(rawValue, peerMedian, catalogRow.higher_is_better)
-        : "neutral",
-      focusMode,
-    );
-
-    const showDelta = kpi.delta !== "" && kpi.delta_type !== "neutral";
-    const delta = showDelta
-      ? {
-          // Percent-valued metrics deltas are percentage points; drop the `%`
-          // so "+5" doesn't read as "5% of 86%".
-          text: isPercent ? kpi.delta.replace(/%$/, "") : kpi.delta,
-          status: applyFocusStatus(kpi.delta_type, focusMode),
-          down: kpi.delta.trim().startsWith("-"),
-        }
-      : null;
-
-    const medianLabel =
-      hasMedian && catalogRow !== undefined && !isSchemaError
-        ? `median ${formatKpiValue(peerMedian, catalogRow.format)}${isPercent ? "%" : ""}`
-        : null;
-
-    return [
-      {
-        key: kpi.metric_key,
-        label: kpi.label,
-        value: `${value}${isPercent && value !== "—" ? "%" : ""}`,
-        valueStatus,
-        delta,
-        medianLabel,
-        // The legacy batch reconstructs no arithmetic gap; median alone shows.
-        gapText: null,
-        gapStatus: "neutral",
-        context: catalogRow?.source_tags.length
-          ? catalogRow.source_tags.join(", ")
-          : null,
-        groupId: source.groupId,
-      },
-    ];
-  });
-}
-
 function deltaStatus(
   delta: MetricDelta,
-  direction: NormalizedMetricResult["direction"],
+  direction: NormalizedMetricResult["direction"]
 ): Status {
   if (direction === "neutral" || delta.value === 0) return "neutral";
   const favorable =
@@ -143,7 +65,7 @@ export function metricKpiTiles(
   byKey: Map<string, NormalizedMetricResult>,
   previousByKey: Map<string, NormalizedMetricResult> | null,
   entityId: string,
-  focusMode: FocusMode,
+  focusMode: FocusMode
 ): KpiTileData[] {
   return KPI_ROW.flatMap((source) => {
     if (source.kind !== "metric") return [];
@@ -160,7 +82,7 @@ export function metricKpiTiles(
     const standing = derivePeerStanding(metric.direction, data);
     const valueStatus = applyFocusStatus(
       peerStatusToStatus(standing.rank),
-      focusMode,
+      focusMode
     );
 
     const previousMetric = previousByKey?.get(source.metricKey) ?? null;
@@ -171,7 +93,7 @@ export function metricKpiTiles(
       value,
       previousValue,
       metric.computation,
-      metric.format,
+      metric.format
     );
     const deltaText = rawDelta ? formatTileDelta(rawDelta) : null;
     const delta =
@@ -180,7 +102,7 @@ export function metricKpiTiles(
             text: deltaText,
             status: applyFocusStatus(
               deltaStatus(rawDelta, metric.direction),
-              focusMode,
+              focusMode
             ),
             down: rawDelta.value < 0,
           }
@@ -226,20 +148,5 @@ export function metricKpiTiles(
         groupId: groupIdForMetricKey(metric.metric_key),
       },
     ];
-  });
-}
-
-/** All KPI tiles in `KPI_ROW` display order. */
-export function kpiRowTiles(
-  legacy: KpiTileData[],
-  metric: KpiTileData[],
-): KpiTileData[] {
-  const byKey = new Map(
-    [...legacy, ...metric].map((tile) => [tile.key, tile]),
-  );
-  return KPI_ROW.flatMap((source) => {
-    const key = source.kind === "legacy" ? source.key : source.metricKey;
-    const tile = byKey.get(key);
-    return tile ? [tile] : [];
   });
 }
