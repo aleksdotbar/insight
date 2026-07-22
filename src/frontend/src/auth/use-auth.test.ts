@@ -13,7 +13,7 @@ describe("signOut", () => {
     authStore.setAuthenticated({
       personId: "p-1",
       email: "bob@example.com",
-      tenants: ["t-1"],
+      tenantId: "t-1",
       roles: ["user"],
     });
     vi.stubGlobal("fetch", vi.fn());

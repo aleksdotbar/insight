@@ -12,7 +12,7 @@ describe("getViewerEmail", () => {
     authStore.setAuthenticated({
       personId: "p-1",
       email: "bob@example.com",
-      tenants: [],
+      tenantId: "",
       roles: [],
     });
 

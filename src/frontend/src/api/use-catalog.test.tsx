@@ -42,7 +42,7 @@ function signInTenant(tenantId: string): void {
   authStore.setAuthenticated({
     personId: "p-1",
     email: "bob.park@example.com",
-    tenants: [tenantId],
+    tenantId,
     roles: ["user"],
   });
 }
@@ -52,7 +52,7 @@ function makeOkResponse(
   links: catalogClient.MetricQueryLink[] = [],
 ): catalogClient.CatalogResponse {
   return {
-    tenant_id: authStore.getSnapshot().session?.tenants[0] ?? "t-fallback",
+    tenant_id: authStore.getSnapshot().session?.tenantId || "t-fallback",
     generated_at: "2026-06-01T00:00:00Z",
     metrics: metrics.map((m, i) => ({
       id: m.id ?? `id-${i}`,

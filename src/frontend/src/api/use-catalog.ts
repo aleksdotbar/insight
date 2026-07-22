@@ -86,7 +86,7 @@ export type UseCatalogResult = {
  */
 export function useCatalog(args: CatalogRequest = {}): UseCatalogResult {
   const { session } = useAuth();
-  const tenantId = session?.tenants[0] ?? null;
+  const tenantId = session?.tenantId || null;
   const roleSlug = args.role_slug;
   const teamId = args.team_id;
 

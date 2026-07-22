@@ -22,7 +22,7 @@ describe("loadSession", () => {
       json: async () => ({
         user: "p-1",
         email: "bob@example.com",
-        tenants: ["t-1"],
+        tenant_id: "t-1",
         roles: ["user"],
       }),
     });
@@ -35,7 +35,7 @@ describe("loadSession", () => {
     expect(snap.session).toEqual({
       personId: "p-1",
       email: "bob@example.com",
-      tenants: ["t-1"],
+      tenantId: "t-1",
       roles: ["user"],
     });
     const [url, init] = fetchMock().mock.calls[0];
@@ -51,7 +51,7 @@ describe("loadSession", () => {
     expect(authStore.getSnapshot().session).toEqual({
       personId: "",
       email: "",
-      tenants: [],
+      tenantId: "",
       roles: [],
     });
   });

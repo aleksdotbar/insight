@@ -28,7 +28,7 @@ export function buildCatalogResponse(
   rows: Array<Partial<CatalogMetric>>,
 ): CatalogResponse {
   return {
-    tenant_id: authStore.getSnapshot().session?.tenants[0] ?? "t-1",
+    tenant_id: authStore.getSnapshot().session?.tenantId || "t-1",
     generated_at: "2026-06-01T00:00:00Z",
     metrics: rows.map((r, i) => ({
       id: r.id ?? `id-${i}`,

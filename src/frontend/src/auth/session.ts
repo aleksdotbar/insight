@@ -21,13 +21,13 @@ export async function loadSession(): Promise<AuthStatus> {
     const body = (await res.json()) as {
       user?: string;
       email?: string;
-      tenants?: string[];
+      tenant_id?: string;
       roles?: string[];
     };
     authStore.setAuthenticated({
       personId: body.user ?? "",
       email: body.email ?? "",
-      tenants: body.tenants ?? [],
+      tenantId: body.tenant_id ?? "",
       roles: body.roles ?? [],
     });
     return "authenticated";

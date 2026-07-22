@@ -63,7 +63,7 @@ describe("<CountersBlock>", () => {
     authStore.setAuthenticated({
       personId: "p-1",
       email: "bob.park@example.com",
-      tenants: ["t-1"],
+      tenantId: "t-1",
       roles: ["user"],
     });
     fetchCatalog.mockReset();

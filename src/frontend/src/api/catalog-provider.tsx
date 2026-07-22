@@ -42,7 +42,7 @@ export function CatalogProvider({
   children: React.ReactNode;
 }): React.ReactElement {
   const { session } = useAuth();
-  const tenantId = session?.tenants[0] ?? null;
+  const tenantId = session?.tenantId || null;
   const queryClient = useQueryClient();
   const prevTenantRef = useRef<string | null>(tenantId);
 

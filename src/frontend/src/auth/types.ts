@@ -16,8 +16,8 @@ export type Session = {
   personId: string;
   /** The person's email — the SPA's person key (org tree, IC routes). */
   email: string;
-  /** Signed tenant memberships. */
-  tenants: string[];
+  /** The signed tenant — one and only one per token (EPIC #1583). */
+  tenantId: string;
   /** Access-control roles. */
   roles: string[];
 };
