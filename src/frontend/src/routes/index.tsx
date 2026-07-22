@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { useViewer } from "@/auth";
-import { DevImpersonationHint } from "@/components/dev-impersonation-hint";
+import { FullScreenLoading } from "@/components/full-screen-loading";
 import { IcDashboardScreen } from "@/screens/ic-dashboard";
 
 export const Route = createFileRoute("/")({
@@ -10,7 +10,8 @@ export const Route = createFileRoute("/")({
 
 function IndexRoute() {
   const { email } = useViewer();
-  if (email) return <IcDashboardScreen personId={email} />;
-  // Dev-only state — guard filters prod into signIn().
-  return <DevImpersonationHint />;
+  // An authenticated session always carries an email; the loading fallback
+  // only shows in the brief window before the store resolves.
+  if (!email) return <FullScreenLoading />;
+  return <IcDashboardScreen personId={email} />;
 }

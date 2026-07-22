@@ -1,125 +1,17 @@
 #!/bin/sh
 set -e
 
-# Escape a value for safe interpolation inside a JavaScript string literal
-# wrapped in double quotes. Backslash MUST be first so the other escapes
-# we add aren't themselves doubled. Newlines / CR aren't realistic in an
-# OIDC issuer URL or client_id, but if anything weird ever creeps in via
-# env, we reject the value at validation time below — never silently
-# embed a multi-line value.
-escape_js() {
-  printf '%s' "$1" | sed \
-    -e 's|\\|\\\\|g' \
-    -e 's|"|\\"|g'
-}
+# The SPA is a pure static bundle served behind the nginx `gateway`, which
+# fronts `/api/*`, `/auth/*`, and `/` (this container). Authentication is a
+# server-side cookie/BFF flow: the browser hits `/auth/login` (gateway ->
+# authenticator -> IdP), gets a `__Host-sid` session cookie, and the SPA calls
+# `/api/*` and `/auth/me` same-origin with `credentials: 'include'`. There is
+# no client-side OIDC and no runtime config injection anymore, so this
+# entrypoint only renders the nginx config template and execs the CMD.
 
-# Reject values containing characters that don't belong in an OIDC issuer
-# or client_id: whitespace, control chars, anything that breaks a JS
-# string literal in nasty ways. If any var has those, fail loudly.
-contains_unsafe_chars() {
-  printf '%s' "$1" | LC_ALL=C grep -q '[[:cntrl:][:space:]]'
-}
-if contains_unsafe_chars "${OIDC_ISSUER:-}" || contains_unsafe_chars "${OIDC_CLIENT_ID:-}"; then
-  echo "ERROR: OIDC_ISSUER or OIDC_CLIENT_ID contains whitespace or control characters; refusing to start." >&2
-  exit 1
-fi
-
-# DEV_USER_EMAIL is the docker-compose dev stack's escape hatch — it
-# turns on impersonation in production builds when no OIDC is configured.
-# It's mutually exclusive with real OIDC: shipping both means a
-# misconfigured prod deploy where everyone gets silently impersonated as
-# DEV_USER_EMAIL. Fail loud here rather than serving a broken-but-up app.
-if [ -n "${DEV_USER_EMAIL:-}" ]; then
-  if contains_unsafe_chars "$DEV_USER_EMAIL"; then
-    echo "ERROR: DEV_USER_EMAIL contains whitespace or control characters; refusing to start." >&2
-    exit 1
-  fi
-  if [ -n "${OIDC_ISSUER:-}" ] || [ -n "${OIDC_CLIENT_ID:-}" ]; then
-    echo "ERROR: DEV_USER_EMAIL is set together with OIDC config — these are mutually exclusive." >&2
-    echo "       Either remove DEV_USER_EMAIL (real OIDC flow), or clear OIDC_ISSUER/OIDC_CLIENT_ID (dev impersonation)." >&2
-    exit 1
-  fi
-fi
-
-# OIDC_SCOPES is space-separated, so internal whitespace is expected. Validate
-# each token has no control chars (still a JS-string-injection concern).
-if [ -n "${OIDC_SCOPES:-}" ]; then
-  for tok in $OIDC_SCOPES; do
-    if printf '%s' "$tok" | LC_ALL=C grep -q '[[:cntrl:]]'; then
-      echo "ERROR: OIDC_SCOPES contains control characters; refusing to start." >&2
-      exit 1
-    fi
-  done
-fi
-
-# Write runtime config to an external JS file. We can't inline the script
-# in index.html — strict CSP (`script-src 'self'`) would reject it. Always
-# write the file so index.html's <script src> tag never 404s. The file
-# may contain __OIDC_CONFIG__ (real OIDC), __DEV_CONFIG__ (compose dev
-# impersonation), or be empty (Vite dev fallback / undefined deploy).
-OIDC_CONFIG_FILE=/usr/share/nginx/html/oidc-config.js
-: > "$OIDC_CONFIG_FILE"
-if [ -n "$OIDC_ISSUER" ] && [ -n "$OIDC_CLIENT_ID" ]; then
-  if [ -z "${OIDC_SCOPES:-}" ]; then
-    echo "ERROR: OIDC_SCOPES must be set when OIDC_ISSUER and OIDC_CLIENT_ID are set." >&2
-    exit 1
-  fi
-  issuer_js=$(escape_js "$OIDC_ISSUER")
-  client_id_js=$(escape_js "$OIDC_CLIENT_ID")
-  scopes_js=$(escape_js "$OIDC_SCOPES")
-  printf 'window.__OIDC_CONFIG__={issuer_url:"%s",client_id:"%s",scopes:"%s"};\n' \
-    "$issuer_js" "$client_id_js" "$scopes_js" >> "$OIDC_CONFIG_FILE"
-  echo "OIDC config written to $OIDC_CONFIG_FILE: issuer=$OIDC_ISSUER client_id=$OIDC_CLIENT_ID scopes=$OIDC_SCOPES"
-elif [ -n "${DEV_USER_EMAIL:-}" ]; then
-  dev_email_js=$(escape_js "$DEV_USER_EMAIL")
-  printf 'window.__DEV_CONFIG__={devUserEmail:"%s"};\n' "$dev_email_js" >> "$OIDC_CONFIG_FILE"
-  # Don't log DEV_USER_EMAIL — it can contain real PII if a deployer points
-  # this at an actual mailbox. The "wrote DEV config" signal is what matters.
-  echo "DEV config written to $OIDC_CONFIG_FILE (auth bypassed via runtime dev impersonation)"
-else
-  echo "No OIDC or DEV config set — $OIDC_CONFIG_FILE left empty (Vite-dev fallback only)"
-fi
-
-# Inject <script src="/oidc-config.js?v=<ts>"> into index.html.
-# Query string is a cache-bust — some intermediates (CDN, browser SW) have
-# been observed serving a stale /oidc-config.js after env changes. Strip any
-# prior oidc-config tag first (matches with or without an existing ?v=…) so
-# restarts replace the tag in-place rather than stacking duplicates.
-CACHE_BUST=$(date +%s)
-sed -i 's|<script src="/oidc-config\.js[^"]*"></script>||g' /usr/share/nginx/html/index.html
-sed -i "s|</head>|<script src=\"/oidc-config.js?v=${CACHE_BUST}\"></script></head>|" \
-  /usr/share/nginx/html/index.html
-
-# Render CSP with the actual OIDC issuer origin so connect-src / frame-src can
-# be tight (specific host) instead of broad `https:`. Falls back to `https:` if
-# OIDC_ISSUER is not set, keeping the build usable without runtime config.
-if [ -n "$OIDC_ISSUER" ]; then
-  # Strip path/query/fragment to get just `scheme://host[:port]`. Validate
-  # that the input actually looks like a URL — if not, fall back to `https:`
-  # rather than splatting a malformed value into the CSP header. The
-  # character class [^/?#] stops at the first authority terminator, so an
-  # OIDC_ISSUER like https://issuer.example.com?foo=bar still yields a
-  # valid CSP source (https://issuer.example.com), not a malformed token.
-  if echo "$OIDC_ISSUER" | grep -qE '^[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]/?#]+'; then
-    # Extraction MUST exclude whitespace too (matches validation). Otherwise
-    # an OIDC_ISSUER like `https://issuer.example.com https:` would pass
-    # validation (first authority looks fine) but the sed greedy match would
-    # extract `https://issuer.example.com https:` — CSP directive values are
-    # space-separated, so that smuggles in `https:` as a third allowed CSP
-    # source, opening connect-src/frame-src to ALL https origins.
-    CSP_REMOTE=$(echo "$OIDC_ISSUER" | sed -E 's|^([A-Za-z][A-Za-z0-9+.-]*://[^[:space:]/?#]+).*|\1|')
-  else
-    echo "WARN: OIDC_ISSUER='$OIDC_ISSUER' is not a well-formed URL — using https: in CSP"
-    CSP_REMOTE="https:"
-  fi
-else
-  CSP_REMOTE="https:"
-fi
-export CSP_REMOTE
-
-# Substitute placeholders in nginx config template.
-envsubst '${CSP_REMOTE}' < /etc/nginx/templates/default.conf.template \
-  > /etc/nginx/conf.d/default.conf
-echo "CSP connect-src/frame-src remote: $CSP_REMOTE"
+# Place the nginx config. It has no runtime placeholders anymore (the SPA is
+# same-origin only, so the CSP needs no injected OIDC issuer origin), but the
+# build ships it under /etc/nginx/templates, so copy it into conf.d here.
+cp /etc/nginx/templates/default.conf.template /etc/nginx/conf.d/default.conf
 
 exec "$@"

@@ -191,17 +191,7 @@
     "footer": "Insight · what's new · 13 July 2026"
   },
   "auth": {
-    "callback": {
-      "completing": "Completing sign-in...",
-      "failed_title": "Sign-in failed",
-      "missing_code": "No authorization code in the callback URL.",
-      "exchange_failed": "We couldn't exchange the authorization code for a session."
-    },
-    "reauth": {
-      "redirecting": "Session expired — redirecting to sign-in…",
-      "failed_title": "Couldn't reach sign-in",
-      "failed_message": "We couldn't redirect you to sign in. Check your connection and try again."
-    }
+    "redirecting": "Redirecting to sign in…"
   },
   "error_boundary": {
     "title": "Something went wrong"
@@ -209,15 +199,6 @@
   "mock_banner": {
     "title": "Synthetic data",
     "description_html": "UI is rendering using mock data."
-  },
-  "impersonation_banner": {
-    "title": "Impersonation active",
-    "description_html": "Viewing as <strong>{{email}}</strong>",
-    "stop": "Stop"
-  },
-  "dev_impersonation_hint": {
-    "title": "Dev impersonation not configured",
-    "description_html": "Nothing to display. Either set <code>VITE_DEV_USER_EMAIL</code> in <code>.env.local</code> to a person email present in the identity service, or configure <code>window.__OIDC_CONFIG__</code> via <code>public/oidc-config.js</code> and sign in."
   },
   "members_table": {
     "view_team_stats": "View team stats",

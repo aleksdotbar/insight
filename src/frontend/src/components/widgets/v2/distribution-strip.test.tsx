@@ -59,7 +59,12 @@ const STATS: PeerStats = { p25: 3, p50: 5, p75: 10, min: 1, max: 15, n: 12 };
 describe("<DistributionStrip>", () => {
   beforeEach(() => {
     authStore.reset();
-    authStore.setTenantId("t-1");
+    authStore.setAuthenticated({
+      personId: "p-1",
+      email: "bob.park@example.com",
+      tenantId: "t-1",
+      roles: ["user"],
+    });
     fetchCatalog.mockReset();
   });
   afterEach(() => {

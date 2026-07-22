@@ -125,7 +125,12 @@ function deptMap(
 describe("<TeamMembersAttention>", () => {
   beforeEach(() => {
     authStore.reset();
-    authStore.setTenantId("t-1");
+    authStore.setAuthenticated({
+      personId: "p-1",
+      email: "bob.park@example.com",
+      tenantId: "t-1",
+      roles: ["user"],
+    });
     fetchCatalog.mockReset();
   });
   afterEach(() => {

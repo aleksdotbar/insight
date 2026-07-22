@@ -44,7 +44,7 @@ type Row = Partial<catalogClient.CatalogMetric> & { metric_key: string };
 
 function buildResponse(rows: Row[]): catalogClient.CatalogResponse {
   return {
-    tenant_id: authStore.getSnapshot().tenantId ?? "t-1",
+    tenant_id: authStore.getSnapshot().session?.tenantId || "t-1",
     generated_at: "2026-06-01T00:00:00Z",
     metrics: rows.map((r, i) => ({
       id: r.id ?? `id-${i}`,
@@ -103,7 +103,12 @@ async function renderWithFetched<T>(
 describe("useTeamViewConfig", () => {
   beforeEach(() => {
     authStore.reset();
-    authStore.setTenantId("t-1");
+    authStore.setAuthenticated({
+      personId: "p-1",
+      email: "bob.park@example.com",
+      tenantId: "t-1",
+      roles: ["user"],
+    });
     fetchCatalog.mockReset();
   });
   afterEach(() => {
