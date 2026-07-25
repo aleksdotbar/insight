@@ -72,19 +72,27 @@ const MIGRATION_LOCK: &str = "identity_resolution_migrations";
 /// How long a second migrator waits for the lock before giving up (seconds).
 const MIGRATION_LOCK_TIMEOUT_SECS: i32 = 300;
 
-/// Run pending migrations under a `GET_LOCK` advisory lock.
+/// Run pending migrations AND the first-admin bootstrap under one `GET_LOCK`
+/// advisory lock.
 ///
 /// The lock serializes concurrent migrators (two Rust initContainers, or a
 /// Rust migrate racing the frozen .NET `DbUp` startup pass) — MariaDB DDL is
 /// not transactional, so without it two racers could double-apply a pending
-/// script. Call with a [`connect_single`] connection: `GET_LOCK` is
-/// session-scoped and must share the session with the DDL.
+/// script. The bootstrap runs INSIDE the same critical section: its
+/// `INSERT … WHERE NOT EXISTS` has no unique constraint backing the active
+/// `(tenant, person, role)` triple, so two replicas racing after the lock was
+/// released could insert two active bootstrap assignments. Call with a
+/// [`connect_single`] connection: `GET_LOCK` is session-scoped and must share
+/// the session with the DDL.
 ///
 /// # Errors
 ///
-/// Returns an error if the lock cannot be acquired within the timeout or a
-/// migration fails.
-pub async fn run_migrations(db: &DatabaseConnection) -> anyhow::Result<()> {
+/// Returns an error if the lock cannot be acquired within the timeout, a
+/// migration fails, or the bootstrap fails.
+pub async fn run_migrations(
+    db: &DatabaseConnection,
+    config: &crate::config::GearConfig,
+) -> anyhow::Result<()> {
     use sea_orm::{ConnectionTrait, DbBackend, Statement};
     use sea_orm_migration::MigratorTrait;
 
@@ -104,7 +112,11 @@ pub async fn run_migrations(db: &DatabaseConnection) -> anyhow::Result<()> {
          {MIGRATION_LOCK_TIMEOUT_SECS}s — is another migrate run stuck?"
     );
 
-    let result = crate::migration::Migrator::up(db, None).await;
+    let result = async {
+        crate::migration::Migrator::up(db, None).await?;
+        bootstrap::bootstrap_admin(db, config).await
+    }
+    .await;
 
     // Best-effort release either way; the lock also dies with the session.
     let _ = db
@@ -116,7 +128,7 @@ pub async fn run_migrations(db: &DatabaseConnection) -> anyhow::Result<()> {
         .await;
 
     result?;
-    tracing::info!("migrations applied");
+    tracing::info!("migrations + bootstrap applied");
     Ok(())
 }
 
@@ -147,9 +159,14 @@ mod tests {
             return Ok(());
         };
         let db = connect_single(&url).await?;
+        let cfg = GearConfig {
+            tenant_default_id: "3e1d5a65-434c-95b4-8c1b-eb8f53a39bab".to_owned(),
+            bootstrap_admin_person_id: "019e27bc-dec0-7626-81a9-c5524662a6a9".to_owned(),
+            ..GearConfig::default()
+        };
 
-        run_migrations(&db).await?;
-        run_migrations(&db).await?;
+        run_migrations(&db, &cfg).await?;
+        run_migrations(&db, &cfg).await?;
 
         let applied = count(&db, "SELECT COUNT(*) FROM seaql_migrations").await?;
         let embedded = i64::try_from(crate::migration::Migrator::migrations().len())?;
@@ -171,7 +188,7 @@ mod tests {
             "DELETE FROM seaql_migrations WHERE version = 'm20260724_000012_org_chart_nullable_parent'",
         ))
         .await?;
-        run_migrations(&db).await?;
+        run_migrations(&db, &cfg).await?;
         let checks = count(
             &db,
             "SELECT COUNT(*) FROM information_schema.CHECK_CONSTRAINTS \
@@ -180,14 +197,8 @@ mod tests {
         .await?;
         assert_eq!(checks, 1, "012 re-run must restore the constraint");
 
-        // Bootstrap admin: two runs, one active assignment.
-        let cfg = GearConfig {
-            tenant_default_id: "3e1d5a65-434c-95b4-8c1b-eb8f53a39bab".to_owned(),
-            bootstrap_admin_person_id: "019e27bc-dec0-7626-81a9-c5524662a6a9".to_owned(),
-            ..GearConfig::default()
-        };
-        bootstrap::bootstrap_admin(&db, &cfg).await?;
-        bootstrap::bootstrap_admin(&db, &cfg).await?;
+        // Bootstrap admin ran under the lock on EVERY run_migrations call
+        // above (three so far) — exactly one active assignment must exist.
         let admins = count(
             &db,
             "SELECT COUNT(*) FROM person_roles \

@@ -92,6 +92,8 @@ jobs:
               # The image compiles the path-dependency lib in — a lib change
               # must republish this image (same for analytics above).
               - 'src/backend/libs/insight-clickhouse/**'
+              # The shared entrypoint is baked into the image too.
+              - 'src/backend/docker-entrypoint.sh'
               - 'src/backend/Cargo.toml'
               - 'src/backend/Cargo.lock'
             toolbox:

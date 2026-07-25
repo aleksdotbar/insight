@@ -87,8 +87,10 @@ pub async fn run_migrate(app: &toolkit::bootstrap::AppConfig) -> anyhow::Result<
         "`gears.identity-resolution.config.database_url` is required for migrate"
     );
     let db = crate::infra::db::connect_single(&cfg.database_url).await?;
-    crate::infra::db::run_migrations(&db).await?;
-    crate::infra::db::bootstrap::bootstrap_admin(&db, &cfg).await?;
+    // Migrations AND the first-admin bootstrap run under one advisory lock —
+    // see `run_migrations` on why the bootstrap must stay inside the critical
+    // section (unconstrained INSERT … WHERE NOT EXISTS between replicas).
+    crate::infra::db::run_migrations(&db, &cfg).await?;
     Ok(())
 }
 

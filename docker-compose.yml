@@ -291,12 +291,15 @@ services:
   # DbUp set no longer carries — so compose must run `migrate` before the
   # server. Exits 0 and stays exited; the server below gates on it.
   identity-resolution-migrate:
+    # backend-common supplies the insight network (without it the migrator
+    # lands on the default network, can't resolve `mariadb`, and the server
+    # blocks forever on service_completed_successfully) + restart:no + init.
+    !!merge <<: *backend-common
     image: ${IDENTITY_RESOLUTION_IMAGE:-insight-identity-resolution:dev}
     container_name: insight-identity-resolution-migrate
     build:
       context: src/backend
       dockerfile: services/identity-resolution/Dockerfile
-    restart: "no"
     depends_on:
       mariadb: {condition: service_healthy, required: false}
     environment:
