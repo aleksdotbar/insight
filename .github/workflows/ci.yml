@@ -169,7 +169,10 @@ jobs:
       # ~15s startup. ClickHouse is intentionally not provisioned — CH-gated
       # tests skip themselves (see cf/insight#1564).
       - name: Start MariaDB (${{ matrix.entry.name }})
-        if: ${{ matrix.entry.live_db }}
+        # live_db is a static per-component flag — only pay the container
+        # startup when this run actually executes tests (with or without
+        # coverage), not on a lint-only fanout entry.
+        if: ${{ matrix.entry.live_db && (matrix.entry.cover || matrix.entry.test) }}
         run: |
           set -euo pipefail
           docker run -d --name insight-maria \
