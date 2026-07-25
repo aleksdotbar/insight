@@ -16,7 +16,8 @@
 //! All SQL here is **verbatim from the .NET service** (cutover parity). It is
 //! injection-safe despite being raw: every value is a **bound parameter**
 //! (`Statement::from_sql_and_values`, no string interpolation) and the tenant is
-//! always pinned in the `WHERE`. The `identity` database is owned by .NET today.
+//! always pinned in the `WHERE`. The `identity` database schema is owned by THIS
+//! service's migrator — see the ownership-transfer docs in `crate::migration`.
 
 pub mod bootstrap;
 pub mod entities;

@@ -282,8 +282,8 @@ services:
   # ── Identity Resolution (Rust port of identity, epic #1602) ────────────
   #
   # Runs SIDE-BY-SIDE with the .NET `identity` service during the cutover:
-  # same API surface, same MariaDB `identity` database (schema still owned
-  # by .NET DbUp), same internal port 8082 — published on a different HOST
+  # same API surface, same MariaDB `identity` database (schema now owned
+  # by the Rust migrator), same internal port 8082 — published on a different HOST
   # port. Consumers keep calling `identity:8082` until the cutover flips
   # their URLs to `identity-resolution:8082` (rollback = flip back).
   # One-shot schema migration (mirrors the k8s migrate initContainer): the
