@@ -75,10 +75,14 @@ const MIGRATION_LOCK_TIMEOUT_SECS: i32 = 300;
 /// Run pending migrations AND the first-admin bootstrap under one `GET_LOCK`
 /// advisory lock.
 ///
-/// The lock serializes concurrent migrators (two Rust initContainers, or a
-/// Rust migrate racing the frozen .NET `DbUp` startup pass) — MariaDB DDL is
-/// not transactional, so without it two racers could double-apply a pending
-/// script. The bootstrap runs INSIDE the same critical section: its
+/// The lock serializes concurrent RUST migrators (two initContainers of two
+/// replicas) — MariaDB DDL is not transactional, so without it two racers
+/// could double-apply a pending script. It does NOT serialize against the
+/// frozen .NET service: its `DbUp`/`BootstrapAdminRunner` startup pass takes
+/// no advisory lock (there, safety rests on every script being idempotent,
+/// and on single bootstrap OWNERSHIP — the umbrella render fails when both
+/// services configure a bootstrap admin). The bootstrap runs INSIDE the same
+/// critical section: its
 /// `INSERT … WHERE NOT EXISTS` has no unique constraint backing the active
 /// `(tenant, person, role)` triple, so two replicas racing after the lock was
 /// released could insert two active bootstrap assignments. Call with a
@@ -141,8 +145,20 @@ mod tests {
     use crate::config::GearConfig;
 
     async fn count(db: &DatabaseConnection, sql: &str) -> anyhow::Result<i64> {
+        count_with(db, sql, []).await
+    }
+
+    async fn count_with(
+        db: &DatabaseConnection,
+        sql: &str,
+        values: impl IntoIterator<Item = sea_orm::Value>,
+    ) -> anyhow::Result<i64> {
         let row = db
-            .query_one(Statement::from_string(DbBackend::MySql, sql))
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::MySql,
+                sql,
+                values,
+            ))
             .await?
             .ok_or_else(|| anyhow::anyhow!("count query returned no row"))?;
         Ok(row.try_get_by_index::<i64>(0)?)
@@ -198,11 +214,22 @@ mod tests {
         assert_eq!(checks, 1, "012 re-run must restore the constraint");
 
         // Bootstrap admin ran under the lock on EVERY run_migrations call
-        // above (three so far) — exactly one active assignment must exist.
-        let admins = count(
+        // above (three so far) — exactly one active assignment must exist
+        // for THIS test's (tenant, person, role) triple. Scoped, not a
+        // global reason='bootstrap' count: a legitimate bootstrap for a
+        // different tenant/person in the same database must not fail this.
+        let tenant = uuid::Uuid::parse_str(&cfg.tenant_default_id)?;
+        let person = uuid::Uuid::parse_str(&cfg.bootstrap_admin_person_id)?;
+        let admins = count_with(
             &db,
             "SELECT COUNT(*) FROM person_roles \
-             WHERE reason = 'bootstrap' AND valid_to IS NULL",
+             WHERE insight_tenant_id = ? AND person_id = ? AND role_id = ? \
+               AND reason = 'bootstrap' AND valid_to IS NULL",
+            [
+                tenant.as_bytes().to_vec().into(),
+                person.as_bytes().to_vec().into(),
+                roles_repo::ADMIN_ROLE_ID.as_bytes().to_vec().into(),
+            ],
         )
         .await?;
         assert_eq!(admins, 1, "bootstrap must be idempotent");
