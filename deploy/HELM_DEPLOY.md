@@ -16,6 +16,7 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
   - [Generate the tenant ID](#generate-the-tenant-id)
   - [Look up the external service addresses](#look-up-the-external-service-addresses)
   - [Compose the Redpanda brokers string](#compose-the-redpanda-brokers-string)
+  - [Read the Argo workflow-controller instance ID](#read-the-argo-workflow-controller-instance-id)
 - [Step 1 — Configure values/umbrella.yaml](#step-1--configure-valuesumbrellayaml)
 - [Step 2 — Fill the secret files](#step-2--fill-the-secret-files)
   - [secrets/insight-db-creds.yaml](#secretsinsight-db-credsyaml)
@@ -133,6 +134,26 @@ kubectl -n $NS_INFRA get svc redpanda -o jsonpath='{range .spec.ports[*]}{.name}
 - One reachable broker bootstraps the client, which then discovers the rest from cluster metadata. Comma-separate more only for resilience.
 - The field is `required`, so the chart will not render without it. If you have no Redpanda and are not exercising the authenticator's audit stream, point it at an unroutable placeholder the way the functional-CI overlay does (`brokers: "redpanda-disabled:9093"`).
 
+### Read the Argo workflow-controller instance ID
+
+`ingestion.reconcile.argoInstanceId` must match the `instanceID` the cluster's Argo workflow controller runs with. It stamps the `workflows.argoproj.io/controller-instanceid` label onto the workflows reconcile submits, so a controller pinned to that instance ID picks them up. **If the controller has no `instanceID` configured — the common case — leave this empty** (the label is omitted and an unpinned controller accepts the workflows anyway). Only set it when the controller is pinned.
+
+Read it off the controller's config map, which is the authoritative source:
+
+```sh
+# find the controller config map (name varies by chart, e.g. argo-workflows-workflow-controller-configmap)
+kubectl -n $NS_INFRA get cm | grep workflow-controller
+
+CM=<the-config-map-name>
+# newer charts nest all controller config under a single `config:` YAML key …
+kubectl -n $NS_INFRA get cm $CM -o jsonpath='{.data.config}' | grep -i instanceID
+# … older ones expose it as a top-level data key:
+kubectl -n $NS_INFRA get cm $CM -o jsonpath='{.data.instanceID}{"\n"}'
+```
+
+- A non-empty match (e.g. `instanceID: argo-workflows-insight`) → set `argoInstanceId` to that exact string.
+- No `instanceID` line / empty output → leave `argoInstanceId` empty (comment the line out). Verify the controller is unpinned by confirming its flags carry no `--instanceid`: `kubectl -n $NS_INFRA get deploy -l app.kubernetes.io/component=workflow-controller -o jsonpath='{.items[0].spec.template.spec.containers[0].args}'`.
+
 ## Step 1 — Configure values/umbrella.yaml
 
 Create `values/umbrella.yaml` from the skeleton below and replace every `<...>` placeholder. No passwords here — they go in the Step 2 secret files.
@@ -174,7 +195,7 @@ ingestion:
   reconcile:
     tenantId: "<TENANT_ID>"
     destinationName: clickhouse-bronze
-    argoInstanceId: "<ARGO_INSTANCE_ID>"     # e.g. argo-workflows-<infra-ns>
+    argoInstanceId: "<ARGO_INSTANCE_ID>"     # match the controller's instanceID (Step 0); leave "" if unpinned
 airbyte:
   namespace: "<AIRBYTE_NAMESPACE>"   # namespace of the Airbyte release, e.g. <infra-ns>; "" = same as the app
   apiUrl: ""                         # "" = computed from airbyte.releaseName + airbyte.namespace; set only for a non-standard URL
@@ -265,7 +286,7 @@ Fill each placeholder:
 | `<REDPANDA_BROKERS>` | The bootstrap string you composed in Step 0 — comma-separated `host:port` pointing at the internal Kafka API listener |
 | `<TOOLBOX_IMAGE>` | Optional. The ingestion toolbox image (drives the WorkflowTemplates and the ClickHouse gold-view migration Job, Step 4/5). Omit to inherit the chart's default, which is pinned to the chart appVersion; set only to override |
 | `<AIRBYTE_API_URL>` | Airbyte server API URL, for example `http://host:8001` |
-| `<ARGO_INSTANCE_ID>` | Your Argo controller's instance ID, for example `argo-workflows-insight-infra` |
+| `<ARGO_INSTANCE_ID>` | The `instanceID` your Argo workflow controller is pinned to — read it off the controller config map in Step 0. Leave empty (`""`) if the controller is unpinned, the common case |
 | `<IMAGE_TAG>` | The Insight product image tag. Optional on all five services — each falls back to its subchart's `Chart.yaml` appVersion — but set them explicitly so every service lands on the same build (see the Appendix) |
 | `<HOST>` | Public FQDN for the ingress, shared by the Gateway and Frontend, for example `insight.example.com` |
 | `<TLS_SECRET>` | Name of the Kubernetes TLS Secret that covers that domain |
@@ -420,7 +441,7 @@ For connector-syncing problems, see the Troubleshooting section of [deploy/CONNE
 | `<REDPANDA_BROKERS>` | `redpanda.brokers` | Always external; a single comma-separated `host:port` string, not a host/port pair. `9093` for the `redpanda/redpanda` chart's internal listener — read yours in Step 0 |
 | `<TOOLBOX_IMAGE>` | `ingestion.toolboxImage` | Optional — defaults to the chart appVersion. Drives the ingestion WorkflowTemplates and the ClickHouse gold-view migrate Job |
 | `<AIRBYTE_API_URL>` | `airbyte.apiUrl` | e.g. `http://host:8001` |
-| `<ARGO_INSTANCE_ID>` | `ingestion.reconcile.argoInstanceId` | Your Argo controller's instance ID |
+| `<ARGO_INSTANCE_ID>` | `ingestion.reconcile.argoInstanceId` | Match the controller's configured `instanceID` (Step 0); empty if unpinned |
 | `<IMAGE_TAG>` | `gateway.image.tag`, `authenticator.image.tag`, `analytics.image.tag`, `identity.image.tag`, `frontend.image.tag` | All five are optional — each falls back to that subchart's `Chart.yaml` appVersion (pinned by the release pipeline). Set them explicitly (recommended) so every service lands on the exact same product build; leaving them blank is safe only when all five subcharts' appVersion are in lockstep in the chart release you install |
 | `<HOST>` | `gateway.ingress.host`, `frontend.ingress.host` | Public FQDN, shared by the Gateway and Frontend (`/*` → UI, `/api/*` → Gateway routes to Analytics/Identity) |
 | `<TLS_SECRET>` | `gateway.ingress.tls.secretName` | Kubernetes TLS Secret name |
