@@ -15,7 +15,7 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
 - [Step 0 — Collect the values Step 1 needs](#step-0--collect-the-values-step-1-needs)
   - [Generate the tenant ID](#generate-the-tenant-id)
   - [Look up the external service addresses](#look-up-the-external-service-addresses)
-  - [Find the Airbyte API URL](#find-the-airbyte-api-url)
+  - [Find the Airbyte namespace](#find-the-airbyte-namespace)
   - [Compose the Redpanda brokers string](#compose-the-redpanda-brokers-string)
   - [Get the OIDC client details](#get-the-oidc-client-details)
   - [Read the Argo workflow-controller instance ID](#read-the-argo-workflow-controller-instance-id)
@@ -23,7 +23,7 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
 - [Step 2 — Fill the secret files](#step-2--fill-the-secret-files)
   - [secrets/insight-db-creds.yaml](#secretsinsight-db-credsyaml)
   - [secrets/insight-authenticator-signing-keys.yaml](#secretsinsight-authenticator-signing-keysyaml)
-- [Step 3 — Create namespace, apply secrets, mirror Airbyte auth](#step-3--create-namespace-apply-secrets-mirror-airbyte-auth)
+- [Step 3 — Create the namespace and apply the secrets](#step-3--create-the-namespace-and-apply-the-secrets)
 - [Step 4 — Install with Helm](#step-4--install-with-helm)
 - [Step 5 — Verify the install](#step-5--verify-the-install)
 - [Step 6 — Configure connectors (optional)](#step-6--configure-connectors-optional)
@@ -54,9 +54,9 @@ You supply one values file, secret files, and optionally one Secret per connecto
 
 ### Cluster and CLI tools
 
-- A Kubernetes cluster you can already reach with `kubectl`, with permission to create namespaces, Secrets, and workloads.
+- A Kubernetes cluster you can already reach with `kubectl`, with permission to create namespaces, Secrets, workloads, and Roles/RoleBindings — including in Airbyte's namespace when it differs from the app's, where the chart installs a Role letting its jobs read Airbyte's auth Secret. That namespace must exist before you install.
 - `helm` ≥ 3.8 — the chart is pulled as an OCI artifact, and OCI support is stable from 3.8 onward.
-- `kubectl`, plus `jq`, `openssl`, `uuidgen` (or `python3`) and `base64` for the commands in Steps 0–3.
+- `kubectl`, plus `openssl`, `uuidgen` (or `python3`) and `base64` for the commands in Steps 0–3.
 
 ### Cluster-level dependencies
 
@@ -76,7 +76,7 @@ kubectl get clusterissuer                       # pick one for tlsDiscovery.issu
 
 ### Running external infrastructure
 
-All six systems below must already run and be reachable from the cluster. The chart installs none of them: ClickHouse, MariaDB, Redis and Redpanda are wired in by host/credentials, Airbyte and Argo via `airbyte.apiUrl` and `ingestion.reconcile.argoInstanceId` — Step 0 reads those addresses off your cluster.
+All six systems below must already run and be reachable from the cluster. The chart installs none of them: ClickHouse, MariaDB, Redis and Redpanda are wired in by host/credentials, Airbyte and Argo via `airbyte.namespace` and `ingestion.reconcile.argoInstanceId` — Step 0 reads those off your cluster.
 
 Argo is the exception to "only wired in": the chart installs WorkflowTemplates and CronWorkflows into `insight`, so its CRDs must be present, at >= 3.5 for the plural `schedules:` field. Without Argo, set `ingestion.templates.enabled: false` or the install fails with `no matches for kind "WorkflowTemplate"`.
 
@@ -125,13 +125,14 @@ Every host is `<svc>.<its-own-namespace>.svc.cluster.local`, or any resolvable h
 kubectl get svc -A | grep -Ei 'clickhouse|mariadb|redis|redpanda|airbyte'
 ```
 
-### Find the Airbyte API URL
+### Find the Airbyte namespace
 
-`airbyte.apiUrl` is the Airbyte **server** Service on its HTTP port. Set it whenever Airbyte runs outside the `insight` namespace: left empty, the chart computes `http://<airbyte.releaseName>-airbyte-server-svc.<release-namespace>.svc.cluster.local:8001`, which resolves only for a release in that same namespace.
+Set `airbyte.namespace` to the namespace the Airbyte release runs in. It drives both the computed API URL and the namespace the jobs read `airbyte-auth-secrets` from, so `airbyte.apiUrl` stays empty unless your Airbyte sits behind a non-standard URL.
 
 ```sh
-kubectl -n <airbyte-ns> get svc | grep server
-  # e.g. http://airbyte-airbyte-server-svc.<airbyte-ns>.svc.cluster.local:8001
+kubectl get svc -A | grep airbyte-server
+  # the namespace in that row is airbyte.namespace
+  # computed URL: http://<releaseName>-airbyte-server-svc.<that-namespace>.svc.cluster.local:8001
 ```
 
 ### Compose the Redpanda brokers string
@@ -205,7 +206,8 @@ ingestion:
     destinationName: clickhouse-bronze
     argoInstanceId: "<ARGO_INSTANCE_ID>"     # match the controller's instanceID (Step 0); leave "" if unpinned
 airbyte:
-  apiUrl: "<AIRBYTE_API_URL>"        # required unless Airbyte runs in the `insight` namespace (Step 0)
+  namespace: "<AIRBYTE_NAMESPACE>"   # where the Airbyte release runs; "" = the app namespace
+  apiUrl: ""                         # "" = computed from releaseName + namespace; set only for a non-standard URL
 
 analytics:
   replicaCount: 1                    # chart default 2; bump for HA
@@ -274,7 +276,7 @@ Fill each placeholder:
 | `<MARIADB_HOST>` | MariaDB host only — no port; the skeleton's `port: 3306` supplies it |
 | `<REDIS_HOST>` | Redis host only — no port; the skeleton's `port: 6379` supplies it |
 | `<REDPANDA_BROKERS>` | The bootstrap string you composed in Step 0 — comma-separated `host:port` pointing at the internal Kafka API listener |
-| `<AIRBYTE_API_URL>` | The Airbyte server Service URL from Step 0, for example `http://host:8001`. Omit only when Airbyte is a release in the `insight` namespace — the chart then computes it from `airbyte.releaseName` |
+| `<AIRBYTE_NAMESPACE>` | Namespace of the Airbyte release from Step 0, for example `insight-infra`. Leave `""` if Airbyte shares the app namespace |
 | `<ARGO_INSTANCE_ID>` | The `instanceID` your Argo workflow controller is pinned to — read it off the controller config map in Step 0. Leave empty (`""`) if the controller is unpinned, the common case |
 | `<HOST>` | Public FQDN for the gateway ingress — the single entrance for both the UI and the APIs, for example `insight.example.com` |
 | `<TLS_SECRET>` | TLS Secret for that domain. The chart only references it: pre-create it, or add `gateway.ingress.annotations: {cert-manager.io/cluster-issuer: <issuer>}`. Missing, ingress-nginx quietly serves its own fake certificate |
@@ -334,9 +336,7 @@ kubectl create secret generic insight-authenticator-signing-keys \
   --dry-run=client -o yaml > secrets/insight-authenticator-signing-keys.yaml
 ```
 
-## Step 3 — Create namespace, apply secrets, mirror Airbyte auth
-
-Create the namespace and apply the secret files:
+## Step 3 — Create the namespace and apply the secrets
 
 ```sh
 kubectl create namespace insight
@@ -346,16 +346,7 @@ kubectl -n insight apply -f secrets/
 kubectl -n insight get secret insight-db-creds insight-authenticator-signing-keys   # expect 4 keys / 1 key (current.pem)
 ```
 
-Mirror Airbyte's auth Secret into `insight` — the reconcile loop and the airbyte-sync workflows read it to call the Airbyte API:
-
-```sh
-NS_AIRBYTE=<the-namespace-airbyte-runs-in>
-kubectl -n $NS_AIRBYTE get secret airbyte-auth-secrets -o json \
-  | jq 'del(.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.ownerReferences,.metadata.annotations,.metadata.labels) | .metadata.namespace="insight"' \
-  | kubectl -n insight apply -f -
-```
-
-The `jq` filter strips the source object's identity fields (UID, resource version, owner references) and retargets the namespace, so Kubernetes accepts it as a new object.
+Do **not** copy Airbyte's own `airbyte-auth-secrets` into `insight`. The reconcile loop and the airbyte-sync workflows read it from Airbyte's namespace at run time — that is what `airbyte.namespace` in Step 1 is for, and the chart renders a Role/RoleBinding there granting `get` on that one Secret. A copy would freeze credentials Airbyte regenerates on reinstall.
 
 ## Step 4 — Install with Helm
 
@@ -413,7 +404,7 @@ See [deploy/CONNECTORS.md](./CONNECTORS.md) for the connector list and a copy-pa
 | `<MARIADB_HOST>` | `mariadb.host` | Always external; port fixed at `3306` |
 | `<REDIS_HOST>` | `redis.host` | Always external; port fixed at `6379` |
 | `<REDPANDA_BROKERS>` | `redpanda.brokers` | Always external; a single comma-separated `host:port` string, not a host/port pair. `9093` for the `redpanda/redpanda` chart's internal listener — read yours in Step 0 |
-| `<AIRBYTE_API_URL>` | `airbyte.apiUrl` | e.g. `http://host:8001`. Empty falls back to `http://<airbyte.releaseName>-airbyte-server-svc.<release-namespace>:8001`, so it is only safe to omit when Airbyte shares the `insight` namespace |
+| `<AIRBYTE_NAMESPACE>` | `airbyte.namespace` | Namespace of the Airbyte release; `""` = app namespace. Drives the computed `apiUrl` and where the jobs read `airbyte-auth-secrets` |
 | `<ARGO_INSTANCE_ID>` | `ingestion.reconcile.argoInstanceId` | Match the controller's configured `instanceID` (Step 0); empty if unpinned |
 | `<HOST>` | `gateway.ingress.host` | Public FQDN on the gateway's Ingress, the only one the chart publishes (`/` → UI, `/api/*` → Analytics/Identity) |
 | `<TLS_SECRET>` | `gateway.ingress.tls.secretName` | Kubernetes TLS Secret name; referenced only — the chart never creates it |
