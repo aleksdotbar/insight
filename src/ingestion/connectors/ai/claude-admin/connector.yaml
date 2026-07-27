@@ -20,6 +20,22 @@ definitions:
     type: CompositeErrorHandler
     error_handlers:
       - type: DefaultErrorHandler
+        # Anthropic's 429s on these endpoints carry no Retry-After header
+        # (confirmed empirically: curl against /v1/organizations/... returns
+        # 429 with no retry-after in the response). WaitTimeFromHeader alone
+        # then returns None on every attempt, so DefaultErrorHandler.backoff_time()
+        # falls through with no wait time, the CDK's internal bounded default
+        # backoff (~5 tries) exhausts fast, and the read aborts. For a
+        # multi-page stream (e.g. api_keys, ~80 pages at limit=1000) that
+        # aborts a full-refresh read with no resumable checkpoint, so the
+        # whole stream restarts from page 1 — turning any single mid-pagination
+        # 429 into a full re-read, which repeats as long as 429s recur.
+        # ExponentialBackoffStrategy is the fallback DefaultErrorHandler.backoff_time()
+        # tries when WaitTimeFromHeader returns None (it returns the first
+        # non-None value from the list), and max_retries is raised so the
+        # connector actually waits out a real rate-limit window instead of
+        # giving up after 5 tries (~a few seconds with no real wait time).
+        max_retries: 10
         response_filters:
           - type: HttpResponseFilter
             action: RATE_LIMITED
@@ -28,6 +44,8 @@ definitions:
         backoff_strategies:
           - type: WaitTimeFromHeader
             header: Retry-After
+          - type: ExponentialBackoffStrategy
+            factor: 5
       - type: DefaultErrorHandler
         max_retries: 5
         response_filters:
