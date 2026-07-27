@@ -27,7 +27,6 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
 - [Step 4 — Install with Helm](#step-4--install-with-helm)
 - [Step 5 — Verify the install](#step-5--verify-the-install)
 - [Step 6 — Configure connectors (optional)](#step-6--configure-connectors-optional)
-- [Troubleshooting](#troubleshooting)
 - [Appendix — Reference](#appendix--reference)
   - [values/umbrella.yaml placeholders](#valuesumbrellayaml-placeholders)
   - [secrets/insight-db-creds.yaml keys](#secretsinsight-db-credsyaml-keys)
@@ -388,20 +387,6 @@ Then open `https://<HOST>` — the host from Step 1 — and confirm the login re
 Configure connectors after the app is up. Each of the 25 connectors is a single Kubernetes Secret; the `insight-reconcile-loop` CronWorkflow discovers it and provisions the Airbyte source automatically, so there is nothing else to run.
 
 See [deploy/CONNECTORS.md](./CONNECTORS.md) for the connector list and a copy-paste Secret for each.
-
-## Troubleshooting
-
-| Problem | What to check |
-|---------|-----------------|
-| `insight-analytics` / `insight-identity` stuck in `CreateContainerConfigError` | The chart could not compose the `*-config` Secrets. Confirm `insight-db-creds` has all four keys and carries **no** `app.kubernetes.io/managed-by: Helm` label: `kubectl -n insight get secret insight-db-creds -o yaml \| grep managed-by` should return nothing |
-| `helm install`/`upgrade` fails with `signingKeysSecret is required` or the authenticator pod won't mount its keys | The Secret named in `authenticator.signingKeysSecret` (default `insight-authenticator-signing-keys`) doesn't exist or is missing `current.pem`. Create it as shown in Step 2 before installing |
-| `helm install`/`upgrade` fails with `tlsDiscovery.issuerRef.name is required` or the `insight-authenticator-authn-tls` Certificate never turns `Ready` | cert-manager isn't installed, or the `ClusterIssuer` named in `authenticator.tlsDiscovery.issuerRef.name` doesn't exist in this cluster — the usual cause is leaving the chart's local-sandbox `local-ca` default in place. Confirm with `kubectl get clusterissuer` and `kubectl -n insight describe certificate insight-authenticator-authn-tls` |
-| `helm install`/`upgrade` fails with `authenticator.oidc.issuerUrl is required` / `redirectUri is required` | Both fields are mandatory (`charts/insight/templates/secrets.yaml` wraps them in `required`). Set them to your IdP's real values — a real IdP is a prerequisite, and there is no way to disable auth |
-| Login fails with an issuer/`iss` mismatch, or discovery 404s | `authenticator.oidc.issuerUrl` must be the issuer the IdP actually advertises, resolving to the *same* URL from the browser and from the authenticator pod — a split-horizon setup (public hostname outside, Service DNS inside) breaks `iss` validation. On Keycloak the issuer is `<base-url>/realms/<realm>`, and the base URL must match what the server advertises. Check with the `oidc-probe` command from Step 0 |
-| Dashboards show "no peer data" (the benchmark/comparison panel is empty) | After Gold-layer data has loaded, restart Analytics: `kubectl -n insight rollout restart deploy/insight-analytics` |
-| Login breaks after changing the host | Update `authenticator.oidc.redirectUri` (and `frontend.oidc.issuer`/`clientId` if the IdP changed) in values, `helm upgrade`, then restart the gateway: `kubectl -n insight rollout restart deploy/insight-gateway` |
-
-For connector-syncing problems, see the Troubleshooting section of [deploy/CONNECTORS.md](./CONNECTORS.md).
 
 ## Appendix — Reference
 
