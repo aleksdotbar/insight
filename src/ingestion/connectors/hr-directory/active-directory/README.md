@@ -89,8 +89,9 @@ kubectl apply -f src/ingestion/secrets/connectors/active-directory.yaml
 
 The connector fetches an **explicit attribute allowlist** (see
 `source_active_directory/ldap_client.py:USER_ATTRIBUTES`) — only identity-resolution
-fields. It never reads photos, addresses, phone numbers, or other PII even when the
-bind account could. Mirrors the ms-entra `$select` allowlist.
+fields such as email, name, employee ID, manager, and distinguished name. It never
+reads photos, postal addresses, phone numbers, or other non-required fields even
+when the bind account could. Mirrors the ms-entra `$select` allowlist.
 
 ## Silver Targets
 

@@ -51,6 +51,8 @@ manager_changes AS (
     FROM history h
     LEFT JOIN current_users mgr
         ON h.new_value = mgr.distinguishedName
+       AND h.tenant_id = mgr.tenant_id
+       AND h.source_id = mgr.source_id
     WHERE h.field_name = 'managerDn'
       AND h.new_value != ''
 ),
@@ -69,7 +71,7 @@ manager_removed AS (
 -- A manager's own mail/UPN changed: fan the new email out to every current
 -- direct report (their managerDn still points at this manager's DN).
 manager_email_changes AS (
-    SELECT
+    SELECT DISTINCT
         report.tenant_id AS tenant_id,
         report.source_id AS source_id,
         report.id AS entity_id,
@@ -78,9 +80,34 @@ manager_email_changes AS (
     FROM history h
     INNER JOIN current_users mgr
         ON h.entity_id = mgr.id
+       AND h.tenant_id = mgr.tenant_id
+       AND h.source_id = mgr.source_id
     INNER JOIN current_users report
         ON report.managerDn = mgr.distinguishedName
+       AND report.tenant_id = mgr.tenant_id
+       AND report.source_id = mgr.source_id
     WHERE h.field_name IN ('mail', 'userPrincipalName')
+),
+
+-- Manager's mail AND userPrincipalName both went empty: no email signal left,
+-- so DELETE the stale parent_email instead of silently keeping the old value.
+manager_email_removed AS (
+    SELECT DISTINCT
+        report.tenant_id AS tenant_id,
+        report.source_id AS source_id,
+        report.id AS entity_id,
+        h.updated_at AS updated_at
+    FROM history h
+    INNER JOIN current_users mgr
+        ON h.entity_id = mgr.id
+       AND h.tenant_id = mgr.tenant_id
+       AND h.source_id = mgr.source_id
+    INNER JOIN current_users report
+        ON report.managerDn = mgr.distinguishedName
+       AND report.tenant_id = mgr.tenant_id
+       AND report.source_id = mgr.source_id
+    WHERE h.field_name IN ('mail', 'userPrincipalName')
+      AND coalesce(mgr.mail, mgr.userPrincipalName, '') = ''
 )
 
 -- parent_email: resolved manager email for org_chart building
@@ -203,3 +230,27 @@ SELECT
     toUnixTimestamp64Milli(toDateTime64(updated_at, 3)) AS _version
 FROM manager_email_changes
 WHERE manager_email IS NOT NULL AND manager_email != ''
+
+UNION ALL
+
+-- manager lost its last email signal: DELETE the stale parent_email for every current direct report
+SELECT
+    CAST(concat(
+        coalesce(tenant_id, ''), '-',
+        'active-directory', '-',
+        coalesce(entity_id, ''), '-',
+        'parent_email', '-',
+        'DELETE-',
+        toString(toUnixTimestamp64Milli(toDateTime64(updated_at, 3)))
+    ) AS String) AS unique_key,
+    toUUID(UUIDNumToString(sipHash128(coalesce(tenant_id, '')))) AS insight_tenant_id,
+    toUUID(UUIDNumToString(sipHash128(coalesce(source_id, '')))) AS insight_source_id,
+    'active-directory' AS insight_source_type,
+    entity_id AS source_account_id,
+    'parent_email' AS value_type,
+    '' AS value,
+    'bronze_active_directory.users.mail' AS value_field_name,
+    'DELETE' AS operation_type,
+    toDateTime64(updated_at, 3) AS _synced_at,
+    toUnixTimestamp64Milli(toDateTime64(updated_at, 3)) AS _version
+FROM manager_email_removed
