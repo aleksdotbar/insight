@@ -15,6 +15,7 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
 - [Step 0 — Collect the values Step 1 needs](#step-0--collect-the-values-step-1-needs)
   - [Generate the tenant ID](#generate-the-tenant-id)
   - [Look up the external service addresses](#look-up-the-external-service-addresses)
+  - [Find the Airbyte API URL](#find-the-airbyte-api-url)
   - [Compose the Redpanda brokers string](#compose-the-redpanda-brokers-string)
   - [Read the Argo workflow-controller instance ID](#read-the-argo-workflow-controller-instance-id)
 - [Step 1 — Configure values/umbrella.yaml](#step-1--configure-valuesumbrellayaml)
@@ -65,14 +66,14 @@ This path assumes your data infrastructure (ClickHouse, MariaDB, Redis, Redpanda
 Install both of these before the chart — it bundles neither:
 
 - **An ingress controller.** Install ingress-nginx, or override `gateway.ingress.className` / `frontend.ingress.className` to match what you run. Both default to `className: nginx`.
-- **cert-manager, with a working `ClusterIssuer`.** The authenticator's TLS-discovery sidecar (`authenticator.tlsDiscovery.enabled`, default `true`) creates a `cert-manager.io/v1` `Certificate`, and Analytics and Identity verify the authenticator's JWKS over HTTPS against that CA — load-bearing, not optional. Provision a `ClusterIssuer` named `local-ca` (the chart default) or point `authenticator.tlsDiscovery.issuerRef.name` at your own.
+- **cert-manager, plus a `ClusterIssuer` of your own.** The authenticator's TLS-discovery sidecar (`authenticator.tlsDiscovery.enabled`, default `true`) creates a `cert-manager.io/v1` `Certificate`, and Analytics and Identity verify the authenticator's JWKS over HTTPS against that CA — load-bearing, not optional. Set `authenticator.tlsDiscovery.issuerRef.name` to whatever your cluster issues from. Do not expect the chart's `local-ca` default to resolve: that issuer belongs to this repo's local k3s sandbox (`deploy/gitops/bootstrap/local/selfsigned-issuer.yaml`, applied by `make bootstrap-cert-manager ENV=local`) and will not exist in a cluster you did not bootstrap that way. Any issuer will do — this certificate is internal-only, trusted through the CA the services mount, so it needs no public chain and is unrelated to the public ingress certificate in `<TLS_SECRET>`.
 
 Confirm both are in place:
 
 ```sh
 kubectl get ingressclass nginx                  # the className both ingress blocks use
 kubectl get crd certificates.cert-manager.io    # cert-manager CRDs installed
-kubectl get clusterissuer local-ca              # the issuer the chart defaults to
+kubectl get clusterissuer                       # pick one for tlsDiscovery.issuerRef.name
 ```
 
 ### Running external infrastructure
@@ -92,67 +93,52 @@ Run every command below from the directory holding your `values/` and `secrets/`
 
 ## Step 0 — Collect the values Step 1 needs
 
-Step 1 asks for two kinds of value: the tenant ID, which you generate, and the addresses of the external services, which you look up. Every datastore is external — the chart only dials it — so nothing here creates infrastructure.
+Generate the tenant ID, then read the rest off the cluster — every dependency is external, and each may sit in its own namespace or outside the cluster entirely.
 
 ### Generate the tenant ID
+
+A lowercase UUID, used verbatim for both `global.tenantDefaultId` and `ingestion.reconcile.tenantId`, and never changed after the first sync (local/dev against the compose wizard, the seed generators, or `fakeidp` instead reuses their fixed `00000000-df51-5b42-9538-d2b56b7ee953`).
 
 ```sh
 uuidgen | tr '[:upper:]' '[:lower:]'    # no uuidgen? python3 -c 'import uuid; print(uuid.uuid4())'
 ```
 
-- It must be a lowercase UUID. The identity tables type the column `UUID`, and the Silver models pass the string through verbatim (`tenant_id AS insight_tenant_id`), so case has to stay consistent.
-- Use the same value for `global.tenantDefaultId` (how the app resolves the tenant) and `ingestion.reconcile.tenantId` (stamped into every ingested row as `insight_tenant_id`). If they diverge, dashboards read one tenant while the pipeline writes another.
-- Never change it after the first sync — ingested data is keyed by it.
-- Local/dev against the compose wizard, the seed generators, or `fakeidp`: use their fixed tenant `00000000-df51-5b42-9538-d2b56b7ee953` instead of generating one.
-
 ### Look up the external service addresses
 
-List the Services in the namespace your infrastructure runs in and read each host and port off it:
+Every host is `<svc>.<its-own-namespace>.svc.cluster.local` — or any resolvable host or IP for off-cluster infrastructure — and the ClickHouse, MariaDB, and Redis ports are already fixed in the skeleton, so you supply only the host.
 
 ```sh
-NS_INFRA=<your-infra-namespace>
-kubectl -n $NS_INFRA get svc
-  # every address in Step 1 is <svc>.$NS_INFRA.svc.cluster.local:<port>
-  # ClickHouse 8123, MariaDB 3306, Redis 6379 are already fixed in the skeleton — you only supply the host
-  # Airbyte: <AIRBYTE_API_URL> is the server Service, e.g. http://airbyte-airbyte-server-svc.$NS_INFRA.svc.cluster.local:8001
+kubectl get svc -A | grep -Ei 'clickhouse|mariadb|redis|redpanda|airbyte'
 ```
 
-Infrastructure outside the cluster works the same way — use any resolvable host or IP instead of the in-cluster DNS name.
+### Find the Airbyte API URL
+
+`airbyte.apiUrl` is the Airbyte **server** Service on its HTTP port, and you must set it whenever Airbyte runs anywhere other than the `insight` namespace — left empty, the chart computes `http://<airbyte.releaseName>-airbyte-server-svc.<release-namespace>.svc.cluster.local:8001`, which only resolves when Airbyte is a release in that same namespace.
+
+```sh
+kubectl -n <airbyte-ns> get svc | grep server
+  # e.g. http://airbyte-airbyte-server-svc.<airbyte-ns>.svc.cluster.local:8001
+```
 
 ### Compose the Redpanda brokers string
 
-`redpanda.brokers` is the exception: one comma-separated `host:port` bootstrap string rather than the host/port pair the other datastores take, and it must point at Redpanda's internal Kafka API listener.
+`redpanda.brokers` takes one comma-separated `host:port` bootstrap string — not the host/port pair the other datastores take — aimed at Redpanda's internal Kafka API listener, so read the port rather than assuming `9093` (that is the `redpanda/redpanda` chart's default; this repo's compose stack uses `9092`).
 
 ```sh
-kubectl -n $NS_INFRA get svc -l app.kubernetes.io/name=redpanda
-kubectl -n $NS_INFRA get svc redpanda -o jsonpath='{range .spec.ports[*]}{.name}={.port}{"\n"}{end}'
-  # compose <svc>.$NS_INFRA.svc.cluster.local:<kafka port>
+kubectl -n <redpanda-ns> get svc <redpanda-svc> -o jsonpath='{range .spec.ports[*]}{.name}={.port}{"\n"}{end}'
+  # compose <redpanda-svc>.<redpanda-ns>.svc.cluster.local:<kafka port>
   # e.g. redpanda.insight-infra.svc.cluster.local:9093
 ```
 
-- Read the port instead of assuming it. `9093` is the internal listener of the official `redpanda/redpanda` chart; other setups differ — this repo's compose stack runs it on `9092`.
-- One reachable broker bootstraps the client, which then discovers the rest from cluster metadata. Comma-separate more only for resilience.
-- The field is `required`, so the chart will not render without it. If you have no Redpanda and are not exercising the authenticator's audit stream, point it at an unroutable placeholder the way the functional-CI overlay does (`brokers: "redpanda-disabled:9093"`).
-
 ### Read the Argo workflow-controller instance ID
 
-`ingestion.reconcile.argoInstanceId` must match the `instanceID` the cluster's Argo workflow controller runs with. It stamps the `workflows.argoproj.io/controller-instanceid` label onto the workflows reconcile submits, so a controller pinned to that instance ID picks them up. **If the controller has no `instanceID` configured — the common case — leave this empty** (the label is omitted and an unpinned controller accepts the workflows anyway). Only set it when the controller is pinned.
-
-Read it off the controller's config map, which is the authoritative source:
+Set `ingestion.reconcile.argoInstanceId` to the controller's configured `instanceID` only when it is pinned to one; no match means leave it empty — the common case, where the reconcile workflows go unlabelled and any controller accepts them.
 
 ```sh
-# find the controller config map (name varies by chart, e.g. argo-workflows-workflow-controller-configmap)
-kubectl -n $NS_INFRA get cm | grep workflow-controller
-
-CM=<the-config-map-name>
-# newer charts nest all controller config under a single `config:` YAML key …
-kubectl -n $NS_INFRA get cm $CM -o jsonpath='{.data.config}' | grep -i instanceID
-# … older ones expose it as a top-level data key:
-kubectl -n $NS_INFRA get cm $CM -o jsonpath='{.data.instanceID}{"\n"}'
+kubectl -n <argo-ns> get cm | grep workflow-controller     # name varies by chart version
+kubectl -n <argo-ns> get cm <cm> -o jsonpath='{.data.config}' | grep -i instanceID   # newer charts nest it under `config:`
+kubectl -n <argo-ns> get cm <cm> -o jsonpath='{.data.instanceID}{"\n"}'              # older ones use a top-level key
 ```
-
-- A non-empty match (e.g. `instanceID: argo-workflows-insight`) → set `argoInstanceId` to that exact string.
-- No `instanceID` line / empty output → leave `argoInstanceId` empty (comment the line out). Verify the controller is unpinned by confirming its flags carry no `--instanceid`: `kubectl -n $NS_INFRA get deploy -l app.kubernetes.io/component=workflow-controller -o jsonpath='{.items[0].spec.template.spec.containers[0].args}'`.
 
 ## Step 1 — Configure values/umbrella.yaml
 
@@ -172,7 +158,7 @@ global:
 
 # Datastore wiring — every dep is external; the chart only dials it.
 clickhouse:
-  host: <CLICKHOUSE_HOST>            # e.g. clickhouse.<infra-ns>.svc.cluster.local
+  host: <CLICKHOUSE_HOST>            # e.g. clickhouse.<its-ns>.svc.cluster.local
   port: 8123
   database: insight
   username: insight
@@ -185,7 +171,7 @@ redis:
   host: <REDIS_HOST>
   port: 6379
 redpanda:
-  brokers: "<REDPANDA_BROKERS>"      # e.g. redpanda.<infra-ns>.svc.cluster.local:9093
+  brokers: "<REDPANDA_BROKERS>"      # e.g. redpanda.<its-ns>.svc.cluster.local:9093
 
 # Ingestion — point at existing Airbyte + Argo; install the dbt WorkflowTemplates.
 ingestion:
@@ -197,21 +183,16 @@ ingestion:
     destinationName: clickhouse-bronze
     argoInstanceId: "<ARGO_INSTANCE_ID>"     # match the controller's instanceID (Step 0); leave "" if unpinned
 airbyte:
-  namespace: "<AIRBYTE_NAMESPACE>"   # namespace of the Airbyte release, e.g. <infra-ns>; "" = same as the app
-  apiUrl: ""                         # "" = computed from airbyte.releaseName + airbyte.namespace; set only for a non-standard URL
+  apiUrl: "<AIRBYTE_API_URL>"        # required unless Airbyte runs in the `insight` namespace (Step 0)
 
 analytics:
   replicaCount: 1                    # chart default 2; bump for HA
-  image:
-    tag: "<IMAGE_TAG>"               # optional — falls back to the chart's appVersion
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 512Mi }
 
 gateway:
   replicaCount: 1
-  image:
-    tag: "<IMAGE_TAG>"                # optional — falls back to the chart's appVersion
   ingress:
     enabled: true
     className: nginx
@@ -225,16 +206,14 @@ gateway:
 
 authenticator:
   replicaCount: 1
-  image:
-    tag: "<IMAGE_TAG>"
   # ES256 signing keys — see Step 2. MUST already exist as a Secret before install.
   signingKeysSecret: "insight-authenticator-signing-keys"
-  # cert-manager Certificate for the JWKS-discovery sidecar. Override
-  # issuerRef.name only if your cluster's ClusterIssuer isn't named `local-ca`.
+  # cert-manager Certificate for the JWKS-discovery sidecar (internal TLS only).
   tlsDiscovery:
     enabled: true
     issuerRef:
-      name: local-ca
+      name: <CLUSTER_ISSUER>          # your cluster's ClusterIssuer; the chart's `local-ca`
+                                      # default only exists in the local k3s sandbox
   oidc:
     issuerUrl: "<OIDC_ISSUER>"        # MUST be set — your IdP's issuer URL
     clientId: "<OIDC_CLIENT_ID>"
@@ -245,8 +224,6 @@ authenticator:
 identity:
   deploy: true                       # MUST be true (chart default false)
   replicaCount: 1
-  image:
-    tag: "<IMAGE_TAG>"
   databaseName: "identity"
   resources:
     requests: { cpu: 50m,  memory: 96Mi }
@@ -255,8 +232,6 @@ identity:
 frontend:                            # the web UI (dashboard)
   deploy: true
   replicaCount: 1
-  image:
-    tag: "<IMAGE_TAG>"
   ingress:
     enabled: true                    # WITHOUT this the UI pod runs but is never exposed
     className: nginx
@@ -285,11 +260,11 @@ Fill each placeholder:
 | `<REDIS_HOST>` | Redis host, in `host:6379` form |
 | `<REDPANDA_BROKERS>` | The bootstrap string you composed in Step 0 — comma-separated `host:port` pointing at the internal Kafka API listener |
 | `<TOOLBOX_IMAGE>` | Optional. The ingestion toolbox image (drives the WorkflowTemplates and the ClickHouse gold-view migration Job, Step 4/5). Omit to inherit the chart's default, which is pinned to the chart appVersion; set only to override |
-| `<AIRBYTE_API_URL>` | Airbyte server API URL, for example `http://host:8001` |
+| `<AIRBYTE_API_URL>` | The Airbyte server Service URL from Step 0, for example `http://host:8001`. Omit only when Airbyte is a release in the `insight` namespace — the chart then computes it from `airbyte.releaseName` |
 | `<ARGO_INSTANCE_ID>` | The `instanceID` your Argo workflow controller is pinned to — read it off the controller config map in Step 0. Leave empty (`""`) if the controller is unpinned, the common case |
-| `<IMAGE_TAG>` | The Insight product image tag. Optional on all five services — each falls back to its subchart's `Chart.yaml` appVersion — but set them explicitly so every service lands on the same build (see the Appendix) |
 | `<HOST>` | Public FQDN for the ingress, shared by the Gateway and Frontend, for example `insight.example.com` |
 | `<TLS_SECRET>` | Name of the Kubernetes TLS Secret that covers that domain |
+| `<CLUSTER_ISSUER>` | A cert-manager `ClusterIssuer` in your cluster, for the authenticator's internal JWKS certificate. Self-signed is fine; the chart's `local-ca` default exists only in this repo's local sandbox |
 | `<OIDC_ISSUER>` | Your IdP's issuer URL. Its `/.well-known/openid-configuration` document must resolve from inside the cluster |
 | `<OIDC_CLIENT_ID>` / `<OIDC_CLIENT_SECRET>` | Your OIDC client / application registration credentials |
 
@@ -323,11 +298,11 @@ stringData:
 If those passwords already live in Secrets in your infrastructure namespace, copy them across instead of retyping them:
 
 ```sh
-NS_INFRA=<your-infra-namespace>                     # where your L2 services run
-kubectl -n $NS_INFRA get secret <ch-secret>         -o jsonpath='{.data.<ch-key>}'        | base64 -d; echo   # clickhouse-password
-kubectl -n $NS_INFRA get secret <maria-secret>      -o jsonpath='{.data.<app-key>}'       | base64 -d; echo   # mariadb-password (app user)
-kubectl -n $NS_INFRA get secret <maria-root-secret> -o jsonpath='{.data.<root-key>}'      | base64 -d; echo   # mariadb-root-password
-kubectl -n $NS_INFRA get secret <redis-secret>      -o jsonpath='{.data.<redis-key>}'     | base64 -d; echo   # redis-password
+# each password lives in a Secret in its own datastore's namespace — they need not be the same namespace
+kubectl -n <clickhouse-ns> get secret <ch-secret>         -o jsonpath='{.data.<ch-key>}'    | base64 -d; echo   # clickhouse-password
+kubectl -n <mariadb-ns>    get secret <maria-secret>      -o jsonpath='{.data.<app-key>}'   | base64 -d; echo   # mariadb-password (app user)
+kubectl -n <mariadb-ns>    get secret <maria-root-secret> -o jsonpath='{.data.<root-key>}'  | base64 -d; echo   # mariadb-root-password
+kubectl -n <redis-ns>      get secret <redis-secret>      -o jsonpath='{.data.<redis-key>}' | base64 -d; echo   # redis-password
 ```
 
 Paste each decoded value into the matching field.
@@ -366,8 +341,8 @@ kubectl -n insight get secret insight-db-creds insight-authenticator-signing-key
 Mirror Airbyte's auth Secret into `insight` — Analytics needs it to call the Airbyte API:
 
 ```sh
-NS_INFRA=<your-infra-namespace>
-kubectl -n $NS_INFRA get secret airbyte-auth-secrets -o json \
+NS_AIRBYTE=<the-namespace-airbyte-runs-in>
+kubectl -n $NS_AIRBYTE get secret airbyte-auth-secrets -o json \
   | jq 'del(.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.ownerReferences,.metadata.annotations,.metadata.labels) | .metadata.namespace="insight"' \
   | kubectl -n insight apply -f -
 ```
@@ -421,7 +396,7 @@ See [deploy/CONNECTORS.md](./CONNECTORS.md) for the connector list and a copy-pa
 |---------|-----------------|
 | `insight-analytics` / `insight-identity` stuck in `CreateContainerConfigError` | The chart could not compose the `*-config` Secrets. Confirm `insight-db-creds` has all four keys and carries **no** `app.kubernetes.io/managed-by: Helm` label: `kubectl -n insight get secret insight-db-creds -o yaml \| grep managed-by` should return nothing |
 | `helm install`/`upgrade` fails with `signingKeysSecret is required` or the authenticator pod won't mount its keys | The Secret named in `authenticator.signingKeysSecret` (default `insight-authenticator-signing-keys`) doesn't exist or is missing `current.pem`. Create it as shown in Step 2 before installing |
-| `helm install`/`upgrade` fails with `tlsDiscovery.issuerRef.name is required` or the `insight-authenticator-authn-tls` Certificate never turns `Ready` | cert-manager isn't installed, or the `ClusterIssuer` named in `authenticator.tlsDiscovery.issuerRef.name` (default `local-ca`) doesn't exist. Confirm with `kubectl get clusterissuer local-ca` and `kubectl -n insight describe certificate insight-authenticator-authn-tls` |
+| `helm install`/`upgrade` fails with `tlsDiscovery.issuerRef.name is required` or the `insight-authenticator-authn-tls` Certificate never turns `Ready` | cert-manager isn't installed, or the `ClusterIssuer` named in `authenticator.tlsDiscovery.issuerRef.name` doesn't exist in this cluster — the usual cause is leaving the chart's local-sandbox `local-ca` default in place. Confirm with `kubectl get clusterissuer` and `kubectl -n insight describe certificate insight-authenticator-authn-tls` |
 | `helm install`/`upgrade` fails with `authenticator.oidc.issuerUrl is required` / `redirectUri is required` | Both fields are mandatory (`charts/insight/templates/secrets.yaml` wraps them in `required`). Set real values, or for local/dev only, set `fakeidp.deploy: true` and point `issuerUrl` at the in-cluster fakeidp — never disable auth |
 | Dashboards show "no peer data" (the benchmark/comparison panel is empty) | After Gold-layer data has loaded, restart Analytics: `kubectl -n insight rollout restart deploy/insight-analytics` |
 | Login breaks after changing the host | Update `authenticator.oidc.redirectUri` (and `frontend.oidc.issuer`/`clientId` if the IdP changed) in values, `helm upgrade`, then restart the gateway: `kubectl -n insight rollout restart deploy/insight-gateway` |
@@ -440,19 +415,20 @@ For connector-syncing problems, see the Troubleshooting section of [deploy/CONNE
 | `<REDIS_HOST>` | `redis.host` | Always external; port fixed at `6379` |
 | `<REDPANDA_BROKERS>` | `redpanda.brokers` | Always external; a single comma-separated `host:port` string, not a host/port pair. `9093` for the `redpanda/redpanda` chart's internal listener — read yours in Step 0 |
 | `<TOOLBOX_IMAGE>` | `ingestion.toolboxImage` | Optional — defaults to the chart appVersion. Drives the ingestion WorkflowTemplates and the ClickHouse gold-view migrate Job |
-| `<AIRBYTE_API_URL>` | `airbyte.apiUrl` | e.g. `http://host:8001` |
+| `<AIRBYTE_API_URL>` | `airbyte.apiUrl` | e.g. `http://host:8001`. Empty falls back to `http://<airbyte.releaseName>-airbyte-server-svc.<release-namespace>:8001`, so it is only safe to omit when Airbyte shares the `insight` namespace |
 | `<ARGO_INSTANCE_ID>` | `ingestion.reconcile.argoInstanceId` | Match the controller's configured `instanceID` (Step 0); empty if unpinned |
-| `<IMAGE_TAG>` | `gateway.image.tag`, `authenticator.image.tag`, `analytics.image.tag`, `identity.image.tag`, `frontend.image.tag` | All five are optional — each falls back to that subchart's `Chart.yaml` appVersion (pinned by the release pipeline). Set them explicitly (recommended) so every service lands on the exact same product build; leaving them blank is safe only when all five subcharts' appVersion are in lockstep in the chart release you install |
 | `<HOST>` | `gateway.ingress.host`, `frontend.ingress.host` | Public FQDN, shared by the Gateway and Frontend (`/*` → UI, `/api/*` → Gateway routes to Analytics/Identity) |
 | `<TLS_SECRET>` | `gateway.ingress.tls.secretName` | Kubernetes TLS Secret name |
+| `<CLUSTER_ISSUER>` | `authenticator.tlsDiscovery.issuerRef.name` | A cert-manager `ClusterIssuer` that exists in your cluster; internal cert, so self-signed is fine |
 | `<OIDC_ISSUER>` | `authenticator.oidc.issuerUrl`, `frontend.oidc.issuer` | Your IdP's issuer URL |
 | `<OIDC_CLIENT_ID>` / `<OIDC_CLIENT_SECRET>` | `authenticator.oidc.clientId`/`clientSecret`, `frontend.oidc.clientId` | Your OIDC client / application registration credentials |
 
 Other notable (non-placeholder) settings in this file:
 
+- Image tags are omitted deliberately. Each subchart renders `image.tag | default .Chart.AppVersion`, and the release pipeline pins those appVersions in lockstep, so a chart release already carries a coherent set of product images. Set `<service>.image.tag` only to pin one service to a different build.
 - `credentials.deploymentMode: helm` and `credentials.autoGenerate: true` — this enables the "bring your own" credentials path, where the chart keeps a labelless `insight-db-creds` Secret instead of generating random passwords.
 - `identity.deploy: true` — required override; the chart's own default is `false`.
-- `authenticator.tlsDiscovery.issuerRef.name: local-ca` — the cert-manager `ClusterIssuer` name the JWKS-discovery Certificate is issued from; override to match your cluster's issuer.
+- `authenticator.tlsDiscovery.issuerRef.name` — the cert-manager `ClusterIssuer` the JWKS-discovery Certificate is issued from. Always set this: the chart ships `local-ca`, which is the self-signed root that `make bootstrap-cert-manager ENV=local` creates for the local k3s sandbox, not anything a real cluster has.
 - There is no auth-off toggle anywhere in this chart. `authenticator.oidc.issuerUrl` and `authenticator.oidc.redirectUri` are hard `required` fields — the simplest no-real-IdP path is `fakeidp.deploy: true`, local/dev only; `keycloak.deploy: true` is a heavier bundled alternative (not documented here).
 
 ### secrets/insight-db-creds.yaml keys
