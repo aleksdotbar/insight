@@ -215,9 +215,9 @@ analytics:
 
 gateway:
   replicaCount: 1
-  ingress:
-    enabled: true
-    className: nginx
+  ingress:                           # the only Ingress the chart publishes; the gateway
+    enabled: true                    # itself routes / to the UI and /api/* to Analytics
+    className: nginx                 # and Identity, from subchart defaults you need not set
     host: <HOST>
     tls:
       enabled: true
