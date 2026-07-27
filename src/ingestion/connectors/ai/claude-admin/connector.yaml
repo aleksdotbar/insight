@@ -823,8 +823,8 @@ streams:
             value: "{{ record.get('user_id', '') }}:{{ stream_partition['workspace_id'] }}"
 
   # ── Stream 8: claude_admin_invites (full refresh, after_id cursor pagination)
-  #    Merged from claude-api: uses `created_at` (project-wide convention)
-  #    instead of claude-team's `invited_at`.
+  #    Schema uses `created_at` (project-wide convention); the Admin API returns
+  #    `invited_at`, so the AddFields below maps it before tenant_id_injection.
   - type: DeclarativeStream
     name: claude_admin_invites
     primary_key:
@@ -887,6 +887,10 @@ streams:
       paginator:
         $ref: "#/definitions/after_id_paginator"
     transformations:
+      - type: AddFields
+        fields:
+          - path: [created_at]
+            value: "{{ record.get('created_at') or record.get('invited_at', '') }}"
       - $ref: "#/definitions/tenant_id_injection"
 
 # default_concurrency: 1 serializes the streams so the connector reads against
