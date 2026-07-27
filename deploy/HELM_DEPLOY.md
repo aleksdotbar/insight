@@ -12,6 +12,7 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
   - [Cluster and CLI tools](#cluster-and-cli-tools)
   - [Cluster-level dependencies](#cluster-level-dependencies)
   - [Running external infrastructure](#running-external-infrastructure)
+- [Step 0 — Generate the tenant ID](#step-0--generate-the-tenant-id)
 - [Step 1 — Configure values/umbrella.yaml](#step-1--configure-valuesumbrellayaml)
 - [Step 2 — Fill the secret files](#step-2--fill-the-secret-files)
   - [secrets/insight-db-creds.yaml](#secretsinsight-db-credsyaml)
@@ -41,18 +42,6 @@ Insight reads engineering and collaboration data from your tools (Jira, Slack, G
 
 Two more subcharts exist purely for local/dev use and are off by default: `fakeidp` (alias `fakeidp`, condition `fakeidp.deploy`) and `keycloak` (alias `keycloak`, condition `keycloak.deploy`) — both are bundled OIDC providers for a cluster with no real IdP available. `fakeidp` is the one this runbook documents; `keycloak` is a heavier bundled alternative not covered here. Neither is appropriate for a real environment.
 
-```mermaid
-flowchart LR
-    B[Browser] --> ING[Ingress: host]
-    ING --> GW[insight-gateway]
-    GW -->|"/*"| FE[insight-frontend]
-    GW -->|"/api/*"| AN[insight-analytics / insight-identity]
-    GW -->|"cookie→JWT exchange<br/>(cached, cosocket)"| AUTH[insight-authenticator]
-    AUTH -->|OIDC login| IDP[External IdP]
-    AUTH -->|mints gateway JWT<br/>signed w/ signing keys| GW
-    AN -->|verifies JWT via JWKS<br/>over cert-manager CA| AUTH
-```
-
 This path assumes your data infrastructure (ClickHouse, MariaDB, Redis, Redpanda, Airbyte, Argo Workflows) already runs and is reachable from the cluster, in another namespace or external. The chart doesn't stand it up; it only wires the services to it. You supply one values file, secret files, and optionally one Secret per connector (see [deploy/CONNECTORS.md](./CONNECTORS.md)). No GitOps repo, CI, or auto-reconciliation — you run the commands yourself.
 
 ## Prerequisites
@@ -64,6 +53,7 @@ This path assumes your data infrastructure (ClickHouse, MariaDB, Redis, Redpanda
 - `kubectl`.
 - `jq`, used to mirror the Airbyte auth Secret in Step 3.
 - `openssl`, used to generate the authenticator's signing key in Step 2.
+- `uuidgen` (or `python3`), used to generate the tenant ID in Step 0.
 - `base64`, used when copying existing datastore passwords in Step 2 (most systems ship this by default).
 
 ### Cluster-level dependencies
@@ -86,11 +76,24 @@ All six systems below must be deployed and reachable from the cluster before you
 | Airbyte | Runs the data connectors (Jira, Slack, GitHub, and so on) that load raw data into ClickHouse Bronze |
 | Argo Workflows | Runs the dbt transform workflows that turn Bronze into Silver and Gold, and runs the sync workflows Airbyte connections trigger |
 
-Run all commands here from the directory holding your `values/` and `secrets/` files. This document shows the full `values/umbrella.yaml` skeleton and the secret files, so you can assemble both directories from what follows. Connector configuration (the `connectors/` directory) is a separate, later step — see [deploy/CONNECTORS.md](./CONNECTORS.md).
+Run every command below from the directory holding your `values/` and `secrets/` files — Steps 1 and 2 give you the full contents of both. Connector configuration (the `connectors/` directory) comes later, in [deploy/CONNECTORS.md](./CONNECTORS.md).
+
+## Step 0 — Generate the tenant ID
+
+Generate the tenant UUID and record it — you paste it into two fields in Step 1:
+
+```sh
+uuidgen | tr '[:upper:]' '[:lower:]'    # no uuidgen? python3 -c 'import uuid; print(uuid.uuid4())'
+```
+
+- It must be a lowercase UUID. The identity tables type the column `UUID`, and the Silver models pass the string through verbatim (`tenant_id AS insight_tenant_id`), so case has to stay consistent.
+- Use the same value for `global.tenantDefaultId` (how the app resolves the tenant) and `ingestion.reconcile.tenantId` (stamped into every ingested row as `insight_tenant_id`). If they diverge, dashboards read one tenant while the pipeline writes another.
+- Never change it after the first sync — ingested data is keyed by it.
+- Local/dev against the compose wizard, the seed generators, or `fakeidp`: use their fixed tenant `00000000-df51-5b42-9538-d2b56b7ee953` instead of generating one.
 
 ## Step 1 — Configure values/umbrella.yaml
 
-Create `values/umbrella.yaml` with the skeleton below, then replace every `<...>` placeholder with your infrastructure's real addresses. Passwords never go here — they live in the secret files from Step 2.
+Create `values/umbrella.yaml` from the skeleton below and replace every `<...>` placeholder. No passwords here — they go in the Step 2 secret files.
 
 ```yaml
 ## values/umbrella.yaml — the only values file you need.
@@ -100,7 +103,7 @@ credentials:
   autoGenerate: true                 # BYO compose; won't overwrite a labelless insight-db-creds
 
 global:
-  tenantDefaultId: "<TENANT_ID>"     # single-tenant seed UUID; must equal ingestion.reconcile.tenantId
+  tenantDefaultId: "<TENANT_ID>"     # the UUID from Step 0; must equal ingestion.reconcile.tenantId
   # storageClass: ""                 # "" = cluster default; e.g. "local-path" locally
   # imagePullSecrets: []             # [{name: my-regcred}] for a private registry
 
@@ -203,17 +206,17 @@ frontend:                            # the web UI (dashboard)
 # fakeidp: {deploy: false}           # local/dev-only alternative to a real IdP — see note below
 ```
 
-If you do not already have this file, you can generate the chart's default values as a starting point instead of typing the skeleton by hand:
+To start from the chart's full defaults instead of typing the skeleton:
 
 ```sh
 helm show values oci://ghcr.io/constructorfabric/charts/insight > values/umbrella.yaml
 ```
 
-The placeholder table below explains every `<...>` value in the skeleton:
+Fill each placeholder:
 
 | Placeholder | What it should be |
 |-------------|--------------------|
-| `<TENANT_ID>` | Your Insight tenant UUID/slug. Must be the same value in `global.tenantDefaultId` and `ingestion.reconcile.tenantId` |
+| `<TENANT_ID>` | The tenant UUID you generated in Step 0. Must be the same value in `global.tenantDefaultId` and `ingestion.reconcile.tenantId` |
 | `<CLICKHOUSE_HOST>` | ClickHouse HTTP host, in `host:8123` form |
 | `<MARIADB_HOST>` | MariaDB host, in `host:3306` form |
 | `<REDIS_HOST>` | Redis host, in `host:6379` form |
@@ -221,26 +224,26 @@ The placeholder table below explains every `<...>` value in the skeleton:
 | `<TOOLBOX_IMAGE>` | The ingestion toolbox image reference (drives the WorkflowTemplates and the ClickHouse gold-view migration Job, Step 4/5) |
 | `<AIRBYTE_API_URL>` | Airbyte server API URL, for example `http://host:8001` |
 | `<ARGO_INSTANCE_ID>` | Your Argo controller's instance ID, for example `argo-workflows-insight-infra` |
-| `<IMAGE_TAG>` | The Insight product image tag for each service. All five `image.tag` fields are optional — each falls back to that subchart's `Chart.yaml` appVersion (pinned by the release pipeline). Set them explicitly (recommended) so every service lands on the exact same product build; leaving them blank is safe only when all five subcharts' appVersion are in lockstep in the chart release you install |
+| `<IMAGE_TAG>` | The Insight product image tag. Optional on all five services — each falls back to its subchart's `Chart.yaml` appVersion — but set them explicitly so every service lands on the same build (see the Appendix) |
 | `<HOST>` | Public FQDN for the ingress, shared by the Gateway and Frontend, for example `insight.example.com` |
 | `<TLS_SECRET>` | Name of the Kubernetes TLS Secret that covers that domain |
 | `<OIDC_ISSUER>` | Your IdP's issuer URL. Its `/.well-known/openid-configuration` document must resolve from inside the cluster |
 | `<OIDC_CLIENT_ID>` / `<OIDC_CLIENT_SECRET>` | Your OIDC client / application registration credentials |
 
-For infrastructure running in the same cluster, use the in-cluster DNS form `<service>.<namespace>.svc.cluster.local`. Any resolvable host or IP address also works.
+For infrastructure in the same cluster, use `<service>.<namespace>.svc.cluster.local`. Any resolvable host or IP also works.
 
-A few settings deserve a closer look before you install:
+Check these four before installing:
 
-- **`identity.deploy` must be `true`.** The chart's own default is `false`, so this block requires an explicit override. Without it, the Identity service (and person resolution for the whole app) does not deploy.
-- **`authenticator.oidc.issuerUrl` and `authenticator.oidc.redirectUri` are hard requirements.** `charts/insight/templates/secrets.yaml` wraps both in Helm's `required` function — the chart refuses to render without them. There is no auth-off escape hatch: OIDC is mandatory in every environment.
-- **No dummy-IdP values file exists for this chart.** If you need a working install without wiring up a real external IdP (local/dev only), enable the bundled fake provider instead: set `fakeidp.deploy: true`, point `authenticator.oidc.issuerUrl` at the in-cluster fakeidp FQDN it exposes, and leave `clientSecret` empty. Never do this in a shared or production cluster. Note: the `fakeidp` (and `keycloak`) images are dev-only and are **not** published to public GHCR — building them locally and loading them into the cluster (or supplying an `imagePullSecret` with access) is required, otherwise the fakeidp pod fails with `ImagePullBackOff` (403). This does not affect a real install, which uses your own IdP and never deploys fakeidp.
-- **`authenticator.signingKeysSecret` must already exist.** It is not auto-generated by the chart — create it in Step 2 before installing.
+- Set `identity.deploy: true`. The chart default is `false`, and without the override Identity — and person resolution for the whole app — never deploys.
+- Set real values for `authenticator.oidc.issuerUrl` and `redirectUri`. The chart wraps both in Helm's `required`, and there is no auth-off switch.
+- Create the Secret named in `authenticator.signingKeysSecret` before installing (Step 2). The chart does not generate it.
+- No real IdP, local/dev only: set `fakeidp.deploy: true`, point `issuerUrl` at the in-cluster fakeidp FQDN, leave `clientSecret` empty. Its image is not on public GHCR, so build and load it locally (or supply an `imagePullSecret`) or the pod hits `ImagePullBackOff`. Never in a shared cluster.
 
 ## Step 2 — Fill the secret files
 
 ### secrets/insight-db-creds.yaml
 
-This Secret holds the four datastore passwords used by Analytics and Identity. All four keys are required — the chart fails fast if any is missing. Values must match the passwords your datastores were deployed with.
+Create this Secret with all four datastore passwords — the chart fails fast if any key is missing. Use the passwords your datastores already run with.
 
 ```yaml
 apiVersion: v1
@@ -254,7 +257,7 @@ stringData:
   redis-password:        "CHANGE_ME"   # Redis password               -> Analytics + Authenticator
 ```
 
-If your existing datastores already have these passwords stored in Secrets in your infrastructure namespace, copy them across instead of retyping them:
+If those passwords already live in Secrets in your infrastructure namespace, copy them across instead of retyping them:
 
 ```sh
 NS_INFRA=<your-infra-namespace>                     # where your L2 services run
@@ -264,20 +267,20 @@ kubectl -n $NS_INFRA get secret <maria-root-secret> -o jsonpath='{.data.<root-ke
 kubectl -n $NS_INFRA get secret <redis-secret>      -o jsonpath='{.data.<redis-key>}'     | base64 -d; echo   # redis-password
 ```
 
-Paste the decoded output into the matching `clickhouse-password` / `mariadb-password` / `mariadb-root-password` / `redis-password` field.
+Paste each decoded value into the matching field.
 
-> **Do not add an `app.kubernetes.io/managed-by: Helm` label to this Secret.** The chart reads that label's *absence* as "bring your own" credentials. With the label, it assumes ownership and may overwrite your passwords with generated ones. Without it, the chart keeps your values and composes `insight-analytics-config` and `insight-identity-config` from them.
+> **Never label this Secret `app.kubernetes.io/managed-by: Helm`.** The chart reads the label's *absence* as "bring your own" and composes `insight-analytics-config` and `insight-identity-config` from your values; with the label it takes ownership and may overwrite them with generated passwords.
 
 ### secrets/insight-authenticator-signing-keys.yaml
 
-The authenticator mints the gateway JWT using an ES256 (EC P-256) key pair. This Secret is **not** auto-generated by the chart — you must create it yourself before `helm install`. Generate a PKCS#8 private key and load it under the required `current.pem` key:
+Generate the authenticator's ES256 (EC P-256) gateway-JWT key as PKCS#8 and create the Secret — the chart does not generate it:
 
 ```sh
 openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -out current.pem
 kubectl -n insight create secret generic insight-authenticator-signing-keys --from-file=current.pem
 ```
 
-During a key rotation, add a `previous.pem` (the outgoing key) alongside the new `current.pem` for at least the JWT TTL plus downstream JWKS-cache age (roughly 65 minutes), then roll the authenticator pods:
+To rotate, keep the outgoing key as `previous.pem` beside the new `current.pem` for at least the JWT TTL plus downstream JWKS-cache age (~65 minutes), then roll the authenticator pods:
 
 ```sh
 kubectl -n insight create secret generic insight-authenticator-signing-keys \
@@ -287,10 +290,9 @@ kubectl -n insight create secret generic insight-authenticator-signing-keys \
 
 ## Step 3 — Create namespace and apply secrets
 
-Create the `insight` namespace and apply the secret files:
+Create the namespace and apply the secret files:
 
 ```sh
-# create the namespace and apply all secrets
 kubectl create namespace insight
 kubectl -n insight apply -f secrets/
 
@@ -298,68 +300,57 @@ kubectl -n insight apply -f secrets/
 kubectl -n insight get secret insight-db-creds insight-authenticator-signing-keys   # expect 4 keys / 1-2 keys (current.pem [+ previous.pem])
 ```
 
-The Analytics service also needs Airbyte's own auth credentials to talk to the Airbyte API. Mirror that Secret from your infrastructure namespace into `insight`:
+Mirror Airbyte's auth Secret into `insight` — Analytics needs it to call the Airbyte API:
 
 ```sh
-# mirror the Airbyte auth secret from your infra namespace
 NS_INFRA=<your-infra-namespace>
 kubectl -n $NS_INFRA get secret airbyte-auth-secrets -o json \
   | jq 'del(.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.ownerReferences,.metadata.annotations,.metadata.labels) | .metadata.namespace="insight"' \
   | kubectl -n insight apply -f -
 ```
 
-The `jq` step strips the original Secret's identity fields (UID, resource version, owner references) and retargets it to the `insight` namespace, so Kubernetes accepts it as a new object.
+The `jq` filter strips the source object's identity fields (UID, resource version, owner references) and retargets the namespace, so Kubernetes accepts it as a new object.
 
 ## Step 4 — Install with Helm
 
-Run the umbrella chart install, pointing it at your filled-in values file:
+Install the umbrella chart against your values file:
 
 ```sh
 helm upgrade --install insight oci://ghcr.io/constructorfabric/charts/insight \
   -n insight -f values/umbrella.yaml --wait --timeout 15m
 ```
 
-Omit `--version` to install the latest published chart, or add `--version <x.y.z>` to pin a specific release. `--wait --timeout 15m` blocks the command until all resources report ready, or until 15 minutes pass, whichever comes first — this gives you a clear pass/fail signal instead of a detached background rollout.
-
-This command also runs a post-install/post-upgrade Helm hook Job, `insight-clickhouse-migrate`, which applies the ClickHouse gold-view migrations (`src/ingestion/scripts/migrations/*.sql`) against your external ClickHouse using `ingestion.toolboxImage`. It runs on **every** `helm upgrade`, not just the first install — this is gated by `clickhouse.runMigrations` (default `true`). `helm upgrade` blocks on this Job the same way it blocks on any other resource; a failing migration fails the whole upgrade. The migration script drops-and-recreates every gold object on each run, so a genuine migrate-Job failure usually points to a schema/data problem in the referenced Bronze/Silver tables, not a stale-object conflict.
+- Add `--version <x.y.z>` to pin a chart release; omit it for the latest published one.
+- `--wait --timeout 15m` blocks until every resource is ready, giving a pass/fail signal instead of a detached rollout.
+- The install also runs the `insight-clickhouse-migrate` hook Job, which applies the ClickHouse gold-view migrations (`src/ingestion/scripts/migrations/*.sql`) with `ingestion.toolboxImage`. It fires on **every** upgrade, not just the first install (gated by `clickhouse.runMigrations`, default `true`), and a failing migration fails the whole upgrade. It drops and recreates every gold object each run, so a failure points at Bronze/Silver schema or data, not a stale-object conflict.
 
 ## Step 5 — Verify the install
 
-Confirm all pods are running (Identity only appears when `identity.deploy: true`; fakeidp/keycloak only when their `deploy` flag is set):
+Run all four checks:
 
 ```sh
 kubectl -n insight get pods
-  # expect: insight-gateway, insight-authenticator, insight-analytics, insight-identity, insight-frontend  (all Running)
-```
+  # expect insight-gateway, -authenticator, -analytics, -identity, -frontend all Running
+  # (Identity only with identity.deploy: true; fakeidp/keycloak only with their deploy flag)
 
-Confirm the chart composed the per-service config Secrets from `insight-db-creds`:
-
-```sh
 kubectl -n insight get secret insight-analytics-config insight-authenticator-config insight-identity-config
-  # chart composed these from insight-db-creds (insight-identity-config only exists when identity.deploy=true)
-```
+  # the chart composes these from insight-db-creds (the identity one only when identity.deploy=true)
 
-Inspect the ClickHouse gold-view migration hook Job and confirm it completed:
-
-```sh
 kubectl -n insight get jobs -l app.kubernetes.io/component=clickhouse-migrate
 kubectl -n insight logs job/insight-clickhouse-migrate
-```
+  # the gold-view migration Job must be Complete
 
-Confirm the reconcile loop's scheduled workflow exists — this is the job that discovers connector Secrets and provisions Airbyte sources and connections automatically:
-
-```sh
 kubectl -n insight get cronworkflow
-  # expect: insight-reconcile-loop (provisions Airbyte sources/connections)
+  # expect insight-reconcile-loop (provisions Airbyte sources/connections)
 ```
 
-Finally, open `https://<HOST>` in a browser (the host you set in Step 1) and confirm the login redirect to your OIDC provider works.
+Then open `https://<HOST>` — the host from Step 1 — and confirm the login redirect to your OIDC provider.
 
 ## Step 6 — Configure connectors (optional)
 
-Configuring connectors is a separate operation from installing the app, done once the app is up and running. There are 25 available connectors, each a single Kubernetes Secret that the `insight-reconcile-loop` CronWorkflow discovers and auto-provisions as an Airbyte source — no further steps once it's applied and filled in correctly.
+Configure connectors after the app is up. Each of the 25 connectors is a single Kubernetes Secret; the `insight-reconcile-loop` CronWorkflow discovers it and provisions the Airbyte source automatically, so there is nothing else to run.
 
-See [deploy/CONNECTORS.md](./CONNECTORS.md) for the full list of connectors and a copy-paste-ready example Secret for each.
+See [deploy/CONNECTORS.md](./CONNECTORS.md) for the connector list and a copy-paste Secret for each.
 
 ## Troubleshooting
 
@@ -380,7 +371,7 @@ For connector-syncing problems, see the Troubleshooting section of [deploy/CONNE
 
 | Placeholder | Field(s) | Notes |
 |-------------|----------|-------|
-| `<TENANT_ID>` | `global.tenantDefaultId`, `ingestion.reconcile.tenantId` | Must be identical across both |
+| `<TENANT_ID>` | `global.tenantDefaultId`, `ingestion.reconcile.tenantId` | Generated in Step 0; a lowercase UUID, identical across both |
 | `<CLICKHOUSE_HOST>` | `clickhouse.host` | Always external; port fixed at `8123` in the file |
 | `<MARIADB_HOST>` | `mariadb.host` | Always external; port fixed at `3306` |
 | `<REDIS_HOST>` | `redis.host` | Always external; port fixed at `6379` |
