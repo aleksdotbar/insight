@@ -32,7 +32,6 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
   - [values/umbrella.yaml placeholders](#valuesumbrellayaml-placeholders)
   - [secrets/insight-db-creds.yaml keys](#secretsinsight-db-credsyaml-keys)
   - [secrets/insight-authenticator-signing-keys.yaml keys](#secretsinsight-authenticator-signing-keysyaml-keys)
-  - [values/umbrella.orbstack.yaml (local variant)](#valuesumbrellaorbstackyaml-local-variant)
 
 <!-- /toc -->
 
@@ -326,15 +325,7 @@ openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt 
 kubectl -n insight create secret generic insight-authenticator-signing-keys --from-file=current.pem
 ```
 
-To rotate, keep the outgoing key as `previous.pem` beside the new `current.pem` for at least the JWT TTL plus downstream JWKS-cache age (~65 minutes), then roll the authenticator pods:
-
-```sh
-kubectl -n insight create secret generic insight-authenticator-signing-keys \
-  --from-file=current.pem --from-file=previous.pem \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-## Step 3 — Create namespace and apply secrets
+## Step 3 — Create namespace, apply secrets, mirror Airbyte auth
 
 Create the namespace and apply the secret files:
 
@@ -343,7 +334,7 @@ kubectl create namespace insight
 kubectl -n insight apply -f secrets/
 
 # verify
-kubectl -n insight get secret insight-db-creds insight-authenticator-signing-keys   # expect 4 keys / 1-2 keys (current.pem [+ previous.pem])
+kubectl -n insight get secret insight-db-creds insight-authenticator-signing-keys   # expect 4 keys / 1 key (current.pem)
 ```
 
 Mirror Airbyte's auth Secret into `insight` — Analytics needs it to call the Airbyte API:
@@ -452,11 +443,4 @@ Recall: this Secret must never carry an `app.kubernetes.io/managed-by: Helm` lab
 
 ### secrets/insight-authenticator-signing-keys.yaml keys
 
-| Key | Meaning |
-|-----|---------|
-| `current.pem` | The active ES256 (EC P-256) signing key, PKCS#8 PEM, unencrypted. Required. |
-| `previous.pem` | The outgoing key during a rotation window. Optional; keep it alongside `current.pem` until the JWT TTL plus downstream JWKS-cache age has elapsed |
-
-### values/umbrella.orbstack.yaml (local variant)
-
-This file is a pre-filled variant of the values file for local development on OrbStack's bundled k3s cluster, with all infrastructure running in an `insight-infra` namespace. It sets a fixed tenant UUID, in-cluster DNS hosts, an empty (host-less) ingress that matches any `Host` header, disabled TLS, and points the authenticator at the in-cluster `fakeidp`/`keycloak` provider rather than a real IdP. Use it only as a reference for local testing — do not reuse its host-less ingress, disabled TLS, or fake-IdP settings on a shared or production cluster.
+One required key, `current.pem`: the active ES256 (EC P-256) signing key, unencrypted PKCS#8 PEM.
