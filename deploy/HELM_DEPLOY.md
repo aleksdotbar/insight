@@ -170,7 +170,7 @@ redpanda:
 ingestion:
   templates:
     enabled: true
-  toolboxImage: "<TOOLBOX_IMAGE>"    # e.g. ghcr.io/constructorfabric/insight-toolbox:<tag>
+  # toolboxImage: "<TOOLBOX_IMAGE>" # optional — defaults to the chart's appVersion-pinned toolbox; only set to override
   reconcile:
     tenantId: "<TENANT_ID>"
     destinationName: clickhouse-bronze
@@ -263,7 +263,7 @@ Fill each placeholder:
 | `<MARIADB_HOST>` | MariaDB host, in `host:3306` form |
 | `<REDIS_HOST>` | Redis host, in `host:6379` form |
 | `<REDPANDA_BROKERS>` | The bootstrap string you composed in Step 0 — comma-separated `host:port` pointing at the internal Kafka API listener |
-| `<TOOLBOX_IMAGE>` | The ingestion toolbox image reference (drives the WorkflowTemplates and the ClickHouse gold-view migration Job, Step 4/5) |
+| `<TOOLBOX_IMAGE>` | Optional. The ingestion toolbox image (drives the WorkflowTemplates and the ClickHouse gold-view migration Job, Step 4/5). Omit to inherit the chart's default, which is pinned to the chart appVersion; set only to override |
 | `<AIRBYTE_API_URL>` | Airbyte server API URL, for example `http://host:8001` |
 | `<ARGO_INSTANCE_ID>` | Your Argo controller's instance ID, for example `argo-workflows-insight-infra` |
 | `<IMAGE_TAG>` | The Insight product image tag. Optional on all five services — each falls back to its subchart's `Chart.yaml` appVersion — but set them explicitly so every service lands on the same build (see the Appendix) |
@@ -418,7 +418,7 @@ For connector-syncing problems, see the Troubleshooting section of [deploy/CONNE
 | `<MARIADB_HOST>` | `mariadb.host` | Always external; port fixed at `3306` |
 | `<REDIS_HOST>` | `redis.host` | Always external; port fixed at `6379` |
 | `<REDPANDA_BROKERS>` | `redpanda.brokers` | Always external; a single comma-separated `host:port` string, not a host/port pair. `9093` for the `redpanda/redpanda` chart's internal listener — read yours in Step 0 |
-| `<TOOLBOX_IMAGE>` | `ingestion.toolboxImage` | Drives the ingestion WorkflowTemplates and the ClickHouse gold-view migrate Job |
+| `<TOOLBOX_IMAGE>` | `ingestion.toolboxImage` | Optional — defaults to the chart appVersion. Drives the ingestion WorkflowTemplates and the ClickHouse gold-view migrate Job |
 | `<AIRBYTE_API_URL>` | `airbyte.apiUrl` | e.g. `http://host:8001` |
 | `<ARGO_INSTANCE_ID>` | `ingestion.reconcile.argoInstanceId` | Your Argo controller's instance ID |
 | `<IMAGE_TAG>` | `gateway.image.tag`, `authenticator.image.tag`, `analytics.image.tag`, `identity.image.tag`, `frontend.image.tag` | All five are optional — each falls back to that subchart's `Chart.yaml` appVersion (pinned by the release pipeline). Set them explicitly (recommended) so every service lands on the exact same product build; leaving them blank is safe only when all five subcharts' appVersion are in lockstep in the chart release you install |
