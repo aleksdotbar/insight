@@ -17,6 +17,7 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
   - [Look up the external service addresses](#look-up-the-external-service-addresses)
   - [Find the Airbyte API URL](#find-the-airbyte-api-url)
   - [Compose the Redpanda brokers string](#compose-the-redpanda-brokers-string)
+  - [Get the OIDC client details](#get-the-oidc-client-details)
   - [Read the Argo workflow-controller instance ID](#read-the-argo-workflow-controller-instance-id)
 - [Step 1 — Configure values/umbrella.yaml](#step-1--configure-valuesumbrellayaml)
 - [Step 2 — Fill the secret files](#step-2--fill-the-secret-files)
@@ -45,7 +46,7 @@ Insight reads engineering and collaboration data from your tools (Jira, Slack, G
 - **Identity** (`insight-identity`, alias `identity`) — resolves people and org data from MariaDB; optional (`identity.deploy`, default `false`).
 - **Frontend** (`insight-frontend`, alias `frontend`) — the web UI (dashboard); optional (`frontend.deploy`, default `true`).
 
-Two more subcharts exist purely for local/dev use and are off by default: `fakeidp` (alias `fakeidp`, condition `fakeidp.deploy`) and `keycloak` (alias `keycloak`, condition `keycloak.deploy`) — both are bundled OIDC providers for a cluster with no real IdP available. `fakeidp` is the one this runbook documents; `keycloak` is a heavier bundled alternative not covered here. Neither is appropriate for a real environment.
+Two more subcharts exist purely for local development and are off by default: `keycloak` (alias `keycloak`, condition `keycloak.deploy`) and `fakeidp` (alias `fakeidp`, condition `fakeidp.deploy`) — dev-mode OIDC servers with an embedded database and known passwords. Neither is covered here, and neither is the IdP for a stand: this runbook expects the real one from [Prerequisites](#cluster-level-dependencies).
 
 This path assumes your data infrastructure (ClickHouse, MariaDB, Redis, Redpanda, Airbyte, Argo Workflows) already runs and is reachable from the cluster, in another namespace or external. The chart doesn't stand it up; it only wires the services to it. You supply one values file, secret files, and optionally one Secret per connector (see [deploy/CONNECTORS.md](./CONNECTORS.md)). No GitOps repo, CI, or auto-reconciliation — you run the commands yourself.
 
@@ -63,12 +64,13 @@ This path assumes your data infrastructure (ClickHouse, MariaDB, Redis, Redpanda
 
 ### Cluster-level dependencies
 
-Install both of these before the chart — it bundles neither:
+Install all three of these before the chart — it bundles none of them:
 
 - **An ingress controller.** Install ingress-nginx, or override `gateway.ingress.className` / `frontend.ingress.className` to match what you run. Both default to `className: nginx`.
+- **A real OIDC identity provider.** OIDC is mandatory in every environment — there is no auth-off switch — so the authenticator needs an IdP to log in against: Entra ID, Okta, Auth0, or your own. **No IdP on the stand? Install Keycloak as its own release and treat it like any other external dependency** — it is the straightforward choice: a real OIDC implementation, a public image, and an admin console for creating the realm and the confidential client. Give it a hostname the browser *and* the authenticator pod both resolve to the same URL, then read its issuer, client ID, and client secret in Step 0. The chart's bundled `keycloak`/`fakeidp` subcharts are not this: they run dev-mode servers with an embedded database and known passwords, for local development only.
 - **cert-manager, plus a `ClusterIssuer` of your own.** The authenticator's TLS-discovery sidecar (`authenticator.tlsDiscovery.enabled`, default `true`) creates a `cert-manager.io/v1` `Certificate`, and Analytics and Identity verify the authenticator's JWKS over HTTPS against that CA — load-bearing, not optional. Set `authenticator.tlsDiscovery.issuerRef.name` to whatever your cluster issues from. Do not expect the chart's `local-ca` default to resolve: that issuer belongs to this repo's local k3s sandbox (`deploy/gitops/bootstrap/local/selfsigned-issuer.yaml`, applied by `make bootstrap-cert-manager ENV=local`) and will not exist in a cluster you did not bootstrap that way. Any issuer will do — this certificate is internal-only, trusted through the CA the services mount, so it needs no public chain and is unrelated to the public ingress certificate in `<TLS_SECRET>`.
 
-Confirm both are in place:
+Confirm the cluster-side pieces (the IdP gets verified in Step 0, once you have its issuer URL):
 
 ```sh
 kubectl get ingressclass nginx                  # the className both ingress blocks use
@@ -130,6 +132,16 @@ kubectl -n <redpanda-ns> get svc <redpanda-svc> -o jsonpath='{range .spec.ports[
   # e.g. redpanda.insight-infra.svc.cluster.local:9093
 ```
 
+### Get the OIDC client details
+
+In the IdP from Prerequisites, register a **confidential** client whose redirect URI is `https://<HOST>/auth/callback`, and collect its issuer URL, client ID, and client secret; on Keycloak the issuer is `<keycloak-base-url>/realms/<realm>`, and the client's *Credentials* tab holds the secret.
+
+```sh
+# the issuer must be the SAME URL the browser and the authenticator pod resolve, or `iss` won't validate
+kubectl run oidc-probe --rm -i --restart=Never --image=curlimages/curl -- \
+  curl -sS <OIDC_ISSUER>/.well-known/openid-configuration | head -c 200
+```
+
 ### Read the Argo workflow-controller instance ID
 
 Set `ingestion.reconcile.argoInstanceId` to the controller's configured `instanceID` only when it is pinned to one; no match means leave it empty — the common case, where the reconcile workflows go unlabelled and any controller accepts them.
@@ -177,7 +189,6 @@ redpanda:
 ingestion:
   templates:
     enabled: true
-  # toolboxImage: "<TOOLBOX_IMAGE>" # optional — defaults to the chart's appVersion-pinned toolbox; only set to override
   reconcile:
     tenantId: "<TENANT_ID>"
     destinationName: clickhouse-bronze
@@ -240,8 +251,6 @@ frontend:                            # the web UI (dashboard)
     issuer: "<OIDC_ISSUER>"          # same IdP as the authenticator
     clientId: "<OIDC_CLIENT_ID>"
     scopes: "openid profile email"   # IdP-specific
-
-# fakeidp: {deploy: false}           # local/dev-only alternative to a real IdP — see note below
 ```
 
 To start from the chart's full defaults instead of typing the skeleton:
@@ -259,7 +268,6 @@ Fill each placeholder:
 | `<MARIADB_HOST>` | MariaDB host, in `host:3306` form |
 | `<REDIS_HOST>` | Redis host, in `host:6379` form |
 | `<REDPANDA_BROKERS>` | The bootstrap string you composed in Step 0 — comma-separated `host:port` pointing at the internal Kafka API listener |
-| `<TOOLBOX_IMAGE>` | Optional. The ingestion toolbox image (drives the WorkflowTemplates and the ClickHouse gold-view migration Job, Step 4/5). Omit to inherit the chart's default, which is pinned to the chart appVersion; set only to override |
 | `<AIRBYTE_API_URL>` | The Airbyte server Service URL from Step 0, for example `http://host:8001`. Omit only when Airbyte is a release in the `insight` namespace — the chart then computes it from `airbyte.releaseName` |
 | `<ARGO_INSTANCE_ID>` | The `instanceID` your Argo workflow controller is pinned to — read it off the controller config map in Step 0. Leave empty (`""`) if the controller is unpinned, the common case |
 | `<HOST>` | Public FQDN for the ingress, shared by the Gateway and Frontend, for example `insight.example.com` |
@@ -275,7 +283,7 @@ Check these four before installing:
 - Set `identity.deploy: true`. The chart default is `false`, and without the override Identity — and person resolution for the whole app — never deploys.
 - Set real values for `authenticator.oidc.issuerUrl` and `redirectUri`. The chart wraps both in Helm's `required`, and there is no auth-off switch.
 - Create the Secret named in `authenticator.signingKeysSecret` before installing (Step 2). The chart does not generate it.
-- No real IdP, local/dev only: set `fakeidp.deploy: true`, point `issuerUrl` at the in-cluster fakeidp FQDN, leave `clientSecret` empty. Its image is not on public GHCR, so build and load it locally (or supply an `imagePullSecret`) or the pod hits `ImagePullBackOff`. Never in a shared cluster.
+- Point the OIDC fields at the real IdP from Prerequisites. The bundled `keycloak`/`fakeidp` subcharts are dev-mode servers for local development, not a stand's IdP.
 
 ## Step 2 — Fill the secret files
 
@@ -360,7 +368,7 @@ helm upgrade --install insight oci://ghcr.io/constructorfabric/charts/insight \
 
 - Add `--version <x.y.z>` to pin a chart release; omit it for the latest published one.
 - `--wait --timeout 15m` blocks until every resource is ready, giving a pass/fail signal instead of a detached rollout.
-- The install also runs the `insight-clickhouse-migrate` hook Job, which applies the ClickHouse gold-view migrations (`src/ingestion/scripts/migrations/*.sql`) with `ingestion.toolboxImage`. It fires on **every** upgrade, not just the first install (gated by `clickhouse.runMigrations`, default `true`), and a failing migration fails the whole upgrade. It drops and recreates every gold object each run, so a failure points at Bronze/Silver schema or data, not a stale-object conflict.
+- The install also runs the `insight-clickhouse-migrate` hook Job, which applies the ClickHouse gold-view migrations (`src/ingestion/scripts/migrations/*.sql`) using the chart's pinned toolbox image. It fires on **every** upgrade, not just the first install (gated by `clickhouse.runMigrations`, default `true`), and a failing migration fails the whole upgrade. It drops and recreates every gold object each run, so a failure points at Bronze/Silver schema or data, not a stale-object conflict.
 
 ## Step 5 — Verify the install
 
@@ -397,7 +405,8 @@ See [deploy/CONNECTORS.md](./CONNECTORS.md) for the connector list and a copy-pa
 | `insight-analytics` / `insight-identity` stuck in `CreateContainerConfigError` | The chart could not compose the `*-config` Secrets. Confirm `insight-db-creds` has all four keys and carries **no** `app.kubernetes.io/managed-by: Helm` label: `kubectl -n insight get secret insight-db-creds -o yaml \| grep managed-by` should return nothing |
 | `helm install`/`upgrade` fails with `signingKeysSecret is required` or the authenticator pod won't mount its keys | The Secret named in `authenticator.signingKeysSecret` (default `insight-authenticator-signing-keys`) doesn't exist or is missing `current.pem`. Create it as shown in Step 2 before installing |
 | `helm install`/`upgrade` fails with `tlsDiscovery.issuerRef.name is required` or the `insight-authenticator-authn-tls` Certificate never turns `Ready` | cert-manager isn't installed, or the `ClusterIssuer` named in `authenticator.tlsDiscovery.issuerRef.name` doesn't exist in this cluster — the usual cause is leaving the chart's local-sandbox `local-ca` default in place. Confirm with `kubectl get clusterissuer` and `kubectl -n insight describe certificate insight-authenticator-authn-tls` |
-| `helm install`/`upgrade` fails with `authenticator.oidc.issuerUrl is required` / `redirectUri is required` | Both fields are mandatory (`charts/insight/templates/secrets.yaml` wraps them in `required`). Set real values, or for local/dev only, set `fakeidp.deploy: true` and point `issuerUrl` at the in-cluster fakeidp — never disable auth |
+| `helm install`/`upgrade` fails with `authenticator.oidc.issuerUrl is required` / `redirectUri is required` | Both fields are mandatory (`charts/insight/templates/secrets.yaml` wraps them in `required`). Set them to your IdP's real values — a real IdP is a prerequisite, and there is no way to disable auth |
+| Login fails with an issuer/`iss` mismatch, or discovery 404s | `authenticator.oidc.issuerUrl` must be the issuer the IdP actually advertises, resolving to the *same* URL from the browser and from the authenticator pod — a split-horizon setup (public hostname outside, Service DNS inside) breaks `iss` validation. On Keycloak the issuer is `<base-url>/realms/<realm>`, and the base URL must match what the server advertises. Check with the `oidc-probe` command from Step 0 |
 | Dashboards show "no peer data" (the benchmark/comparison panel is empty) | After Gold-layer data has loaded, restart Analytics: `kubectl -n insight rollout restart deploy/insight-analytics` |
 | Login breaks after changing the host | Update `authenticator.oidc.redirectUri` (and `frontend.oidc.issuer`/`clientId` if the IdP changed) in values, `helm upgrade`, then restart the gateway: `kubectl -n insight rollout restart deploy/insight-gateway` |
 
@@ -414,7 +423,6 @@ For connector-syncing problems, see the Troubleshooting section of [deploy/CONNE
 | `<MARIADB_HOST>` | `mariadb.host` | Always external; port fixed at `3306` |
 | `<REDIS_HOST>` | `redis.host` | Always external; port fixed at `6379` |
 | `<REDPANDA_BROKERS>` | `redpanda.brokers` | Always external; a single comma-separated `host:port` string, not a host/port pair. `9093` for the `redpanda/redpanda` chart's internal listener — read yours in Step 0 |
-| `<TOOLBOX_IMAGE>` | `ingestion.toolboxImage` | Optional — defaults to the chart appVersion. Drives the ingestion WorkflowTemplates and the ClickHouse gold-view migrate Job |
 | `<AIRBYTE_API_URL>` | `airbyte.apiUrl` | e.g. `http://host:8001`. Empty falls back to `http://<airbyte.releaseName>-airbyte-server-svc.<release-namespace>:8001`, so it is only safe to omit when Airbyte shares the `insight` namespace |
 | `<ARGO_INSTANCE_ID>` | `ingestion.reconcile.argoInstanceId` | Match the controller's configured `instanceID` (Step 0); empty if unpinned |
 | `<HOST>` | `gateway.ingress.host`, `frontend.ingress.host` | Public FQDN, shared by the Gateway and Frontend (`/*` → UI, `/api/*` → Gateway routes to Analytics/Identity) |
@@ -429,7 +437,7 @@ Other notable (non-placeholder) settings in this file:
 - `credentials.deploymentMode: helm` and `credentials.autoGenerate: true` — this enables the "bring your own" credentials path, where the chart keeps a labelless `insight-db-creds` Secret instead of generating random passwords.
 - `identity.deploy: true` — required override; the chart's own default is `false`.
 - `authenticator.tlsDiscovery.issuerRef.name` — the cert-manager `ClusterIssuer` the JWKS-discovery Certificate is issued from. Always set this: the chart ships `local-ca`, which is the self-signed root that `make bootstrap-cert-manager ENV=local` creates for the local k3s sandbox, not anything a real cluster has.
-- There is no auth-off toggle anywhere in this chart. `authenticator.oidc.issuerUrl` and `authenticator.oidc.redirectUri` are hard `required` fields — the simplest no-real-IdP path is `fakeidp.deploy: true`, local/dev only; `keycloak.deploy: true` is a heavier bundled alternative (not documented here).
+- There is no auth-off toggle anywhere in this chart. `authenticator.oidc.issuerUrl` and `authenticator.oidc.redirectUri` are hard `required` fields, so a real IdP is a prerequisite; install Keycloak as a separate release if the stand has none. The bundled `keycloak`/`fakeidp` subcharts are local-development servers (embedded database, known passwords) and not a substitute.
 
 ### secrets/insight-db-creds.yaml keys
 
