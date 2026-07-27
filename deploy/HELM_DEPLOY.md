@@ -58,10 +58,18 @@ This path assumes your data infrastructure (ClickHouse, MariaDB, Redis, Redpanda
 
 ### Cluster-level dependencies
 
-Two things must already be installed in the cluster before you install this chart — neither is bundled by it:
+Install both of these before the chart — it bundles neither:
 
-- **An ingress controller.** The Gateway and Frontend ingress blocks are hardcoded to `className: nginx`; install an ingress-nginx controller (or override `gateway.ingress.className` / `frontend.ingress.className` to match whatever you run).
-- **cert-manager**, with a working `ClusterIssuer`. The authenticator's TLS-discovery sidecar (`authenticator.tlsDiscovery.enabled: true` by default) creates a `cert-manager.io/v1` `Certificate`, so cert-manager's CRDs must be present. Analytics and Identity trust that cert-manager-issued CA to verify the authenticator's JWKS over HTTPS — this is load-bearing, not optional. The chart's default `issuerRef.name` is `local-ca`; either provision a `ClusterIssuer` with that name, or override `authenticator.tlsDiscovery.issuerRef.name` to point at your own.
+- **An ingress controller.** Install ingress-nginx, or override `gateway.ingress.className` / `frontend.ingress.className` to match what you run. Both default to `className: nginx`.
+- **cert-manager, with a working `ClusterIssuer`.** The authenticator's TLS-discovery sidecar (`authenticator.tlsDiscovery.enabled`, default `true`) creates a `cert-manager.io/v1` `Certificate`, and Analytics and Identity verify the authenticator's JWKS over HTTPS against that CA — load-bearing, not optional. Provision a `ClusterIssuer` named `local-ca` (the chart default) or point `authenticator.tlsDiscovery.issuerRef.name` at your own.
+
+Confirm both are in place:
+
+```sh
+kubectl get ingressclass nginx                  # the className both ingress blocks use
+kubectl get crd certificates.cert-manager.io    # cert-manager CRDs installed
+kubectl get clusterissuer local-ca              # the issuer the chart defaults to
+```
 
 ### Running external infrastructure
 
