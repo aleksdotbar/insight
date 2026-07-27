@@ -12,7 +12,10 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
   - [Cluster and CLI tools](#cluster-and-cli-tools)
   - [Cluster-level dependencies](#cluster-level-dependencies)
   - [Running external infrastructure](#running-external-infrastructure)
-- [Step 0 — Generate the tenant ID](#step-0--generate-the-tenant-id)
+- [Step 0 — Collect the values Step 1 needs](#step-0--collect-the-values-step-1-needs)
+  - [Generate the tenant ID](#generate-the-tenant-id)
+  - [Look up the external service addresses](#look-up-the-external-service-addresses)
+  - [Compose the Redpanda brokers string](#compose-the-redpanda-brokers-string)
 - [Step 1 — Configure values/umbrella.yaml](#step-1--configure-valuesumbrellayaml)
 - [Step 2 — Fill the secret files](#step-2--fill-the-secret-files)
   - [secrets/insight-db-creds.yaml](#secretsinsight-db-credsyaml)
@@ -73,7 +76,7 @@ kubectl get clusterissuer local-ca              # the issuer the chart defaults 
 
 ### Running external infrastructure
 
-All six systems below must be deployed and reachable from the cluster before you start. The chart never installs any of them — ClickHouse, MariaDB, Redis, and Redpanda are wired in purely by host/credentials (Step 1); Airbyte and Argo Workflows are wired in via `airbyte.apiUrl` and `ingestion.reconcile.argoInstanceId`.
+All six systems below must be deployed and reachable from the cluster before you start. The chart never installs any of them — ClickHouse, MariaDB, Redis, and Redpanda are wired in purely by host/credentials; Airbyte and Argo Workflows via `airbyte.apiUrl` and `ingestion.reconcile.argoInstanceId`. Step 0 shows how to read those addresses off your cluster.
 
 | System | Used for |
 |--------|----------|
@@ -86,9 +89,11 @@ All six systems below must be deployed and reachable from the cluster before you
 
 Run every command below from the directory holding your `values/` and `secrets/` files — Steps 1 and 2 give you the full contents of both. Connector configuration (the `connectors/` directory) comes later, in [deploy/CONNECTORS.md](./CONNECTORS.md).
 
-## Step 0 — Generate the tenant ID
+## Step 0 — Collect the values Step 1 needs
 
-Generate the tenant UUID and record it — you paste it into two fields in Step 1:
+Step 1 asks for two kinds of value: the tenant ID, which you generate, and the addresses of the external services, which you look up. Every datastore is external — the chart only dials it — so nothing here creates infrastructure.
+
+### Generate the tenant ID
 
 ```sh
 uuidgen | tr '[:upper:]' '[:lower:]'    # no uuidgen? python3 -c 'import uuid; print(uuid.uuid4())'
@@ -98,6 +103,35 @@ uuidgen | tr '[:upper:]' '[:lower:]'    # no uuidgen? python3 -c 'import uuid; p
 - Use the same value for `global.tenantDefaultId` (how the app resolves the tenant) and `ingestion.reconcile.tenantId` (stamped into every ingested row as `insight_tenant_id`). If they diverge, dashboards read one tenant while the pipeline writes another.
 - Never change it after the first sync — ingested data is keyed by it.
 - Local/dev against the compose wizard, the seed generators, or `fakeidp`: use their fixed tenant `00000000-df51-5b42-9538-d2b56b7ee953` instead of generating one.
+
+### Look up the external service addresses
+
+List the Services in the namespace your infrastructure runs in and read each host and port off it:
+
+```sh
+NS_INFRA=<your-infra-namespace>
+kubectl -n $NS_INFRA get svc
+  # every address in Step 1 is <svc>.$NS_INFRA.svc.cluster.local:<port>
+  # ClickHouse 8123, MariaDB 3306, Redis 6379 are already fixed in the skeleton — you only supply the host
+  # Airbyte: <AIRBYTE_API_URL> is the server Service, e.g. http://airbyte-airbyte-server-svc.$NS_INFRA.svc.cluster.local:8001
+```
+
+Infrastructure outside the cluster works the same way — use any resolvable host or IP instead of the in-cluster DNS name.
+
+### Compose the Redpanda brokers string
+
+`redpanda.brokers` is the exception: one comma-separated `host:port` bootstrap string rather than the host/port pair the other datastores take, and it must point at Redpanda's internal Kafka API listener.
+
+```sh
+kubectl -n $NS_INFRA get svc -l app.kubernetes.io/name=redpanda
+kubectl -n $NS_INFRA get svc redpanda -o jsonpath='{range .spec.ports[*]}{.name}={.port}{"\n"}{end}'
+  # compose <svc>.$NS_INFRA.svc.cluster.local:<kafka port>
+  # e.g. redpanda.insight-infra.svc.cluster.local:9093
+```
+
+- Read the port instead of assuming it. `9093` is the internal listener of the official `redpanda/redpanda` chart; other setups differ — this repo's compose stack runs it on `9092`.
+- One reachable broker bootstraps the client, which then discovers the rest from cluster metadata. Comma-separate more only for resilience.
+- The field is `required`, so the chart will not render without it. If you have no Redpanda and are not exercising the authenticator's audit stream, point it at an unroutable placeholder the way the functional-CI overlay does (`brokers: "redpanda-disabled:9093"`).
 
 ## Step 1 — Configure values/umbrella.yaml
 
@@ -228,7 +262,7 @@ Fill each placeholder:
 | `<CLICKHOUSE_HOST>` | ClickHouse HTTP host, in `host:8123` form |
 | `<MARIADB_HOST>` | MariaDB host, in `host:3306` form |
 | `<REDIS_HOST>` | Redis host, in `host:6379` form |
-| `<REDPANDA_BROKERS>` | Redpanda broker(s), in `host:9093` form |
+| `<REDPANDA_BROKERS>` | The bootstrap string you composed in Step 0 — comma-separated `host:port` pointing at the internal Kafka API listener |
 | `<TOOLBOX_IMAGE>` | The ingestion toolbox image reference (drives the WorkflowTemplates and the ClickHouse gold-view migration Job, Step 4/5) |
 | `<AIRBYTE_API_URL>` | Airbyte server API URL, for example `http://host:8001` |
 | `<ARGO_INSTANCE_ID>` | Your Argo controller's instance ID, for example `argo-workflows-insight-infra` |
@@ -383,7 +417,7 @@ For connector-syncing problems, see the Troubleshooting section of [deploy/CONNE
 | `<CLICKHOUSE_HOST>` | `clickhouse.host` | Always external; port fixed at `8123` in the file |
 | `<MARIADB_HOST>` | `mariadb.host` | Always external; port fixed at `3306` |
 | `<REDIS_HOST>` | `redis.host` | Always external; port fixed at `6379` |
-| `<REDPANDA_BROKERS>` | `redpanda.brokers` | Always external; include port, e.g. `:9093` |
+| `<REDPANDA_BROKERS>` | `redpanda.brokers` | Always external; a single comma-separated `host:port` string, not a host/port pair. `9093` for the `redpanda/redpanda` chart's internal listener — read yours in Step 0 |
 | `<TOOLBOX_IMAGE>` | `ingestion.toolboxImage` | Drives the ingestion WorkflowTemplates and the ClickHouse gold-view migrate Job |
 | `<AIRBYTE_API_URL>` | `airbyte.apiUrl` | e.g. `http://host:8001` |
 | `<ARGO_INSTANCE_ID>` | `ingestion.reconcile.argoInstanceId` | Your Argo controller's instance ID |
