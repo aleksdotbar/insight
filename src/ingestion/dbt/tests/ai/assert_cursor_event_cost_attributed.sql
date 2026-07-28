@@ -27,18 +27,34 @@ WITH event_cost AS (
 
 attributed AS (
 
+    {#- Two-step on purpose. Inner: read-time dedup at the table's own grain
+        (unique_key). Outer: fold the userId siblings that can share one
+        email-day — only one of them carries the day's cost, and siblings can
+        tie on _version, so an argMax across them could return the NULL sibling
+        and report a day that is in fact attributed. max() ignores NULLs, and
+        still yields NULL when no sibling carries cost. -#}
     SELECT
-        coalesce(insight_tenant_id, '')     AS tenant_key,
-        coalesce(source_id, '')             AS source_key,
+        tenant_key,
+        source_key,
         email,
         day,
-        {#- tuple() keeps a NULL winner: bare argMax skips rows whose value
-            argument is NULL, which would hide the very rows this check exists
-            to report. -#}
-        tupleElement(argMax(tuple(cost_cents), _version), 1) AS cost_cents,
+        max(cost_cents)                     AS cost_cents,
         toUInt8(1)                          AS present
-    FROM {{ ref('class_ai_dev_usage') }}
-    WHERE source = 'cursor'
+    FROM (
+        SELECT
+            coalesce(insight_tenant_id, '') AS tenant_key,
+            coalesce(source_id, '')         AS source_key,
+            email,
+            day,
+            unique_key,
+            {#- tuple() keeps a NULL winner: bare argMax skips rows whose value
+                argument is NULL, which would hide the very rows this check
+                exists to report. -#}
+            tupleElement(argMax(tuple(cost_cents), _version), 1) AS cost_cents
+        FROM {{ ref('class_ai_dev_usage') }}
+        WHERE source = 'cursor'
+        GROUP BY tenant_key, source_key, email, day, unique_key
+    )
     GROUP BY tenant_key, source_key, email, day
 
 )
