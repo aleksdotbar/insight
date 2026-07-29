@@ -3,13 +3,10 @@ name: Trivy Images
 # CVE scan of the published images. This is the only place where three things are visible:
 #
 #   1. base-image and OS-package CVEs (nothing in the repository describes them);
-#   2. .NET dependencies — the five .csproj projects ship no packages.lock.json, so
-#      `trivy fs` cannot resolve their versions and skips them entirely;
-#   3. Python dependencies — same story for the eleven pyproject.toml projects (toolbox,
-#      jira-enrich and the connectors), which have no lock file either.
-#
-# Inside an image those dependencies are installed and therefore resolvable, so this workflow
-# carries the SCA coverage that trivy.yml structurally cannot.
+#   2. the dependency set a shipped image was actually built with. trivy.yml resolves lock files
+#      per run, which answers "what would we get today" — not "what is running right now";
+#   3. anything the Dockerfile installs that no manifest mentions — the npm packages and Go
+#      binaries inside insight-toolbox appear in no lock file anywhere.
 #
 # Report-only: `--exit-code 0`, findings go to "Security -> Code scanning" under a per-image
 # category plus a job-summary table. Nothing blocks. Barring a vulnerable image from
@@ -80,7 +77,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Trivy image scan (CRITICAL/HIGH)
+      - name: Trivy image scan (all severities)
         # Trivy pulls straight from the registry (TRIVY_USERNAME/TRIVY_PASSWORD) instead of a
         # mounted docker socket, so no local `docker pull` is needed. `--ignore-unfixed` keeps
         # the output to what a base-image or dependency bump can actually fix. A multi-arch
@@ -91,6 +88,8 @@ jobs:
           IMAGE_REF: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.tag || 'latest' }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        # Every severity, not just CRITICAL/HIGH: these images are the only inventory of what
+        # actually ships. On the frontend image the narrower filter hid 70 of 107 findings.
         # One pull and one analysis per image: `trivy convert` derives the SARIF from the JSON
         # rather than rescanning, which for a 14-image matrix saves 14 redundant registry pulls
         # and layer analyses. `-w /work` so a repo-root `.trivyignore` is resolved — Trivy reads
@@ -104,7 +103,7 @@ jobs:
             -w /work \
             -e TRIVY_USERNAME -e TRIVY_PASSWORD \
             "$TRIVY_IMAGE" image \
-              --severity CRITICAL,HIGH \
+              --severity CRITICAL,HIGH,MEDIUM,LOW \
               --pkg-types os,library \
               --ignore-unfixed \
               --exit-code 0 \
@@ -139,19 +138,20 @@ jobs:
           w(f"Base image: `{d.get('Metadata', {}).get('OS', {}).get('Family', '?')} "
             f"{d.get('Metadata', {}).get('OS', {}).get('Name', '?')}`\n\n")
           if not rows:
-              w("No fixable CRITICAL/HIGH findings.\n")
+              w("No fixable findings at any severity.\n")
               sys.exit(0)
           sev = collections.Counter(v["Severity"] for _, v in rows)
           w(f"**{len(rows)}** fixable finding(s) — "
-            + ", ".join(f"{sev[s]} {s}" for s in ("CRITICAL", "HIGH") if sev.get(s)) + "\n\n")
+            + ", ".join(f"{sev[s]} {s}" for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW") if sev.get(s))
+            + "\n\n")
           bundles = collections.defaultdict(list)
           for eco, v in rows:
               bundles[(eco, v["PkgName"], v.get("InstalledVersion", "?"))].append(v)
-          rank = {"CRITICAL": 0, "HIGH": 1}
+          rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
           w("| Ecosystem | Package | Max | CVEs | Fixed in |\n|---|---|---|---:|---|\n")
           for (eco, pkg, ver), items in sorted(
-                  bundles.items(), key=lambda kv: (min(rank.get(i["Severity"], 2) for i in kv[1]), kv[0])):
-              worst = min(items, key=lambda i: rank.get(i["Severity"], 2))["Severity"]
+                  bundles.items(), key=lambda kv: (min(rank.get(i["Severity"], 4) for i in kv[1]), kv[0])):
+              worst = min(items, key=lambda i: rank.get(i["Severity"], 4))["Severity"]
               fixes = sorted({i.get("FixedVersion") or "-" for i in items})
               w(f"| {eco} | `{pkg}@{ver}` | {worst} | {len(items)} | {', '.join(fixes)[:60]} |\n")
           out.close()
