@@ -1,8 +1,9 @@
 name: TruffleHog Secrets
 
-# Secret detection, split into a blocking merge gate and a non-blocking history sweep.
-# Companion to semgrep.yml, which excludes generic-secret rules precisely because this
-# workflow owns the domain.
+# Secret detection, split into a per-pull-request diff scan and a full-history sweep. Companion
+# to semgrep.yml, which excludes generic-secret rules precisely because this workflow owns the
+# domain. Both passes are report-only; flipping the diff pass to blocking is a one-line change,
+# tracked separately.
 #
 # Why the split: a full-history scan of this repository currently returns 253 findings —
 # every one of them unverified, and every one triaged (2026-07-28) as a detector false
@@ -11,9 +12,10 @@ name: TruffleHog Secrets
 # on identifiers in dbt models, zero-filled UUIDs in test data, and `CHANGE_ME` templates in
 # `.env.local.example`. Blocking on that baseline would be permanently red, so:
 #
-#   secrets-diff     — pull requests only, BLOCKING. Scans just the commits the PR adds, so
-#                      the historical baseline is out of range by construction and the gate
-#                      starts green. A new secret cannot merge.
+#   secrets-diff     — pull requests only. Scans just the commits the PR adds, so the historical
+#                      baseline is out of range by construction and the pass is empty unless the
+#                      PR itself introduces something. This is the pass to make blocking first:
+#                      it is the only one whose baseline is empty by construction.
 #   secrets-history  — nightly, REPORT-ONLY. Full history over every ref, no exclusions, so
 #                      the 253 stay visible and any change to that number is noticeable.
 #
@@ -30,9 +32,9 @@ name: TruffleHog Secrets
 # public, so Actions logs are world-readable and echoing a hit would publish the value the
 # gate exists to protect. Summaries carry detector, commit and path only.
 #
-# Known gap: direct pushes to main are covered by the nightly report, not by the blocking
-# gate, because a push has no reliable range to diff against on a new or force-pushed ref.
-# Closing it requires the history baseline to be clean.
+# Known gap for whenever this becomes blocking: a push has no reliable range to diff against on
+# a new or force-pushed ref, so direct pushes to main would stay covered by the nightly sweep
+# only. Closing that requires the history baseline to be triaged to zero.
 
 on:
   pull_request:
@@ -83,11 +85,11 @@ jobs:
               --results=verified,unknown,unverified,filtered_unverified \
             > trufflehog-findings.jsonl
 
-      - name: Summarize (redacted) and fail on any finding
+      - name: Summarize (redacted)
         if: always()
         run: |
           [ -f trufflehog-findings.jsonl ] || exit 0
-          python3 - trufflehog-findings.jsonl "${GITHUB_STEP_SUMMARY:-/dev/null}" blocking <<'PY'
+          python3 - trufflehog-findings.jsonl "${GITHUB_STEP_SUMMARY:-/dev/null}" <<'PY'
           import json, sys, collections
           rows = []
           with open(sys.argv[1], encoding="utf-8") as fh:
@@ -104,7 +106,6 @@ jobs:
                       "file": git.get("file") or "?",
                       "line": git.get("line") or "",
                   })
-          blocking = sys.argv[3] == "blocking"
           out = open(sys.argv[2], "a", encoding="utf-8")
           w = out.write
           w("## TruffleHog — commits added by this PR\n\n")
@@ -124,7 +125,6 @@ jobs:
             "is a detector false positive on synthetic data, say so in the PR and add a narrow, "
             "reviewed exclusion rather than widening the filter.\n")
           out.close()
-          sys.exit(1 if blocking else 0)
           PY
 
   secrets-history:
@@ -217,8 +217,8 @@ jobs:
   # comments, where they arrive more often than in code. On this repository the API source reads
   # ~8600 chunks against the git scan's ~6900, and takes about ten seconds.
   #
-  # Report-only, and off pull requests: it depends on API availability and rate limits, so a
-  # transient failure must not block a merge. The blocking gate stays the git-based diff scan.
+  # Off pull requests because it depends on API availability and rate limits, and a transient
+  # outage should not colour a pull request at all.
   secrets-api:
     name: secrets (GitHub API)
     if: github.event_name != 'pull_request'

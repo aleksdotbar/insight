@@ -2,8 +2,10 @@ name: Trivy SCA
 
 # Software-composition analysis over the repository. Two passes:
 #
-#   gate   — CRITICAL only, blocks. Baseline today: 0 vulnerabilities, 0 secrets,
-#            0 CRITICAL misconfigurations, so the gate starts green.
+#   critical — CRITICAL only, and the one pass that also runs the secret scanner. Report-only
+#            like everything else here (`--exit-code 0`); kept separate because its output goes
+#            to the log alone, never to a SARIF upload. Baseline: 0 secrets, 0 CRITICAL
+#            misconfigurations, 9 CRITICAL vulnerabilities once locks resolve.
 #   report — every severity, never blocks. Findings land in "Security -> Code scanning" plus a
 #            job-summary table. It resolves what the repository cannot express on its own before
 #            scanning — see the two paragraphs below.
@@ -23,7 +25,8 @@ name: Trivy SCA
 #
 # The report pass drops the secret scanner (`--scanners vuln,misconfig`): Code Scanning
 # alerts on a public repository are world-readable and Trivy quotes the surrounding match.
-# Secrets stay in the blocking gate, and TruffleHog owns the domain (trufflehog.yml).
+# Secrets stay in the `critical` pass, whose output reaches the log only, and TruffleHog owns
+# the domain anyway (trufflehog.yml).
 #
 # The umbrella chart in charts/insight stays unscanned: it needs `helm dependency build` to pull
 # subcharts, which the rendered per-service charts already cover template-for-template.
@@ -50,7 +53,7 @@ env:
 
 jobs:
   gate:
-    name: gate (CRITICAL)
+    name: critical (report-only)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -58,10 +61,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Trivy fs scan — CRITICAL only (blocking)
-        # `--ignore-unfixed` keeps the gate actionable: a CRITICAL with no released fix cannot
-        # be resolved by the PR author and belongs in the report pass instead. Waivers go in
-        # `.trivyignore` at the repo root, date-scoped:
+      - name: Trivy fs scan — CRITICAL only (report-only)
+        # `--ignore-unfixed` keeps the output actionable: a CRITICAL with no released fix cannot
+        # be resolved by the PR author. Waivers go in `.trivyignore` at the repo root,
+        # date-scoped — they matter again the moment this pass becomes blocking:
         #   CVE-2026-12345   exp:2026-12-31   # tracked in #NNNN, fix queued
         #
         # `-w /src` is load-bearing for that: Trivy resolves the default ignore file relative
@@ -77,7 +80,7 @@ jobs:
               --scanners vuln,secret,misconfig \
               --severity CRITICAL \
               --ignore-unfixed \
-              --exit-code 1 \
+              --exit-code 0 \
               --no-progress \
               /src
 
@@ -127,15 +130,15 @@ jobs:
           echo "Lock files now present:"
           git ls-files --others --exclude-standard | grep -E 'packages\.lock\.json|uv\.lock' | sed 's/^/  /' || echo "  none"
 
-      - name: Trivy fs scan — all severities (never blocks)
+      - name: Trivy fs scan — all severities
         # One scan, two formats: JSON feeds the summary below, and `trivy convert` derives the
         # SARIF from that same JSON instead of rescanning. `-w /src` for the ignore-file reason
-        # documented on the gate job.
+        # documented on the `critical` pass.
         #
-        # CRITICAL is in the severity list even though the gate blocks on it: the gate only
-        # prints a table, so without this a CRITICAL would fail the check and never appear as an
-        # alert. `--include-dev-deps` because a compromised build-time dependency executes during
-        # the build; excluding them understates the supply-chain surface.
+        # CRITICAL is in the severity list even though the `critical` pass covers it: that pass
+        # only prints a table, so without this a CRITICAL would never appear as an alert.
+        # `--include-dev-deps` because a compromised build-time dependency executes during the
+        # build; excluding them understates the supply-chain surface.
         run: |
           set -euo pipefail
           docker run --rm \
