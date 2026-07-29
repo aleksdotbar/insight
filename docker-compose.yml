@@ -303,7 +303,7 @@ services:
     depends_on:
       mariadb: {condition: service_healthy, required: false}
     environment:
-      APP__gears__identity-resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
+      APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
     volumes:
       - type: bind
         source: ./deploy/compose/build/identity-resolution/identity-resolution
@@ -338,13 +338,13 @@ services:
       # gears-rust host: structural config (gears list, oidc-authn-plugin
       # full-auth wiring) lives in the bind-mounted
       # deploy/compose/identity-resolution-fullauth.yaml; these
-      # APP__gears__identity-resolution__config__* env vars override the
+      # APP__gears__identity_resolution__config__* env vars override the
       # deployment-specific leaf values.
-      APP__gears__identity-resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
-      APP__gears__identity-resolution__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
-      APP__gears__identity-resolution__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
-      APP__gears__identity-resolution__config__clickhouse_user: "${CLICKHOUSE_USER:-insight}"
-      APP__gears__identity-resolution__config__clickhouse_password: "${CLICKHOUSE_PASSWORD:-insight-local}"
+      APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
+      APP__gears__identity_resolution__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
+      APP__gears__identity_resolution__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
+      APP__gears__identity_resolution__config__clickhouse_user: "${CLICKHOUSE_USER:-insight}"
+      APP__gears__identity_resolution__config__clickhouse_password: "${CLICKHOUSE_PASSWORD:-insight-local}"
     volumes:
       - type: bind
         source: ./deploy/compose/build/identity-resolution/identity-resolution

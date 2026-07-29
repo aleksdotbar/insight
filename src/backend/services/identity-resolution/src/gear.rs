@@ -18,7 +18,7 @@ use crate::config::GearConfig;
 
 /// Identity-resolution gear. Capability: `rest` (HTTP surface). Config key is
 /// the gear name `identity-resolution`; env overrides are
-/// `APP__gears__identity-resolution__config__*`.
+/// `APP__gears__identity_resolution__config__*`.
 #[derive(Default)]
 #[toolkit::gear(name = "identity-resolution", capabilities = [rest])]
 pub struct IdentityResolutionGear {

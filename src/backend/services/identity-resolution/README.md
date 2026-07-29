@@ -39,7 +39,7 @@ the gear name contains a hyphen (`identity-resolution`), which a shell `export`
 variable name cannot contain.
 ```bash
 cd src/backend
-env "APP__gears__identity-resolution__config__database_url=$URL" \
+env "APP__gears__identity_resolution__config__database_url=$URL" \
   cargo run -p identity-resolution -- -c services/identity-resolution/config/insight.yaml
 ```
 Startup log should show `connected to MariaDB` and `HTTP server bound on 0.0.0.0:8082`.
@@ -57,7 +57,7 @@ open http://localhost:8082/docs   # OpenAPI docs page
 - `database_url` is left **empty** in `config/insight.yaml` — no credentials are
   committed. It is injected via the env override above (or, in a real deploy,
   from the umbrella Secret).
-- Config env-override convention: `APP__gears__identity-resolution__config__<field>`
+- Config env-override convention: `APP__gears__identity_resolution__config__<field>`
   (double underscore between path segments).
 - If the service fails at init with `gear 'identity-resolution' not found`, the
   `gears.identity-resolution.config` section is missing from the config YAML.
