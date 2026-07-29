@@ -1,38 +1,16 @@
 name: TruffleHog Secrets
 
-# Secret detection, split into a per-pull-request diff scan and a full-history sweep. Companion
-# to semgrep.yml, which excludes generic-secret rules precisely because this workflow owns the
-# domain. Both passes are report-only; flipping the diff pass to blocking is a one-line change,
-# tracked separately.
+# Secret detection. All passes report-only (#2020).
 #
-# Why the split: a full-history scan of this repository currently returns 253 findings —
-# every one of them unverified, and every one triaged (2026-07-28) as a detector false
-# positive: synthetic e2e metric fixtures (178, mostly JiraToken/Lob matching 24- and
-# 40-character fixture strings), the loose GitLab token regex firing on prose in docs/ and
-# on identifiers in dbt models, zero-filled UUIDs in test data, and `CHANGE_ME` templates in
-# `.env.local.example`. Blocking on that baseline would be permanently red, so:
+#   secrets-diff     — pull requests, the PR's own commits only (#2025).
+#   secrets-history  — nightly, every ref. Baseline: 253 unverified false positives.
+#   secrets-api      — nightly, GitHub API: comments, wikis, unreachable objects.
 #
-#   secrets-diff     — pull requests only. Scans just the commits the PR adds, so the historical
-#                      baseline is out of range by construction and the pass is empty unless the
-#                      PR itself introduces something. This is the pass to make blocking first:
-#                      it is the only one whose baseline is empty by construction.
-#   secrets-history  — nightly, REPORT-ONLY. Full history over every ref, no exclusions, so
-#                      the 253 stay visible and any change to that number is noticeable.
-#
-# `--results=verified,unknown,unverified,filtered_unverified` on both. The default set
-# (`verified,unknown`) hides findings whose live verification fails, so an already-revoked or
-# inactive credential produces a green run — on a public repository that is still a leak.
-#
-# Do not add `--filter-entropy` to quiet the fixture noise: at the threshold that clears this
-# baseline it also suppresses AWS access key IDs, which sit right at that entropy boundary.
-#
-# Raw secret values never reach a log, a job summary or an artifact: this repository is
-# public, so Actions logs are world-readable and echoing a hit would publish the value the
-# gate exists to protect. Summaries carry detector, commit and path only.
-#
-# Known gap for whenever this becomes blocking: a push has no reliable range to diff against on
-# a new or force-pushed ref, so direct pushes to main would stay covered by the nightly sweep
-# only. Closing that requires the history baseline to be triaged to zero.
+# Do not change without reading why:
+#   - `--results=verified,unknown,unverified,filtered_unverified` — the default hides findings
+#     whose verification failed, which on a public repository is still a leak.
+#   - no `--filter-entropy` — it suppresses AWS access key IDs.
+#   - raw values never reach a log, summary or artifact — this repository is public.
 
 on:
   pull_request:
@@ -63,23 +41,22 @@ jobs:
           persist-credentials: false
 
       - name: TruffleHog scan (commits added by this PR)
-        # Digest-pinned image via `docker run`, matching semgrep.yml. stdout carries the JSON
-        # findings — including raw values — and is redirected to a file that stays on the
-        # runner; only stderr (progress and the scan summary) reaches the log. `--fail` is
-        # not used: the summary step decides the exit code so a failing run still renders a
-        # readable report first.
+        # `pull_request.base.sha` lags main, so it pulls unrelated commits into range (#2025).
+        # The merge ref's first parent is the current base tip — that is the PR's own range.
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
+          SINCE="$(git rev-parse 'HEAD^1' 2>/dev/null || echo "$BASE_SHA")"
+          echo "Scanning ${SINCE}..HEAD"
           docker run --rm \
             -v "${{ github.workspace }}:/src:ro" \
-            -e BASE_SHA \
+            -e SINCE \
             trufflesecurity/trufflehog:3.96.0@sha256:aa821cf4ace8861c7d096d83818cdf7bb9719028a52d37a52eaad44086a52577 \
             git file:///src \
               --json \
               --no-update \
-              --since-commit "$BASE_SHA" \
+              --since-commit "$SINCE" \
               --results=verified,unknown,unverified,filtered_unverified \
             > trufflehog-findings.jsonl
 
