@@ -293,8 +293,7 @@ class IdentityProcess:
     # -- rust ---------------------------------------------------------------
 
     def _rust_env(self) -> dict[str, str]:
-        """Leaf-config env overrides for the gears host (direct Popen execve
-        preserves the hyphenated gear-name segments)."""
+        """Leaf-config env overrides for the gears host."""
         env = os.environ.copy()
         env.update(
             {

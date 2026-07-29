@@ -34,13 +34,13 @@ URL=$(kubectl -n insight get secret insight-identity-config \
 ```
 
 ### 3. Run the service — from `src/backend`
-Pass the DB URL as an env override. **Use `env "NAME=VALUE" …`, not `export`** —
-the gear name contains a hyphen (`identity-resolution`), which a shell `export`
-variable name cannot contain.
+Pass the DB URL as an env override. The toolkit maps the underscored
+`identity_resolution` environment-key segment to the hyphenated
+`identity-resolution` YAML gear name.
 ```bash
 cd src/backend
-env "APP__gears__identity_resolution__config__database_url=$URL" \
-  cargo run -p identity-resolution -- -c services/identity-resolution/config/insight.yaml
+export APP__gears__identity_resolution__config__database_url="$URL"
+cargo run -p identity-resolution -- -c services/identity-resolution/config/insight.yaml
 ```
 Startup log should show `connected to MariaDB` and `HTTP server bound on 0.0.0.0:8082`.
 
