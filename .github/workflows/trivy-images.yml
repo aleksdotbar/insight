@@ -91,12 +91,17 @@ jobs:
           IMAGE_REF: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.tag || 'latest' }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        # One pull and one analysis per image: `trivy convert` derives the SARIF from the JSON
+        # rather than rescanning, which for a 14-image matrix saves 14 redundant registry pulls
+        # and layer analyses. `-w /work` so a repo-root `.trivyignore` is resolved — Trivy reads
+        # the default ignore file relative to the working directory.
         run: |
           set -euo pipefail
           echo "Scanning ${IMAGE_REF}"
           docker run --rm \
             -v "${{ github.workspace }}:/work" \
             -v /tmp/trivy-cache:/root/.cache \
+            -w /work \
             -e TRIVY_USERNAME -e TRIVY_PASSWORD \
             "$TRIVY_IMAGE" image \
               --severity CRITICAL,HIGH \
@@ -108,16 +113,9 @@ jobs:
               "$IMAGE_REF"
           docker run --rm \
             -v "${{ github.workspace }}:/work" \
-            -v /tmp/trivy-cache:/root/.cache \
-            -e TRIVY_USERNAME -e TRIVY_PASSWORD \
-            "$TRIVY_IMAGE" image \
-              --severity CRITICAL,HIGH \
-              --pkg-types os,library \
-              --ignore-unfixed \
-              --exit-code 0 \
-              --no-progress \
+            "$TRIVY_IMAGE" convert \
               --format sarif --output /work/trivy-image.sarif \
-              "$IMAGE_REF"
+              /work/trivy-image.json
 
       - name: Summarize findings in the job summary
         if: always()
@@ -160,7 +158,10 @@ jobs:
           PY
 
       - name: Upload SARIF to GitHub Code Scanning
-        if: always()
+        # The hashFiles guard matters more here than elsewhere: with 14 matrix legs, one failed
+        # registry pull would otherwise report twice — once for the pull, once for a SARIF file
+        # that was never written.
+        if: ${{ always() && hashFiles('trivy-image.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@fb0994ef1c058010acf1efccff928b0a83b1ed54 # v4.32.6
         with:
           sarif_file: trivy-image.sarif
