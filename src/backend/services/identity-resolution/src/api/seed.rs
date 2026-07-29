@@ -222,7 +222,18 @@ pub async fn create_persons_seed(
     if let Err(err) = try_enqueue_job(&state.seed_tx, job) {
         // Channel full/closed — fail the row so it isn't a zombie, and tell the
         // caller to retry later (503, not 500 — parity with the .NET queue-full).
-        let _ = ops_repo::fail(&state.db, operation_id, "seed queue full; retry later").await;
+        // A failed status update is logged, not propagated: 503/retry-later is
+        // still the right caller signal, and a row left `queued` is reclaimed
+        // by the startup zombie sweep (`sweep_zombies`).
+        if let Err(db_err) =
+            ops_repo::fail(&state.db, operation_id, "seed queue full; retry later").await
+        {
+            tracing::error!(
+                error = %db_err,
+                %operation_id,
+                "failed to mark the refused seed operation as failed"
+            );
+        }
         return Err(err);
     }
 
