@@ -226,13 +226,20 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: TruffleHog scan (GitHub API — comments, wikis, unreachable objects)
-        env:
-          # The auto-injected token is enough for a public repository's commits and comments.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Deliberately unauthenticated. `GITHUB_TOKEN` cannot be used here: the GitHub source
+        # calls `GET /user` to identify the token owner, and an installation token gets
+        # `403 Resource not accessible by integration`, which fails the whole job. This repository
+        # is public, so no token is needed — measured unauthenticated: 34393 chunks in 15s.
+        #
+        # Known partial coverage: enumerating comments stops with a 422 past ~1000 issues
+        # ("Pagination with the page parameter is not supported for large datasets"). That is a
+        # TruffleHog limitation and `--comments-timeframe` does not avoid it. The git-object half
+        # is unaffected, and that is where the value sits — it reaches commits no ref points at,
+        # which a refs-based scan cannot see at all. TruffleHog still exits 0, so the run stays
+        # green with the error visible in the log.
         run: |
           set -euo pipefail
           docker run --rm \
-            -e GITHUB_TOKEN \
             trufflesecurity/trufflehog:3.96.0@sha256:aa821cf4ace8861c7d096d83818cdf7bb9719028a52d37a52eaad44086a52577 \
             github \
               --repo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
