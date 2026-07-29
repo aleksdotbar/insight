@@ -4,7 +4,14 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
-from source_bitbucket_cloud.streams.base import BitbucketIncrementalStream, BitbucketStream, repo_scope, schema, unique_key
+from source_bitbucket_cloud.streams.base import (
+    BitbucketIncrementalStream,
+    BitbucketStream,
+    repo_scope,
+    repo_state_key,
+    schema,
+    unique_key,
+)
 from source_bitbucket_cloud.streams.pr_base import PullRequestStateStream
 
 
@@ -85,8 +92,22 @@ class DeploymentsStream(RepositorySnapshotStream):
     resource = "deployments"
 
 
+def slim_pipeline(pipeline: Mapping[str, Any]) -> dict[str, Any]:
+    """Only what the child streams read; the full object is never cached."""
+    return {
+        "uuid": pipeline.get("uuid"),
+        "created_on": pipeline.get("created_on"),
+        "completed_on": pipeline.get("completed_on"),
+        "state": {"name": ((pipeline.get("state") or {}).get("name"))},
+    }
+
+
 class PipelineStateStream(BitbucketIncrementalStream):
     cursor_field = "created_on"
+
+    # The stream emitting full pipeline records (pipelines) always fetches and
+    # fills the slim cache; steps and test reports read it.
+    reads_selection_cache = True
 
     def repository_records(self, repo, bucket_id: int):
         del bucket_id
@@ -101,6 +122,21 @@ class PipelineStateStream(BitbucketIncrementalStream):
         raise NotImplementedError
 
     def pipeline_candidates(self, repo, prior: Mapping[str, Any]):
+        cache_key = (repo_state_key(repo), str(prior.get("created_on") or ""))
+        if self.reads_selection_cache:
+            cached = self._catalog.pipeline_selections.get(cache_key)
+            if cached is not None:
+                present, slim, cached_state = cached
+                return present, slim, dict(cached_state)
+        present, pipelines, new_state = self._fetch_pipelines(repo, prior)
+        self._catalog.pipeline_selections[cache_key] = (
+            present,
+            [slim_pipeline(p) for p in pipelines],
+            dict(new_state),
+        )
+        return present, pipelines, new_state
+
+    def _fetch_pipelines(self, repo, prior: Mapping[str, Any]):
         watermark = str(prior.get("created_on") or "")
         floor = None
         if watermark:
@@ -146,6 +182,7 @@ class PipelineStateStream(BitbucketIncrementalStream):
 
 class PipelinesStream(PipelineStateStream):
     name = "pipelines"
+    reads_selection_cache = False
 
     def pipeline_records(self, repo, pipeline: Mapping[str, Any]):
         pipeline_uuid = pipeline.get("uuid")
@@ -288,8 +325,14 @@ class PipelineStepTestReportsStream(PipelineStateStream):
         )
 
 
+def slim_issue(issue: Mapping[str, Any]) -> dict[str, Any]:
+    return {"id": issue.get("id"), "updated_on": issue.get("updated_on")}
+
+
 class IssueStateStream(BitbucketIncrementalStream):
     cursor_field = "updated_on"
+
+    reads_selection_cache = True
 
     def repository_records(self, repo, bucket_id: int):
         del bucket_id
@@ -307,6 +350,21 @@ class IssueStateStream(BitbucketIncrementalStream):
         raise NotImplementedError
 
     def selected_issues(self, repo, prior):
+        cache_key = (repo_state_key(repo), str(prior.get("updated_on") or ""))
+        if self.reads_selection_cache:
+            cached = self._catalog.issue_selections.get(cache_key)
+            if cached is not None:
+                present, slim, cached_state = cached
+                return present, slim, dict(cached_state)
+        present, issues, new_state = self._fetch_issues(repo, prior)
+        self._catalog.issue_selections[cache_key] = (
+            present,
+            [slim_issue(i) for i in issues],
+            dict(new_state),
+        )
+        return present, issues, new_state
+
+    def _fetch_issues(self, repo, prior):
         watermark = str(prior.get("updated_on") or "")
         floor = self._start_date
         if watermark:
@@ -323,6 +381,7 @@ class IssueStateStream(BitbucketIncrementalStream):
 
 class IssuesStream(IssueStateStream):
     name = "issues"
+    reads_selection_cache = False
 
     def issue_records(self, repo, issue: Mapping[str, Any]):
         issue_id = issue.get("id")

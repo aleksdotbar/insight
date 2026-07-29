@@ -73,7 +73,7 @@ class TestRepositoryQuarantine:
 
         assert error is None
         assert len(records) == 1
-        assert stream.state["repositories"][repo_state_key(good)] == {"head_shas": ["a1"]}
+        assert stream.state["repositories"][repo_state_key(good)] == {"head_shas": ["a1"], "repo_updated_on": "2026-06-01T00:00:00+00:00"}
 
 
 class TestIssuesDisabledRepos:

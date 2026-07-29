@@ -133,7 +133,7 @@ class TestDeniedRepositoryIsSkipped:
 
         assert error is None
         assert [r["hash"] for r in records] == ["a1"]
-        assert stream.state["repositories"] == {repo_state_key(good): {"head_shas": ["a1"]}}
+        assert stream.state["repositories"] == {repo_state_key(good): {"head_shas": ["a1"], "repo_updated_on": "2026-06-01T00:00:00+00:00"}}
 
 
 class TestTransientFailuresStillFail:

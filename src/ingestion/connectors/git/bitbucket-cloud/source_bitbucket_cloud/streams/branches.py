@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from source_bitbucket_cloud.streams.base import BitbucketStream, repo_scope, schema, unique_key
+from source_bitbucket_cloud.streams.base import BitbucketIncrementalStream, repo_scope, schema, unique_key
 
 
-class BranchesStream(BitbucketStream):
+class BranchesStream(BitbucketIncrementalStream):
     """Current branches per repository, as per-repository snapshots.
 
     The generation is scoped to one repository, not to a bucket: a repository
@@ -16,14 +16,24 @@ class BranchesStream(BitbucketStream):
     whole bucket over one denied repository — and workspaces where unreadable
     repositories are common (observed in production) would freeze every bucket.
 
+    Incremental only in the cheapest sense: the per-repository state holds the
+    repository's updated_on from the workspace listing, and a repository that
+    has not been pushed to since the last pass is skipped without a request —
+    its previous generation simply stays the newest complete one.
+
     Trade-off: a repository deleted from the workspace stops producing
     generations, so its last branch snapshot lingers in silver. That is bounded
     (the repository is gone) and preferable to fleet-wide starvation.
     """
 
     name = "branches"
+    cursor_field = "updated_on"
 
     def repository_records(self, repo, bucket_id: int) -> Iterable[Mapping[str, Any]]:
+        prior = self.repository_state(repo)
+        repo_updated_on = str(repo.raw.get("updated_on") or "")
+        if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
+            return
         generation = self.generation("branches", *repo_scope(repo))
         entity_keys: set[str] = set()
         for branch in self._catalog.branches(repo):
@@ -55,6 +65,7 @@ class BranchesStream(BitbucketStream):
             workspace=repo.workspace,
             repo_slug=repo.slug,
         )
+        self.commit_repository_state(repo, {"repo_updated_on": repo_updated_on})
 
     def get_json_schema(self) -> Mapping[str, Any]:
         nullable_string = {"type": ["null", "string"]}

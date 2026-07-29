@@ -50,6 +50,14 @@ class RepositoryCatalog:
         self._repositories: list[RepositoryRef] | None = None
         self._branches: dict[str, list[BranchRef]] = {}
         self._inaccessible: set[str] = set()
+        # Shared per-sync selection caches (see streams/pr_base.py). Keyed by
+        # (repository, watermark) and holding SLIM projections only — a handful
+        # of scalar fields per entity, never the raw API objects. The raw list
+        # for the whole workspace would cost hundreds of MB held across the six
+        # sequential PR streams; the slim form is ~100 bytes per entity.
+        self.pr_selections: dict[tuple[str, str], tuple[list, dict]] = {}
+        self.pipeline_selections: dict[tuple[str, str], tuple[bool, list, dict]] = {}
+        self.issue_selections: dict[tuple[str, str], tuple[bool, list, dict]] = {}
 
     def mark_inaccessible(self, repo: RepositoryRef) -> None:
         """Record that this repository denies access, for the rest of the sync.
