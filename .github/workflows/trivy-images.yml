@@ -88,10 +88,8 @@ jobs:
           IMAGE_REF: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.tag || 'latest' }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        # CRITICAL/HIGH only. Widening to MEDIUM/LOW was tried and reverted on review: one
-        # connector goes from 99 findings to 315, so the estate would report ~2100 instead of ~660
-        # and bury the 73 CRITICAL that actually drive action. Everything here comes from a base
-        # layer and the remedy is identical either way — refresh the base image.
+        # CRITICAL/HIGH only: everything here comes from a base layer, and the remedy is the same
+        # at any severity — refresh the base image.
         # One pull and one analysis per image: `trivy convert` derives the SARIF from the JSON
         # rather than rescanning, which for a 14-image matrix saves 14 redundant registry pulls
         # and layer analyses. `-w /work` so a repo-root `.trivyignore` is resolved — Trivy reads

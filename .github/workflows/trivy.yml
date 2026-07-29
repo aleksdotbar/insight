@@ -3,25 +3,19 @@ name: Trivy SCA
 # Software-composition analysis over the repository. Two passes:
 #
 #   critical — CRITICAL only, and the one pass that also runs the secret scanner. Report-only
-#            like everything else here (`--exit-code 0`); kept separate because its output goes
-#            to the log alone, never to a SARIF upload. Baseline: 0 secrets, 0 CRITICAL
-#            misconfigurations, 9 CRITICAL vulnerabilities once locks resolve.
-#   report — every severity, never blocks. Findings land in "Security -> Code scanning" plus a
-#            job-summary table. It resolves what the repository cannot express on its own before
-#            scanning — see the two paragraphs below.
+#            like the rest (`--exit-code 0`); separate because its output reaches the log alone,
+#            never a SARIF upload.
+#   report — every severity. Findings land in "Security -> Code scanning" and a job-summary
+#            table. Resolves what the repository cannot express on its own first — see below.
 #
 # Lock files: `trivy fs` resolves dependency versions from them, and this repository commits
-# exactly one — Cargo.lock. The eleven pyproject.toml projects have none, so Python was
-# previously invisible here. The report job generates them in the workspace before scanning
-# (`uv lock`) and throws them away with the runner. Nothing is committed and no build contract
-# changes; the scan simply resolves what it needs. This also reaches the projects no image
-# contains — tests, scripts, deploy/seed. .NET is not resolved; the step explains why.
+# exactly one — Cargo.lock. The report job generates the Python ones before scanning and throws
+# them away with the runner, which also covers the projects no image contains: tests, scripts,
+# deploy/seed.
 #
-# Helm charts: seven of the nine in this repository cannot be scanned as raw templates because
-# they `required` values at render time, so Trivy skipped them and reported only the two that
-# happen to render. The report job now renders all of them with throwaway values and scans the
-# output, which takes the misconfiguration count from 21 to 124. Rendered YAML is uploaded under
-# its own `trivy-helm` category so its synthetic paths never mix with real repository files.
+# Helm charts: most of them `required` values at render time, which a raw-template scan cannot
+# satisfy, so the report job renders them with throwaway values and scans the output. Rendered
+# YAML uploads under its own `trivy-helm` category, keeping synthetic paths away from real ones.
 #
 # The report pass drops the secret scanner (`--scanners vuln,misconfig`): Code Scanning
 # alerts on a public repository are world-readable and Trivy quotes the surrounding match.
@@ -67,11 +61,9 @@ jobs:
         # date-scoped — they matter again the moment this pass becomes blocking:
         #   CVE-2026-12345   exp:2026-12-31   # tracked in #NNNN, fix queued
         #
-        # `-w /src` is load-bearing for that: Trivy resolves the default ignore file relative
-        # to the working directory, so without it a repo-root `.trivyignore` is read from the
-        # image's own cwd and silently ignored. `--ignorefile` is not used instead because
-        # Trivy exits FATAL when the named file does not exist, which would break every run
-        # until someone adds a waiver.
+        # `-w /src` is required for that: Trivy resolves the default ignore file relative to the
+        # working directory. Do not switch to `--ignorefile` — it exits FATAL when the file is
+        # absent, breaking every run until someone adds a waiver.
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/src:ro" \
@@ -97,20 +89,13 @@ jobs:
           persist-credentials: false
 
       - name: Resolve Python dependencies
-        # Trivy needs a lock file to know which versions are in play, and the eleven
-        # pyproject.toml projects commit none. These are generated into the workspace and die with
-        # the runner — nothing is committed and no build contract changes. Measured: one
-        # connector's generated uv.lock carries 9 findings including a CRITICAL, and across all
-        # eleven the repository goes from 0 vulnerabilities to 102.
+        # Trivy needs a lock file to resolve dependency versions, and the pyproject.toml projects
+        # commit none. Generated into the workspace and discarded with the runner: nothing is
+        # committed and no build contract changes.
         #
-        # .NET is deliberately absent. `dotnet restore --use-lock-file` needs an 851 MB SDK image
-        # plus ~30s and reported 0 findings across all five .csproj projects; whatever actually
-        # ships is covered by the insight-identity image scan. Worth reinstating only if a NuGet
-        # finding ever shows up there.
-        #
-        # Best-effort by design: a registry hiccup during resolution must cost coverage, not the
-        # whole report. Each `uv lock` is guarded individually so one unresolvable project does
-        # not take the other ten with it.
+        # Best-effort by design — a registry hiccup must cost coverage, not the whole report — and
+        # each `uv lock` is guarded on its own so one unresolvable project does not take the rest
+        # with it.
         continue-on-error: true
         env:
           UV_IMAGE: ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
