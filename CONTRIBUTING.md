@@ -123,6 +123,23 @@ Covered by the [Quick start](#quick-start). See also
 [Compose configuration](#compose-configuration) for the post-wizard
 knobs and [Daily workflow](#daily-workflow) for the edit-build loop.
 
+Use an explicit instance when worktrees may contain different database
+migrations:
+
+```bash
+./dev-compose.sh up --instance=main
+./dev-compose.sh up --instance=metric-drilldown
+./dev-compose.sh up --instance=worktree
+```
+
+The instance scopes Compose containers, networks, and named volumes under
+`insight-<name>`. Pass the same option to `down`, `build`, `seed`, and
+`prune`. `worktree` derives the name from the checkout directory, so the
+same command can be used in every worktree. The default remains `insight`.
+Concurrent instances also need separate env files with distinct published
+host ports. Standard Compose commands target an instance with
+`docker compose -p insight-<name> …`.
+
 ### Kubernetes — interactive
 
 ```bash
