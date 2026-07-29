@@ -154,6 +154,14 @@ class TestClientHardening:
         assert seen["params"] == {"pagelen": "100"}
         assert ("include", "new1") in seen["data"] and ("exclude", "old1") in seen["data"]
 
+    def test_commits_between_without_current_heads_asks_nothing(self):
+        client = self.make_client()
+        calls = []
+
+        client.paginate = lambda *args, **kwargs: calls.append(kwargs) or iter(())
+        assert list(client.commits_between(repository(), [], ["old1"])) == []
+        assert calls == []
+
 
 class TestNewCommits404Recovery:
     def make_stream(self, client, repo):

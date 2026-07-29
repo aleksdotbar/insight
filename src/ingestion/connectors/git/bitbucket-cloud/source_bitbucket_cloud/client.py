@@ -272,12 +272,9 @@ class BitbucketClient:
     ) -> Iterable[Mapping[str, Any]]:
         includes = sorted(set(current_heads))
         excludes = [("exclude", head) for head in sorted(set(previous_heads))]
-        if not includes and not excludes:
-            return
+        # With no include the endpoint falls back to every branch, so excludes
+        # alone would page a whole history out; nothing is newly reachable.
         if not includes:
-            yield from self.paginate(
-                self.repo_path(repo, "commits"), method="POST", params={"pagelen": "100"}, data=excludes
-            )
             return
         for start in range(0, len(includes), self.COMMITS_INCLUDE_CHUNK):
             chunk = includes[start : start + self.COMMITS_INCLUDE_CHUNK]
