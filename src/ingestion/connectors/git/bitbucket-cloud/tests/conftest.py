@@ -39,6 +39,17 @@ class FakeCatalog:
     def __init__(self, repositories: Iterable[RepositoryRef], client: FakeClient | None = None):
         self._repositories = list(repositories)
         self._client = client
+        self._inaccessible: set[str] = set()
+
+    def mark_inaccessible(self, repo: RepositoryRef) -> None:
+        self._inaccessible.add(repo.uuid)
+
+    def is_inaccessible(self, repo: RepositoryRef) -> bool:
+        return repo.uuid in self._inaccessible
+
+    @property
+    def inaccessible_count(self) -> int:
+        return len(self._inaccessible)
 
     def repositories(self) -> list[RepositoryRef]:
         return self._repositories

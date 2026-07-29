@@ -49,6 +49,24 @@ class RepositoryCatalog:
         self._skip_forks = skip_forks
         self._repositories: list[RepositoryRef] | None = None
         self._branches: dict[str, list[BranchRef]] = {}
+        self._inaccessible: set[str] = set()
+
+    def mark_inaccessible(self, repo: RepositoryRef) -> None:
+        """Record that this repository denies access, for the rest of the sync.
+
+        A repository can appear in the workspace listing and still refuse every
+        request under it (403) — normal with repo-scoped tokens or per-repository
+        permissions. The catalog is shared by every stream, so the first stream
+        to discover it saves the others from rediscovering it repo by repo.
+        """
+        self._inaccessible.add(repo.uuid)
+
+    def is_inaccessible(self, repo: RepositoryRef) -> bool:
+        return repo.uuid in self._inaccessible
+
+    @property
+    def inaccessible_count(self) -> int:
+        return len(self._inaccessible)
 
     def repositories(self) -> list[RepositoryRef]:
         if self._repositories is None:
