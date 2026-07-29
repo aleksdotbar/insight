@@ -6,17 +6,37 @@ observed in production. Retrying never changes it, so treating it as a failure
 leaves the sync red on every run and buries the transient failures that do need
 attention. These tests pin the distinction: denied is skipped, everything else
 still fails loudly.
+
+The matrix classes at the bottom run EVERY stream the source wires — the list is
+derived from `SourceBitbucketCloud.streams()` itself, so a stream added later is
+covered automatically instead of depending on this file being remembered.
 """
 
 from __future__ import annotations
 
+import pytest
 from airbyte_cdk.models import SyncMode
 
 from source_bitbucket_cloud.client import BitbucketApiError
+from source_bitbucket_cloud.source import SourceBitbucketCloud
 from source_bitbucket_cloud.streams.base import BUCKET_COUNT, repo_state_key, repository_bucket
 from source_bitbucket_cloud.streams.branches import BranchesStream
 from source_bitbucket_cloud.streams.commits import CommitsStream
 from tests.conftest import SHARED, FakeCatalog, FakeClient, branch, repository
+
+
+def every_stream_class():
+    """All stream classes, from the production wiring — not a hand list."""
+    source = SourceBitbucketCloud()
+    streams = source.streams(
+        {
+            "bitbucket_token": "t",
+            "bitbucket_workspaces": ["ws"],
+            "insight_tenant_id": "T",
+            "insight_source_id": "S",
+        }
+    )
+    return [type(stream) for stream in streams]
 
 
 def denied(status: int):
@@ -178,3 +198,186 @@ class TestBranchesSnapshotStaysSafe:
         _, error = read_all_buckets(stream)
 
         assert error is None
+
+
+class FullyDeniedClient(FakeClient):
+    """Faithful mirror of the real client against an all-403 repository.
+
+    Raising paths raise BitbucketApiError(403); tolerant paths behave as the
+    real client does — paginate_optional answers (False, ()) and a request made
+    with allow_statuses covering 403 answers None.
+    """
+
+    def _deny(self):
+        raise BitbucketApiError(403, "https://api.bitbucket.org/2.0/x", "no access")
+
+    def branches(self, repo):
+        self._deny()
+
+    def commits_between(self, repo, include, exclude):
+        self._deny()
+
+    def paginate(self, path, **kwargs):
+        self._deny()
+
+    def paginate_optional(self, path, **kwargs):
+        return False, iter(())
+
+    def request(self, method, path, **kwargs):
+        allowed = kwargs.get("allow_statuses") or ()
+        if 403 in allowed:
+            return None
+        self._deny()
+
+
+class BrokenClient(FakeClient):
+    """Every request fails with a retry-exhausted 500 — a transient outage."""
+
+    def _boom(self):
+        raise BitbucketApiError(500, "https://api.bitbucket.org/2.0/x", "server error")
+
+    branches = lambda self, repo: self._boom()  # noqa: E731
+    commits_between = lambda self, repo, include, exclude: self._boom()  # noqa: E731
+    paginate = lambda self, path, **kw: self._boom()  # noqa: E731
+    paginate_optional = lambda self, path, **kw: self._boom()  # noqa: E731
+    request = lambda self, method, path, **kw: self._boom()  # noqa: E731
+
+
+@pytest.mark.parametrize("stream_class", every_stream_class(), ids=lambda c: c.__name__)
+class TestEveryStreamSurvivesADeniedRepository:
+    """The no-gaps guarantee: no stream may fail the sync over a 403 repository."""
+
+    def test_denied_repository_never_fails_the_sync(self, stream_class):
+        repo = repository()
+        client = FullyDeniedClient()
+        stream = stream_class(**{**SHARED, "client": client, "catalog": FakeCatalog([repo], client)})
+        if hasattr(stream, "state"):
+            stream.state = {}
+
+        records, error = read_all_buckets(stream)
+
+        assert error is None, f"{stream_class.__name__} failed the sync over a denied repository"
+        items = [r for r in records if r.get("record_type") == "item"]
+        if stream_class.__name__ == "RepositoriesStream":
+            # Its data comes from the workspace listing, which succeeded — the
+            # repository is visible, only its contents are not. Emitting the
+            # metadata is correct.
+            assert items, "the workspace listing was readable; the repository row should be emitted"
+        else:
+            assert items == [], f"{stream_class.__name__} emitted items from a repository it could not read"
+        # Any marker touching the denied repository must say unavailable —
+        # otherwise dbt treats the denied read as a legitimate empty collection
+        # and deletes rows. Markers of unrelated empty buckets may stay
+        # available: their partitions contain nothing to delete.
+        repo_bucket = repository_bucket(repo_state_key(repo))
+        touching = [
+            m
+            for m in records
+            if m.get("record_type") == "snapshot_complete"
+            and (m.get("repository_uuid") == repo.uuid or m.get("bucket_id") == repo_bucket)
+        ]
+        if stream_class.__name__ != "RepositoriesStream":
+            assert all(m["snapshot_available"] is False for m in touching), (
+                f"{stream_class.__name__} marked a denied read as an available snapshot"
+            )
+
+    def test_denied_repository_state_never_advances(self, stream_class):
+        repo = repository()
+        client = FullyDeniedClient()
+        stream = stream_class(**{**SHARED, "client": client, "catalog": FakeCatalog([repo], client)})
+        if not hasattr(stream, "state"):
+            pytest.skip("full-refresh stream keeps no state")
+        stream.state = {}
+
+        read_all_buckets(stream)
+
+        assert stream.state["repositories"].get(repo_state_key(repo), {}) in ({}, None) or (
+            "head_shas" not in stream.state["repositories"].get(repo_state_key(repo), {})
+            and "updated_on" not in stream.state["repositories"].get(repo_state_key(repo), {})
+        ), f"{stream_class.__name__} advanced state for a repository it never read"
+
+
+class TestFeatureLevelDenialStaysFeatureLevel:
+    """Pipelines is a per-repository feature: a 403 there means "no pipelines
+    visible", not "this repository is unreadable". It must not mark the whole
+    repository inaccessible — that would suppress its commits and pull requests.
+
+    These paths only run with pre-existing pipeline state, which the all-denied
+    matrix above never reaches, so they are pinned separately.
+    """
+
+    def test_open_pipeline_refetch_403_does_not_poison_the_repository(self):
+        from source_bitbucket_cloud.streams.metric_events import PipelinesStream
+
+        repo = repository()
+
+        class PipelinesDeniedClient(FakeClient):
+            def request(self, method, path, **kwargs):
+                allowed = kwargs.get("allow_statuses") or ()
+                if 403 in allowed:
+                    return None  # what the real client answers for a tolerated 403
+                raise BitbucketApiError(403, path, "no access")
+
+        client = PipelinesDeniedClient()
+        client.optional_values["repositories/ws/repo/pipelines"] = (True, [])
+        catalog = FakeCatalog([repo], client)
+        stream = PipelinesStream(**{**SHARED, "client": client, "catalog": catalog})
+        stream.state = {
+            "version": 3,
+            "bucket_count": 8,
+            "repositories": {repo_state_key(repo): {"created_on": "2026-06-01T00:00:00+00:00", "open": ["p1"]}},
+        }
+
+        _, error = read_all_buckets(stream)
+
+        assert error is None
+        assert not catalog.is_inaccessible(repo), (
+            "a pipelines-only denial must not mark the repository inaccessible"
+        )
+
+    def test_test_reports_403_marks_the_snapshot_not_the_repository(self):
+        from source_bitbucket_cloud.streams.metric_events import PipelineStepTestReportsStream
+
+        repo = repository()
+
+        class ReportsDeniedClient(FakeClient):
+            def request(self, method, path, **kwargs):
+                allowed = kwargs.get("allow_statuses") or ()
+                if 403 in allowed:
+                    return None
+                raise BitbucketApiError(403, path, "no access")
+
+        client = ReportsDeniedClient()
+        client.optional_values["repositories/ws/repo/pipelines"] = (
+            True,
+            [{"uuid": "p1", "created_on": "2026-06-02T00:00:00+00:00", "state": {"name": "COMPLETED"}}],
+        )
+        client.optional_values["repositories/ws/repo/pipelines/p1/steps"] = (True, [{"uuid": "s1"}])
+        catalog = FakeCatalog([repo], client)
+        stream = PipelineStepTestReportsStream(**{**SHARED, "client": client, "catalog": catalog})
+        stream.state = {}
+
+        records, error = read_all_buckets(stream)
+
+        assert error is None
+        assert not catalog.is_inaccessible(repo)
+        markers = [r for r in records if r.get("record_type") == "snapshot_complete"]
+        assert markers and all(m["snapshot_available"] is False for m in markers)
+
+
+@pytest.mark.parametrize("stream_class", every_stream_class(), ids=lambda c: c.__name__)
+class TestEveryStreamSurfacesTransientFailures:
+    """The counterpart: a real outage must never be silently absorbed."""
+
+    def test_500_fails_the_sync_loudly(self, stream_class):
+        repo = repository()
+        client = BrokenClient()
+        stream = stream_class(**{**SHARED, "client": client, "catalog": FakeCatalog([repo], client)})
+        if hasattr(stream, "state"):
+            stream.state = {}
+
+        _, error = read_all_buckets(stream)
+
+        if type(stream).__name__ == "RepositoriesStream":
+            pytest.skip("reads only the already-fetched catalog; no per-repository request to fail")
+        assert error is not None, f"{stream_class.__name__} silently swallowed a 500"

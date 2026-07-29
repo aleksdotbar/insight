@@ -119,8 +119,14 @@ class PipelineStateStream(BitbucketIncrementalStream):
             if pipeline_uuid:
                 pipelines[pipeline_uuid] = pipeline
         for pipeline_uuid in prior.get("open") or []:
+            # 403 is tolerated here, not raised: Pipelines is a per-repository
+            # feature, so a denial means "no pipelines visible", not "this
+            # repository is unreadable". Letting it escape would mark the whole
+            # repository inaccessible and suppress its commits and pull requests.
             response = self._client.request(
-                "GET", self._client.repo_path(repo, f"pipelines/{pipeline_uuid}"), allow_not_found=True
+                "GET",
+                self._client.repo_path(repo, f"pipelines/{pipeline_uuid}"),
+                allow_statuses={403, 404},
             )
             if response is not None:
                 pipeline = response.json()
@@ -230,7 +236,10 @@ class PipelineStepTestReportsStream(PipelineStateStream):
             step_uuid = step.get("uuid")
             generation = self.generation(repo.uuid, pipeline_uuid, step_uuid, "test_reports")
             path = self._client.repo_path(repo, f"pipelines/{pipeline_uuid}/steps/{step_uuid}/test_reports")
-            response = self._client.request("GET", path, allow_not_found=True)
+            # Tolerates 403 for the same reason as the pipeline refetch above: a
+            # feature-level denial must mark this snapshot unavailable, not the
+            # repository. `available` below already records it.
+            response = self._client.request("GET", path, allow_statuses={403, 404})
             count = 0
             if response is not None:
                 payload = response.json()
