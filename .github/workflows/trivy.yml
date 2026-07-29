@@ -11,11 +11,11 @@ name: Trivy SCA
 #            scanning — see the two paragraphs below.
 #
 # Lock files: `trivy fs` resolves dependency versions from them, and this repository commits
-# exactly one — Cargo.lock. The five .csproj and eleven pyproject.toml projects have none, so
-# .NET and Python were previously invisible here. The report job now generates them in the
-# workspace before scanning (`dotnet restore --use-lock-file`, `uv lock`) and throws them away
-# with the runner. Nothing is committed and no build contract changes; the scan simply resolves
-# what it needs. This also reaches the projects no image contains — tests, scripts, deploy/seed.
+# exactly one — Cargo.lock. The eleven pyproject.toml projects have none, so Python was
+# previously invisible here. The report job generates them in the workspace before scanning
+# (`uv lock`) and throws them away with the runner. Nothing is committed and no build contract
+# changes; the scan simply resolves what it needs. This also reaches the projects no image
+# contains — tests, scripts, deploy/seed. .NET is not resolved; the step explains why.
 #
 # Helm charts: seven of the nine in this repository cannot be scanned as raw templates because
 # they `required` values at render time, so Trivy skipped them and reported only the two that
@@ -96,28 +96,26 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve .NET and Python dependencies
-        # Trivy needs a lock file to know which versions are in play. These are generated into
-        # the workspace and die with the runner — nothing is committed and no build contract
-        # changes. Measured: the five .csproj resolve in ~30s and report clean; one connector's
-        # generated uv.lock alone carries 9 findings including a CRITICAL.
+      - name: Resolve Python dependencies
+        # Trivy needs a lock file to know which versions are in play, and the eleven
+        # pyproject.toml projects commit none. These are generated into the workspace and die with
+        # the runner — nothing is committed and no build contract changes. Measured: one
+        # connector's generated uv.lock carries 9 findings including a CRITICAL, and across all
+        # eleven the repository goes from 0 vulnerabilities to 102.
+        #
+        # .NET is deliberately absent. `dotnet restore --use-lock-file` needs an 851 MB SDK image
+        # plus ~30s and reported 0 findings across all five .csproj projects; whatever actually
+        # ships is covered by the insight-identity image scan. Worth reinstating only if a NuGet
+        # finding ever shows up there.
         #
         # Best-effort by design: a registry hiccup during resolution must cost coverage, not the
         # whole report. Each `uv lock` is guarded individually so one unresolvable project does
         # not take the other ten with it.
         continue-on-error: true
         env:
-          DOTNET_SDK: mcr.microsoft.com/dotnet/sdk:9.0@sha256:cb9d975bf57fd1b0915858d1db1184bea20f7f746f0536323fcab49673144e8c
           UV_IMAGE: ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
         run: |
           set -uo pipefail
-          echo "::group::dotnet restore --use-lock-file"
-          docker run --rm \
-            -v "${{ github.workspace }}:/repo" \
-            -w /repo/src/backend/services/identity \
-            "$DOTNET_SDK" dotnet restore --use-lock-file || echo "dotnet restore failed — .NET coverage skipped"
-          echo "::endgroup::"
-          echo "::group::uv lock"
           git ls-files '**/pyproject.toml' | while read -r manifest; do
             project="$(dirname "$manifest")"
             docker run --rm \
@@ -126,9 +124,8 @@ jobs:
               "$UV_IMAGE" uv lock \
               || echo "uv lock failed — skipped ${project}"
           done
-          echo "::endgroup::"
           echo "Lock files now present:"
-          git ls-files --others --exclude-standard | grep -E 'packages\.lock\.json|uv\.lock' | sed 's/^/  /' || echo "  none"
+          git ls-files --others --exclude-standard | grep -E 'uv\.lock' | sed 's/^/  /' || echo "  none"
 
       - name: Trivy fs scan — all severities
         # One scan, two formats: JSON feeds the summary below, and `trivy convert` derives the
@@ -185,7 +182,7 @@ jobs:
               miscfg += [(r.get("Target"), m) for m in (r.get("Misconfigurations") or [])]
           w("## Trivy SCA — repository (report-only)\n\n")
           w(f"**{len(vulns)}** vulnerabilit(ies) + **{len(miscfg)}** misconfiguration(s), every "
-            f"severity, including development dependencies and the .NET / Python lock files "
+            f"severity, including development dependencies and the Python lock files "
             f"resolved for this run. Image layers are covered by `Trivy Images`. "
             f"Full details in [Security -> Code scanning]({cs_url}).\n\n")
           rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}

@@ -77,7 +77,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Trivy image scan (all severities)
+      - name: Trivy image scan (CRITICAL/HIGH)
         # Trivy pulls straight from the registry (TRIVY_USERNAME/TRIVY_PASSWORD) instead of a
         # mounted docker socket, so no local `docker pull` is needed. `--ignore-unfixed` keeps
         # the output to what a base-image or dependency bump can actually fix. A multi-arch
@@ -88,8 +88,10 @@ jobs:
           IMAGE_REF: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ inputs.tag || 'latest' }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        # Every severity, not just CRITICAL/HIGH: these images are the only inventory of what
-        # actually ships. On the frontend image the narrower filter hid 70 of 107 findings.
+        # CRITICAL/HIGH only. Widening to MEDIUM/LOW was tried and reverted on review: one
+        # connector goes from 99 findings to 315, so the estate would report ~2100 instead of ~660
+        # and bury the 73 CRITICAL that actually drive action. Everything here comes from a base
+        # layer and the remedy is identical either way — refresh the base image.
         # One pull and one analysis per image: `trivy convert` derives the SARIF from the JSON
         # rather than rescanning, which for a 14-image matrix saves 14 redundant registry pulls
         # and layer analyses. `-w /work` so a repo-root `.trivyignore` is resolved — Trivy reads
@@ -103,7 +105,7 @@ jobs:
             -w /work \
             -e TRIVY_USERNAME -e TRIVY_PASSWORD \
             "$TRIVY_IMAGE" image \
-              --severity CRITICAL,HIGH,MEDIUM,LOW \
+              --severity CRITICAL,HIGH \
               --pkg-types os,library \
               --ignore-unfixed \
               --exit-code 0 \
@@ -138,16 +140,15 @@ jobs:
           w(f"Base image: `{d.get('Metadata', {}).get('OS', {}).get('Family', '?')} "
             f"{d.get('Metadata', {}).get('OS', {}).get('Name', '?')}`\n\n")
           if not rows:
-              w("No fixable findings at any severity.\n")
+              w("No fixable CRITICAL/HIGH findings.\n")
               sys.exit(0)
           sev = collections.Counter(v["Severity"] for _, v in rows)
           w(f"**{len(rows)}** fixable finding(s) — "
-            + ", ".join(f"{sev[s]} {s}" for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW") if sev.get(s))
-            + "\n\n")
+            + ", ".join(f"{sev[s]} {s}" for s in ("CRITICAL", "HIGH") if sev.get(s)) + "\n\n")
           bundles = collections.defaultdict(list)
           for eco, v in rows:
               bundles[(eco, v["PkgName"], v.get("InstalledVersion", "?"))].append(v)
-          rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+          rank = {"CRITICAL": 0, "HIGH": 1}
           w("| Ecosystem | Package | Max | CVEs | Fixed in |\n|---|---|---|---:|---|\n")
           for (eco, pkg, ver), items in sorted(
                   bundles.items(), key=lambda kv: (min(rank.get(i["Severity"], 4) for i in kv[1]), kv[0])):
