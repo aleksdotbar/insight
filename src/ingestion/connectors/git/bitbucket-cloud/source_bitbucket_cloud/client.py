@@ -251,19 +251,35 @@ class BitbucketClient:
                 )
         return branches
 
+    # Bitbucket documents no ceiling on include/exclude counts, and per
+    # BCLOUD-13229 its limits tend to surface as unexplained 400s. A repository
+    # with hundreds of branches would otherwise send them all in one form, so
+    # includes are chunked; the union of the chunked ranges is the same commit
+    # set (the full exclude list rides along with every chunk), and bronze
+    # dedups any overlap by unique_key.
+    COMMITS_INCLUDE_CHUNK = 100
+
     def commits_between(
         self, repo: RepositoryRef, current_heads: Sequence[str], previous_heads: Sequence[str]
     ) -> Iterable[Mapping[str, Any]]:
-        form = [("include", head) for head in sorted(set(current_heads))]
-        form.extend(("exclude", head) for head in sorted(set(previous_heads)))
-        if not form:
+        includes = sorted(set(current_heads))
+        excludes = [("exclude", head) for head in sorted(set(previous_heads))]
+        if not includes and not excludes:
             return
-        yield from self.paginate(
-            self.repo_path(repo, "commits"),
-            method="POST",
-            params={"pagelen": "100"},
-            data=form,
-        )
+        if not includes:
+            yield from self.paginate(
+                self.repo_path(repo, "commits"), method="POST", params={"pagelen": "100"}, data=excludes
+            )
+            return
+        for start in range(0, len(includes), self.COMMITS_INCLUDE_CHUNK):
+            chunk = includes[start : start + self.COMMITS_INCLUDE_CHUNK]
+            form = [("include", head) for head in chunk] + excludes
+            yield from self.paginate(
+                self.repo_path(repo, "commits"),
+                method="POST",
+                params={"pagelen": "100"},
+                data=form,
+            )
 
     def repo_path(self, repo: RepositoryRef, suffix: str) -> str:
         workspace = quote(repo.workspace, safe="")

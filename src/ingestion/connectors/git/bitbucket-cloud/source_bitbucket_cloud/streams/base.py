@@ -203,6 +203,17 @@ class BitbucketStream(Stream, ABC):
             try:
                 yield from self.repository_records(repo, bucket_id)
             except BitbucketApiError as error:
+                if error.status_code == 401:
+                    # Credential failure is global, not per-repository: every
+                    # remaining repo would fail identically, drowning the log in
+                    # quarantine noise before a generic end-of-sync error. Abort
+                    # now with the actionable cause instead.
+                    raise RuntimeError(
+                        "Bitbucket authentication failed mid-sync (HTTP 401): the token was "
+                        "rejected. If bitbucket_username is unset, Atlassian API tokens are "
+                        "sent as Bearer and refused — set the username, or the token has "
+                        "expired/been rotated."
+                    ) from error
                 if error.status_code in DENIED_STATUSES:
                     self.skip_repository(repo, error.status_code)
                 else:

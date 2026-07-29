@@ -157,27 +157,53 @@ class TestTransientFailuresStillFail:
 
 
 class TestBranchesSnapshotStaysSafe:
-    """branches is a bucket-scoped, deletion-aware snapshot.
+    """branches is a per-repository, deletion-aware snapshot.
 
-    Omitting a skipped repository's branches would read as "every branch of that
-    repository was deleted", so the bucket must be marked unavailable and dbt has
-    to keep the previous generation.
+    A denied repository must produce NO marker — its previous generation then
+    stays the newest complete one and its branches are retained. Emitting an
+    available marker instead would read as "every branch of that repository was
+    deleted". Per-repository (not bucket) scope matters at fleet scale: with
+    denied repositories scattered across buckets, a bucket-scoped generation
+    would freeze branch updates for every repository, permanently.
     """
 
     def _bucket_of(self, repo):
         return repository_bucket(repo_state_key(repo))
 
-    def test_marker_is_unavailable_when_a_repository_is_denied(self):
+    def test_denied_repository_produces_no_marker_and_keeps_its_generation(self):
         repo = repository()
         stream, _ = build(BranchesStream, [repo], denied(403))
 
         records = list(
             stream.read_records(SyncMode.full_refresh, stream_slice={"bucket_id": self._bucket_of(repo)})
         )
-        marker = records[-1]
 
-        assert marker["record_type"] == "snapshot_complete"
-        assert marker["snapshot_available"] is False
+        assert records == [], "a denied repository must contribute nothing — absence keeps its previous generation"
+
+    def test_denied_repository_does_not_freeze_its_neighbours(self):
+        """The fleet-scale property: other repositories keep updating."""
+        readable = repository(slug="readable")
+        stream_denied = repository(slug="denied", uuid="{denied}")
+        # force both into the same bucket so the old bucket-scope design would couple them
+        while repository_bucket(repo_state_key(readable)) != repository_bucket(repo_state_key(stream_denied)):
+            readable = repository(slug=readable.slug + "x")
+
+        class MixedClient(FakeClient):
+            def branches(self, repo):
+                if repo.slug.startswith("denied"):
+                    raise BitbucketApiError(403, "https://api.bitbucket.org/2.0/x", "no access")
+                return [branch("main", "a1")]
+
+        stream, _ = build(BranchesStream, [readable, stream_denied], MixedClient())
+        records = list(
+            stream.read_records(SyncMode.full_refresh, stream_slice={"bucket_id": self._bucket_of(readable)})
+        )
+
+        markers = [r for r in records if r.get("record_type") == "snapshot_complete"]
+        assert len(markers) == 1, "exactly the readable repository closes a generation"
+        assert markers[0]["repo_slug"] == readable.slug
+        assert markers[0]["snapshot_available"] is True
+        assert markers[0]["snapshot_item_count"] == 1
 
     def test_marker_is_available_when_every_repository_was_read(self):
         repo = repository()
@@ -295,6 +321,85 @@ class TestEveryStreamSurvivesADeniedRepository:
             "head_shas" not in stream.state["repositories"].get(repo_state_key(repo), {})
             and "updated_on" not in stream.state["repositories"].get(repo_state_key(repo), {})
         ), f"{stream_class.__name__} advanced state for a repository it never read"
+
+
+class TestCredentialFailureAbortsLoudly:
+    """401 is global, not per-repository: quarantining every repo one by one
+    would drown the log and end in a generic message. Abort at the first one
+    with the actionable cause."""
+
+    def test_401_aborts_immediately_with_the_cause(self):
+        good, other = repository(slug="one"), repository(slug="two", uuid="{two}")
+        stream, catalog = build(CommitsStream, [good, other], denied(401))
+        stream.state = {}
+
+        with pytest.raises(RuntimeError, match="authentication failed"):
+            for bucket in range(BUCKET_COUNT):
+                list(stream.read_records(SyncMode.incremental, stream_slice={"bucket_id": bucket}))
+
+        assert catalog.inaccessible_count == 0, "401 must not mark repositories denied — the token is the problem"
+        assert stream._failed_repositories == [], "and must not be recorded as per-repository failures"
+
+
+class TestVanishedDiffstatIsTolerated:
+    """A commit's diffstat can be permanently gone (orphaned merge parents,
+    rewritten history) — the pre-rewrite connector tolerated exactly this
+    (`ignore_404`). It must mark that commit's snapshot unavailable, not fail
+    the repository on every sync forever."""
+
+    def test_missing_diffstat_marks_snapshot_unavailable_not_the_sync(self, repo):
+        client = FakeClient()
+        client.branch_values[repo.uuid] = [branch("main", "head")]
+        client.commit_values = [{"hash": "gone", "date": "2026-06-01T00:00:00+00:00"}]
+        # the diffstat endpoint answers 404 -> paginate_optional -> (False, ())
+        client.optional_values[client.repo_path(repo, "diffstat/gone")] = (False, [])
+        from source_bitbucket_cloud.streams.file_changes import FileChangesStream
+
+        stream, catalog = build(FileChangesStream, [repo], client)
+        stream.state = {}
+
+        records, error = read_all_buckets(stream)
+
+        assert error is None, "one vanished diffstat must not fail the repository forever"
+        assert not catalog.is_inaccessible(repo)
+        markers = [r for r in records if r.get("record_type") == "snapshot_complete"]
+        assert markers and markers[0]["snapshot_available"] is False, (
+            "the denial must be recorded — an available empty snapshot would read as "
+            "'this commit changed nothing' and zero its line counts"
+        )
+        assert stream.state["repositories"][repo_state_key(repo)]["head_shas"] == ["head"], (
+            "the repository still advances past the bad commit"
+        )
+
+
+class TestManyBranchRepositoriesChunkTheCommitRange:
+    """Bitbucket's include/exclude ceiling is undocumented (BCLOUD-13229); a
+    repository with hundreds of branches must not send them in one form."""
+
+    def test_includes_are_chunked_and_excludes_ride_along(self):
+        from source_bitbucket_cloud.client import BitbucketClient
+
+        client = BitbucketClient("tok")
+        calls: list[list[tuple[str, str]]] = []
+
+        def fake_paginate(path, *, params=None, method="GET", data=None, **kwargs):
+            calls.append(list(data or []))
+            return iter(())
+
+        client.paginate = fake_paginate
+        includes = [f"new{i:04d}" for i in range(250)]
+        excludes = [f"old{i:04d}" for i in range(30)]
+
+        list(client.commits_between(repository(), includes, excludes))
+
+        assert len(calls) == 3  # 250 heads / 100 per chunk
+        for form in calls:
+            chunk_includes = [v for k, v in form if k == "include"]
+            chunk_excludes = sorted(v for k, v in form if k == "exclude")
+            assert len(chunk_includes) <= 100
+            assert chunk_excludes == sorted(excludes), "every chunk must carry the FULL exclude set"
+        fetched = sorted(v for form in calls for k, v in form if k == "include")
+        assert fetched == sorted(includes), "the union of chunks must cover every head exactly once"
 
 
 class TestFeatureLevelDenialStaysFeatureLevel:

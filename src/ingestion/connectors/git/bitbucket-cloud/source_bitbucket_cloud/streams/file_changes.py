@@ -30,7 +30,16 @@ class FileChangesStream(CommitRangeMixin, BitbucketIncrementalStream):
             return
         generation = self.generation(repo.uuid, sha)
         entity_keys: set[str] = set()
-        for entry in self._client.paginate(self._client.repo_path(repo, f"diffstat/{sha}"), params={"pagelen": "100"}):
+        # A commit's diffstat can be permanently gone (orphaned merge parents,
+        # rewritten history) — the pre-rewrite connector tolerated exactly this
+        # ("commit diffstat gone", ignore_404). Raising here would fail the
+        # repository on every sync forever. The marker records the denial so the
+        # completeness gate keeps whatever was known before instead of treating
+        # the empty read as "this commit changed nothing".
+        present, entries = self._client.paginate_optional(
+            self._client.repo_path(repo, f"diffstat/{sha}"), params={"pagelen": "100"}
+        )
+        for entry in entries:
             new_file = entry.get("new") or {}
             old_file = entry.get("old") or {}
             filename = new_file.get("path") or old_file.get("path")
@@ -61,6 +70,7 @@ class FileChangesStream(CommitRangeMixin, BitbucketIncrementalStream):
             scope_parts=[repo.uuid, sha, "diffstat"],
             generation_id=generation,
             item_count=len(entity_keys),
+            available=present,
             repository_uuid=repo.uuid,
             workspace_uuid=repo.workspace_uuid,
             source_type="commit",
