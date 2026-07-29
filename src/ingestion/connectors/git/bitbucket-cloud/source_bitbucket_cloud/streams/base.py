@@ -199,6 +199,9 @@ class BitbucketStream(Stream, ABC):
         bucket_id, repositories = self.bucket(stream_slice)
         for repo in repositories:
             if self._catalog.is_inaccessible(repo):
+                # Discovered by an earlier stream; still counts toward THIS
+                # stream's end-of-sync skipped summary.
+                self._skipped_repositories.append(f"{repo.workspace}/{repo.slug}")
                 continue
             try:
                 yield from self.repository_records(repo, bucket_id)

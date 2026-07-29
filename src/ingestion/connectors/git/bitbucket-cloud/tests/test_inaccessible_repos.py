@@ -111,6 +111,9 @@ class TestDeniedRepositoryIsSkipped:
         records, error = read_all_buckets(later)
 
         assert (records, error) == ([], None)
+        assert later._skipped_repositories == [f"{repo.workspace}/{repo.slug}"], (
+            "a pre-known inaccessible repository must still appear in this stream's skipped summary"
+        )
 
     def test_other_repositories_still_sync(self):
         good, bad = repository(slug="good"), repository(slug="bad", uuid="{bad}")
