@@ -1,12 +1,21 @@
 """Contract: the error-path status codes the rest of the suite leaves out.
 
-Closes the per-status-code gaps of the coverage report (advisory `✗` cells):
-validation 400s on the mutating endpoints, 404s for unknown ids on
-DELETE/GET, and the 401/403 gate on every route that only had it proven on a
-sibling. Each case was checked against BOTH implementations' source before
-being added here — anything only one side answers is a divergence, not a
-contract, and stays out (e.g. the Rust-only 400 on a too-long revoke reason
-in DELETE bodies, or the Rust-only nil `viewed_person_id` rejection).
+Closes the per-status-code gaps of the coverage report: validation 400s on
+the mutating endpoints, 404s for unknown ids on DELETE/GET, the 401/403 gate
+proven on every route (not just a sibling), malformed-UUID / query-param
+400s, and the nil-tenant 400. Each case was probed against BOTH
+implementations before being added; behavior only the Rust port has (see
+`lib.identity.supports_strict_input_validation`) is asserted in its own
+capability-gated section, so this file is the full Rust surface while the
+.NET run stays green.
+
+Deliberately absent here:
+- 503 on POST /v1/persons-seed (seed queue full): the queue capacity is a
+  compile-time constant (gear.rs, 100) and the refusal needs the channel
+  full at the instant of the POST — not deterministically inducible from a
+  black-box test, the same reason the coverage gate excludes >=500 codes
+  (SERVER_FAULT_FLOOR). Pinned instead by Rust unit tests on the extracted
+  refusal path (identity-resolution src/api/seed.rs, `try_enqueue_job`).
 
 Nothing here mutates state: the 400s fail validation before any write, the
 404s target ids that don't exist, and the 401/403s never pass the gate.
@@ -223,6 +232,88 @@ def test_forest_negative_depth_400(api) -> None:
 def test_forest_invalid_valid_at_400(api) -> None:
     r = api.get("/v1/subchart?valid_at=not-a-date")
     assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+
+
+# ── malformed ids / query params → 400 (route + binder level) ────────────
+
+
+def test_role_delete_malformed_uuid_400(api) -> None:
+    assert api.delete("/v1/roles/not-a-uuid").status_code == 400
+
+
+def test_person_role_delete_malformed_uuid_400(api) -> None:
+    assert api.delete("/v1/person-roles/not-a-uuid").status_code == 400
+
+
+def test_visibility_delete_malformed_uuid_400(api) -> None:
+    assert api.delete("/v1/visibility/not-a-uuid").status_code == 400
+
+
+def test_persons_seed_get_malformed_uuid_400(api) -> None:
+    assert api.get("/v1/persons-seed/not-a-uuid").status_code == 400
+
+
+def test_person_roles_list_malformed_limit_400(api) -> None:
+    assert api.get("/v1/person-roles?limit=abc").status_code == 400
+
+
+def test_persons_seed_list_malformed_limit_400(api) -> None:
+    assert api.get("/v1/persons-seed?limit=abc").status_code == 400
+
+
+def test_person_roles_list_malformed_person_filter_400(api) -> None:
+    assert api.get("/v1/person-roles?person=not-a-uuid").status_code == 400
+
+
+def test_visibility_list_malformed_active_400(api) -> None:
+    assert api.get("/v1/visibility?active=maybe").status_code == 400
+
+
+# ── Rust-only strict validation (capability-gated) ────────────────────────
+
+
+@pytest.fixture
+def strict_api(identity_svc, api):
+    """`api`, but only on an implementation with the strict input validation
+    the Rust port added — skipped (before any request) elsewhere."""
+    if not identity_svc.supports_strict_input_validation:
+        pytest.skip("strict input validation is Rust-only (see lib.identity)")
+    return api
+
+
+def test_person_role_delete_reason_too_long_400(strict_api) -> None:
+    """The revoke body's `reason` cap is enforced BEFORE the lookup, so an
+    unknown id keeps this non-mutating."""
+    r = strict_api.request(
+        "DELETE", f"/v1/person-roles/{UNKNOWN_ID}", json={"reason": TOO_LONG_REASON}
+    )
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+    problem(r)
+
+
+def test_visibility_delete_reason_too_long_400(strict_api) -> None:
+    r = strict_api.request(
+        "DELETE", f"/v1/visibility/{UNKNOWN_ID}", json={"reason": TOO_LONG_REASON}
+    )
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+    problem(r)
+
+
+def test_visibility_create_nil_viewed_400(strict_api) -> None:
+    """A present-but-nil target is nonsense (only an ABSENT viewed_person_id
+    means whole-tree visibility); .NET creates the grant, Rust refuses."""
+    r = strict_api.post(
+        "/v1/visibility",
+        json={"viewer_person_id": str(seed.ALICE), "viewed_person_id": str(NIL_UUID)},
+    )
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+    problem(r)
+
+
+def test_subchart_malformed_uuid_400(strict_api) -> None:
+    """Rust rejects the unparseable path id as 400; the .NET binder answers
+    404 — a reviewed divergence, so only the Rust behavior is pinned."""
+    assert strict_api.get("/v1/subchart/not-a-uuid").status_code == 400
 
 
 # ── nil tenant in the JWT → 400 tenant_unresolved ────────────────────────
