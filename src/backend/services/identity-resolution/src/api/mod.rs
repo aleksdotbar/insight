@@ -10,6 +10,7 @@ pub mod roles;
 pub mod seed;
 pub mod subchart;
 pub mod visibility;
+pub mod visible_persons;
 
 use std::sync::Arc;
 
@@ -241,7 +242,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .handler(subchart::get_forest)
         .register(router, openapi);
 
-    OperationBuilder::get("/v1/subchart/{person_id}")
+    let router = OperationBuilder::get("/v1/subchart/{person_id}")
         .operation_id("identity_resolution.subchart.get")
         .summary("Depth-bounded org subtree rooted at a person")
         .authenticated()
@@ -253,5 +254,20 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         )
         .standard_errors(openapi)
         .handler(subchart::get_subchart)
+        .register(router, openapi);
+
+    OperationBuilder::post("/v1/visible-persons")
+        .operation_id("identity_resolution.visible_persons.create")
+        .summary("Filter emails to the ones the caller may see")
+        .authenticated()
+        .no_license_required()
+        .json_request::<visible_persons::VisiblePersonsRequest>(openapi, "Emails to check")
+        .json_response_with_schema::<visible_persons::VisiblePersonsResponse>(
+            openapi,
+            StatusCode::OK,
+            "Visible subset",
+        )
+        .standard_errors(openapi)
+        .handler(visible_persons::filter_visible_persons)
         .register(router, openapi)
 }

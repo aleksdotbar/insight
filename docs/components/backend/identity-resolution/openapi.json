@@ -122,6 +122,34 @@
           "reason"
         ],
         "type": "object"
+      },
+      "VisiblePersonsCommandModel": {
+        "properties": {
+          "emails": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "emails"
+        ],
+        "type": "object"
+      },
+      "VisiblePersonsResponse": {
+        "properties": {
+          "visible": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "visible"
+        ],
+        "type": "object"
       }
     }
   },
@@ -581,6 +609,35 @@
         },
         "responses": {
           "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "Insight.Identity.Api"
+        ]
+      }
+    },
+    "/v1/visible-persons": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisiblePersonsCommandModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisiblePersonsResponse"
+                }
+              }
+            },
             "description": "OK"
           }
         },

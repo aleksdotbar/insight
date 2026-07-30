@@ -30,6 +30,9 @@ pub mod sql_named;
 pub mod subchart_repo;
 pub mod visibility_repo;
 
+#[cfg(test)]
+mod visible_set_live_tests;
+
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
 /// Connect to `MariaDB` and return a connection pool.
