@@ -367,7 +367,9 @@ def _operation_row(cfg: SessionConfig, tenant: uuid.UUID) -> dict | None:
 def test_seed_cli_wrong_tenant_guard(identity_inputs, identity_svc, compose_stack) -> None:
     """An unforced run for a tenant `persons` has never seen — while other
     tenants' rows exist — must refuse (exit 3) and journal the refusal:
-    seeding would mint a parallel person set under a wrong tenant (#1550)."""
+    seeding would mint a parallel person set under a wrong tenant
+    (HOTFIX(#1550): the unfiltered reader re-files every row under the
+    configured tenant)."""
     if not identity_svc.supports_seed_cli:
         pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
     res = identity_svc.run_seed_cli(tenant=str(GUARD_TENANT), force=False)

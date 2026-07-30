@@ -63,7 +63,8 @@ impl SeedStore for MariaDbSeedStore<'_> {
 /// How the `persons` log is populated relative to one tenant — input to the
 /// CLI runner's wrong-tenant guard (see `seed_runner`): rows under OTHER
 /// tenants with none under the configured one means the operator is about to
-/// mint a parallel person universe (the #1550 failure mode), not seed a fresh
+/// mint a parallel person universe (the HOTFIX(#1550) failure mode — the
+/// unfiltered reader re-files every row under the configured tenant), not seed a fresh
 /// install.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TenantPresence {

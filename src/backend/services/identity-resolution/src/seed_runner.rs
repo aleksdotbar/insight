@@ -7,9 +7,9 @@
 //! → input read → guards → the same domain pipeline the removed
 //! `POST /v1/persons-seed` used → journal completed/failed.
 //!
-//! Concurrency: runs serialize on a per-tenant MariaDB `GET_LOCK` held on a
-//! dedicated single-connection session for the whole run (see
-//! `infra::db::try_acquire_seed_lock`) — covers cron-vs-manual overlap and
+//! Concurrency: runs serialize on a per-tenant MariaDB `GET_LOCK` owned by an
+//! RAII guard for the whole run (see `infra::db::SeedLockGuard` — every exit
+//! path releases it) — covers cron-vs-manual overlap and
 //! multiple Insight instances sharing one database. A concurrent run fails
 //! fast ([`SeedRunError::LockBusy`], exit code 2) instead of queueing a stale
 //! re-run behind the active one.
@@ -20,7 +20,7 @@
 //!     pipeline (wrong ClickHouse URL/database, wiped stand), not "no people";
 //!   * wrong tenant — `persons` rows exist under OTHER tenants and none under
 //!     the configured one: seeding would mint a parallel person universe
-//!     under the wrong tenant (the #1550 failure mode), which the append-only
+//!     under the wrong tenant (the HOTFIX(#1550) failure mode), which the append-only
 //!     log cannot undo. A genuinely fresh install (empty `persons`) passes.
 
 use std::time::Duration;
@@ -97,6 +97,16 @@ pub async fn run(
             "unsupported mode '{mode}'; only '{LINK_BY_EMAIL_MODE}' is available"
         )));
     }
+    // SINGLE-TENANT BY DESIGN, gated on HOTFIX(#1550): one run seeds exactly
+    // one tenant — the configured one. A true multi-tenant mode ("enumerate
+    // tenants, seed each") is NOT possible yet: the identity_inputs reader
+    // deliberately reads the WHOLE table with no tenant filter (see the
+    // HOTFIX(#1550) block in `infra::identity_inputs` — the dbt producer
+    // hashes tenant ids, so there is nothing to filter on), which means every
+    // tenant's run would ingest every other tenant's rows and mint duplicate
+    // person universes. Once the producer writes real tenant UUIDs and the
+    // reader filter returns, this becomes a loop over tenants — the runner is
+    // already per-tenant everywhere below (lock name, journal row, writes).
     if config.tenant_default_id.is_empty() {
         return Err(SeedRunError::Failed(anyhow::anyhow!(
             "`gears.identity-resolution.config.tenant_default_id` is required for seed"
@@ -105,14 +115,12 @@ pub async fn run(
     let tenant = Uuid::parse_str(config.tenant_default_id.trim())
         .map_err(|e| anyhow::anyhow!("invalid tenant_default_id: {e}"))?;
 
-    // Work pool + a dedicated single-connection session for the advisory
-    // lock: GET_LOCK is session-scoped, so the lock must not ride a pooled
-    // connection that could be swapped mid-run.
     let db = db::connect(&config.database_url).await?;
-    let lock_conn = db::connect_single(&config.database_url).await?;
-    if !db::try_acquire_seed_lock(&lock_conn, tenant).await? {
+    // RAII: the guard owns the lock's dedicated session — every exit path
+    // (return, cancellation, crash) releases the lock, see `SeedLockGuard`.
+    let Some(lock) = db::SeedLockGuard::try_acquire(&config.database_url, tenant).await? else {
         return Err(SeedRunError::LockBusy);
-    }
+    };
 
     let result = tokio::time::timeout(RUN_TIMEOUT, run_locked(&db, config, tenant, mode, force))
         .await
@@ -123,8 +131,7 @@ pub async fn run(
             )))
         });
 
-    // Best-effort; the lock also dies with `lock_conn`'s session.
-    db::release_seed_lock(&lock_conn, tenant).await;
+    lock.release().await;
     result
 }
 
