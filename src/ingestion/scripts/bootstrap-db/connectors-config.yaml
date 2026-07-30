@@ -109,8 +109,6 @@ connectors:
         value: fake
       zoom_client_secret:
         value: fake
-      zoom_start_date:
-        value: "2020-01-01"
   zulip-proxy:
     path: collaboration/zulip-proxy
     config:
@@ -146,6 +144,8 @@ connectors:
         env: SALESFORCE_CLIENT_SECRET
       salesforce_instance_url:
         env: SALESFORCE_INSTANCE_URL
+      salesforce_start_date:
+        value: "2024-01-01"
   bitbucket-cloud:
     path: git/bitbucket-cloud
     config:
