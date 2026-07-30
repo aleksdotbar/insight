@@ -413,6 +413,224 @@ async fn admin_create_with_unknown_field_returns_400() -> TestResult {
     Ok(())
 }
 
+// ── Saved-query CRUD + run (#1965) ───────────────────────────────
+//
+// Covers every non-5xx response of `/v1/queries*`. CRUD is DB-only, so the
+// happy paths return real 2xx against MariaDB. `/run` reaches ClickHouse; with
+// `dead_ch` its 200 collapses to 5xx (out of scope here), so only its 404
+// (unknown id, resolved before any CH call) is asserted. Each test uses a fresh
+// `Uuid::now_v7()` tenant, so the empty-to-populated `saved_queries` table is
+// parallel-safe and needs no seed row.
+
+fn create_body() -> Value {
+    json!({ "name": "coverage query", "description": "d", "sql": "SELECT 1" })
+}
+
+fn delete_req(uri: &str) -> Result<Request<Body>, axum::http::Error> {
+    Request::builder()
+        .method("DELETE")
+        .uri(uri)
+        .body(Body::empty())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn saved_query_crud_round_trip() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let tenant = Uuid::now_v7();
+    let app = app(db, tenant);
+
+    // CREATE → 201
+    let resp = app
+        .clone()
+        .oneshot(json_req("POST", "/v1/queries", &create_body())?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::CREATED, "create should 201");
+    let created = body_json(resp).await?;
+    let id = created["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("created payload missing string id: {created}"))
+        .to_owned();
+
+    // LIST → 200, contains the new row
+    let resp = app.clone().oneshot(get("/v1/queries")?).await?;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let list = body_json(resp).await?;
+    let items = list["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("list payload has no items array: {list}"));
+    assert!(
+        items.iter().any(|i| i["id"].as_str() == Some(id.as_str())),
+        "list should contain the created query: {list}"
+    );
+
+    // GET one → 200
+    let resp = app
+        .clone()
+        .oneshot(get(&format!("/v1/queries/{id}"))?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // UPDATE → 200
+    let update = json!({ "name": "renamed", "sql": "SELECT 2" });
+    let resp = app
+        .clone()
+        .oneshot(json_req("PUT", &format!("/v1/queries/{id}"), &update)?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::OK, "update should 200");
+
+    // DELETE → 204
+    let resp = app
+        .clone()
+        .oneshot(delete_req(&format!("/v1/queries/{id}"))?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT, "delete should 204");
+
+    // GET after delete → 404
+    let resp = app.oneshot(get(&format!("/v1/queries/{id}"))?).await?;
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "deleted query is gone"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn saved_query_create_with_invalid_sql_returns_400() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let app = app(db, Uuid::now_v7());
+    // Non-read statement: the single-SELECT gate rejects it on write.
+    let bad = json!({ "name": "bad", "sql": "DROP TABLE t" });
+    let resp = app.oneshot(json_req("POST", "/v1/queries", &bad)?).await?;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn saved_query_update_with_invalid_sql_returns_400() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let tenant = Uuid::now_v7();
+    let app = app(db, tenant);
+
+    let resp = app
+        .clone()
+        .oneshot(json_req("POST", "/v1/queries", &create_body())?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let created = body_json(resp).await?;
+    let id = created["id"].as_str().unwrap_or_default().to_owned();
+
+    // Multiple statements are rejected by the gate on update.
+    let bad = json!({ "sql": "SELECT 1; SELECT 2" });
+    let resp = app
+        .oneshot(json_req("PUT", &format!("/v1/queries/{id}"), &bad)?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn get_unknown_saved_query_returns_404() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let app = app(db, Uuid::now_v7());
+    let resp = app
+        .oneshot(get(&format!("/v1/queries/{}", Uuid::now_v7()))?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn update_unknown_saved_query_returns_404() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let app = app(db, Uuid::now_v7());
+    let resp = app
+        .oneshot(json_req(
+            "PUT",
+            &format!("/v1/queries/{}", Uuid::now_v7()),
+            &json!({ "name": "x" }),
+        )?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn delete_unknown_saved_query_returns_404() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let app = app(db, Uuid::now_v7());
+    let resp = app
+        .oneshot(delete_req(&format!("/v1/queries/{}", Uuid::now_v7()))?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn run_unknown_saved_query_returns_404() -> TestResult {
+    // The run handler resolves the saved query (tenant-scoped) before touching
+    // ClickHouse, so an unknown id is a clean 404 that never reaches `dead_ch`.
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let app = app(db, Uuid::now_v7());
+    let resp = app
+        .oneshot(json_req(
+            "POST",
+            &format!("/v1/queries/{}/run", Uuid::now_v7()),
+            &json!({}),
+        )?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn saved_query_is_tenant_scoped() -> TestResult {
+    // A query created under tenant A must be invisible to tenant B — the
+    // handler filters every read by `insight_tenant_id`.
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let tenant_a = Uuid::now_v7();
+    let app_a = app(db.clone(), tenant_a);
+    let resp = app_a
+        .oneshot(json_req("POST", "/v1/queries", &create_body())?)
+        .await?;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let created = body_json(resp).await?;
+    let id = created["id"].as_str().unwrap_or_default().to_owned();
+
+    let app_b = app(db, Uuid::now_v7());
+    let resp = app_b.oneshot(get(&format!("/v1/queries/{id}"))?).await?;
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "tenant B must not see tenant A's saved query"
+    );
+    Ok(())
+}
+
 // ── Handlers that reach ClickHouse / Identity (5xx by design) ────
 
 #[tokio::test]

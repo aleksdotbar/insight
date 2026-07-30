@@ -185,9 +185,9 @@ The system **MUST** provide an empty `presentation` ClickHouse database for new 
 
 #### Saved-Query CRUD and Run
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-saved-query-crud`
+- [x] `p1` - **ID**: `cpt-presentation-fr-saved-query-crud`
 
-The system **MUST** allow an analyst to create, list, fetch, update, delete, and run saved queries scoped to their tenant. Create and update **MUST** validate the SQL through the single-SELECT gate; run **MUST** execute read-only and return rows. (#1965.)
+The system **MUST** allow an analyst to create, list, fetch, update, delete, and run saved queries scoped to their tenant. Create and update **MUST** validate the SQL through the single-SELECT gate; run **MUST** execute read-only and return rows. (Shipped, #1965.)
 
 **Rationale**: A new analytics slice needs no engineering change and no re-ingest.
 
@@ -305,13 +305,13 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 #### Saved-Query API
 
-- [ ] `p1` - **ID**: `cpt-presentation-interface-saved-query-api`
+- [x] `p1` - **ID**: `cpt-presentation-interface-saved-query-api`
 
 **Type**: REST API (HTTP/JSON)
 
 **Stability**: unstable
 
-**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN.
+**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN. (CRUD + run shipped in #1965; named parameters follow in #1966.)
 
 **Breaking Change Policy**: Unstable in Phase A; contract hardens in a later phase.
 
