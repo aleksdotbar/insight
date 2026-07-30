@@ -15,10 +15,17 @@ FROM (
     SELECT
         workspace_id AS tenant_id,
         lower(assumeNotNull(email)) AS entity_id,
-        coalesce(
-            nullIf(toString(org_unit_id), ''),
-            nullIf(department_name, '')
-        ) AS cohort_id
+        -- The org cohort is keyed by department NAME, matching what the rest of
+        -- the serving path calls `org_unit_id` (insight.people projects
+        -- `argMax(department)` under that name, and the frontend round-trips the
+        -- value back as `org_unit_id in ('Engineering', …)`). This used to
+        -- coalesce a `class_people.org_unit_id Nullable(UUID)` column ahead of
+        -- the name; that column was always NULL (no `org_units` table exists) and
+        -- has been dropped. Do NOT reintroduce a UUID branch here without
+        -- migrating insight.people and the frontend in the same change — a
+        -- coalesce that prefers UUIDs would emit cohort ids the frontend never
+        -- sends, silently emptying every peer metric.
+        nullIf(department_name, '') AS cohort_id
     FROM {{ ref('class_people') }}
     WHERE email IS NOT NULL
       AND email != ''

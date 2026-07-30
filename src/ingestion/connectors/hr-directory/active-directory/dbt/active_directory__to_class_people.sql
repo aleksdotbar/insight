@@ -32,8 +32,12 @@ SELECT
     -- Prefer `mail` as canonical address; fall back to UPN when mail unset.
     coalesce(u.mail, u.userPrincipalName)           AS email,
     u.jobTitle                                      AS job_title,
+    -- `department_name` is the org cohort key for this class. There is no
+    -- org-unit UUID anywhere in the system (no `org_units` table exists), so
+    -- the former always-NULL `org_unit_id Nullable(UUID)` column was dropped.
+    -- Downstream `org_unit_id` (insight.people, gold views, the frontend) is a
+    -- department NAME string derived from this field.
     u.department                                    AS department_name,
-    CAST(NULL AS Nullable(UUID))                    AS org_unit_id,
     -- manager_person_id is the resolved unified person ID, not an AD source ID.
     -- Leave it null here; Silver Step 2 (Identity Manager) resolves it from the
     -- parent_id/parent_email identity_inputs signals emitted by
