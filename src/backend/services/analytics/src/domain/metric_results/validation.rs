@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::api::error::MetricError;
 use crate::domain::metric_definitions::{ComputationSpec, MetricDefinition, load_definitions};
+use crate::domain::person_visibility::normalize_person_id;
 use crate::domain::schema_validator::parse::parse_metric_key;
 
 use super::dto::{
@@ -528,10 +529,9 @@ fn normalize_entity_ids(
 // and the observation sources emit them lowercased, so equality requires
 // lowercasing here too. Other entity types keep their casing.
 fn normalize_entity_id(entity_type: &str, entity_id: &str) -> String {
-    let trimmed = entity_id.trim();
     match entity_type {
-        "person" => trimmed.to_ascii_lowercase(),
-        _ => trimmed.to_owned(),
+        "person" => normalize_person_id(entity_id),
+        _ => entity_id.trim().to_owned(),
     }
 }
 

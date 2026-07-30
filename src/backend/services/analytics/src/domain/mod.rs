@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod metric;
 pub mod metric_definitions;
 pub mod metric_results;
+pub(crate) mod person_visibility;
 pub mod query;
 pub mod query_gate;
 pub mod saved_query;

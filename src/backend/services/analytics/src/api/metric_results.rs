@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::Extension;
+use axum::http::HeaderMap;
 use futures::stream::{self, StreamExt};
 use serde::de::DeserializeOwned;
 use toolkit_canonical_errors::CanonicalError;
@@ -18,6 +19,7 @@ use crate::domain::metric_results::{
     build_period_view, build_ranked_groups, build_timeseries_view, demux_peer_rows,
     demux_period_rows, enforce_view_row_limit, plan_queries, plan_rankings, validate_request,
 };
+use crate::domain::person_visibility::authorize_entity_ids;
 use toolkit_security::SecurityContext;
 
 const QUERY_CONCURRENCY: usize = 4;
@@ -30,9 +32,19 @@ const QUERY_FETCH_TIMEOUT: Duration = Duration::from_mins(1);
 pub async fn query_metric_results(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
+    headers: HeaderMap,
     Json(req): Json<MetricResultsRequest>,
 ) -> Result<Json<MetricResultsResponse>, CanonicalError> {
     let req = validate_request(&state.db, ctx.subject_tenant_id(), req).await?;
+    authorize_entity_ids(
+        &state.identity,
+        &ctx,
+        super::forwarded_authorization(&headers),
+        &req.entity_type,
+        &req.entity_ids,
+    )
+    .await?;
+
     let mut ranking_results = BTreeMap::new();
     let mut rankings = stream::iter(plan_rankings(&req))
         .map(|ranking| {

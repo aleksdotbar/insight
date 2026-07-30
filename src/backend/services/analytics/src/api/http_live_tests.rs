@@ -80,7 +80,7 @@ fn dead_ch() -> insight_clickhouse::Client {
 /// Build a full `AppState` against the live DB. Cache is a no-op stub; authz
 /// is the config authorizer (`is_tenant_admin` == true), so the admin write
 /// path is reachable without a real identity provider.
-fn build_state(db: DatabaseConnection) -> AppState {
+fn build_state(db: DatabaseConnection, identity: IdentityClient) -> AppState {
     let cache: Arc<dyn CatalogCache> = Arc::new(NoopCatalogCache::default());
     let tenant_auth: Arc<dyn TenantAuthorization> = Arc::new(ConfigTenantAuthorization::new(None));
     let validator = SchemaValidator::new(db.clone(), dead_ch());
@@ -94,7 +94,7 @@ fn build_state(db: DatabaseConnection) -> AppState {
     AppState {
         db,
         ch: dead_ch(),
-        identity: IdentityClient::new("http://127.0.0.1:1"),
+        identity,
         config: GearConfig::default(),
         validator,
         tenant_auth,
@@ -113,12 +113,66 @@ const TEST_PERSON: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0
 /// covered by the plugin's own tests + the compose e2e. This suite is about the
 /// handler -> DB glue for a known caller.
 fn app(db: DatabaseConnection, tenant: Uuid) -> Router {
+    let Ok(identity) = IdentityClient::new("http://127.0.0.1:1") else {
+        unreachable!("the static identity url builds a client")
+    };
+    app_with_identity(db, tenant, identity)
+}
+
+fn app_with_identity(db: DatabaseConnection, tenant: Uuid, identity: IdentityClient) -> Router {
     let openapi = OpenApiRegistryImpl::new();
-    let state = Arc::new(build_state(db));
+    let state = Arc::new(build_state(db, identity));
     let api = super::build_operations(Router::new(), &openapi)
         .layer(from_fn_with_state(tenant, inject_host_context))
         .layer(axum::Extension(state));
     Router::new().merge(api)
+}
+
+/// Loopback identity serving `POST /v1/visible-persons` — answers with the
+/// intersection of the requested emails and `visible`.
+async fn spawn_identity(visible: &[&str]) -> Result<IdentityClient, Box<dyn std::error::Error>> {
+    let visible = Arc::new(
+        visible
+            .iter()
+            .map(|e| (*e).to_owned())
+            .collect::<std::collections::HashSet<String>>(),
+    );
+
+    let app = Router::new().route(
+        "/v1/visible-persons",
+        axum::routing::post(move |axum::Json(req): axum::Json<Value>| {
+            let visible = Arc::clone(&visible);
+            async move {
+                let granted = req["emails"]
+                    .as_array()
+                    .map(|ids| {
+                        ids.iter()
+                            .filter_map(|v| v.as_str())
+                            .filter(|email| visible.contains(*email))
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                axum::Json(json!({"visible": granted}))
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    Ok(IdentityClient::new(&format!("http://{addr}"))?)
+}
+
+fn metric_results_body(entity_ids: &[&str]) -> Value {
+    json!({
+        "entity": {"type": "person", "ids": entity_ids},
+        "period": {"from": "2026-01-01", "to": "2026-01-31"},
+        "metrics": [{"metric_key": "ai.accepted_lines", "views": [{"view": "period"}]}],
+    })
 }
 
 /// Seed a `SecurityContext` (subject + tenant) the way `authverify` would.
@@ -148,6 +202,9 @@ fn json_req(method: &str, uri: &str, body: &Value) -> Result<Request<Body>, axum
         .method(method)
         .uri(uri)
         .header("content-type", "application/json")
+        // The gateway always forwards a bearer on authenticated routes; handlers
+        // that fan out to identity read it off the request.
+        .header("authorization", "Bearer test-gateway-jwt")
         .body(Body::from(
             serde_json::to_vec(body).unwrap_or_else(|e| panic!("serialize body: {e}")),
         ))
@@ -187,6 +244,58 @@ async fn list_metrics_returns_200_items() -> TestResult {
     assert!(
         body.get("items").is_some(),
         "list payload has items: {body}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn metric_results_forbids_a_person_outside_the_callers_visible_set() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let identity = spawn_identity(&["report@example.com"]).await?;
+    let app = app_with_identity(db, Uuid::now_v7(), identity);
+
+    let req = json_req(
+        "POST",
+        "/v1/metric-results",
+        &metric_results_body(&["ceo@example.com"]),
+    )?;
+    let resp = app.oneshot(req).await?;
+
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "a person the caller cannot see must not resolve to data"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn metric_results_does_not_deny_a_person_inside_the_callers_visible_set() -> TestResult {
+    // ClickHouse is unreachable here, so an admitted request cannot reach a 200;
+    // what this pins is that the gate did not reject it. The status alone is not
+    // evidence of anything further — a gate failure and a ClickHouse failure are
+    // both 500.
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let identity = spawn_identity(&["report@example.com"]).await?;
+    let app = app_with_identity(db, Uuid::now_v7(), identity);
+
+    let req = json_req(
+        "POST",
+        "/v1/metric-results",
+        &metric_results_body(&["report@example.com"]),
+    )?;
+    let resp = app.oneshot(req).await?;
+
+    assert_ne!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "a person identity reports as visible must pass the gate"
     );
     Ok(())
 }

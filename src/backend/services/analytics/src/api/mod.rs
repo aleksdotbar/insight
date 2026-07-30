@@ -67,6 +67,12 @@ pub struct AppState {
     pub admin_threshold: AdminThresholdService,
 }
 
+pub(crate) fn forwarded_authorization(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+}
+
 /// Register all analytics routes onto the host's stateless router.
 ///
 /// Builds the analytics endpoints on a fresh sub-router (via
