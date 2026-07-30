@@ -31,6 +31,7 @@ tenant_id String,
 source_key String,
 entity_type String,
 entity_id String,
+person_id Nullable(UUID),
 metric_date Date,
 observed_at Nullable(DateTime64(3)),
 measure_key String,
@@ -45,6 +46,14 @@ Rules:
 - `source_key` identifies the logical source.
 - `measure_key` identifies the source measure.
 - `entity_type` and `entity_id` identify the measured entity.
+- `person_id` is the canonical person resolved from the identity log at
+  build time (`resolve_person_id` dbt macro; NULL = identity does not know
+  the email). ADDITIVE, not yet consumed: the runtime still keys on
+  `entity_id`, and the schema validator's `OBSERVATION_COLUMNS` /
+  `COHORT_COLUMNS` deliberately exclude it until the person_id API cutover
+  — probing for a column nothing reads would gate metric availability on
+  the next dbt rebuild after a deploy, for no reader's benefit. The cohort
+  view carries the same column under the same rule.
 - `observed_at` is reserved for future point-in-time semantics.
 - `subject_key` carries the counted subject for distinct-count measures (a
   date, a tool) and is NULL on every other measure's rows.
