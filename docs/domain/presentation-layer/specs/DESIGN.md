@@ -86,12 +86,15 @@ Requirements that significantly influence architecture decisions.
 ├──────────────────────────────────── │ ──────────────────────────┤
 │                CONTRACT (read-only)  ▼      presentation (write)  │
 │  ┌───────────────────────────┐   ┌───────────────────────────┐  │
-│  │ silver class_*/fct_*/mtr_*│   │ presentation.queries      │  │
-│  │ identity person.*/identity│   │ new gold, results, scratch│  │
+│  │ silver class_*/fct_*/mtr_*│   │ new gold / query results  │  │
+│  │ identity person.*/identity│   │ scratch (presentation DB) │  │
 │  │ legacy gold in `insight`  │   └───────────────────────────┘  │
 │  └───────────────────────────┘                                  │
 └─────────────────────────────────────────────────────────────────┘
    ▲ produced by Engineering / ingestion layer (additive, versioned)
+   Saved-query metadata (`presentation.queries`) lives in the analytics
+   service DB (MariaDB), not the ClickHouse `presentation` namespace; only
+   `/run` reaches ClickHouse.
 ```
 
 | Layer | Responsibility | Technology |
