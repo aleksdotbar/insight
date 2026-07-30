@@ -23,6 +23,7 @@ pub mod bootstrap;
 pub mod entities;
 pub mod ops_repo;
 pub mod person_roles_repo;
+pub mod persons_log_repo;
 pub mod persons_repo;
 pub mod roles_repo;
 pub mod seed_repo;
@@ -139,6 +140,63 @@ impl SeedLockGuard {
                 DbBackend::MySql,
                 "SELECT RELEASE_LOCK(?)",
                 [format!("{SEED_LOCK_PREFIX}{}", self.tenant_id).into()],
+            ))
+            .await;
+    }
+}
+
+/// Name of the GLOBAL advisory lock serializing persons-sync runs (the sync
+/// copies the whole log regardless of tenant, so unlike the seed there is no
+/// per-tenant suffix). Same cross-process/cross-instance properties as the
+/// seed lock; distinct from it so a sync never contends with a seed.
+const SYNC_LOCK: &str = "persons-sync";
+
+/// RAII holder of the persons-sync advisory lock — the global sibling of
+/// [`SeedLockGuard`], with identical lifetime semantics (owns its dedicated
+/// single-connection session; every exit path up to and including process
+/// death releases the lock server-side).
+pub struct SyncLockGuard {
+    conn: DatabaseConnection,
+}
+
+impl SyncLockGuard {
+    /// Try to take the global sync lock without waiting (`GET_LOCK` timeout 0
+    /// — a concurrent run fails fast instead of publishing a stale snapshot
+    /// after the active one). Returns `None` when another run holds it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection or the query fails.
+    pub async fn try_acquire(database_url: &str) -> anyhow::Result<Option<Self>> {
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+        let conn = connect_single(database_url).await?;
+        let acquired: Option<i8> = conn
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::MySql,
+                "SELECT GET_LOCK(?, 0)",
+                [SYNC_LOCK.into()],
+            ))
+            .await?
+            .map(|r| r.try_get_by_index::<Option<i8>>(0))
+            .transpose()?
+            .flatten();
+        if acquired == Some(1) {
+            Ok(Some(Self { conn }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Explicit best-effort release (the happy path); dropping the session
+    /// releases the lock anyway.
+    pub async fn release(self) {
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+        let _ = self
+            .conn
+            .execute(Statement::from_sql_and_values(
+                DbBackend::MySql,
+                "SELECT RELEASE_LOCK(?)",
+                [SYNC_LOCK.into()],
             ))
             .await;
     }

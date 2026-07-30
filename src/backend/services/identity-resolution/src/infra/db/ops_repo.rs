@@ -18,6 +18,8 @@ use uuid::Uuid;
 /// `operation_type` value of persons-seed runs — shared by the CLI runner
 /// (writes) and the `GET /v1/persons-seed*` journal endpoints (filter).
 pub const PERSONS_SEED_OP: &str = "persons-seed";
+/// Operation type of the persons→ClickHouse sync (`sync` subcommand).
+pub const PERSONS_SYNC_OP: &str = "persons-sync";
 
 /// Lifecycle phase of an operation. DB column is a `VARCHAR(16)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
