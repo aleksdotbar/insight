@@ -125,7 +125,7 @@ pub struct IdentityClient {
 
 impl IdentityClient {
     /// Create a new client. `base_url` is the identity service root,
-    /// e.g. `http://insight-identity:8082`.
+    /// e.g. `http://insight-identity-resolution:8082`.
     #[must_use]
     pub fn new(base_url: &str) -> Self {
         Self {

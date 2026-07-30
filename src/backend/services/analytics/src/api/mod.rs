@@ -7,6 +7,7 @@ pub(crate) mod error;
 mod handlers;
 mod metric_definitions;
 mod metric_results;
+mod saved_queries;
 
 #[cfg(test)]
 mod http_live_tests;
@@ -29,6 +30,7 @@ use crate::domain::catalog::response as catalog_response;
 use crate::domain::metric;
 use crate::domain::metric_definitions::listing as metric_definitions_listing;
 use crate::domain::query;
+use crate::domain::saved_query;
 use crate::domain::schema_validator::SchemaValidator;
 use crate::domain::threshold;
 use crate::infra::identity::{IdentityClient, Person};
@@ -228,6 +230,93 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         )
         .standard_errors(openapi)
         .handler(metric_results::query_metric_results)
+        .register(router, openapi);
+
+    // Saved-query CRUD + run (#1965) — the presentation-layer "Data Analytics"
+    // surface. CRUD is service-DB metadata; only `/run` reaches ClickHouse.
+    router = OperationBuilder::get("/v1/queries")
+        .operation_id("analytics_api.queries.list")
+        .summary("List saved queries")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<saved_query::SavedQueryListResponse>(
+            openapi,
+            StatusCode::OK,
+            "List of saved queries",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::list_saved_queries)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/queries")
+        .operation_id("analytics_api.queries.create")
+        .summary("Create a saved query")
+        .authenticated()
+        .no_license_required()
+        .json_request::<saved_query::CreateSavedQueryRequest>(openapi, "Saved query to create")
+        .json_response_with_schema::<saved_query::SavedQuery>(
+            openapi,
+            StatusCode::CREATED,
+            "Created saved query",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::create_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::get("/v1/queries/{id}")
+        .operation_id("analytics_api.queries.get")
+        .summary("Get a saved query by id")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<saved_query::SavedQuery>(
+            openapi,
+            StatusCode::OK,
+            "Saved query",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::get_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::put("/v1/queries/{id}")
+        .operation_id("analytics_api.queries.update")
+        .summary("Update a saved query")
+        .authenticated()
+        .no_license_required()
+        .json_request::<saved_query::UpdateSavedQueryRequest>(
+            openapi,
+            "Saved query fields to update",
+        )
+        .json_response_with_schema::<saved_query::SavedQuery>(
+            openapi,
+            StatusCode::OK,
+            "Updated saved query",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::update_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::delete("/v1/queries/{id}")
+        .operation_id("analytics_api.queries.delete")
+        .summary("Delete a saved query")
+        .authenticated()
+        .no_license_required()
+        .no_content_response(StatusCode::NO_CONTENT, "Saved query deleted")
+        .standard_errors(openapi)
+        .handler(saved_queries::delete_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/queries/{id}/run")
+        .operation_id("analytics_api.queries.run")
+        .summary("Run a saved query")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<saved_query::RunResponse>(
+            openapi,
+            StatusCode::OK,
+            "Query result rows",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::run_saved_query)
         .register(router, openapi);
 
     // Thresholds (legacy)

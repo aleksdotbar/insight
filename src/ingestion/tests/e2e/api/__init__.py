@@ -8,6 +8,8 @@ one test per (path, method, status-code) case:
   test_catalog.py            POST /v1/catalog/get_metrics
   test_metrics.py            GET+POST /v1/metrics · GET+PUT+DELETE /v1/metrics/{id}
                              POST /v1/metrics/{id}/query · POST /v1/metrics/queries
+  test_queries.py            GET+POST /v1/queries · GET+PUT+DELETE /v1/queries/{id}
+                             POST /v1/queries/{id}/run
   test_metric_thresholds.py  GET+POST /v1/metrics/{id}/thresholds
                              PUT+DELETE /v1/metrics/{id}/thresholds/{tid}
   test_admin_thresholds.py   GET+POST /v1/admin/metric-thresholds

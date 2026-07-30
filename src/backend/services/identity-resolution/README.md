@@ -1,6 +1,6 @@
 # identity-resolution
 
-Rust port of the .NET `identity` service (epic #1602).
+The Insight identity service (Rust; epic #1602 — port of the retired .NET `identity` service).
 Built on the gears-rust framework — same host pattern as `services/analytics`
 (the `api-gateway` system gear is the REST host; auth ENABLED — the
 `oidc-authn-plugin` verifies the gateway JWT and maps its claims into the
@@ -10,7 +10,7 @@ Current state: boots as a gears host, connects to MariaDB on startup, and
 implements the full ported surface — `POST /v1/profiles` (attributes, `ids[]`,
 org tree), persons-seed, roles / person-roles / visibility, org subchart, and
 the internal service-only `GET /internal/persons/by-email/{email}`. (The
-deprecated .NET `GET /v1/persons/{email}` is intentionally not carried.)
+deprecated legacy `GET /v1/persons/{email}` is intentionally not carried.)
 
 ## Run locally against the dev cluster DB
 
@@ -27,8 +27,8 @@ kubectl -n insight-infra port-forward svc/mariadb 3306:3306
 Reuse the exact connection string the deployed identity service uses, rewriting
 the host to localhost:
 ```bash
-URL=$(kubectl -n insight get secret insight-identity-config \
-  -o jsonpath='{.data.IDENTITY__mariadb__url}' | base64 -d \
+URL=$(kubectl -n insight get secret insight-identity-resolution-config \
+  -o jsonpath='{.data.APP__gears__identity-resolution__config__database_url}' | base64 -d \
   | sed 's#@[^/]*/#@127.0.0.1:3306/#')
 # → mysql://insight:<password>@127.0.0.1:3306/identity
 ```
@@ -53,7 +53,7 @@ open http://localhost:8082/docs   # OpenAPI docs page
 
 ## Notes
 - HTTP port **8082** (owned by the `api-gateway` host gear) — same port as the
-  .NET identity service it replaces, so the cutover flips only the hostname.
+  retired .NET identity service it replaced, so the cutover flipped only the hostname.
 - `database_url` is left **empty** in `config/insight.yaml` — no credentials are
   committed. It is injected via the env override above (or, in a real deploy,
   from the umbrella Secret).

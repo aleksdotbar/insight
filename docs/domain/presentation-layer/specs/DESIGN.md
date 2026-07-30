@@ -50,7 +50,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-single-select-gate` | `validate_single_select` in `query_gate.rs`, wired through `parse_query_ref` — the one chokepoint metric SQL crosses on write and run |
 | `cpt-presentation-fr-read-only-role` | Dedicated `presentation_ro` ClickHouse role: `SELECT` on the contract, `CREATE`/`INSERT` only in `presentation`, no `DROP`/`ALTER`/`TRUNCATE` |
 | `cpt-presentation-fr-namespace` | New empty `presentation` database for new gold, saved-query results, and scratch; legacy gold left read-only in `insight` |
-| `cpt-presentation-fr-saved-query-crud` | `presentation.queries` is a SeaORM entity in the service database (like metric definitions); CRUD mutates that metadata, not ClickHouse. Only `/run` reaches ClickHouse — it reuses the existing read path and executes the stored SQL as `presentation_ro`, so no write grant on the contract is ever needed |
+| `cpt-presentation-fr-saved-query-crud` | The saved query (`presentation.queries` logically; the `saved_queries` table physically) is a SeaORM entity in the analytics **service database (MariaDB)**, like metric definitions; CRUD mutates that metadata, not ClickHouse. Only `/run` reaches ClickHouse — it reuses the existing read path and executes the stored SQL as `presentation_ro`, so no write grant on the contract is ever needed. Shipped (#1965) |
 | `cpt-presentation-fr-query-params` | Named parameters, `tenant` always injected from context (not client SQL), `period` supported |
 | `cpt-presentation-fr-tenant-filter` | Literal `insight_tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` — replacing the no-op |
 | `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary (silver and identity objects) |
@@ -86,12 +86,15 @@ Requirements that significantly influence architecture decisions.
 ├──────────────────────────────────── │ ──────────────────────────┤
 │                CONTRACT (read-only)  ▼      presentation (write)  │
 │  ┌───────────────────────────┐   ┌───────────────────────────┐  │
-│  │ silver class_*/fct_*/mtr_*│   │ presentation.queries      │  │
-│  │ identity person.*/identity│   │ new gold, results, scratch│  │
+│  │ silver class_*/fct_*/mtr_*│   │ new gold / query results  │  │
+│  │ identity person.*/identity│   │ scratch (presentation DB) │  │
 │  │ legacy gold in `insight`  │   └───────────────────────────┘  │
 │  └───────────────────────────┘                                  │
 └─────────────────────────────────────────────────────────────────┘
    ▲ produced by Engineering / ingestion layer (additive, versioned)
+   Saved-query metadata (`presentation.queries`) lives in the analytics
+   service DB (MariaDB), not the ClickHouse `presentation` namespace; only
+   `/run` reaches ClickHouse.
 ```
 
 | Layer | Responsibility | Technology |
@@ -173,13 +176,13 @@ New gold does not add `insight_tenant_id` outside the coordinated engineering re
 
 | Entity | Description | Location |
 |--------|-------------|--------|
-| `presentation.queries` | Saved query: a single `SELECT`/`WITH` over the contract, tenant-scoped | ClickHouse `presentation` DB |
+| `presentation.queries` (`saved_queries` table) | Saved query: a single `SELECT`/`WITH` over the contract, tenant-scoped | Analytics service DB (MariaDB), like the metric CRUD entities |
 | Query gate | `validate_single_select` — the syntactic read-only barrier | [query_gate.rs](../../../../src/backend/services/analytics/src/domain/query_gate.rs) |
 | Metric compiler | Builds contract SQL; owns the shared `WHERE` where the tenant filter is injected | [metric_results/](../../../../src/backend/services/analytics/src/domain/metric_results/) |
 
 **Relationships**:
 - `presentation.queries.sql` → contract objects (silver, identity, legacy gold in `insight`): read-only `SELECT` validated by the gate.
-- `presentation.queries.insight_tenant_id` → the tenant predicate injected on run.
+- `presentation.queries.insight_tenant_id` → the tenant that owns the row; scopes all CRUD. It is also the source for the tenant predicate the run path will inject once #1967 replaces the compiler no-op.
 
 ### 3.2 Component Model
 
@@ -231,21 +234,22 @@ Makes the public query path incapable of anything but a single read, so a broken
 
 #### Read-Only Role
 
-- [ ] `p2` - **ID**: `cpt-presentation-component-read-only-role`
+- [x] `p2` - **ID**: `cpt-presentation-component-read-only-role`
 
 ##### Why this component exists
 
-The second, independent barrier behind the query gate: once analytics connects as the role, even a read that slips past the gate executes under grants that make writing, altering, or dropping the source impossible. Read-only enforced by construction, not convention. The role is **provisioned** by #1963; it is **not yet the active query-path identity** — analytics still connects as the admin until that wiring lands, so this barrier is dormant until then.
+The second, independent barrier behind the query gate: once analytics connects as the role, even a read that slips past the gate executes under grants that make writing, altering, or dropping the source impossible. Read-only enforced by construction, not convention. The role is **provisioned** by #1963; #1964 adds the grant-less `presentation` user that carries it and points analytics at that user, so the barrier is now active.
 
 ##### Responsibility scope
 
 - `presentation_ro` ClickHouse role: `SELECT` on the contract (silver, identity/person, legacy gold in `insight`); `SELECT`/`INSERT`/`CREATE` only in `presentation`; no `DROP`/`ALTER`/`TRUNCATE` anywhere.
-- Defined as idempotent DDL in [presentation-role.sql](../../../../src/ingestion/scripts/bootstrap-db/presentation-role.sql); provisioned by [apply-ch-migrations.sh](../../../../src/ingestion/scripts/apply-ch-migrations.sh) (the clickhouse-migrate hook, which bootstrap also runs), guarded so a ClickHouse admin without access-management is skipped with a warning rather than aborting.
+- Grant-less `presentation` user (#1964): every privilege comes from `presentation_ro` (a role only *adds* privileges, so activating it on a user with direct grants would not restrict anything). This is the user analytics connects as.
+- Defined as idempotent DDL in [presentation-role.sql](../../../../src/ingestion/scripts/bootstrap-db/presentation-role.sql) (role) plus [provision-presentation-access.sh](../../../../src/ingestion/scripts/bootstrap-db/provision-presentation-access.sh) (the user, which needs a password); provisioned by [apply-ch-migrations.sh](../../../../src/ingestion/scripts/apply-ch-migrations.sh) (the clickhouse-migrate hook, which bootstrap also runs), guarded so a ClickHouse admin without access-management — or a run without the user password — is skipped with a warning rather than aborting.
 
 ##### Responsibility boundaries
 
 - Does NOT parse SQL — that is the query gate.
-- Does NOT create the `presentation` database or wire the analytics connection to the role — those follow in #1964 and the connection wiring; until the connection wiring lands the role is provisioned but inactive.
+- Does NOT gate the switch behind a flag: analytics always connects as the `presentation` user, whose password is a required credential (like the admin one). The user is provisioned before analytics needs it — by the clickhouse-migrate Hook (gitops/chart) or the ClickHouse init scripts (compose) — so the deploy-side switch must land together with a release that carries that provisioning.
 
 ##### Related components (by ID)
 
@@ -256,23 +260,23 @@ The second, independent barrier behind the query gate: once analytics connects a
 
 #### Saved-Query API
 
-- [ ] `p2` - **ID**: `cpt-presentation-component-saved-query-api`
+- [x] `p2` - **ID**: `cpt-presentation-component-saved-query-api`
 
 ##### Why this component exists
 
-Plain CRUD over stored queries so a new analytics slice needs no engineering change and no re-ingest. The one new surface Phase A adds ("Data Analytics").
+Plain CRUD over stored queries so a new analytics slice needs no engineering change and no re-ingest. The one new surface Phase A adds ("Data Analytics"). CRUD + run shipped (#1965); named parameters follow in #1966.
 
 ##### Responsibility scope
 
-- CRUD over `presentation.queries`, tenant-scoped.
-- Validate SQL via the query gate on create and update.
-- Run: inject the tenant filter, execute read-only as `presentation_ro`, return untyped JSON rows (same shape as the existing metric query path).
-- Named parameters: `tenant` always injected from context, `period` supported.
+- CRUD over `presentation.queries` (the `saved_queries` service-DB table), tenant-scoped from the session `SecurityContext`. Handlers mirror the metric CRUD in `api::handlers`; delete is a hard delete.
+- Validate SQL via the query gate (`validate_single_select`) on create, update, **and** run — the run-side re-validation keeps a stored SQL from reaching ClickHouse as anything but a single read.
+- Run: execute the stored single-SELECT read-only as `presentation_ro` and return untyped JSON rows (`JSONEachRow`, same shape as the existing metric query path).
 
 ##### Responsibility boundaries
 
 - Does NOT carry metric metadata, thresholds, or passports — those are Phase B.
-- Does NOT bypass the gate or the tenant filter.
+- Does NOT bypass the gate.
+- Does NOT yet inject named parameters (`tenant`/`period`, #1966) or the tenant-row filter (#1967) — #1965 executes the stored SQL as authored; those cross-cutting concerns extend the run path in their own sub-issues.
 
 ##### Related components (by ID)
 
@@ -334,8 +338,9 @@ Serves many experimental FE builds under one host against one shared read-only s
 
 ### 3.3 API Contracts
 
-- [ ] `p2` - **ID**: `cpt-presentation-interface-saved-query-endpoints`
+- [x] `p2` - **ID**: `cpt-presentation-interface-saved-query-endpoints`
 
+- **Implements**: `cpt-presentation-interface-saved-query-api` (PRD §7.1 Public API Surface)
 - **Contracts**: `cpt-presentation-contract-read-only-consumption`
 - **Technology**: REST / HTTP JSON
 - **Base path**: `/v1/queries`
@@ -351,7 +356,7 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 | `GET` | `/v1/queries/{id}` | Fetch one | unstable |
 | `PUT` | `/v1/queries/{id}` | Update (re-validates SQL) | unstable |
 | `DELETE` | `/v1/queries/{id}` | Delete | unstable |
-| `POST` | `/v1/queries/{id}/run` | Execute read-only, inject tenant filter, return rows | unstable |
+| `POST` | `/v1/queries/{id}/run` | Execute read-only as `presentation_ro`, return rows (tenant filter injected in #1967) | unstable |
 
 `run` executes as `presentation_ro` and returns untyped JSON rows, the same shape as the existing metric query path. No metric metadata, thresholds, or passports in Phase A.
 
@@ -374,9 +379,9 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 |--------|-------|
 | Contract | Read-only: silver (`class_*`, `fct_*`, `mtr_*`), identity (`person.*`, `identity.*`), legacy gold in `insight` |
 | Presentation namespace | New `presentation` DB: `SELECT` + `CREATE`/`INSERT` for new gold, results, scratch |
-| Access | Executed as the `presentation_ro` role (SELECT on contract; CREATE/INSERT only in `presentation`) |
+| Access | Executed as the grant-less `presentation` user, whose only privileges come via the `presentation_ro` role (SELECT on contract; CREATE/INSERT only in `presentation`) |
 | Read semantics | `FINAL` on silver `ReplacingMergeTree` reads |
-| Bootstrap | Role defined in `src/ingestion/scripts/bootstrap-db/presentation-role.sql`, provisioned (guarded) by `apply-ch-migrations.sh`; the empty `presentation` DB follows in #1964 |
+| Bootstrap | `presentation` DB always created (`clickhouse.initDatabases` + the core-DB block of `apply-ch-migrations.sh`); role + grant-less user via `provision-presentation-access.sh` — the user only when its password is supplied (guarded). Role DDL in `presentation-role.sql` |
 
 #### Redis
 
@@ -454,15 +459,15 @@ sequenceDiagram
 
 ### 3.7 Database Schemas & Tables
 
-- [ ] `p3` - **ID**: `cpt-presentation-db-schemas`
+- [x] `p3` - **ID**: `cpt-presentation-db-schemas`
 
-Only one new entity is added in Phase A. It lives in the `presentation` namespace; contract objects are unchanged (read-only).
+Only one new entity is added in Phase A. It lives in the analytics **service database (MariaDB)** alongside the metric CRUD entities — not in the ClickHouse `presentation` namespace — because CRUD is metadata management, not a contract read. Contract objects and the `presentation` ClickHouse namespace are unchanged by CRUD; only `/run` reaches ClickHouse.
 
-#### Table: `presentation.queries`
+#### Table: `saved_queries` (`presentation.queries`)
 
 **ID**: `cpt-presentation-dbtable-queries`
 
-Saved query authored by an analyst: a single `SELECT`/`WITH` over the contract, tenant-scoped.
+Saved query authored by an analyst: a single `SELECT`/`WITH` over the contract, tenant-scoped. Created by migration `m20260730_000001_saved_queries` (#1965).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -476,7 +481,7 @@ Saved query authored by an analyst: a single `SELECT`/`WITH` over the contract, 
 
 **PK**: `id`
 
-**Additional info**: Lives in the `presentation` namespace; written via the `presentation_ro` role's `CREATE`/`INSERT` grant. Reads and runs are tenant-scoped by `insight_tenant_id`.
+**Additional info**: Lives in the analytics service DB (MariaDB), written by the service's own SeaORM connection — not the `presentation_ro` ClickHouse role, which is only the identity for `/run` reads. All CRUD reads/writes are tenant-scoped by `insight_tenant_id`.
 
 ## 4. Additional context
 
@@ -485,8 +490,8 @@ Saved query authored by an analyst: a single `SELECT`/`WITH` over the contract, 
 Ordered by quick win; each step ships value or safety on its own, and no step depends on physically moving gold.
 
 1. **Single-SELECT gate** (safety, done, #1962) — `validate_single_select`, applied on write and run via `parse_query_ref`. Shipped with no DB or infra change.
-2. **`presentation_ro` role + empty `presentation` DB** (safety, #1963/#1964) — add to CH bootstrap (`src/ingestion/scripts/bootstrap-db/`); point analytics at the role (`config.rs`, `gear.rs` `with_auth`).
-3. **Saved-query CRUD** (value, #1965/#1966) — new entity plus migration for `presentation.queries`; handlers and routes per section 3.3; reuse the existing run path for `/run`.
+2. **`presentation_ro` role + empty `presentation` DB** (safety, done, #1963/#1964) — role + grant-less `presentation` user in CH bootstrap (`bootstrap-db/provision-presentation-access.sh`); empty DB via `clickhouse.initDatabases` + `apply-ch-migrations.sh`; analytics connects as the `presentation` user (existing `clickhouse_user`/`clickhouse_password` config → `gear.rs` `with_auth`), its password a required credential provisioned before analytics needs it.
+3. **Saved-query CRUD** (value) — CRUD + run shipped (#1965): the `saved_queries` service-DB entity plus migration, handlers and routes per section 3.3, reusing the existing `JSONEachRow` read path for `/run`. Named parameters (#1966) extend the run path next.
 4. **Tenant filter** (correctness, #1967) — replace the no-op with the injected predicate in the compiler's shared `WHERE`; `insight_tenant_id` first in `ORDER BY` for new gold; cover with an e2e metric test (`src/ingestion/tests/e2e`). Coordinated with engineering #1829.
 5. **Query console** (value, FE, #1970) — thin stable app on the saved-query API: auth shell, author, list, run, render table / auto-chart. Tier-2 "promote to card" can follow.
 6. **Preview environments** (infra, FE, #1971-#1973) — path-based `/exp/<name>` on a shared read-only synthetic backend; Redis-`state` return path; one route object per experiment; manual `kubectl`/`helm`.

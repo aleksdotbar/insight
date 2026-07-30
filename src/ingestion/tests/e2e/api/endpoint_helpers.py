@@ -57,3 +57,24 @@ def create_scratch_metric(client, name_prefix: str) -> dict:
     assert body["is_enabled"] is True
     assert body["query_ref"] == SCRATCH_QUERY_REF
     return body
+
+
+def create_scratch_saved_query(client, name_prefix: str) -> dict:
+    """POST a scratch saved query and return the created body (201 asserted).
+
+    Reuses `SCRATCH_QUERY_REF` so `/run` executes deterministically on any
+    ClickHouse. Callers own cleanup: `DELETE /v1/queries/{id}` (a hard delete)
+    before the test ends so the row never leaks into `GET /v1/queries`.
+    """
+    r = client.post(
+        "/v1/queries",
+        json={
+            "name": f"{name_prefix}-{uuid.uuid4().hex[:8]}",
+            "description": "e2e endpoint-contract scratch saved query",
+            "sql": SCRATCH_QUERY_REF,
+        },
+    )
+    assert r.status_code == 201, f"create saved query: status={r.status_code} body={r.text}"
+    body = r.json()
+    assert body["sql"] == SCRATCH_QUERY_REF
+    return body
