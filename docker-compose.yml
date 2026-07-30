@@ -644,8 +644,8 @@ services:
         mkdir -p /out/analytics /out/authenticator
         [ ! -d /out/analytics/analytics ] || rm -rf /out/analytics/analytics
         [ ! -d /out/authenticator/authenticator ] || rm -rf /out/authenticator/authenticator
-        install -m 0755 /target/release/analytics /out/analytics/analytics
-        install -m 0755 /target/release/authenticator /out/authenticator/authenticator
+        cp /target/release/analytics /out/analytics/analytics && chmod 0755 /out/analytics/analytics
+        cp /target/release/authenticator /out/authenticator/authenticator && chmod 0755 /out/authenticator/authenticator
 
   build-frontend:
     profiles: ["build"]

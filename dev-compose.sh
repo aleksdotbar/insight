@@ -634,15 +634,15 @@ YML
           mkdir -p /out/analytics /out/authenticator /out/identity-resolution
           if [ -f /target/release/analytics ]; then
             [ ! -d /out/analytics/analytics ] || rm -rf /out/analytics/analytics
-            install -m 0755 /target/release/analytics /out/analytics/analytics
+            cp /target/release/analytics /out/analytics/analytics && chmod 0755 /out/analytics/analytics
           fi
           if [ -f /target/release/authenticator ]; then
             [ ! -d /out/authenticator/authenticator ] || rm -rf /out/authenticator/authenticator
-            install -m 0755 /target/release/authenticator /out/authenticator/authenticator
+            cp /target/release/authenticator /out/authenticator/authenticator && chmod 0755 /out/authenticator/authenticator
           fi
           if [ -f /target/release/identity-resolution ]; then
             [ ! -d /out/identity-resolution/identity-resolution ] || rm -rf /out/identity-resolution/identity-resolution
-            install -m 0755 /target/release/identity-resolution /out/identity-resolution/identity-resolution
+            cp /target/release/identity-resolution /out/identity-resolution/identity-resolution && chmod 0755 /out/identity-resolution/identity-resolution
           fi
         "
     fi
@@ -930,15 +930,15 @@ cmd_build() {
       mkdir -p /out/analytics /out/authenticator /out/identity-resolution
       if [ -f /target/release/analytics ]; then
         [ ! -d /out/analytics/analytics ] || rm -rf /out/analytics/analytics
-        install -m 0755 /target/release/analytics /out/analytics/analytics
+        cp /target/release/analytics /out/analytics/analytics && chmod 0755 /out/analytics/analytics
       fi
       if [ -f /target/release/authenticator ]; then
         [ ! -d /out/authenticator/authenticator ] || rm -rf /out/authenticator/authenticator
-        install -m 0755 /target/release/authenticator /out/authenticator/authenticator
+        cp /target/release/authenticator /out/authenticator/authenticator && chmod 0755 /out/authenticator/authenticator
       fi
       if [ -f /target/release/identity-resolution ]; then
         [ ! -d /out/identity-resolution/identity-resolution ] || rm -rf /out/identity-resolution/identity-resolution
-        install -m 0755 /target/release/identity-resolution /out/identity-resolution/identity-resolution
+        cp /target/release/identity-resolution /out/identity-resolution/identity-resolution && chmod 0755 /out/identity-resolution/identity-resolution
       fi
     "
   }
@@ -1277,17 +1277,29 @@ test_stand_pick_canary() {
 # un-torn-down run from satisfying the gate instantly.
 test_stand_wait_ready() {
   local table="$1" measure_key="$2" run_started_at="$3"
-  local elapsed=0 val="" ch_port="${CLICKHOUSE_HTTP_PORT:-8123}"
+  local elapsed=0 val="" rebuilt="" ch_port="${CLICKHOUSE_HTTP_PORT:-8123}"
   local ch_user="${CLICKHOUSE_USER:-insight}" ch_pass="${CLICKHOUSE_PASSWORD:-insight-local}"
-  local query="SELECT sum(value) FROM insight.${table} WHERE measure_key = '${measure_key}' AND observed_at >= '${run_started_at}'"
+  # Run scoping. The obvious filter — `observed_at >= run_started_at` — cannot
+  # work: the gold model projects observed_at as a literal
+  # CAST(NULL AS Nullable(DateTime64(3))), so it is NULL on every row and the
+  # predicate never matches. Instead ask ClickHouse when the table was last
+  # written: max(modification_time) over its active parts is real ingestion
+  # metadata, and it answers exactly the question the gate cares about —
+  # "did dbt rebuild this during THIS run, or am I looking at a previous
+  # run's rows?"
+  local rebuilt_query="SELECT max(modification_time) >= toDateTime('${run_started_at}') FROM system.parts WHERE database = 'insight' AND table = '${table}' AND active"
+  local query="SELECT sum(value) FROM insight.${table} WHERE measure_key = '${measure_key}'"
 
   echo "=== Readiness gate: waiting for ${measure_key} in insight.${table} (since ${run_started_at}) ==="
   while [[ "$elapsed" -lt "$TEST_STAND_READY_TIMEOUT" ]]; do
+    rebuilt="$(curl -sf -u "${ch_user}:${ch_pass}" --data-binary "$rebuilt_query" \
+             "http://localhost:${ch_port}/" 2>/dev/null || true)"
     val="$(curl -sf -u "${ch_user}:${ch_pass}" --data-binary "$query" \
              "http://localhost:${ch_port}/" 2>/dev/null || true)"
     val="$(trim "${val:-}")"
-    if [[ -n "$val" ]] && awk -v v="$val" 'BEGIN{exit !(v+0>0)}' 2>/dev/null; then
-      echo "Readiness gate: ${measure_key}=${val} after ${elapsed}s — dbt has refreshed."
+    if [[ "$(trim "${rebuilt:-}")" == "1" ]] \
+       && [[ -n "$val" ]] && awk -v v="$val" 'BEGIN{exit !(v+0>0)}' 2>/dev/null; then
+      echo "Readiness gate: ${measure_key}=${val} after ${elapsed}s — dbt rebuilt insight.${table} for this run."
       return 0
     fi
     sleep "$TEST_STAND_READY_INTERVAL"
@@ -1295,7 +1307,8 @@ test_stand_wait_ready() {
   done
 
   echo "ERROR: readiness gate timed out after ${TEST_STAND_READY_TIMEOUT}s." >&2
-  echo "       ${measure_key} in insight.${table} was: '${val:-<no response>}' (want > 0)." >&2
+  echo "       ${measure_key} in insight.${table} was: '${val:-<no response>}' (want > 0)," >&2
+  echo "       table-rebuilt-since-run-start was: '${rebuilt:-<no response>}' (want 1)." >&2
   echo "       The stack is still up. Re-run the seed with:" >&2
   echo "         ./dev-compose.sh test-stand seed" >&2
   return 1
