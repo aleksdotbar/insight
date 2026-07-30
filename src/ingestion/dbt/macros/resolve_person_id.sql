@@ -20,10 +20,13 @@
   every consuming model picks it up on the next build. Consumers must not
   re-derive person_id any other way.
 
-  NORMALIZATION CONTRACT: `lower(trimBoth(...))` — must stay identical to
-  the entity_id normalization in the observation models (e.g.
-  git_metric_observations: "Match the API's entity-id normalization exactly")
-  or the join silently misses.
+  NORMALIZATION CONTRACT: `lower(trimBoth(...))` on BOTH sides, enforced in
+  the join itself — resolved_person_id_join() applies the same expression to
+  the model's entity_id rather than trusting each model to have normalized
+  identically (they don't: git trims, ai/wiki/task only lowercase, collab
+  inherits person_key from the class contract). Idempotent for
+  already-normalized keys; for the rest it is the difference between
+  resolving and silently missing.
 
   Dedup note (check-dbt-conventions): identity_persons is a plain MergeTree
   replaced wholesale by an atomic snapshot swap — no ReplacingMergeTree, no
@@ -65,7 +68,7 @@
 
 {% macro resolved_person_id_join(rel) %}
     LEFT JOIN ({{ resolve_person_id() }}) AS identity_map
-        ON identity_map.email = {{ rel }}.entity_id
+        ON identity_map.email = lower(trimBoth({{ rel }}.entity_id))
 {% endmacro %}
 
 {% macro resolved_person_id_column() %}
