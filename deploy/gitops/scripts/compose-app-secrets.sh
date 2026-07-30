@@ -165,12 +165,24 @@ CH_PW=$( kubectl -n "$NS_APP" get secret insight-db-creds \
   -o jsonpath='{.data.clickhouse-password}'| base64 -d)
 RD_PW=$( kubectl -n "$NS_APP" get secret insight-db-creds \
   -o jsonpath='{.data.redis-password}'     | base64 -d)
-# Analytics connects as the grant-less read-only `presentation` user (#1964);
-# its password is required, like the admin one.
-CH_PRES_PW=$(kubectl -n "$NS_APP" get secret insight-db-creds \
-  -o jsonpath='{.data.clickhouse-presentation-password}' | base64 -d)
+# Which ClickHouse user analytics connects as — the #1964 admin→read-only
+# cutover switch, same contract as identityUrl above. Empty keeps the
+# historical admin user, so environments pinned to a release without
+# insight#2036 (which provisions the user) are untouched; per env, set
+# .clickhouse.analyticsUsername to "presentation" once its pin carries #2036
+# (the clickhouse-<user>-password key must be sealed into insight-db-creds).
+# Rollback is clearing it back (+ rollout restart of analytics).
+CH_ANALYTICS_USER=$(yq -r '.clickhouse.analyticsUsername // ""' "$VALUES")
+[ "$CH_ANALYTICS_USER" != "null" ] || CH_ANALYTICS_USER=""
+if [ -n "$CH_ANALYTICS_USER" ]; then
+  CH_ANALYTICS_PW=$(kubectl -n "$NS_APP" get secret insight-db-creds \
+    -o jsonpath="{.data.clickhouse-${CH_ANALYTICS_USER}-password}" | base64 -d)
+else
+  CH_ANALYTICS_USER="$CH_USER"
+  CH_ANALYTICS_PW="$CH_PW"
+fi
 
-for v in MDB_PW CH_PW CH_PRES_PW; do
+for v in MDB_PW CH_PW CH_ANALYTICS_PW; do
   [ -n "${!v}" ] || {
     echo "ERROR: $v missing from $NS_APP/insight-db-creds — refusing to compose with empty password" >&2
     exit 1
@@ -213,8 +225,8 @@ stringData:
   APP__gears__analytics__config__database_url: "mysql://${MDB_USER}:${MDB_PW}@${MDB_HOST}:${MDB_PORT}/${MDB_DB}"
   APP__gears__analytics__config__clickhouse_url: "http://${CH_HOST}:${CH_PORT}"
   APP__gears__analytics__config__clickhouse_database: "${CH_DB}"
-  APP__gears__analytics__config__clickhouse_user: "presentation"
-  APP__gears__analytics__config__clickhouse_password: "${CH_PRES_PW}"
+  APP__gears__analytics__config__clickhouse_user: "${CH_ANALYTICS_USER}"
+  APP__gears__analytics__config__clickhouse_password: "${CH_ANALYTICS_PW}"
   APP__gears__analytics__config__identity_url: "${IDENTITY_URL}"
   APP__gears__analytics__config__redis_url: "${REDIS_URL}"
 EOF
@@ -335,4 +347,4 @@ EOF
 echo "composed → $NS_APP/insight-identity-resolution-config"
 
 # Don't echo any of the passwords; clear the shell env explicitly.
-unset MDB_PW CH_PW RD_PW REDIS_URL CH_PRES_PW
+unset MDB_PW CH_PW RD_PW REDIS_URL CH_ANALYTICS_PW
