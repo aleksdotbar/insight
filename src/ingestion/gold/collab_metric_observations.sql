@@ -18,6 +18,9 @@ SELECT
     source_key,
     entity_type,
     entity_id,
+    -- Canonical person from the identity log; NULL = unknown email (see
+    -- macros/resolve_person_id.sql). entity_id stays the runtime key.
+    {{ resolved_person_id_column() }},
     metric_date,
     observed_at,
     measure_key,
@@ -25,3 +28,4 @@ SELECT
     subject_key,
     dimensions
 FROM {{ ref('collab_metric_evidence') }}
+{{ resolved_person_id_join("collab_metric_evidence") }}

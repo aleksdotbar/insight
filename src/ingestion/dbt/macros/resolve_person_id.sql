@@ -45,3 +45,33 @@
         id DESC
     LIMIT 1 BY email
 {% endmacro %}
+
+{#-
+  Companions for the observation models' final projections, so the join and
+  the column read identically across every model (and grep finds one shape):
+
+      SELECT
+          ...,
+          {{ resolved_person_id_column() }},
+          ...
+      FROM value_measures
+      {{ resolved_person_id_join('value_measures') }}
+      WHERE ...
+
+  The `if` keeps a join miss an honest NULL instead of the zero UUID a plain
+  LEFT JOIN default would mint — join_use_nulls deliberately stays off
+  model-wide so the models' other joins keep their semantics.
+-#}
+
+{% macro resolved_person_id_join(rel) %}
+    LEFT JOIN ({{ resolve_person_id() }}) AS identity_map
+        ON identity_map.email = {{ rel }}.entity_id
+{% endmacro %}
+
+{% macro resolved_person_id_column() %}
+    if(
+        identity_map.email != '',
+        toNullable(identity_map.person_id),
+        CAST(NULL AS Nullable(UUID))
+    ) AS person_id
+{% endmacro %}
