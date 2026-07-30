@@ -107,15 +107,29 @@ pub async fn run(
     // person universes. Once the producer writes real tenant UUIDs and the
     // reader filter returns, this becomes a loop over tenants — the runner is
     // already per-tenant everywhere below (lock name, journal row, writes).
-    if config.tenant_default_id.is_empty() {
-        return Err(SeedRunError::Failed(anyhow::anyhow!(
-            "`gears.identity-resolution.config.tenant_default_id` is required for seed"
-        )));
-    }
-    let tenant = Uuid::parse_str(config.tenant_default_id.trim())
-        .map_err(|e| anyhow::anyhow!("invalid tenant_default_id: {e}"))?;
-
     let db = db::connect(&config.database_url).await?;
+
+    // Tenant resolution: the configured tenant_default_id wins; when it is
+    // EMPTY (existing installs whose pre-created config Secret predates the
+    // seed and cannot be touched right now — dev is one), fall back to the
+    // single tenant the persons log already holds. Inference is deliberately
+    // narrow: exactly ONE distinct tenant is the only unambiguous case —
+    // writing under the sole tenant the data already lives under is what an
+    // operator would configure anyway. Zero (fresh install) or several
+    // tenants → refuse and demand explicit config; guessing there recreates
+    // the HOTFIX(#1550) wrong-tenant hazard the guards exist to prevent.
+    let distinct = seed_repo::distinct_tenants(&db, 2).await?;
+    let tenant = match resolve_tenant(&config.tenant_default_id, &distinct) {
+        Ok(t) => t,
+        Err(msg) => return Err(SeedRunError::Failed(anyhow::anyhow!(msg))),
+    };
+    if config.tenant_default_id.trim().is_empty() {
+        tracing::warn!(
+            %tenant,
+            "tenant_default_id is not configured — inferred the sole tenant \
+             from the persons log; configure it explicitly to silence this"
+        );
+    }
     // RAII: the guard owns the lock's dedicated session — every exit path
     // (return, cancellation, crash) releases the lock, see `SeedLockGuard`.
     let Some(lock) = db::SeedLockGuard::try_acquire(&config.database_url, tenant).await? else {
@@ -238,6 +252,32 @@ async fn guarded_seed(
         })
 }
 
+/// The pure tenant-resolution decision (split out for unit tests): an
+/// explicitly configured tenant always wins; an empty config falls back to
+/// the SOLE tenant present in the persons log; anything ambiguous refuses
+/// with an operator-facing message.
+fn resolve_tenant(configured: &str, distinct_in_persons: &[Uuid]) -> Result<Uuid, String> {
+    let configured = configured.trim();
+    if !configured.is_empty() {
+        return Uuid::parse_str(configured).map_err(|e| format!("invalid tenant_default_id: {e}"));
+    }
+    match distinct_in_persons {
+        [sole] => Ok(*sole),
+        [] => Err(
+            "`gears.identity-resolution.config.tenant_default_id` is required for seed: the \
+             persons log is empty, so there is no tenant to infer (fresh install — configure \
+             the tenant explicitly)"
+                .to_owned(),
+        ),
+        _ => Err(
+            "`gears.identity-resolution.config.tenant_default_id` is required for seed: the \
+             persons log holds several tenants, so inference is ambiguous — configure the \
+             tenant explicitly"
+                .to_owned(),
+        ),
+    }
+}
+
 /// The pure guard decision (see the module docs): refuse an empty input and
 /// refuse a wrong-tenant run; `--force` overrides both. The returned message
 /// is operator-facing — it lands verbatim in the operation's `error_message`
@@ -326,9 +366,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_tenant_fails_before_any_connect() {
+    async fn default_config_fails_cleanly() {
         let cfg = crate::config::GearConfig::default();
         let err = run(&cfg, LINK_BY_EMAIL_MODE, false).await;
         assert!(matches!(err, Err(SeedRunError::Failed(_))));
+    }
+
+    #[test]
+    fn configured_tenant_wins_over_inference() -> anyhow::Result<()> {
+        let configured = tenant();
+        let resolved = resolve_tenant(
+            &configured.to_string(),
+            &[Uuid::from_u128(1), Uuid::from_u128(2)],
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+        assert_eq!(resolved, configured);
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_configured_tenant_is_refused() {
+        assert!(resolve_tenant("not-a-uuid", &[]).is_err());
+    }
+
+    #[test]
+    fn empty_config_infers_the_sole_tenant() -> anyhow::Result<()> {
+        let sole = tenant();
+        let resolved = resolve_tenant("  ", &[sole]).map_err(|e| anyhow::anyhow!(e))?;
+        assert_eq!(resolved, sole);
+        Ok(())
+    }
+
+    #[test]
+    fn empty_config_with_no_tenants_is_refused_as_fresh_install() -> anyhow::Result<()> {
+        let Err(msg) = resolve_tenant("", &[]) else {
+            anyhow::bail!("empty persons log must not infer a tenant");
+        };
+        assert!(msg.contains("fresh install"), "{msg}");
+        Ok(())
+    }
+
+    #[test]
+    fn empty_config_with_several_tenants_is_refused_as_ambiguous() -> anyhow::Result<()> {
+        let Err(msg) = resolve_tenant("", &[Uuid::from_u128(1), Uuid::from_u128(2)]) else {
+            anyhow::bail!("several tenants must not infer");
+        };
+        assert!(msg.contains("ambiguous"), "{msg}");
+        Ok(())
     }
 }

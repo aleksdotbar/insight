@@ -399,6 +399,20 @@ def test_seed_cli_empty_input_guard(identity_inputs, identity_svc, compose_stack
         _fill_roster(compose_stack)
 
 
+def test_seed_cli_unconfigured_tenant_refuses_when_ambiguous(
+    identity_inputs, identity_svc, compose_stack
+) -> None:
+    """With NO tenant configured the binary may only infer a tenant when the
+    persons log holds exactly one — the fixture dataset spans several
+    (TEST_TENANT_ID, OTHER_TENANT, ...), so an unconfigured run must refuse
+    (exit 1) instead of guessing one of them."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    res = identity_svc.run_seed_cli(tenant=None, force=True)
+    assert res.returncode == 1, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+    assert "ambiguous" in (res.stdout + res.stderr), res.stderr
+
+
 def test_seed_cli_failure_exits_1_and_journals(identity_inputs, identity_svc, compose_stack) -> None:
     """A run that fails AFTER the journal row exists (here: unreachable
     ClickHouse) exits 1 and leaves a failed operation carrying only the

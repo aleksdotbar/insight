@@ -281,7 +281,7 @@ class IdentityProcess:
     def run_seed_cli(
         self,
         *,
-        tenant: str,
+        tenant: str | None,
         force: bool = False,
         mode: str | None = None,
         timeout_s: float = 300.0,
@@ -294,6 +294,8 @@ class IdentityProcess:
 
         `tenant` lands as the config `tenant_default_id` — the seed stamps
         its writes and journal row with it (there is no JWT on this path).
+        `None` leaves the config empty, exercising the binary's tenant
+        inference (sole-tenant fallback / ambiguous refusal).
         """
         if not self.supports_seed_cli:
             raise ApiSpawnError(
@@ -302,7 +304,8 @@ class IdentityProcess:
             )
         cmd = locate_rust_app(self.cfg)
         env = self._rust_env()
-        env["APP__gears__identity-resolution__config__tenant_default_id"] = tenant
+        if tenant is not None:
+            env["APP__gears__identity-resolution__config__tenant_default_id"] = tenant
         if extra_env:
             env.update(extra_env)
         args = [*cmd, "-c", str(self._rig_config_path), "seed"]

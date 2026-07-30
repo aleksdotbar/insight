@@ -74,6 +74,30 @@ pub struct TenantPresence {
     pub has_other: bool,
 }
 
+/// Distinct tenants present in the `persons` log, capped at `cap` rows —
+/// the seed runner's tenant inference only needs "zero, one, or more", so a
+/// tiny cap keeps this a loose index scan on `idx_tenant_person`.
+///
+/// # Errors
+///
+/// Returns an error if the query fails or a stored tenant id is not 16 bytes.
+pub async fn distinct_tenants(db: &DatabaseConnection, cap: u64) -> anyhow::Result<Vec<Uuid>> {
+    const SQL: &str = "SELECT DISTINCT insight_tenant_id FROM persons LIMIT ?";
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::MySql,
+            SQL,
+            [cap.into()],
+        ))
+        .await?;
+    rows.iter()
+        .map(|r| {
+            let id: Vec<u8> = r.try_get("", "insight_tenant_id")?;
+            Ok(Uuid::from_slice(&id)?)
+        })
+        .collect()
+}
+
 /// Whether `persons` holds rows under the given tenant / under any other
 /// tenant. `EXISTS` probes (short-circuit on `idx_tenant_person`) rather than
 /// a whole-table aggregate — the guard only needs zero-vs-non-zero, and this
