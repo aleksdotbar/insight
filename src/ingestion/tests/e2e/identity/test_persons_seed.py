@@ -42,6 +42,11 @@ pytestmark = [pytest.mark.identity, pytest.mark.mutating]
 SEED_SOURCE_ID = uuid.UUID("55555555-5555-5555-5555-555555555555")
 SHARED_EMAIL = "seeded.person@e2e.test"
 SOLO_EMAIL = "solo.person@e2e.test"
+BOSS_EMAIL = "boss.person@e2e.test"
+# A parent_email no account ever carries as its email — the seed must skip
+# the edge (ADR-0010: no stub persons) and fall back to a NULL-parent
+# membership row.
+GHOST_EMAIL = "ghost.manager@e2e.test"
 
 # A tenant nothing ever seeds successfully: `persons` never has rows under it,
 # so the wrong-tenant guard must always refuse an unforced run for it.
@@ -56,33 +61,54 @@ _OPERATION_TIMEOUT_S = 120.0
 _ROSTER: list[tuple[str, str, str]] = [
     # (account, value_type, value) — two accounts share SHARED_EMAIL.
     # Connectors emit a source-native `id` observation per account; the
-    # profile's `ids[]` is built from exactly those.
+    # profile's `ids[]` is built from exactly those. The parent_email rows
+    # give the org-chart rebuild something to derive edges from: the shared
+    # person reports to the boss; the solo person's manager is unresolvable
+    # (GHOST_EMAIL belongs to nobody); the boss reports to nobody.
+    ("seed-boss", "email", BOSS_EMAIL),
+    ("seed-boss", "id", "seed-boss"),
     ("seed-acc-1", "email", SHARED_EMAIL),
     ("seed-acc-1", "id", "seed-acc-1"),
     ("seed-acc-1", "display_name", "Seeded Person"),
+    ("seed-acc-1", "parent_email", BOSS_EMAIL),
     ("seed-acc-2", "email", SHARED_EMAIL),
     ("seed-acc-2", "id", "seed-acc-2"),
     ("seed-acc-3", "email", SOLO_EMAIL),
     ("seed-acc-3", "id", "seed-acc-3"),
     ("seed-acc-3", "display_name", "Solo Person"),
+    ("seed-acc-3", "parent_email", GHOST_EMAIL),
 ]
 
 
-def _fill_roster(cfg: SessionConfig) -> None:
-    """TRUNCATE + INSERT the deterministic roster into identity_inputs."""
-    clickhouse.execute(cfg, "TRUNCATE TABLE identity.identity_inputs")
+def _insert_inputs(
+    cfg: SessionConfig,
+    rows: list[tuple[str, str, str]],
+    version_start: int,
+    shift_seconds: int = 0,
+) -> None:
+    """INSERT observation rows into identity_inputs, one distinct _synced_at
+    per row (production reality): the seed derives observation created_at
+    from it, and the persons UNIQUE key (…, value_type, created_at) silently
+    drops same-instant collisions — e.g. two accounts' `id` observations for
+    the same person.
+
+    `shift_seconds` nudges the batch AFTER earlier same-run batches (the
+    manager-change rows must outrank the roster). Keep it SMALL (seconds):
+    the MariaDB `persons` log survives sessions on a kept stack (the session
+    seed wipes only reason='e2e-seed' rows), so an input stamped far in the
+    future outranks the NEXT session's fresh roster in the latest-observation
+    race until the wall clock catches up — an order-of-runs flake.
+    """
     values = []
-    for i, (account, value_type, value) in enumerate(_ROSTER):
-        # Distinct _synced_at per row (production reality): the seed derives
-        # observation created_at from it, and the persons UNIQUE key
-        # (…, value_type, created_at) silently drops same-instant collisions —
-        # e.g. two accounts' `id` observations for the same person.
+    for i, (account, value_type, value) in enumerate(rows):
+        offset = len(rows) - i
         values.append(
             "("
-            f"'{account}:{value_type}', "
+            f"'{account}:{value_type}:{version_start + i}', "
             f"'{seed.SEED_TENANT}', 'e2e-source', '{SEED_SOURCE_ID}', "
             f"'{account}', '{value_type}', '{value}', "
-            f"'UPSERT', now64(3) - INTERVAL {len(_ROSTER) - i} SECOND, {i + 1}"
+            f"'UPSERT', now64(3) + INTERVAL {shift_seconds} SECOND - INTERVAL {offset} SECOND, "
+            f"{version_start + i}"
             ")"
         )
     clickhouse.execute(
@@ -92,6 +118,12 @@ def _fill_roster(cfg: SessionConfig) -> None:
         " source_account_id, value_type, value, operation_type, _synced_at, _version) VALUES "
         + ", ".join(values),
     )
+
+
+def _fill_roster(cfg: SessionConfig) -> None:
+    """TRUNCATE + INSERT the deterministic roster into identity_inputs."""
+    clickhouse.execute(cfg, "TRUNCATE TABLE identity.identity_inputs")
+    _insert_inputs(cfg, _ROSTER, 1)
 
 
 @pytest.fixture(scope="module")
@@ -363,6 +395,139 @@ def test_seed_cli_empty_input_guard(identity_inputs, identity_svc, compose_stack
         # The module fixture fills once (module scope) — restore for the
         # tests that run after this one.
         _fill_roster(compose_stack)
+
+
+# ── input → org_chart correspondence (#1690: the projection itself) ───────
+
+
+def _person_id_by_email(identity_svc, email: str) -> str:
+    """Resolve a seeded person's UUID via the tenant-agnostic internal
+    lookup (freshly minted persons are in nobody's visibility subtree)."""
+    with identity_svc.client(
+        sub=str(seed.SEED_ADMIN), tenant=str(seed.SEED_TENANT), sub_type="service", roles="service"
+    ) as svc:
+        r = svc.get(f"/internal/persons/by-email/{email}")
+        assert r.status_code == 200, f"status={r.status_code} body={r.text}"
+        return r.json()["insight_source_id"]
+
+
+def _org_chart_edges(cfg: SessionConfig, child: str) -> list[tuple[str | None, bool]]:
+    """(parent_person_id, is_open) org_chart rows for a child, oldest first.
+
+    Straight SQL on purpose: this asserts the seed's WRITE (inputs →
+    projection), not the read API — the profile projection filters by
+    `org_chart_source_type` (bamboohr in the rig config), which the
+    handcrafted fixture tree already covers in the read tests.
+    """
+    with seed._connection(cfg) as conn, conn.cursor() as cur:  # noqa: SLF001 — harness-internal helper
+        cur.execute(
+            "SELECT LOWER(HEX(parent_person_id)), valid_to IS NULL"
+            " FROM org_chart"
+            " WHERE insight_tenant_id = %s AND child_person_id = %s"
+            " ORDER BY valid_from",
+            (seed.SEED_TENANT.bytes, uuid.UUID(child).bytes),
+        )
+        return [(row[0], bool(row[1])) for row in cur.fetchall()]
+
+
+def _hex(person: str) -> str:
+    return uuid.UUID(person).hex
+
+
+def test_seed_org_chart_matches_inputs(identity_inputs, identity_svc, compose_stack) -> None:
+    """The org_chart the seed rebuilds corresponds to the parent_email
+    observations in identity_inputs: a resolvable manager becomes the open
+    edge, an unresolvable one degrades to a NULL-parent membership row
+    (ADR-0010: no stub persons), and a top-of-tree person gets the Path-B
+    NULL-parent row."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+    assert res.returncode == 0, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+    boss = _person_id_by_email(identity_svc, BOSS_EMAIL)
+    shared = _person_id_by_email(identity_svc, SHARED_EMAIL)
+    solo = _person_id_by_email(identity_svc, SOLO_EMAIL)
+
+    # shared reports to boss: exactly one open edge, parent = boss.
+    open_edges = [p for p, is_open in _org_chart_edges(compose_stack, shared) if is_open]
+    assert open_edges == [_hex(boss)], open_edges
+
+    # solo's manager is unresolvable (GHOST_EMAIL belongs to nobody) — the
+    # edge is skipped, membership survives as a NULL-parent row.
+    open_edges = [p for p, is_open in _org_chart_edges(compose_stack, solo) if is_open]
+    assert open_edges == [None], open_edges
+
+    # boss reports to nobody — Path-B NULL-parent membership row.
+    open_edges = [p for p, is_open in _org_chart_edges(compose_stack, boss) if is_open]
+    assert open_edges == [None], open_edges
+
+
+def test_seed_manager_change_reaches_org_chart(identity_inputs, identity_svc, compose_stack) -> None:
+    """THE #1690 regression: a manager change lands in identity_inputs → a
+    RE-RUN of the seed moves the open org_chart edge to the new manager and
+    closes the old one. Before the fix nothing re-ran the seed, so this
+    exact transition never reached the Team view.
+
+    The whole cast is PER-RUN unique (uuid-suffixed accounts/emails), never
+    the shared roster: the MariaDB persons log outlives sessions on a kept
+    stack, so a re-parenting of a REUSED account would poison the next
+    session's roster in the latest-observation race whenever runs land
+    seconds apart (an order-of-runs flake we hit). A fresh child has no
+    cross-session history by construction.
+    """
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    run_tag = uuid.uuid4().hex[:12]
+    child_acc = f"flip-child-{run_tag}"
+    child_email = f"flip.child.{run_tag}@e2e.test"
+    boss_a_acc = f"flip-boss-a-{run_tag}"
+    boss_a_email = f"flip.boss.a.{run_tag}@e2e.test"
+    boss_b_acc = f"flip-boss-b-{run_tag}"
+    boss_b_email = f"flip.boss.b.{run_tag}@e2e.test"
+
+    # Baseline ingest: the child reports to manager A.
+    _insert_inputs(
+        compose_stack,
+        [
+            (boss_a_acc, "email", boss_a_email),
+            (boss_a_acc, "id", boss_a_acc),
+            (child_acc, "email", child_email),
+            (child_acc, "id", child_acc),
+            (child_acc, "parent_email", boss_a_email),
+        ],
+        version_start=100,  # distinct RMT _version space from the roster
+        shift_seconds=4,  # newer than any roster row (max now-1)
+    )
+    res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+    assert res.returncode == 0, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+    child = _person_id_by_email(identity_svc, child_email)
+    boss_a = _person_id_by_email(identity_svc, boss_a_email)
+    open_edges = [p for p, is_open in _org_chart_edges(compose_stack, child) if is_open]
+    assert open_edges == [_hex(boss_a)], f"baseline edge must point at manager A: {open_edges}"
+
+    # The connector ingests a manager change: a NEWER parent_email pointing
+    # at a new (also newly ingested) manager B.
+    _insert_inputs(
+        compose_stack,
+        [
+            (boss_b_acc, "email", boss_b_email),
+            (boss_b_acc, "id", boss_b_acc),
+            (child_acc, "parent_email", boss_b_email),
+        ],
+        version_start=200,
+        shift_seconds=8,  # newer than the baseline batch above
+    )
+    res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+    assert res.returncode == 0, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+    boss_b = _person_id_by_email(identity_svc, boss_b_email)
+    edges = _org_chart_edges(compose_stack, child)
+    open_edges = [p for p, is_open in edges if is_open]
+    assert open_edges == [_hex(boss_b)], f"open edge must move to manager B: {edges}"
+    # Manager A's edge is closed, not erased — SCD2 history survives.
+    assert (_hex(boss_a), False) in edges, edges
 
 
 def test_seed_cli_lock_busy(identity_inputs, identity_svc, compose_stack) -> None:
