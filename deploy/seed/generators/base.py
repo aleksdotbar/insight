@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import logging
+import os
 import random
 import re
 from typing import TYPE_CHECKING
@@ -25,15 +26,76 @@ if TYPE_CHECKING:
 
 UTC = _dt.UTC
 
+DEFAULT_SEED_DAYS = 60
+
+# Env knobs. Both are resolved ONCE per process by the helpers below and are
+# recorded in the manifest, so a run is reproducible from what it reports.
+_ANCHOR_ENV = "SEED_ANCHOR_DATE"
+_DAYS_ENV = "SEED_DAYS"
+
+_anchor_cache: _dt.date | None = None
+
+
+def anchor_date() -> _dt.date:
+    """The last calendar day that carries seeded activity, inclusive.
+
+    Every generator derives its dates from this — nothing may read the clock
+    directly, or two generators in the same run could straddle UTC midnight
+    and desynchronise (and a re-seed the next day would silently produce a
+    different dataset).
+
+    `SEED_ANCHOR_DATE` pins it to an ISO date; the literal `today` selects
+    the default explicitly. The default is *yesterday* UTC, because the
+    current day is deliberately excluded (a partial day fights the gold
+    views' day-aligned aggregates).
+
+    The default deliberately tracks the calendar rather than a committed
+    constant: a fixed past anchor ages one day per day, and the metric
+    surfaces this seed exists to populate are read through a UI whose
+    default period is relative to now. A stand seeded against a constant
+    from months ago renders empty while being perfectly "deterministic".
+    Determinism here means "a given anchor always yields the same bytes",
+    and the anchor is reported in the manifest — so CI and test stands pin
+    it explicitly and get exact reproducibility, while the developer inner
+    loop stays populated.
+    """
+    global _anchor_cache
+    if _anchor_cache is None:
+        raw = os.environ.get(_ANCHOR_ENV, "").strip()
+        if raw and raw.lower() != "today":
+            _anchor_cache = _dt.date.fromisoformat(raw)
+        else:
+            _anchor_cache = _dt.datetime.now(UTC).date() - _dt.timedelta(days=1)
+    return _anchor_cache
+
+
+def anchor_datetime() -> _dt.datetime:
+    """Anchor as an aware UTC midnight datetime.
+
+    Aware, not naive: clickhouse-connect serialises DateTime with
+    `int(x.timestamp())`, which resolves a naive value in the seeding
+    process's local timezone and would make the seeding host an undeclared
+    input.
+    """
+    return _dt.datetime.combine(anchor_date(), _dt.time(), tzinfo=UTC)
+
+
+def seed_days(default: int = DEFAULT_SEED_DAYS) -> int:
+    """Length of the seeded activity window, in days."""
+    raw = os.environ.get(_DAYS_ENV, "").strip()
+    return int(raw) if raw else default
+
 
 def days_window(days: int, end: _dt.date | None = None) -> list[_dt.date]:
-    """Return `days` consecutive dates ending the day BEFORE `end`.
+    """Return `days` consecutive dates ending on the anchor, inclusive.
 
-    `end` defaults to "today (UTC)". The current day is excluded so
-    partial-day rows don't fight the gold views' day-aligned aggregates.
+    `end` is EXCLUSIVE and defaults to the day after `anchor_date()`, so the
+    window is `[anchor - days + 1 .. anchor]`. Callers should not pass `end`
+    unless they genuinely need a different window; the default is what keeps
+    every generator on the same calendar.
     """
     if end is None:
-        end = _dt.datetime.now(UTC).date()
+        end = anchor_date() + _dt.timedelta(days=1)
     return [end - _dt.timedelta(days=i) for i in range(days, 0, -1)]
 
 

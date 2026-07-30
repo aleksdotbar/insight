@@ -701,9 +701,17 @@ services:
       # writable outputs (target/, logs/) to a writable scratch dir.
       DBT_TARGET_PATH: "/tmp/dbt-target"
       DBT_LOG_PATH: "/tmp/dbt-logs"
+      # Seed window. SEED_ANCHOR_DATE is the last day carrying activity — an
+      # ISO date pins the dataset reproducibly, the literal `today` (or unset)
+      # tracks the calendar. Both are recorded in the emitted manifest.
+      SEED_ANCHOR_DATE: "${SEED_ANCHOR_DATE:-}"
+      SEED_DAYS: "${SEED_DAYS:-60}"
     volumes:
       # Bind-mount the source so seed.py edits don't need a rebuild.
-      - ./deploy/seed:/app:ro
+      # NOT read-only: the seed writes manifest.json back into this directory
+      # at the end of a successful run, and downstream test phases read it
+      # from that fixed path.
+      - ./deploy/seed:/app
       # Schema + gold inputs: the SAME scripts the k8s clickhouse-migrate
       # Hook Job runs — create-bronze-placeholders.sh (+ lib/ch-exec.sh),
       # apply-ch-migrations.sh, migrations/*.sql — plus the full dbt project

@@ -21,6 +21,10 @@ from dataclasses import dataclass, field, replace
 # ─── Fixed UUIDs ────────────────────────────────────────────────────────
 # The dev lead's UUID matches the value the original dev-compose.sh seed
 # inserts, so re-runs across both scripts converge on the same row.
+# Default tenant for the demo organisation. Mirrors TENANT_DEFAULT_ID in
+# docker-compose.yml and deploy/compose/keycloak/gen-realm.py.
+TENANT_DEFAULT = "00000000-df51-5b42-9538-d2b56b7ee953"
+
 DEV_LEAD_UUID = "00000000-0000-0000-0000-000000000010"
 
 CEO_UUID = "aaaaaaaa-0000-0000-0000-000000000001"

@@ -573,3 +573,6 @@ trivy-fs.sarif
 trivy-image.json
 trivy-image.sarif
 trufflehog-findings.jsonl
+
+# Seed manifest — per-stand runtime output (PROFILE.md is the committed view).
+deploy/seed/manifest.json

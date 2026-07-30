@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from generators.base import (
+    anchor_date,
     bulk_insert,
     days_window,
     deterministic_uuid,
@@ -84,7 +85,7 @@ def seed_class_crm_deals(
                 cycle = rng.randint(7, 60)
                 close = d + _dt.timedelta(days=cycle)
                 # Closed if the close date is in the past (i.e. before today).
-                today = _dt.datetime.now(_dt.UTC).date()
+                today = anchor_date()
                 is_closed = 1 if close < today else 0
                 is_won = 1 if is_closed and rng.random() < 0.35 else 0
                 amount = round(rng.uniform(500, 50000), 2)
