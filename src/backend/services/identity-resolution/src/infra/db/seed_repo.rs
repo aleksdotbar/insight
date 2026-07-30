@@ -67,13 +67,16 @@ impl SeedStore for MariaDbSeedStore<'_> {
 /// install.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TenantPresence {
-    /// `persons` rows stored under the given tenant.
-    pub own_rows: i64,
-    /// `persons` rows stored under any other tenant.
-    pub other_rows: i64,
+    /// Whether `persons` holds any row under the given tenant.
+    pub has_own: bool,
+    /// Whether `persons` holds any row under any other tenant.
+    pub has_other: bool,
 }
 
-/// Count `persons` rows under the given tenant vs under any other tenant.
+/// Whether `persons` holds rows under the given tenant / under any other
+/// tenant. `EXISTS` probes (short-circuit on `idx_tenant_person`) rather than
+/// a whole-table aggregate — the guard only needs zero-vs-non-zero, and this
+/// runs ahead of every seed.
 ///
 /// # Errors
 ///
@@ -82,12 +85,10 @@ pub async fn tenant_presence(
     db: &DatabaseConnection,
     tenant_id: Uuid,
 ) -> anyhow::Result<TenantPresence> {
-    // SUM of a boolean is DECIMAL in MariaDB — CAST so the driver decodes i64.
     const SQL: &str = r"
         SELECT
-            CAST(COALESCE(SUM(insight_tenant_id = ?), 0) AS SIGNED)  AS own_rows,
-            CAST(COALESCE(SUM(insight_tenant_id <> ?), 0) AS SIGNED) AS other_rows
-        FROM persons
+            EXISTS(SELECT 1 FROM persons WHERE insight_tenant_id = ?)  AS has_own,
+            EXISTS(SELECT 1 FROM persons WHERE insight_tenant_id <> ?) AS has_other
     ";
     let row = db
         .query_one(Statement::from_sql_and_values(
@@ -101,8 +102,8 @@ pub async fn tenant_presence(
         .await?
         .ok_or_else(|| anyhow::anyhow!("tenant_presence query returned no row"))?;
     Ok(TenantPresence {
-        own_rows: row.try_get("", "own_rows")?,
-        other_rows: row.try_get("", "other_rows")?,
+        has_own: row.try_get::<i64>("", "has_own")? != 0,
+        has_other: row.try_get::<i64>("", "has_other")? != 0,
     })
 }
 

@@ -43,10 +43,19 @@ pub const SYSTEM_AUTHOR: Uuid = Uuid::nil();
 /// The only seed mode the pipeline implements (parity with the .NET service).
 pub const LINK_BY_EMAIL_MODE: &str = "link-by-email";
 
-/// Upper bound on one run — same ceiling the removed queue worker used; a
-/// hung ClickHouse/MariaDB call fails the Job instead of wedging it past the
-/// `CronJob`’s next tick (the advisory lock would hold that tick off).
+/// Upper bound on the read + pipeline — same ceiling the removed queue
+/// worker used; a hung ClickHouse/MariaDB call fails the Job (with the
+/// journal row updated to `failed`) instead of wedging it past the
+/// `CronJob`'s next tick (the advisory lock would hold that tick off).
 const SEED_TIMEOUT: Duration = Duration::from_mins(10);
+
+/// Backstop over the WHOLE lock-held critical section — the zombie sweep and
+/// the journal writes are MariaDB calls outside [`SEED_TIMEOUT`]'s scope, and
+/// a hang in any of them would hold the advisory lock just as effectively as
+/// a hung pipeline. A run cut off by THIS timeout may leave its `operations`
+/// row `running`; the next run's zombie sweep reclaims it. The chart's
+/// `activeDeadlineSeconds` (900s) stays the final out-of-process backstop.
+const RUN_TIMEOUT: Duration = Duration::from_mins(12);
 
 /// How stale a `queued`/`running` operation must be before the pre-run sweep
 /// reclaims it. A killed Job pod leaves its row `running` forever otherwise —
@@ -105,7 +114,14 @@ pub async fn run(
         return Err(SeedRunError::LockBusy);
     }
 
-    let result = run_locked(&db, config, tenant, mode, force).await;
+    let result = tokio::time::timeout(RUN_TIMEOUT, run_locked(&db, config, tenant, mode, force))
+        .await
+        .unwrap_or_else(|_| {
+            Err(SeedRunError::Failed(anyhow::anyhow!(
+                "persons-seed run timed out after {}s inside the lock-held critical section",
+                RUN_TIMEOUT.as_secs()
+            )))
+        });
 
     // Best-effort; the lock also dies with `lock_conn`'s session.
     db::release_seed_lock(&lock_conn, tenant).await;
@@ -236,12 +252,11 @@ fn input_guards(
                 .to_owned(),
         );
     }
-    if presence.own_rows == 0 && presence.other_rows > 0 {
+    if !presence.has_own && presence.has_other {
         return Err(format!(
-            "tenant guard: persons holds {} rows under other tenant(s) and none under the \
-             configured tenant {tenant} — seeding would mint a parallel person set under a \
-             wrong tenant; fix tenant_default_id or re-run with --force",
-            presence.other_rows
+            "tenant guard: persons already holds rows under other tenant(s) and none under \
+             the configured tenant {tenant} — seeding would mint a parallel person set under \
+             a wrong tenant; fix tenant_default_id or re-run with --force"
         ));
     }
     Ok(())
@@ -256,16 +271,13 @@ mod tests {
         Uuid::from_u128(9)
     }
 
-    fn presence(own: i64, other: i64) -> TenantPresence {
-        TenantPresence {
-            own_rows: own,
-            other_rows: other,
-        }
+    fn presence(has_own: bool, has_other: bool) -> TenantPresence {
+        TenantPresence { has_own, has_other }
     }
 
     #[test]
     fn empty_input_refused_and_names_the_table() -> anyhow::Result<()> {
-        let Err(err) = input_guards(0, presence(0, 0), tenant(), false) else {
+        let Err(err) = input_guards(0, presence(false, false), tenant(), false) else {
             anyhow::bail!("empty input must be refused");
         };
         assert!(err.contains("identity_inputs"), "{err}");
@@ -274,7 +286,7 @@ mod tests {
 
     #[test]
     fn wrong_tenant_refused_and_names_the_tenant() -> anyhow::Result<()> {
-        let Err(err) = input_guards(10, presence(0, 42), tenant(), false) else {
+        let Err(err) = input_guards(10, presence(false, true), tenant(), false) else {
             anyhow::bail!("wrong-tenant run must be refused");
         };
         assert!(err.contains("tenant"), "{err}");
@@ -284,19 +296,19 @@ mod tests {
 
     #[test]
     fn force_overrides_both_guards() {
-        assert!(input_guards(0, presence(0, 0), tenant(), true).is_ok());
-        assert!(input_guards(10, presence(0, 42), tenant(), true).is_ok());
+        assert!(input_guards(0, presence(false, false), tenant(), true).is_ok());
+        assert!(input_guards(10, presence(false, true), tenant(), true).is_ok());
     }
 
     #[test]
     fn fresh_install_passes_unforced() {
         // Non-empty input, persons entirely empty — the bootstrap shape.
-        assert!(input_guards(10, presence(0, 0), tenant(), false).is_ok());
+        assert!(input_guards(10, presence(false, false), tenant(), false).is_ok());
     }
 
     #[test]
     fn steady_state_passes_unforced() {
-        assert!(input_guards(10, presence(5, 42), tenant(), false).is_ok());
+        assert!(input_guards(10, presence(true, true), tenant(), false).is_ok());
     }
 
     #[tokio::test]
