@@ -20,7 +20,7 @@ from conftest import ANALYTICS_DIRECT, GW, IDENTITY_DIRECT, mint_gateway_jwt, mi
 # `/api/analytics/v1/metrics` into the service's own `/v1/metrics`.
 ANALYTICS_VIA_GW = f"{GW}/api/analytics/v1/metrics"
 ANALYTICS_LIST_DIRECT = f"{ANALYTICS_DIRECT}/v1/metrics"
-IDENTITY_LOOKUP_DIRECT = f"{IDENTITY_DIRECT}/v1/persons/nobody@example.com"
+IDENTITY_LIST_DIRECT = f"{IDENTITY_DIRECT}/v1/roles"
 
 TENANT_DEV = "00000000-df51-5b42-9538-d2b56b7ee953"  # the dev user's tenant
 GATEWAY_ISSUER = "https://authn-tls:8443"  # = authenticator gateway_issuer
@@ -51,7 +51,7 @@ def test_analytics_direct_without_jwt_is_401(client):
 
 def test_identity_direct_without_jwt_is_401(client):
     # The other downstream service verifies too — fail-closed with no JWT.
-    status, _, _ = client.request(IDENTITY_LOOKUP_DIRECT)
+    status, _, _ = client.request(IDENTITY_LIST_DIRECT)
     assert status == 401, f"identity direct/no-JWT got {status}"
 
 

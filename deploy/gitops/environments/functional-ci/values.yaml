@@ -56,5 +56,5 @@ fakeidp:
 analytics:
   replicaCount: 1
 
-identity:
+identityResolution:
   deploy: true

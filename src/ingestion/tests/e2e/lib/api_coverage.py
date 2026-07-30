@@ -82,7 +82,6 @@ BLOCKED: dict[str, frozenset[int]] = {
 # The identity service runs auth-ENABLED in the rig (a real gateway JWT on
 # every request), so 401 is exercised and REQUIRED — only 429 (no rate
 # limiter) is universally unobservable.
-IDENTITY_SKIP_LIST: list[tuple[str, str]] = []
 IDENTITY_UNIVERSAL_BOILERPLATE = frozenset({429})
 # The committed .NET spec declares a generic `200` on the mutating routes,
 # but the handlers actually answer 201 (create) / 202 (accepted) / 204
@@ -127,18 +126,6 @@ _IDENTITY_COMMON_REQUIRED_EXTRA: dict[str, frozenset[int]] = {
     "GET /v1/subchart/{personId}": frozenset({400, 401, 404}),
 }
 
-# Where the implementations answer DIFFERENT codes for the same guard (the
-# .NET 422 → Rust 409 family, contract.UNPROCESSABLE_OR_CONFLICT; the
-# .NET-only deprecated lookup), the delta is per-suite on top of the common
-# base.
-IDENTITY_REQUIRED_EXTRA: dict[str, frozenset[int]] = {
-    **_IDENTITY_COMMON_REQUIRED_EXTRA,
-    "POST /v1/profiles": _IDENTITY_COMMON_REQUIRED_EXTRA["POST /v1/profiles"] | {422},
-    "DELETE /v1/roles/{id}": _IDENTITY_COMMON_REQUIRED_EXTRA["DELETE /v1/roles/{id}"] | {422},
-    "DELETE /v1/person-roles/{id}": _IDENTITY_COMMON_REQUIRED_EXTRA["DELETE /v1/person-roles/{id}"]
-    | {422},
-    "GET /v1/persons/{email}": frozenset({404}),
-}
 IDENTITY_RUST_REQUIRED_EXTRA: dict[str, frozenset[int]] = {
     # POST /v1/persons-seed is dropped in the Rust successor (see the SKIP
     # entry below) — its inherited requirement must go with it, or the gate
@@ -146,17 +133,15 @@ IDENTITY_RUST_REQUIRED_EXTRA: dict[str, frozenset[int]] = {
     **{k: v for k, v in _IDENTITY_COMMON_REQUIRED_EXTRA.items() if k != "POST /v1/persons-seed"},
     "POST /v1/profiles": _IDENTITY_COMMON_REQUIRED_EXTRA["POST /v1/profiles"] | {409},
     "DELETE /v1/roles/{id}": _IDENTITY_COMMON_REQUIRED_EXTRA["DELETE /v1/roles/{id}"] | {409},
-    "DELETE /v1/person-roles/{id}": _IDENTITY_COMMON_REQUIRED_EXTRA["DELETE /v1/person-roles/{id}"]
-    | {409},
+    "DELETE /v1/person-roles/{id}": _IDENTITY_COMMON_REQUIRED_EXTRA["DELETE /v1/person-roles/{id}"] | {409},
 }
 
-# The Rust implementation dropped the deprecated persons lookup (approved
-# removal, zero callers) and the persons-seed POST trigger (#1690: the seed is
+# The Rust service dropped the deprecated persons lookup (approved removal,
+# zero callers) and the persons-seed POST trigger (#1690: the seed is
 # CLI-only — CronJob / manual Job via the `seed` subcommand; the GET journal
-# routes remain). The gate universe is still the committed .NET spec until the
-# Rust service publishes its own, so SKIP entries let these operations be
-# legitimately unexercised on a Rust run — while the dotnet suite (no such
-# skips) still REQUIRES them, so a .NET regression can't hide.
+# routes remain). The gate universe (the committed identity-resolution spec,
+# inherited from the retired .NET service) still lists them, so SKIP entries
+# let these operations be legitimately unexercised.
 IDENTITY_RUST_SKIP_LIST: list[tuple[str, str]] = [
     ("GET /v1/persons/{email}", "dropped in the Rust successor (approved removal; tests skip via capabilities)"),
     (
@@ -209,7 +194,6 @@ _SUITES = {
         _ANALYTICS_UNIVERSAL_BOILERPLATE,
         _ANALYTICS_REQUIRED_EXTRA,
     ),
-    "identity": (IDENTITY_SKIP_LIST, IDENTITY_BLOCKED, IDENTITY_UNIVERSAL_BOILERPLATE, IDENTITY_REQUIRED_EXTRA),
     "identity-rust": (
         IDENTITY_RUST_SKIP_LIST,
         IDENTITY_BLOCKED,

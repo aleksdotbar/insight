@@ -3,7 +3,7 @@
 
 Answers the authenticator's internal person lookup
 `GET /internal/persons/by-email/{email}` with a deterministic `insight_source_id`,
-so the login loop can resolve a person without standing up the real .NET Identity
+so the login loop can resolve a person without standing up the real identity-resolution service
 service + seeding. The real endpoint gates on a service gateway JWT; the stub
 ignores the bearer (test seam). Any other path 404s. Bind address from argv[1]
 (default 127.0.0.1:8092).

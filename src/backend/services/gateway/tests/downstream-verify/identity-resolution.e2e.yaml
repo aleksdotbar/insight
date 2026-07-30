@@ -1,15 +1,17 @@
-# dev-compose full-auth identity-resolution host config (bind-mounted over
-# /app/config/insight.yaml). Same structure as
-# services/identity-resolution/config/insight.yaml, but with the
-# oidc-authn-plugin wired to the dev TLS discovery front (`authn-tls`) + its
-# self-signed CA at /certs/ca.pem. DB/ClickHouse leaves come from APP__ env in
-# docker-compose.yml. NGINX_BFF R1: the service verifies the ES256 gateway JWT.
+# Downstream-verify e2e identity-resolution host config (bind-mounted over
+# /app/config/insight.yaml).
+#
+# Same structure as services/identity-resolution/config/insight.yaml, but with
+# CONCRETE oidc-authn-plugin verification values for the e2e network: the
+# gateway JWT's issuer is the TLS discovery front (`authn-tls`), and its
+# self-signed CA is mounted at /certs/ca.pem. The plugin resolves the JWKS via
+# OIDC discovery over https (its runtime is https-only — no http discovery),
+# so the authenticator's `/.well-known/*` is fronted by the `authn-tls` nginx
+# sidecar.
+#
+# DB/ClickHouse leaves come from APP__ env in the compose file.
 
 server:
-  # MUST stay OUTSIDE /app: compose auto-reload (watchexec) watches /app (the
-  # binary's dir), so a home_dir under /app makes the gear's own startup writes
-  # (gts store, etc.) trip a restart mid-boot → a crash-loop. Keep runtime
-  # state in /tmp (ephemeral is fine for dev).
   home_dir: "/tmp/identity-resolution"
 
 logging:
@@ -61,8 +63,10 @@ gears:
         required_claims: []
       http_client:
         request_timeout: 5s
+        # Trust the self-signed CA that signed authn-tls's server cert.
         custom_ca_certificate_paths: ["/certs/ca.pem"]
       s2s_oauth:
+        # Unused here; must name a trusted issuer. Never fetched.
         discovery_url: "https://authn-tls:8443"
         default_subject_type: "service"
         token_cache:
