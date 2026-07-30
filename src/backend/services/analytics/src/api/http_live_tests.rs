@@ -43,6 +43,7 @@ use crate::config::GearConfig;
 use crate::domain::admin_threshold::AdminThresholdService;
 use crate::domain::auth::{ConfigTenantAuthorization, TenantAuthorization};
 use crate::domain::catalog::{CatalogReader, ThresholdResolver};
+use crate::domain::metric_definitions::test_fixture::DrilldownFixture;
 use crate::domain::schema_validator::SchemaValidator;
 use crate::infra::cache::catalog_cache::{CatalogCache, NoopCatalogCache};
 use crate::infra::db::entities;
@@ -659,5 +660,104 @@ async fn query_metric_without_clickhouse_maps_to_error() -> TestResult {
         "expected an error status, got {}",
         resp.status()
     );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn metric_results_loads_drilldown_capabilities_before_clickhouse_error() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let fixture = DrilldownFixture::insert(&db, &["git.commits"], &[]).await?;
+    let result: anyhow::Result<()> = async {
+        let app = app(db.clone(), fixture.tenant_id);
+        let resp = app
+            .oneshot(json_req(
+                "POST",
+                "/v1/metric-results",
+                &json!({
+                    "entity": {"type": "person", "ids": ["person@example.com"]},
+                    "period": {"from": "2026-07-01", "to": "2026-07-28"},
+                    "metrics": [{
+                        "metric_key": "git.commits",
+                        "views": [{"view": "period"}]
+                    }]
+                }),
+            )?)
+            .await?;
+        anyhow::ensure!(resp.status().is_server_error());
+        Ok(())
+    }
+    .await;
+    fixture.delete(&db).await?;
+    result.map_err(Into::into)
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn metric_drilldown_validates_selection_before_clickhouse_error() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let fixture = DrilldownFixture::insert(&db, &["git.commits"], &["repository"]).await?;
+    let result: anyhow::Result<()> = async {
+        let app = app(db.clone(), fixture.tenant_id);
+        let body = json!({
+            "metric_key": "git.commits",
+            "entity": {"type": "person", "id": "person@example.com"},
+            "period": {"from": "2026-07-01", "to": "2026-07-28"},
+            "filters": [{"dimension": "repository", "values": ["org/repo"]}],
+            "display_dimensions": ["repository"],
+            "limit": 100
+        });
+        let resp = app
+            .oneshot(json_req("POST", "/v1/metric-drilldown", &body)?)
+            .await?;
+        anyhow::ensure!(resp.status() == StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+    .await;
+    fixture.delete(&db).await?;
+    result.map_err(Into::into)
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn metric_drilldown_rejects_invalid_selection_without_clickhouse() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let app = app(db, Uuid::now_v7());
+    for body in [
+        json!({
+            "metric_key": "git.commits",
+            "entity": {"type": "team", "id": "team"},
+            "period": {"from": "2026-07-01", "to": "2026-07-28"},
+            "limit": 100
+        }),
+        json!({
+            "metric_key": "git.commits",
+            "entity": {"type": "person", "id": ""},
+            "period": {"from": "2026-07-01", "to": "2026-07-28"},
+            "limit": 100
+        }),
+        json!({
+            "metric_key": "git.commits",
+            "entity": {"type": "person", "id": "person@example.com"},
+            "period": {"from": "2026-07-28", "to": "2026-07-01"},
+            "limit": 100
+        }),
+    ] {
+        let resp = app
+            .clone()
+            .oneshot(json_req("POST", "/v1/metric-drilldown", &body)?)
+            .await?;
+        assert_eq!(
+            resp.status(),
+            StatusCode::BAD_REQUEST,
+            "should reject: {body:?}"
+        );
+    }
     Ok(())
 }
