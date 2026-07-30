@@ -22,7 +22,16 @@ NAMESPACE="$(yq -r '.connection.namespace' "${DESCRIPTOR}")"
 
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "${WORKDIR}"' EXIT
+# The source and destination images run as their own non-root user, while
+# `mktemp -d` is 0700 owned by the invoking user — so on a Linux host the
+# bind-mounted /work is unreadable inside the container and every connector dies
+# with "Permission denied: '/work/config.json'". macOS Docker Desktop hides this
+# (its file sharing ignores uid and mode), so the failure only appears on Linux,
+# e.g. in the connectors-ddl CI lane. The directory name is random and lives for
+# one connector, so widening the mode is an acceptable trade for portability.
+chmod 0755 "${WORKDIR}"
 cp "${CONFIG_JSON}" "${WORKDIR}/config.json"
+chmod 0644 "${WORKDIR}/config.json"
 
 echo "[${NAME}] discover"
 if [[ "${CONNECTOR_TYPE}" == "cdk" ]]; then
@@ -81,6 +90,8 @@ jq -n '{
   }' > "${WORKDIR}/destination_config.json"
 
 echo "[${NAME}] create tables in ${NAMESPACE}"
+# Readable inside the destination container too — same reason as config.json above.
+chmod 0644 "${WORKDIR}/destination_config.json" "${WORKDIR}/configured_catalog.json"
 docker run --rm -i -v "${WORKDIR}:/work:ro" "${DESTINATION_CLICKHOUSE_IMAGE}" \
   write --config /work/destination_config.json --catalog /work/configured_catalog.json \
   < "${WORKDIR}/traces.jsonl" \
