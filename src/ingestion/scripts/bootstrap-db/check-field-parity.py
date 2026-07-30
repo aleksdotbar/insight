@@ -17,15 +17,23 @@ WHY
   `system.columns` of a warehouse where every model has been materialised —
   exactly what `bootstrap-db.sh` produces.
 
-WHAT IT CHECKS (all findings are hard failures — no baseline, no warn tier)
+WHAT IT CHECKS
   1. coverage  — every non-ephemeral model in the manifest has a relation in the
                  warehouse. Without this a connector whose `discover` failed
                  would silently shrink the comparison and the audit would pass
                  for the wrong reason.
   2. columns   — contributor and target expose the same column names.
   3. order     — identical column positions (the UNION is positional).
-  4. types     — byte-identical `system.columns.type`. `Nullable(T)` vs `T`
-                 counts: it is the divergence that decides the silver type.
+  4. types     — `system.columns.type`, byte for byte.
+
+  Everything above is a FAILURE (exit 1) except one benign shape, reported as a
+  WARNing: the target published `Nullable(T)` where this contributor declares a
+  plain `T`. ClickHouse widens like that when another branch is nullable, every
+  value from this branch still fits, and readers already handle NULLs from the
+  other branches. See classify_type_divergence for why the mirror image —
+  contributor `Nullable(T)`, target `T` — is a failure instead.
+
+  There is no baseline file: a failure is a failure on the run it appears in.
 
   A per-column breakdown of which contributors disagree with each other is
   printed after the findings — that is the root cause behind most type findings
@@ -48,7 +56,7 @@ USAGE
   export CLICKHOUSE_USER=... CLICKHOUSE_PASSWORD=...
   ./check-field-parity.py [--manifest PATH]
 
-EXIT: 0 clean, 1 findings, 2 usage/connection error.
+EXIT: 0 clean (warnings only is still clean), 1 failures, 2 usage/connection error.
 """
 
 from __future__ import annotations
@@ -157,9 +165,25 @@ def passthrough_relation(node: dict, manifest: dict) -> Relation | None:
     return upstream[0]["schema"], upstream[0].get("identifier") or upstream[0].get("alias") or upstream[0]["name"]
 
 
-def nullable_only(left: str, right: str) -> bool:
-    """True when the two types differ solely by a Nullable wrapper."""
-    return f"Nullable({left})" == right or f"Nullable({right})" == left
+def classify_type_divergence(source: str, target: str) -> tuple[str, bool]:
+    """(label, is_failure) for a contributor type that differs from the target's.
+
+    Only one shape is benign: the target widened a non-nullable branch to
+    `Nullable(T)`. That is what ClickHouse does when ANOTHER contributor declares
+    the column nullable — every value from this branch still fits the published
+    type, and readers already have to handle NULLs from the other branches.
+
+    The mirror image is not benign. A contributor declaring `Nullable(T)` against
+    a target that publishes plain `T` cannot happen while the target is the
+    supertype of its branches, so it means the silver table is stale (built
+    before this contributor, kept by on_schema_change=ignore) and is about to
+    truncate NULLs into zeroes.
+    """
+    if target == f"Nullable({source})":
+        return "nullable-widening", False
+    if source == f"Nullable({target})":
+        return "nullable-narrowing", True
+    return "representation", True
 
 
 def load_manifest(path: Path) -> dict:
@@ -209,6 +233,7 @@ def main() -> int:
         structure[(row["database"], row["table"])].append((row["position"], row["name"], row["type"]))
 
     findings: list[str] = []
+    warnings: list[str] = []
     unchecked: list[str] = []
 
     # --- check 1: coverage -------------------------------------------------
@@ -269,12 +294,12 @@ def main() -> int:
                     findings.append(f"columns   {label} -> {target_label}: extra `{name} {source_types[name]}`")
             for name in source_order:
                 if name in target_types and source_types[name] != target_types[name]:
-                    differs = nullable_only(source_types[name], target_types[name])
-                    kind = "nullable-only" if differs else "representation"
-                    findings.append(
+                    kind, is_failure = classify_type_divergence(source_types[name], target_types[name])
+                    message = (
                         f"types     {label} -> {target_label}: `{name}` is {source_types[name]}, "
                         f"target publishes {target_types[name]} [{kind}]"
                     )
+                    (findings if is_failure else warnings).append(message)
             common_source = [name for name in source_order if name in target_types]
             common_target = [name for name in target_order if name in source_types]
             if common_source != common_target:
@@ -286,6 +311,8 @@ def main() -> int:
 
     for finding in findings:
         print(f"FAIL  {finding}")  # noqa: T201  — this IS the script's output
+    for warning in warnings:
+        print(f"WARN  {warning}")  # noqa: T201
     for note in unchecked:
         print(f"UNCHECKED  {note}")  # noqa: T201
 
@@ -322,12 +349,13 @@ def main() -> int:
     by_category: dict[str, int] = defaultdict(int)
     for finding in findings:
         by_category[finding.split(" ", 1)[0]] += 1
-    by_category["nullable-only"] = sum(1 for finding in findings if "[nullable-only]" in finding)
-    by_category["representation"] = sum(1 for finding in findings if "[representation]" in finding)
+    for kind in ("nullable-narrowing", "representation"):
+        by_category[kind] = sum(1 for finding in findings if f"[{kind}]" in finding)
     breakdown = ", ".join(f"{count} {category}" for category, count in sorted(by_category.items()) if count)
     print(  # noqa: T201
-        f"\n{len(findings)} finding(s) ({breakdown}), {len(unchecked)} unchecked, "
-        f"{len(groups)} union target(s), {len(structure)} relation(s) in the warehouse"
+        f"\n{len(findings)} failure(s) ({breakdown or 'none'}), {len(warnings)} warning(s), "
+        f"{len(unchecked)} unchecked, {len(groups)} union target(s), "
+        f"{len(structure)} relation(s) in the warehouse"
     )
     return 1 if findings else 0
 

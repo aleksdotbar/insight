@@ -147,10 +147,12 @@ jobs:
       - name: Field parity
         run: |
           set -euo pipefail
-          # Strict: every model in the manifest must have a relation (bootstrap-db
-          # just built all of them, so a gap means something failed quietly), and
-          # any column-set, order or type divergence — Nullable(T) vs T included —
-          # is a failure. manifest.json comes from the dbt run inside bootstrap-db.
+          # Every model in the manifest must have a relation (bootstrap-db just
+          # built all of them, so a gap means something failed quietly), and any
+          # column-set, order or type divergence fails the job. The one benign
+          # shape — the target widened this contributor's T to Nullable(T) because
+          # another branch is nullable — is printed as WARN and does not fail.
+          # manifest.json comes from the dbt run inside bootstrap-db.
           if ! "${BOOTSTRAP_DIR}/check-field-parity.py" --no-env-file; then
             echo "::error title=Field parity::A staging contributor does not line up with its silver union target. ClickHouse unions branches BY POSITION and widens types silently, so this is a data-correctness gate, not style."
             exit 1
