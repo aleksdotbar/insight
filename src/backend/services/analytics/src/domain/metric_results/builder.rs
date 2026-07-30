@@ -265,6 +265,7 @@ pub fn build_histogram_view(
 pub fn build_metric_result(
     def: &MetricDefinition,
     views: Vec<MetricResultViewDto>,
+    selection: super::dto::MetricResultSelectionDto,
 ) -> MetricResultDto {
     let computation = match &def.spec {
         ComputationSpec::Sum { .. } => ComputationDto::Sum,
@@ -283,6 +284,8 @@ pub fn build_metric_result(
         direction: def.base.direction,
         computation,
         views,
+        drilldown: None,
+        selection,
     }
 }
 
@@ -760,26 +763,58 @@ mod tests {
         );
     }
 
+    fn selection(metric_key: &str) -> super::super::dto::MetricResultSelectionDto {
+        super::super::dto::MetricResultSelectionDto {
+            metric_key: metric_key.to_owned(),
+            entity: super::super::dto::MetricResultsEntityDto {
+                r#type: "person".to_owned(),
+                ids: vec!["person@example.com".to_owned()],
+            },
+            period: super::super::dto::MetricResultsPeriodDto {
+                from: "2026-07-01".to_owned(),
+                to: "2026-07-28".to_owned(),
+            },
+            filters: Vec::new(),
+        }
+    }
+
     #[test]
     fn metric_result_wire_shape_is_flat_with_computation_tag() {
-        let sum = build_metric_result(&sum_metric(), Vec::new());
+        let sum = build_metric_result(&sum_metric(), Vec::new(), selection("ai.accepted_lines"));
         let sum_json = serde_json::to_value(&sum).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(sum_json["computation"], "sum");
         assert_eq!(sum_json["metric_key"], "ai.accepted_lines");
         assert_eq!(sum_json["format"], "integer");
         assert!(sum_json.get("scale").is_none());
+        assert_eq!(sum_json["selection"]["metric_key"], "ai.accepted_lines");
+        assert_eq!(sum_json["selection"]["entity"]["type"], "person");
+        assert_eq!(
+            sum_json["selection"]["entity"]["ids"][0],
+            "person@example.com"
+        );
+        assert_eq!(sum_json["selection"]["period"]["from"], "2026-07-01");
+        assert_eq!(sum_json["selection"]["period"]["to"], "2026-07-28");
+        assert_eq!(sum_json["selection"]["filters"], serde_json::json!([]));
+        assert!(
+            sum_json.get("drilldown").is_none(),
+            "absent drilldown capability must be omitted from the wire shape"
+        );
 
-        let ratio = build_metric_result(&ratio_metric(), Vec::new());
+        let ratio = build_metric_result(&ratio_metric(), Vec::new(), selection("ai.ratio"));
         let ratio_json = serde_json::to_value(&ratio).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(ratio_json["computation"], "ratio");
         assert_eq!(ratio_json["scale"], 100.0);
 
-        let median = build_metric_result(&median_metric(), Vec::new());
+        let median = build_metric_result(&median_metric(), Vec::new(), selection("ai.median"));
         let median_json = serde_json::to_value(&median).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(median_json["computation"], "median");
         assert!(median_json.get("scale").is_none());
 
-        let distinct = build_metric_result(&distinct_count_metric(), Vec::new());
+        let distinct = build_metric_result(
+            &distinct_count_metric(),
+            Vec::new(),
+            selection("ai.distinct"),
+        );
         let distinct_json = serde_json::to_value(&distinct).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(distinct_json["computation"], "distinct_count");
         assert!(distinct_json.get("scale").is_none());
