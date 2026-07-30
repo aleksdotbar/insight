@@ -22,10 +22,32 @@ deny). These rules cover only what tooling cannot enforce.
 - Parse, don't validate: newtypes at boundaries (`RelationName::parse(&str) ->
   Option<RelationName>`), never raw `String` carried through layers.
 - Exhaustive `match` on our own enums — no `_` arm.
+- States that cannot coexist are enum variants, not bool/Option field
+  combinations; make the invalid combination unrepresentable rather than
+  checked at runtime.
 - Smallest visibility that compiles; `pub(crate)` before `pub`. No speculative
   API surface.
 - `#[derive(Debug)]` always; `Clone` only when a consumer clones.
 - Constants: module top, grouped, unit-suffixed (`_BYTES`, `_SECS`, `_DAYS`).
+
+## Ownership
+
+- Borrow before cloning: `&str` over `String`, `&[T]` over `Vec<T>` in
+  parameters; take ownership only when the function stores or consumes the
+  value.
+- A `.clone()` inside a loop or iterator chain needs a reason; restructure to
+  borrow or hoist it out.
+- Small `Copy` types pass by value.
+
+## Errors and dispatch
+
+- `Result` for everything fallible; panics never cross a request boundary.
+- Typed errors (`thiserror`) in domain and library code; `anyhow` only in
+  binary entry points and startup wiring.
+- Generics for internal hot paths; `dyn Trait` only for genuinely
+  heterogeneous collections or to cut compile-time bloat at an API boundary.
+- Prefer `#[expect(clippy::...)]` over `#[allow]` — it errors when the lint
+  stops firing; either way the justification rides on the same line.
 
 ## Comments
 
