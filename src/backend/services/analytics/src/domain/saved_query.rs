@@ -85,3 +85,23 @@ impl toolkit::api::api_dto::ResponseApiDto for SavedQueryListResponse {}
 impl toolkit::api::api_dto::ResponseApiDto for RunResponse {}
 impl toolkit::api::api_dto::RequestApiDto for CreateSavedQueryRequest {}
 impl toolkit::api::api_dto::RequestApiDto for UpdateSavedQueryRequest {}
+
+#[cfg(test)]
+mod tests {
+    use super::UpdateSavedQueryRequest;
+
+    /// The triple-state `description` deserializer: absent → unchanged (`None`),
+    /// explicit `null` → clear (`Some(None)`), value → set (`Some(Some(..))`).
+    #[test]
+    fn description_absent_null_and_value_are_distinct() -> Result<(), Box<dyn std::error::Error>> {
+        let absent: UpdateSavedQueryRequest = serde_json::from_str("{}")?;
+        assert_eq!(absent.description, None);
+
+        let cleared: UpdateSavedQueryRequest = serde_json::from_str(r#"{"description": null}"#)?;
+        assert_eq!(cleared.description, Some(None));
+
+        let set: UpdateSavedQueryRequest = serde_json::from_str(r#"{"description": "hi"}"#)?;
+        assert_eq!(set.description, Some(Some("hi".to_owned())));
+        Ok(())
+    }
+}

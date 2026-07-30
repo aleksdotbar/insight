@@ -178,19 +178,23 @@ async fn execute_read(
         CanonicalError::internal("query execution failed").create()
     })?;
 
-    if raw_bytes.is_empty() {
+    parse_json_each_row(&raw_bytes).map_err(|e| {
+        tracing::error!(error = %e, "failed to parse ClickHouse JSON response");
+        CanonicalError::internal("failed to parse query results").create()
+    })
+}
+
+/// Parse a `JSONEachRow` byte stream (one JSON object per line) into untyped
+/// rows. Empty input yields no rows; blank lines are skipped; a malformed line
+/// is an error. Pure so the row-shaping is unit-testable without ClickHouse.
+fn parse_json_each_row(raw: &[u8]) -> Result<Vec<serde_json::Value>, serde_json::Error> {
+    if raw.is_empty() {
         return Ok(Vec::new());
     }
-
-    raw_bytes
-        .split(|&b| b == b'\n')
+    raw.split(|&b| b == b'\n')
         .filter(|line| !line.is_empty())
         .map(serde_json::from_slice)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to parse ClickHouse JSON response");
-            CanonicalError::internal("failed to parse query results").create()
-        })
+        .collect()
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -245,5 +249,43 @@ fn model_to_summary(m: saved_queries::Model) -> SavedQuerySummary {
         id: m.id,
         name: m.name,
         description: m.description,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_json_each_row;
+    use serde_json::json;
+
+    type R = Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn empty_input_yields_no_rows() -> R {
+        assert_eq!(parse_json_each_row(b"")?, Vec::<serde_json::Value>::new());
+        Ok(())
+    }
+
+    #[test]
+    fn parses_one_row_per_line_and_skips_blanks() -> R {
+        let raw = b"{\"a\":1}\n{\"a\":2}\n";
+        assert_eq!(
+            parse_json_each_row(raw)?,
+            vec![json!({"a": 1}), json!({"a": 2})]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn single_row_without_trailing_newline() -> R {
+        assert_eq!(
+            parse_json_each_row(b"{\"x\":\"y\"}")?,
+            vec![json!({"x": "y"})]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_line_is_an_error() {
+        assert!(parse_json_each_row(b"{not json}").is_err());
     }
 }
