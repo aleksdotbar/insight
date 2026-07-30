@@ -6,7 +6,7 @@ End-to-end workflow for authoring and maintaining Playwright tests using `playwr
 - **Generate** — turn a spec into Playwright test files. Update the spec if it's vague or stale.
 - **Heal** — diagnose failing tests, fix the code, reconcile the spec with reality.
 
-All three lean on the same mechanic: run `npx playwright test --debug=cli` in the background, then `playwright-cli attach tw-XXXX` to drive the paused page interactively. See [playwright-tests.md](playwright-tests.md) for the debug/attach mechanics and [test-generation.md](test-generation.md) for how every `playwright-cli` action emits Playwright TypeScript.
+All three lean on the same mechanic: run `npx playwright test --debug=cli` in the background, then `playwright-cli attach tw-XXXX` to drive the paused page interactively. See [playwright-tests.md](playwright-tests.md) for the debug/attach mechanics.
 
 ---
 
@@ -173,7 +173,7 @@ playwright-cli attach tw-XXXX
 
 Walk the scenario's `Steps:` one by one with `playwright-cli`, treating the spec as the plan and the live app as the source of truth. If a step is vague ("click the button" — which button?), references an element that no longer exists, or contradicts the app's actual behaviour, use your judgement: update the spec to match what the app really does, then keep going. Editing the spec mid-generation is expected.
 
-Every action prints the equivalent Playwright TypeScript (see [test-generation.md](test-generation.md)):
+Every action prints the equivalent Playwright TypeScript:
 
 ```bash
 playwright-cli snapshot                         # find refs
@@ -182,7 +182,7 @@ playwright-cli press Enter
 playwright-cli click e7
 ```
 
-For each `- expect:` bullet, add an explicit assertion. See [test-generation.md](test-generation.md) for details.
+For each `- expect:` bullet, add an explicit assertion.
 
 Collect the generated code and write the test file at the path given in the spec:
 
@@ -300,6 +300,5 @@ Only after the user answers, either update the spec (intentional change) or file
 | For... | See |
 |---|---|
 | `--debug=cli` / attach mechanics | [playwright-tests.md](playwright-tests.md) |
-| How `playwright-cli` actions become TS | [test-generation.md](test-generation.md) |
 | Mocking requests during exploration/generation | [request-mocking.md](request-mocking.md) |
 | Managing the CLI browser session | [session-management.md](session-management.md) |

@@ -58,8 +58,8 @@ re-targeted — read the issue body and go straight to step 3. Grounding costs t
 reading, and it earns that only when you are changing *what gets tested*.
 
 Otherwise, don't invent a generic checklist. Read the issue and the actual implementation the same way
-`scope-feature-tests` does — pull the issue (`gh issue view <n> --repo constructorfabric/insight
---json title,body,labels,parent`), check for a branch or merged PR (`gh pr list --repo constructorfabric/insight --search "<n>"
+`scope-feature-tests` does — pull the issue (`gh issue view n --repo constructorfabric/insight
+--json title,body,labels,parent`), check for a branch or merged PR (`gh pr list --repo constructorfabric/insight --search "n"
 --state all`), then read the code — this repo for backend, ingestion and dbt, and the sibling
 `../insight-front` for UI.
 
