@@ -50,7 +50,7 @@ def seed_class_support_activity(
 ) -> int:
     truncate(client, "silver", "class_support_activity")
     cols = [
-        "insight_tenant_id", "person_key", "date", "data_source",
+        "tenant_id", "person_key", "date", "data_source",
         "updates", "public_comments", "private_comments", "solved",
         "csat_good", "csat_total", "_version",
     ]

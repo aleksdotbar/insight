@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import logging
 import random
+import re
 from typing import TYPE_CHECKING
+
+LOG = logging.getLogger("seed.generators")
 
 if TYPE_CHECKING:
     import clickhouse_connect.driver.client
@@ -105,6 +109,38 @@ def truncate(
     client.command(f"TRUNCATE TABLE IF EXISTS `{schema}`.`{table}`")
 
 
+def _live_columns(
+    client: clickhouse_connect.driver.client.Client,
+    schema: str,
+    table: str,
+) -> dict[str, str]:
+    """Column name -> type for the target table, read at insert time."""
+    result = client.query(
+        "SELECT name, type FROM system.columns "
+        "WHERE database = {db:String} AND table = {tbl:String}",
+        parameters={"db": schema, "tbl": table},
+    )
+    return {row[0]: row[1] for row in result.result_rows}
+
+
+def _coerce(value: object, ch_type: str) -> object:
+    """Widen a `date` to midnight `datetime` for DateTime-typed columns.
+
+    The snapshot schema types some day-grain columns as `DateTime`/
+    `DateTime64` where a generator supplies `datetime.date`; the driver then
+    calls `.timestamp()` on it and raises. A date means midnight on that
+    date, so the widening is lossless and unambiguous. Anything else is
+    passed through untouched — this is not a general type converter.
+    """
+    if (
+        isinstance(value, _dt.date)
+        and not isinstance(value, _dt.datetime)
+        and "DateTime" in ch_type
+    ):
+        return _dt.datetime.combine(value, _dt.time())
+    return value
+
+
 def bulk_insert(
     client: clickhouse_connect.driver.client.Client,
     schema: str,
@@ -112,8 +148,83 @@ def bulk_insert(
     columns: list[str],
     rows: list[tuple[object, ...]],
 ) -> int:
-    """Insert `rows` and return the count. No-op on empty input."""
+    """Insert `rows` and return the count. No-op on empty input.
+
+    Columns the target table does not have are dropped (with a warning)
+    rather than raising `Unrecognized column`. The silver schema is created
+    by `create-bronze-placeholders.sh` from the CI-generated
+    `connectors-ddl/` snapshot, which mirrors the real dbt models; a
+    generator's hardcoded column list can lag behind that snapshot. Making
+    the live schema authoritative here means one place adapts instead of
+    every generator, and a lagging column degrades to a logged omission
+    instead of aborting the whole seed.
+
+    A column the schema DOES have is never dropped, so this cannot silently
+    hide a value the gold layer reads — it only drops what the target has
+    nowhere to put.
+    """
     if not rows:
         return 0
+    have = _live_columns(client, schema, table)
+    if not have:
+        raise RuntimeError(
+            f"{schema}.{table} has no columns (does the table exist?) — "
+            f"cannot reconcile generator columns {columns}"
+        )
+    extra = [c for c in columns if c not in have]
+    if extra:
+        keep = [i for i, c in enumerate(columns) if c in have]
+        LOG.warning(
+            "%s.%s: dropping %d generator column(s) absent from the live schema: %s",
+            schema,
+            table,
+            len(extra),
+            ", ".join(extra),
+        )
+        columns = [columns[i] for i in keep]
+        rows = [tuple(row[i] for i in keep) for row in rows]
+    if "unique_key" in have and "unique_key" not in columns:
+        # The real silver tables are ReplacingMergeTree ORDER BY unique_key.
+        # A generator that omits unique_key leaves every row with the same
+        # default value, so the engine dedups the whole table down to ONE
+        # row — silently, and only visible after a merge. Synthesising the
+        # key from the row's own values keeps rows distinct, stays
+        # deterministic across re-seeds (same values -> same key), and still
+        # dedups genuinely identical rows, which is what the key is for.
+        LOG.warning(
+            "%s.%s: generator omits unique_key on a ReplacingMergeTree table; "
+            "synthesising it per row to prevent dedup collapse",
+            schema,
+            table,
+        )
+        # Respect the column's declared width: unique_key is FixedString(N)
+        # on some tables and String on others.
+        width_match = re.search(r"FixedString\((\d+)\)", have["unique_key"])
+        width = int(width_match.group(1)) if width_match else None
+
+        # Engine/metadata columns MUST NOT feed the key. These tables are
+        # ReplacingMergeTree(_version), whose contract is "same sorting key ->
+        # collapse, keep the highest _version". If _version were part of the
+        # key, bumping it would yield a DIFFERENT unique_key and the newer row
+        # would be appended alongside the old one instead of replacing it —
+        # inverting the engine's semantics. Same for _airbyte_extracted_at,
+        # which is an ingestion timestamp, not identity.
+        key_idx = [i for i, c in enumerate(columns) if not c.startswith("_")]
+
+        def _key(row: tuple[object, ...]) -> str:
+            seed = "|".join(repr(row[i]) for i in key_idx)
+            digest = hashlib.blake2b(
+                f"{schema}|{table}|{seed}".encode(), digest_size=16
+            ).hexdigest()
+            return digest[:width] if width else deterministic_uuid(schema, table, seed)
+
+        columns = [*columns, "unique_key"]
+        rows = [(*row, _key(row)) for row in rows]
+
+    types = [have[c] for c in columns]
+    if any("DateTime" in t for t in types):
+        rows = [
+            tuple(_coerce(v, t) for v, t in zip(row, types, strict=True)) for row in rows
+        ]
     client.insert(table, rows, column_names=columns, database=schema)
     return len(rows)

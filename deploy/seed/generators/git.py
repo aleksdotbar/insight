@@ -35,6 +35,18 @@ if TYPE_CHECKING:
 COMMITS_CAP = 20
 PRS_CAP = 6
 
+# One logical git source for the whole seed. This MUST be written to every
+# git silver table: gold/git_metric_observations builds its project and
+# repository dimension values with
+# `concat(toString(prs.source_id), ':', prs.project_key)`, and `toString`
+# of a NULL is NULL, which makes the whole dimension array NULL and fails
+# its CAST to a non-nullable Tuple. It is also part of the join key between
+# class_git_pull_requests_commits and class_git_commits, and NULL never
+# equals NULL in a join.
+SOURCE_ID = deterministic_uuid("git.source", "insight_github")
+PROJECT_KEY = "insight"
+REPO_SLUG = "insight/insight"
+
 
 def _eligible(roster: Sequence[Person]) -> list[Person]:
     """Persons whose team profile has any git weight."""
@@ -53,6 +65,7 @@ def seed_class_git_commits(
     truncate(client, "silver", "class_git_commits")
     cols = [
         "insight_tenant_id", "commit_hash", "project_key", "repo_slug",
+        "source_id",
         "tenant_id", "author_email", "date", "is_merge_commit",
         "file_path", "lines_added", "lines_removed", "data_source", "_version",
     ]
@@ -72,7 +85,8 @@ def seed_class_git_commits(
                 added = float(rng.randint(2, 180))
                 removed = float(rng.randint(0, 80))
                 rows.append((
-                    tenant_uuid, sha.replace("-", ""), "insight", "insight/insight",
+                    tenant_uuid, sha.replace("-", ""), PROJECT_KEY, REPO_SLUG,
+                    SOURCE_ID,
                     tenant_uuid, p.email, d, is_merge,
                     "src/main.rs", added, removed, "insight_github", version,
                 ))
@@ -90,6 +104,13 @@ def seed_class_git_pull_requests(
         "insight_tenant_id", "pr_id", "author_email", "author_name",
         "state", "created_on", "merged_on", "closed_on",
         "lines_added", "lines_removed", "tenant_id", "data_source", "_version",
+        # gold/git_metric_observations puts `destination_branch` into a
+        # dimension tuple whose value slot is non-nullable, and guards only
+        # the empty string (`if(x = '', '__unknown__', x)`), not NULL. Emit
+        # both branch names explicitly, as a real git connector would,
+        # rather than relying on the column default.
+        "source_branch", "destination_branch",
+        "source_id", "project_key", "repo_slug",
     ]
     rows: list[tuple[object, ...]] = []
     version = 1
@@ -125,6 +146,8 @@ def seed_class_git_pull_requests(
                     pr_added, pr_removed,
                     tenant_uuid, "insight_github",
                     version,
+                    f"feature/pr-{pr_id}", "main",
+                    SOURCE_ID, PROJECT_KEY, REPO_SLUG,
                 ))
     return bulk_insert(client, "silver", "class_git_pull_requests", cols, rows)
 
@@ -140,6 +163,7 @@ def seed_class_git_file_changes(
     truncate(client, "silver", "class_git_file_changes")
     cols = [
         "insight_tenant_id", "commit_hash", "project_key", "repo_slug",
+        "source_id",
         "tenant_id", "file_path", "lines_added", "lines_removed", "_version",
     ]
     rows: list[tuple[object, ...]] = []
@@ -160,11 +184,70 @@ def seed_class_git_file_changes(
                     added = rng.randint(2, 180)
                     removed = rng.randint(0, 80)
                     rows.append((
-                        tenant_uuid, sha_clean, "insight", "insight/insight",
+                        tenant_uuid, sha_clean, PROJECT_KEY, REPO_SLUG,
+                        SOURCE_ID,
                         tenant_uuid, paths[j % len(paths)],
                         added, removed, version,
                     ))
     return bulk_insert(client, "silver", "class_git_file_changes", cols, rows)
+
+
+def seed_class_git_pull_requests_commits(
+    client: clickhouse_connect.driver.client.Client,
+    roster: Sequence[Person],
+    tenant_uuid: str,
+    days: int,
+) -> int:
+    """PR -> commit links.
+
+    gold/git_metric_observations derives per-PR author attribution from this
+    table (its `pr_commit_emails` CTE INNER JOINs it against
+    class_git_commits, then LEFT JOINs the result onto the PRs). Without it
+    the CTE is empty, every PR row misses the LEFT JOIN, and the model's
+    dimension CAST fails on the resulting NULLs — so the table is not
+    optional for a stand that expects git metrics.
+
+    Links are reconstructed from the same seeded RNG streams the PR and
+    commit generators use, so a PR's commits are that author's commits from
+    the same day. Deterministic across runs by construction.
+    """
+    truncate(client, "silver", "class_git_pull_requests_commits")
+    cols = [
+        "tenant_id", "source_id", "project_key", "repo_slug",
+        "pr_id", "commit_hash", "commit_order", "data_source", "_version",
+    ]
+    rows: list[tuple[object, ...]] = []
+    version = 1
+    for p in _eligible(roster):
+        persona = persona_multiplier(p.uuid)
+        weight = TEAM_PROFILES[p.team or ""].weights["github"]
+        for d in days_window(days):
+            # Re-derive the day's commit hashes exactly as
+            # seed_class_git_commits does (same salt, same draw order).
+            crng = seeded_rng(p.uuid, d, "git.commits")
+            cmean = 5 * persona * weight * weekday_multiplier(d)
+            n_commits = min(poisson(crng, cmean), COMMITS_CAP)
+            if n_commits == 0:
+                continue
+            hashes = [
+                deterministic_uuid("git.commit", p.uuid, d.isoformat(), str(i))[:40].replace("-", "")
+                for i in range(n_commits)
+            ]
+            # Re-derive the day's PR ids the same way.
+            prng = seeded_rng(p.uuid, d, "git.prs")
+            pmean = 0.8 * persona * weight * weekday_multiplier(d)
+            n_prs = min(poisson(prng, pmean), PRS_CAP)
+            for i in range(n_prs):
+                pr_id = deterministic_int("git.pr", p.uuid, d.isoformat(), str(i))
+                # Deal the day's commits round-robin across the day's PRs so
+                # every PR gets at least one and no commit is double-linked.
+                linked = hashes[i::n_prs] if n_prs else []
+                for order, commit_hash in enumerate(linked):
+                    rows.append((
+                        tenant_uuid, SOURCE_ID, PROJECT_KEY, REPO_SLUG,
+                        pr_id, commit_hash, order, "insight_github", version,
+                    ))
+    return bulk_insert(client, "silver", "class_git_pull_requests_commits", cols, rows)
 
 
 def generate(
@@ -178,4 +261,6 @@ def generate(
         "silver.class_git_commits":       seed_class_git_commits(client, roster, tenant_uuid, days),
         "silver.class_git_pull_requests": seed_class_git_pull_requests(client, roster, tenant_uuid, days),
         "silver.class_git_file_changes":  seed_class_git_file_changes(client, roster, tenant_uuid, days),
+        "silver.class_git_pull_requests_commits":
+            seed_class_git_pull_requests_commits(client, roster, tenant_uuid, days),
     }

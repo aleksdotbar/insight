@@ -124,7 +124,7 @@ def seed_task_users(
     on insight_source_id + user_id) actually emits rows."""
     truncate(client, "silver", "class_task_users")
     cols = [
-        "insight_tenant_id",
+        "tenant_id",
         "insight_source_id",
         "user_id",
         "email",
