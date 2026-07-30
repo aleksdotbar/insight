@@ -25,6 +25,10 @@ deny). These rules cover only what tooling cannot enforce.
 - States that cannot coexist are enum variants, not bool/Option field
   combinations; make the invalid combination unrepresentable rather than
   checked at runtime.
+- When an API has call-order rules, encode them as type state so the wrong
+  order fails to compile (`Session<Anonymous>` has no `.send()`;
+  `authenticate()` returns `Session<Authenticated>` which does) — instead of
+  a runtime `is_ready` check.
 - Smallest visibility that compiles; `pub(crate)` before `pub`. No speculative
   API surface.
 - `#[derive(Debug)]` always; `Clone` only when a consumer clones.
@@ -49,15 +53,46 @@ deny). These rules cover only what tooling cannot enforce.
 - Prefer `#[expect(clippy::...)]` over `#[allow]` — it errors when the lint
   stops firing; either way the justification rides on the same line.
 
+## Concurrency
+
+- Never hold a lock or semaphore permit across an `.await` unless the hold is
+  the point (a concurrency cap); when it is, say so with an `// INVARIANT:`
+  line.
+- CPU-heavy or blocking work (serialization of large payloads, file I/O,
+  crypto) goes through `spawn_blocking`, never inline in an async handler.
+- Bound every unbounded thing at the edge: concurrent requests (semaphore),
+  response sizes, queue depths. A missing bound is a bug, not a default.
+- Shared mutable state wants a redesign before it wants `Arc<Mutex<_>>`;
+  message passing or single-owner tasks first.
+
+## Performance
+
+- Measure before optimizing; no speculative micro-optimization in review
+  feedback or code.
+- No allocation in per-row/per-item loops when the value can be borrowed or
+  hoisted; watch `.collect()` used only to iterate again.
+- Streaming over buffering when payloads can be large; if buffering is
+  required, cap it.
+
 ## Comments
 
-- None, unless code cannot express the why: intentional redundancy
-  (defense-in-depth re-checks), cross-function invariants ("the cursor is not
-  an authorization token"), `#[allow]` justifications. One line each.
-- No module headers, no `///` on self-describing items, no issue numbers in
-  source, no phase/scope notes — that context lives in issues and PRs.
+- None, unless code cannot express the why. Allowed categories, one line
+  each, tagged so they are greppable and an untagged comment stands out:
+  - `// SAFETY:` — soundness argument for an `unsafe` block.
+  - `// INVARIANT:` — a cross-function fact a future edit could silently
+    break ("the cursor is not an authorization token").
+  - `// WORKAROUND:` — external bug or platform behavior being dodged, with
+    the reason it is needed.
+  - lint suppressions — justification on the same line as the attribute.
+- No module headers, no issue numbers in source, no phase/scope notes — that
+  context lives in issues and PRs. Anything that deserves to outlive a PR
+  becomes a type, a test, or a design-doc section, never a comment.
 - Non-obvious semantics get a test whose name states the rule
   (`absent_null_and_value_are_three_distinct_states`), not a comment.
+- `///` doc comments: only in shared library crates on exported items —
+  what it does and its error conditions, briefly. Binaries and services get
+  none; their consumers read the source. No `missing_docs` enforcement
+  anywhere.
 
 ## Readability
 
