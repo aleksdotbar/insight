@@ -595,7 +595,12 @@ traceability = "DOCS-ONLY"
 [[systems.artifacts]]
 kind = "ADR"
 path = "docs/components/backend/authenticator/specs/ADR/0001-per-environment-idp-selection.md"
-name = "ADR-0001: Per-Environment IdP Selection (fakeidp for CI/compose, Dex for local k8s)"
+name = "ADR-0001: Per-Environment IdP Selection (fakeidp for CI/compose, Dex for local k8s) (superseded by ADR-0002)"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/authenticator/specs/ADR/0002-real-idp-on-deployed-stands.md"
+name = "ADR-0002: Real IdP on Deployed Stands (Pre-Provisioned Keycloak)"
 
 [[systems.artifacts]]
 kind = "DESIGN"
