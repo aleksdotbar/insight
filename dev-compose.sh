@@ -134,6 +134,10 @@ Options:
   --build-only=svc1,svc2    Build only these; everything else from ghcr.
   --frontend-mode=MODE      Override FRONTEND_MODE for this run.
                             (dev | built | ghcr)
+  --authenticator-redirect=URI
+                            Register an extra OIDC redirect_uri in the
+                            generated Keycloak realm. Repeatable. The two
+                            default localhost callbacks are always kept.
   --auth=MODE               Override AUTH_MODE (fakeidp|keycloak) from
                             .env.compose for this run only.
                             (fakeidp | keycloak, default: fakeidp)
@@ -317,6 +321,8 @@ cmd_up() {
   local frontend_mode_override=""
   local auth_mode_override=""
   local instance="$COMPOSE_INSTANCE"
+  # Repeatable. Empty => gen-realm.py keeps its own defaults untouched.
+  local authenticator_redirects=""
   local skip_build=false
   local no_frontend=false
 
@@ -336,6 +342,11 @@ cmd_up() {
       --frontend-mode)   frontend_mode_override="$2"; shift 2 ;;
       --auth=*)          auth_mode_override="${1#*=}"; shift ;;
       --auth)            auth_mode_override="$2"; shift 2 ;;
+      --authenticator-redirect=*)
+        authenticator_redirects="$(add "$authenticator_redirects" "${1#*=}")"; shift ;;
+      --authenticator-redirect)
+        [[ $# -ge 2 ]] || { echo "ERROR: --authenticator-redirect requires a value." >&2; return 2; }
+        authenticator_redirects="$(add "$authenticator_redirects" "$2")"; shift 2 ;;
       --skip-build)      skip_build=true; shift ;;
       --no-frontend)     no_frontend=true; shift ;;
       --start-airbyte|--start-argo)
@@ -540,8 +551,24 @@ YML
     local kc_base="http://${kc_ip}:8085/kc"
 
     echo "=== Generating Keycloak realm import (deploy/compose/keycloak/realm-insight.generated.json) ==="
+    # gen-realm.py's own --authenticator-redirect REPLACES its defaults rather
+    # than appending, so whenever we pass any URI we must re-state the two
+    # defaults too — dropping them would deregister the human login origins
+    # and break `./dev-compose.sh up --auth keycloak`.
+    local redirect_args=""
+    if [[ -n "$authenticator_redirects" ]]; then
+      local _uri
+      for _uri in $authenticator_redirects \
+                  "http://localhost:3000/auth/callback" \
+                  "http://localhost:8080/auth/callback"; do
+        redirect_args="$redirect_args --authenticator-redirect $_uri"
+      done
+      echo "    registering redirect URIs:$redirect_args"
+    fi
+    # shellcheck disable=SC2086  # redirect_args is a deliberately word-split flag list
     python3 deploy/compose/keycloak/gen-realm.py \
       --dev-email "$dev_lead_email" \
+      $redirect_args \
       --out deploy/compose/keycloak/realm-insight.generated.json
 
     # NGINX_BFF: the AUTHENTICATOR (not the frontend) logs in against Keycloak,
@@ -1151,6 +1178,209 @@ EOF
 # Dispatcher
 # ──────────────────────────────────────────────────────────────────────
 
+# ─── test-stand ────────────────────────────────────────────────────────
+#
+# The automated-test face of the same stack. Every verb DELEGATES to the
+# cmd_* functions above — this block owns policy (which knobs are forced,
+# when the stand is considered ready), never mechanism.
+#
+# It is deliberately isolated from the developer's own `.env.compose`:
+# everything runs through a generated, gitignored `.env.compose.test-stand`,
+# so `./dev-compose.sh up` keeps behaving exactly as it did.
+
+TEST_STAND_ENV_FILE=".env.compose.test-stand"
+# The compose SPA origin a browser test runner reaches the frontend at. Not
+# localhost: the runner is a container on the `insight` network.
+TEST_STAND_REDIRECT="http://insight-front/auth/callback"
+TEST_STAND_READY_TIMEOUT=240
+TEST_STAND_READY_INTERVAL=5
+
+cmd_test_stand_help() {
+  cat <<'EOF'
+usage: dev-compose.sh test-stand <up|seed|test|down> [args]
+
+The stack in test configuration: pinned ghcr frontend, real Keycloak login,
+and a readiness gate that waits for dbt-built gold data rather than for
+containers to report healthy.
+
+  up      Generate .env.compose.test-stand, bring the stack up, seed it, and
+          block until a gold metric proves dbt has refreshed.
+  seed    Re-seed the running stand (default target: all).
+  test    Run the stand suite against an already-up stand. Passes extra
+          arguments through to pytest.
+  down    Stop the stand and REMOVE its volumes, so the next `up` starts
+          from empty databases.
+
+Isolation: reads and writes .env.compose.test-stand only — never your own
+.env.compose. Airbyte and Argo are never started.
+EOF
+}
+
+# Resolve the frontend image from the chart's appVersion, so the stand runs
+# the same build the umbrella chart would deploy. Never `:latest`, which
+# would make a run unreproducible.
+test_stand_frontend_image() {
+  local chart="src/frontend/helm/Chart.yaml" version
+  [[ -f "$chart" ]] || { echo "ERROR: $chart not found — cannot pin the frontend image." >&2; return 1; }
+  version="$(awk -F'"' '/^appVersion:/ {print $2; exit}' "$chart")"
+  [[ -n "$version" ]] || { echo "ERROR: no appVersion in $chart — cannot pin the frontend image." >&2; return 1; }
+  printf 'ghcr.io/constructorfabric/insight-front:%s' "$version"
+}
+
+# Derive the test env file from the committed example, overriding only the
+# knobs the test path forces. SEEDED_LOCAL_* are blanked so every `up` seeds.
+test_stand_write_env() {
+  local image="$1" auth_mode="$2"
+  [[ -f .env.compose.example ]] || { echo "ERROR: .env.compose.example not found." >&2; return 1; }
+  cp .env.compose.example "$TEST_STAND_ENV_FILE"
+  update_env_var "$TEST_STAND_ENV_FILE" FRONTEND_MODE   "ghcr"
+  update_env_var "$TEST_STAND_ENV_FILE" FRONTEND_IMAGE  "$image"
+  update_env_var "$TEST_STAND_ENV_FILE" AUTH_MODE       "$auth_mode"
+  update_env_var "$TEST_STAND_ENV_FILE" SEEDED_LOCAL_MARIA ""
+  update_env_var "$TEST_STAND_ENV_FILE" SEEDED_LOCAL_CH    ""
+  echo "=== test-stand env → $TEST_STAND_ENV_FILE (frontend: $image, auth: $auth_mode) ==="
+}
+
+# Pick the metric the readiness gate polls.
+#
+# Hardcoding one metric couples the gate to whatever the seed happened to
+# populate when this was written. Phase 1's verdict records which metrics are
+# actually non-trivial, so prefer that; `tasks_closed` is only the fallback.
+# Echoes "<table> <measure_key>".
+test_stand_pick_canary() {
+  local verdict=".cf-studio/.plans/stage1-compose-e2e-suite/out/seed-reality.md"
+  local default_table="task_metric_observations" default_key="tasks_closed"
+  if [[ -f "$verdict" ]]; then
+    # Prefer tasks_closed when the verdict lists it as non-trivial.
+    if grep -E '^\|' "$verdict" | grep -q -e 'tasks_closed.*counter.*non-trivial'; then
+      printf '%s %s' "$default_table" "$default_key"; return 0
+    fi
+    local row key
+    row="$(grep -E '^\|.*\| *counter *\|.*non-trivial' "$verdict" | head -1 || true)"
+    if [[ -n "$row" ]]; then
+      # metric_key is the first backticked cell on the row.
+      key="$(printf '%s' "$row" | sed -n 's/.*`\([a-z0-9_]*\)`.*/\1/p' | head -1)"
+      if [[ -n "$key" ]]; then
+        local model
+        model="$(printf '%s' "$row" | grep -oE '\b(task|git|collab|ai|wiki)\b' | head -1 || true)"
+        [[ -n "$model" ]] && { printf '%s %s' "${model}_metric_observations" "$key"; return 0; }
+      fi
+    fi
+  fi
+  printf '%s %s' "$default_table" "$default_key"
+}
+
+# Block until a gold metric proves dbt has refreshed for THIS run.
+#
+# Container health only proves a process started, and a fixed sleep is a
+# guess. Scoping on observed_at is what stops rows left by a previous,
+# un-torn-down run from satisfying the gate instantly.
+test_stand_wait_ready() {
+  local table="$1" measure_key="$2" run_started_at="$3"
+  local elapsed=0 val="" ch_port="${CLICKHOUSE_HTTP_PORT:-8123}"
+  local ch_user="${CLICKHOUSE_USER:-insight}" ch_pass="${CLICKHOUSE_PASSWORD:-insight-local}"
+  local query="SELECT sum(value) FROM insight.${table} WHERE measure_key = '${measure_key}' AND observed_at >= '${run_started_at}'"
+
+  echo "=== Readiness gate: waiting for ${measure_key} in insight.${table} (since ${run_started_at}) ==="
+  while [[ "$elapsed" -lt "$TEST_STAND_READY_TIMEOUT" ]]; do
+    val="$(curl -sf -u "${ch_user}:${ch_pass}" --data-binary "$query" \
+             "http://localhost:${ch_port}/" 2>/dev/null || true)"
+    val="$(trim "${val:-}")"
+    if [[ -n "$val" ]] && awk -v v="$val" 'BEGIN{exit !(v+0>0)}' 2>/dev/null; then
+      echo "Readiness gate: ${measure_key}=${val} after ${elapsed}s — dbt has refreshed."
+      return 0
+    fi
+    sleep "$TEST_STAND_READY_INTERVAL"
+    elapsed=$((elapsed + TEST_STAND_READY_INTERVAL))
+  done
+
+  echo "ERROR: readiness gate timed out after ${TEST_STAND_READY_TIMEOUT}s." >&2
+  echo "       ${measure_key} in insight.${table} was: '${val:-<no response>}' (want > 0)." >&2
+  echo "       The stack is still up. Re-run the seed with:" >&2
+  echo "         ./dev-compose.sh test-stand seed" >&2
+  return 1
+}
+
+cmd_test_stand() {
+  local verb="${1:-help}"
+  [[ $# -gt 0 ]] && shift
+
+  case "$verb" in
+    up)
+      local auth_mode="keycloak" image
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --auth=*) auth_mode="${1#*=}"; shift ;;
+          --auth)   auth_mode="$2"; shift 2 ;;
+          -h|--help) cmd_test_stand_help; return 0 ;;
+          *) echo "ERROR: unknown test-stand up option: $1" >&2; return 2 ;;
+        esac
+      done
+
+      image="$(test_stand_frontend_image)" || return 1
+      test_stand_write_env "$image" "$auth_mode" || return 1
+
+      local up_args=(--env-file "$TEST_STAND_ENV_FILE")
+      [[ "$auth_mode" == keycloak ]] && up_args+=(--authenticator-redirect "$TEST_STAND_REDIRECT")
+      cmd_up "${up_args[@]}" || return 1
+
+      # cmd_up resolved and exported the issuer for this run; persist what it
+      # chose rather than re-deriving it, so the seed container and the test
+      # suite read exactly the value the stack is running with.
+      update_env_var "$TEST_STAND_ENV_FILE" AUTH_MODE "${AUTH_MODE:-$auth_mode}"
+      update_env_var "$TEST_STAND_ENV_FILE" AUTHENTICATOR_OIDC_ISSUER "${AUTHENTICATOR_OIDC_ISSUER:-}"
+      echo "=== persisted AUTH_MODE=${AUTH_MODE:-$auth_mode} AUTHENTICATOR_OIDC_ISSUER=${AUTHENTICATOR_OIDC_ISSUER:-<empty>} ==="
+
+      # Scope the gate to this run BEFORE seeding.
+      local run_started_at
+      run_started_at="$(date -u '+%Y-%m-%d %H:%M:%S')"
+
+      # cmd_up's first-run auto-seed may already have run, but it ran before
+      # the issuer was persisted — so its manifest would record the wrong IdP.
+      # Re-seed explicitly now that the env file is complete.
+      cmd_seed --env-file "$TEST_STAND_ENV_FILE" all || return 1
+
+      local canary table measure_key
+      canary="$(test_stand_pick_canary)"
+      table="${canary%% *}"; measure_key="${canary##* }"
+      test_stand_wait_ready "$table" "$measure_key" "$run_started_at" || return 1
+
+      echo "=== test-stand is ready ==="
+      ;;
+
+    seed)
+      [[ -f "$TEST_STAND_ENV_FILE" ]] || {
+        echo "ERROR: $TEST_STAND_ENV_FILE not found — run: ./dev-compose.sh test-stand up" >&2; return 1; }
+      cmd_seed --env-file "$TEST_STAND_ENV_FILE" "${@:-all}"
+      ;;
+
+    test)
+      # Runs against an already-up stand: never brings it up, seeds it, or
+      # tears it down, so a failing suite leaves the stand intact to inspect.
+      [[ -d tests/stand ]] || {
+        echo "ERROR: tests/stand does not exist yet (it is created in a later phase)." >&2
+        return 1; }
+      command -v pytest >/dev/null 2>&1 || {
+        echo "ERROR: pytest not found on PATH." >&2; return 1; }
+      local gw_port="${GATEWAY_PORT:-8080}"
+      curl -sf -o /dev/null --max-time 5 "http://localhost:${gw_port}/" 2>/dev/null || {
+        echo "ERROR: gateway is not answering on http://localhost:${gw_port}/." >&2
+        echo "       Bring the stand up first: ./dev-compose.sh test-stand up" >&2
+        return 1; }
+      pytest -q tests/stand "$@"
+      ;;
+
+    down)
+      # Always --volumes: the next `up` must start from empty databases, so a
+      # run's data comes only from its own seed.
+      cmd_down --volumes --env-file "$TEST_STAND_ENV_FILE"
+      ;;
+
+    help|-h|--help) cmd_test_stand_help ;;
+    *) echo "ERROR: unknown test-stand verb: $verb" >&2; cmd_test_stand_help; return 2 ;;
+  esac
+}
+
 usage() {
   cat <<'EOF'
 usage: dev-compose.sh <subcommand> [args]
@@ -1198,6 +1428,7 @@ main() {
     seed)  cmd_seed  ${args[@]+"${args[@]}"} ;;
     urls)  cmd_urls  ${args[@]+"${args[@]}"} ;;
     prune) cmd_prune ${args[@]+"${args[@]}"} ;;
+    test-stand) cmd_test_stand ${args[@]+"${args[@]}"} ;;
     help|-h|--help) usage ;;
     *) echo "ERROR: unknown subcommand: $sub" >&2; usage; return 2 ;;
   esac
