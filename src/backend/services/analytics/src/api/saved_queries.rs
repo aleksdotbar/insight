@@ -206,19 +206,34 @@ async fn execute_read(
 /// Map a ClickHouse run error to a canonical error. A query that references a
 /// named parameter left unbound (e.g. `{period}` with no `period` supplied) is
 /// caller error (`UNKNOWN_QUERY_PARAMETER`, code 456) — surface it as a 400 so
-/// the console can prompt for the missing value rather than a bare 500.
+/// the console can prompt for the missing value rather than a bare 500. The
+/// unbound parameter's name is reported when ClickHouse names it, so a query
+/// using `{region}` is not mislabeled as a missing `period`.
 fn classify_run_error(id: Uuid, message: &str) -> CanonicalError {
     if message.contains("UNKNOWN_QUERY_PARAMETER") || message.contains("Code: 456") {
+        let param = missing_param_name(message);
+        let reason = match param {
+            Some(name) => {
+                format!("named parameter `{name}` is referenced by the query but was not supplied")
+            }
+            None => "a named parameter referenced by the query was not supplied".to_owned(),
+        };
         return SavedQueryError::invalid_argument()
             .with_resource(id.to_string())
-            .with_field_violation(
-                "period",
-                "query references a named parameter that was not supplied",
-                "MISSING",
-            )
+            .with_field_violation(param.unwrap_or("params"), reason, "MISSING")
             .create();
     }
     CanonicalError::internal("query execution failed").create()
+}
+
+/// Extract the unbound parameter's name from a ClickHouse
+/// `UNKNOWN_QUERY_PARAMETER` message. ClickHouse backtick-quotes the name
+/// (`Substitution ``period`` is not set`); return the first such token, or
+/// `None` when the message does not name it.
+fn missing_param_name(message: &str) -> Option<&str> {
+    let start = message.find('`')? + 1;
+    let len = message[start..].find('`')?;
+    Some(&message[start..start + len])
 }
 
 /// Parse a `JSONEachRow` byte stream (one JSON object per line) into untyped
@@ -291,22 +306,22 @@ fn model_to_summary(m: saved_queries::Model) -> SavedQuerySummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_run_error, parse_json_each_row};
+    use super::{classify_run_error, missing_param_name, parse_json_each_row};
     use serde_json::json;
     use toolkit_canonical_errors::Problem;
     use uuid::Uuid;
 
     type R = Result<(), Box<dyn std::error::Error>>;
 
-    fn status_of(
+    fn problem_of(
         err: toolkit_canonical_errors::CanonicalError,
     ) -> Result<serde_json::Value, serde_json::Error> {
-        Ok(serde_json::to_value(Problem::from(err))?["status"].clone())
+        serde_json::to_value(Problem::from(err))
     }
 
-    /// A ClickHouse unbound-parameter error (code 456) is caller error → 400 on
-    /// the `period` field, not a bare 500 (#1966). Both the numeric code and the
-    /// symbolic name the server includes are matched.
+    /// A ClickHouse unbound-parameter error (code 456) is caller error → 400, not
+    /// a bare 500 (#1966). Both the numeric code and the symbolic name the server
+    /// includes are matched.
     #[test]
     fn missing_named_param_is_a_400() -> R {
         for msg in [
@@ -314,13 +329,46 @@ mod tests {
             "Code: 456. DB::Exception: Substitution `period` is not set",
             "DB::Exception: ... (UNKNOWN_QUERY_PARAMETER)",
         ] {
+            let p = problem_of(classify_run_error(Uuid::now_v7(), msg))?;
+            assert_eq!(p["status"], 400, "should be a 400: {msg:?}");
+        }
+        Ok(())
+    }
+
+    /// The 400 names the parameter ClickHouse reports as unbound, so a query
+    /// using `{region}` is not mislabeled as a missing `period`; when the message
+    /// does not name it, the violation falls back to a generic `params` field.
+    #[test]
+    fn missing_param_400_reports_the_named_parameter() -> R {
+        for (msg, field) in [
+            (
+                "Code: 456. DB::Exception: Substitution `period` is not set",
+                "period",
+            ),
+            (
+                "Code: 456. DB::Exception: Substitution `region` is not set",
+                "region",
+            ),
+            ("DB::Exception: ... (UNKNOWN_QUERY_PARAMETER)", "params"),
+        ] {
+            let p = problem_of(classify_run_error(Uuid::now_v7(), msg))?;
             assert_eq!(
-                status_of(classify_run_error(Uuid::now_v7(), msg))?,
-                400,
-                "should be a 400: {msg:?}"
+                p["context"]["field_violations"][0]["field"], field,
+                "wrong field for {msg:?}"
             );
         }
         Ok(())
+    }
+
+    /// The name extractor returns the first backtick-quoted token, or `None`.
+    #[test]
+    fn missing_param_name_extracts_backtick_token() {
+        assert_eq!(
+            missing_param_name("Substitution `period` is not set"),
+            Some("period")
+        );
+        assert_eq!(missing_param_name("no backticks here"), None);
+        assert_eq!(missing_param_name("unterminated `oops"), None);
     }
 
     /// Any other ClickHouse failure stays an opaque 500 — we do not leak engine
@@ -331,11 +379,8 @@ mod tests {
             "bad response: Code: 60. DB::Exception: Unknown table",
             "network error: connection refused",
         ] {
-            assert_eq!(
-                status_of(classify_run_error(Uuid::now_v7(), msg))?,
-                500,
-                "should be a 500: {msg:?}"
-            );
+            let p = problem_of(classify_run_error(Uuid::now_v7(), msg))?;
+            assert_eq!(p["status"], 500, "should be a 500: {msg:?}");
         }
         Ok(())
     }

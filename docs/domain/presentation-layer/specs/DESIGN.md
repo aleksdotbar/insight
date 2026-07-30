@@ -358,7 +358,7 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 | `GET` | `/v1/queries/{id}` | Fetch one | unstable |
 | `PUT` | `/v1/queries/{id}` | Update (re-validates SQL) | unstable |
 | `DELETE` | `/v1/queries/{id}` | Delete | unstable |
-| `POST` | `/v1/queries/{id}/run` | Execute read-only as `presentation_ro`, return rows; optional body `{ "period": "<value>" }` binds `{period}`; `{tenant}` always bound from context (tenant-row filter injected in #1967) | unstable |
+| `POST` | `/v1/queries/{id}/run` | Execute read-only as `presentation_ro`, return rows; optional body `{ "period": "<value>" }` binds `{period}`; `{tenant}` always bound from context (tenant-row *filter* deferred to #1967 — the run path binds the tenant value but adds no `insight_tenant_id` predicate yet) | unstable |
 
 `run` executes as `presentation_ro` and returns untyped JSON rows, the same shape as the existing metric query path. The request body is optional; named parameters (`tenant`/`period`, #1966) are bound as ClickHouse server-side parameters. No metric metadata, thresholds, or passports in Phase A.
 
