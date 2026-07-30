@@ -1,6 +1,6 @@
 ---
 name: file-bug-insight
-description: "File an Insight defect as a GitHub issue in constructorfabric/insight — triage against existing issues, gather evidence, localize the fix to the layer that owns it, draft a report that reads in under a minute, confirm, create, and verify the metadata landed. Use whenever the user asks to file/report/raise/log a bug, ticket, defect or issue, and trigger PROACTIVELY once an investigation has converged on 'this is broken and should be recorded' — don't wait for the words 'file a bug'. Also fires on 'log this', 'report it', 'this is broken, make a ticket', 'turn this into an issue', 'we should file two bugs for X and Y'. The repo is PUBLIC, so the default flow is draft → confirm → create and the body must be scrubbed of internal detail. Prefer this over the general `file-bug` skill for anything in the Insight product — dashboards, metrics, connectors, dbt, ClickHouse, identity, the Helm install — since it carries the medallion evidence walk, the layer localization and the live board IDs; the general skill is for a Constructor *platform* defect that belongs in YouTrack."
+description: "File an Insight defect as a GitHub issue in constructorfabric/insight — triage against existing issues, gather evidence, collect what the reproduction produced, draft a report that reads in under a minute, confirm, create, and verify the metadata landed. It reports OBSERVATIONS ONLY — no investigation, no root-cause analysis, no naming the file or layer to fix; that is the assignee's job. Use whenever the user asks to file/report/raise/log a bug, ticket, defect or issue, and trigger PROACTIVELY once an investigation has converged on 'this is broken and should be recorded' — don't wait for the words 'file a bug'. Also fires on 'log this', 'report it', 'this is broken, make a ticket', 'turn this into an issue', 'we should file two bugs for X and Y'. The repo is PUBLIC, so the default flow is draft → confirm → create and the body must be scrubbed of internal detail. Prefer this over the general `file-bug` skill for anything in the Insight product — dashboards, metrics, connectors, dbt, ClickHouse, identity, the Helm install — since it carries the medallion evidence walk, the reproduction-data discipline and the live board IDs; the general skill is for a Constructor *platform* defect that belongs in YouTrack."
 disable-model-invocation: false
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestion
@@ -8,7 +8,9 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestio
 
 # File an Insight bug
 
-Turn an observed defect into an issue someone else can act on in under a minute, carrying the evidence that proves it and a root cause traced from the real code.
+Turn an observed defect into an issue someone else can act on in under a minute, carrying the data the reproduction produced.
+
+**Report what you saw, not why it happens.** Reproduce, collect, attach. Diagnosis — which file, which layer, which expression — belongs to whoever picks the issue up: they have the context to be right, and a confident wrong cause in the body sends them down it before they start. An observation you can defend beats an explanation you cannot.
 
 **The tracker is always `constructorfabric/insight` on GitHub** — inside this repo there is no routing decision to make. (A Constructor *platform* bug — APS, Learn, Proctor, a platform stand's auth or navigation — goes to YouTrack instead; that routing lives in the general `file-bug` skill, not here.)
 
@@ -20,8 +22,8 @@ A finding may arrive already carrying a `verdict`, an `existing_issue` and a `la
 
 - **`verdict` must be `CONFIRMED`.** An `UNVERIFIED` finding is a hypothesis, and filing one spends a reader's attention on a maybe. Reproduce it yourself first, or hand it to the `qa-finding-refuter` agent where the fleet is installed.
 - **`existing_issue` must have been searched.** If it names an issue, comment on that issue instead of filing. If the match is *closed*, say so in the comment — a regression is more urgent than a new bug.
-- **`layer: stand` is not a product bug.** A `join_use_nulls` view mismatch, a stale `schema_status` cache, an unseeded connector, a tenant mismatch — these are environment faults. File one only when the deploy path itself is the defect, and then it's a `deploy` bug about the chart or migration, not a metric bug.
-- **`layer: unknown` is not filable.** Localize it first — walk the medallion by hand as below, or hand it to `qa-warehouse-analyst` where the fleet is installed — because the assignee and the grooming call both follow the layer.
+- **`layer: stand` is not a product bug.** A `join_use_nulls` view mismatch, a stale `schema_status` cache, an unseeded connector, a tenant mismatch — these are environment faults, and the reproduction shows it: the same check passes on a correctly populated instance. Record that and stop.
+- **A missing `layer` is not a blocker.** You do not have to know where the fix lands in order to file. Attach what you observed at each layer you could reach and leave the conclusion open.
 
 ## Companion skills
 
@@ -31,10 +33,10 @@ Each of these owns a slice of the work. Some are still being built out here, so 
 |---|---|---|
 | `playwright-cli` | the browser command surface — snapshots, refs, clicks, screenshots, console, network | exploring a stand or reproducing any UI defect |
 | `drive-ui` | getting an *authenticated* browser on any stand — fakeidp and the `DEV_USER_EMAIL` seed locally, a passkey attach on a remote one — plus the routes and the evidence set | any UI defect, local or remote |
-| `metric-parity` | the full bronze → silver → gold walk | localizing a wrong number to a layer |
+| `metric-parity` | the full bronze → silver → gold walk | collecting the same query at every layer |
 | `release-verify` | install and seed health | settling "product bug, or empty instance?" |
 
-One check belongs here rather than in `drive-ui`, because getting it wrong misroutes the bug: before calling a wrong on-screen value a frontend defect, look at the browser console and the API response behind it (`playwright-cli console`, then `requests` and `request <n>`). If the API already returned the wrong number, the layer is `analytics` or below and the UI is only the messenger.
+One collection step belongs here rather than in `drive-ui`: whenever a value on screen looks wrong, capture the browser console and the API response behind it (`playwright-cli console`, then `requests` and `request <n>`) and attach both. Whether the wrong number arrived from the API or was rendered wrong is the single most useful fact in the report — and it is an observation, not a diagnosis, as long as you paste what the response actually contained.
 
 ## Triage — before you gather
 
@@ -48,11 +50,11 @@ gh issue list --repo constructorfabric/insight --state all --search "<key phrase
 
 **Keep the limit high.** Closed issues rank after every open one, so a short window returns open matches only — a search for "threshold" gives 30 open and 0 closed at `--limit 30`, and 57 open plus 43 closed at 100. A closed match is the *more* urgent finding, since it means a regression.
 
-Search more than once with different vocabulary — the metric key, the field name, the group title, the error code, the user-visible label. Same defect → add your evidence to the existing issue. Genuinely different root cause or fix site → file new and cross-link with a one-line `related to #N` (a bare link, not a "how this differs" writeup — that reads as noise).
+Search more than once with different vocabulary — the metric key, the field name, the group title, the error code, the user-visible label. Same defect → add your evidence to the existing issue. A genuinely different symptom → file new and cross-link with a one-line `related to #N` (a bare link, not a "how this differs" writeup — that reads as noise).
 
 **Product bug, or environment artifact?** A metric that is empty because nothing was seeded or synced is not a product defect. File only what would still be wrong on a correctly populated instance. The cheapest check is the bottom of the medallion: no bronze rows for that connector and window means a seed or sync gap, so stop. (`release-verify` sweeps this for the whole install where it exists.)
 
-**One bug or several?** One issue per distinct root cause and fix site. Split a shared symptom with different causes; use a fix checklist for several touch-points of the *same* fix.
+**One bug or several?** One issue per distinct reproduction. Two symptoms that need different steps to trigger are two issues; the same symptom reached by two paths is one issue with both paths in Steps. Where you cannot tell, file one and say what else you saw — merging beats splitting a single defect across two threads.
 
 ## Gather evidence — never write from memory
 
@@ -60,7 +62,7 @@ Collect first, write second. The evidence must let someone else reproduce this.
 
 **Artifacts do not go in this repo.** Nothing in this tree is gitignored for scratch output — `scratch/`, `tmp/`, `artifacts/` are merely untracked, so a screenshot or a body file left behind surfaces in someone's `git status` and rides along on the next `git add -A`. Write evidence and the issue body to the session scratchpad directory your environment names, or to a fresh `mktemp -d`; that is what the `--body-file` path below assumes. (`../insight-workspace/scratch/` also works when that checkout sits alongside this one.)
 
-- **Data / metric bugs** — trace the medallion to where the value *first* goes wrong. Empty **bronze** means a sync or seed artifact, not a bug. Rows in bronze dropped at **silver** is a staging bug. Rows in silver but wrong in **gold** is a model or view bug. Don't file "gold is broken" when the story is "nothing upstream".
+- **Data / metric bugs** — run the same question at all three layers and record all three answers, even the ones that look normal. A reader who sees rows at bronze and silver but not at gold learns more from those three counts than from any sentence you could write about them. Empty **bronze** is the one case that ends the report: nothing was synced or seeded, so there is no product defect to file.
   ```sh
   CH=(docker exec insight-clickhouse clickhouse-client -u insight --password "${CLICKHOUSE_PASSWORD:-insight-local}")
   "${CH[@]}" -q "SELECT … FROM insight.<gold> WHERE …"                      # gold — served
@@ -73,36 +75,11 @@ Collect first, write second. The evidence must let someone else reproduce this.
 - **Pipeline / config bugs with no UI** — the failure signal itself: the exact error and stack, or a row-count contrast that runs the code's own filter (returns 0) against the unfiltered count (>0). **If the failure is silent** — completes "successfully" with zero effect — say so explicitly. That is the key symptom.
 - **What the metric is *supposed* to do** lives in `docs/domain/metrics/specs/DESIGN.md` and the model under `src/ingestion/`. Read the intent before calling behaviour wrong.
 
-## Localize the fix from the actual code
-
-Naming *where the fix lands* is what makes an issue actionable and routes it to an owner. Read and quote the real code; never infer a formula from a metric's name. Use "X-side, not Y-side" when it disambiguates a layer — *"client-side, not API-side: the API correctly returns 403; the SPA renders the menu entry unconditionally."*
-
-Gold is defined in two places and they are not interchangeable: the dbt models in `src/ingestion/gold/` materialize the measure observation tables, while the `insight.*` views and marts are created by the migrations in `src/ingestion/scripts/migrations/`. Views get redefined across several migrations — grep them all and read the **latest-timestamped** one before quoting a formula.
-
-Verify every reference against `main` before linking it; your worktree may differ:
-
-```sh
-gh api "repos/constructorfabric/insight/contents/<path>?ref=main" \
-  -H "Accept: application/vnd.github.raw" | grep -nE '<pattern>'
-```
-
 ## Type and priority
 
 - **Issue Type = `Bug`** — the native type (`--type "Bug"`), never a `bug` label.
 - **Priority is the Insight #40 project *field*, not a label.** Never add `priority:*`. Options: `Blocker` (blocks the next installable release), `High` (meaningful demo features), `Medium` (default). Suggest a level and confirm it.
-- **Don't label.** Component, team, release and planning labels are applied during grooming by the people who own that call, and a wrong one routes the bug to the wrong team. Name the owning layer in Root Cause instead, in words.
-
-Naming the layer is still your job — it just belongs in Root Cause, in words, not in a label:
-
-| Fleet `layer` | Symptom shape |
-|---|---|
-| `frontend` | Correct in ClickHouse, renders wrong — axis, colours, series, formatting, null-vs-zero |
-| `analytics` | 500s, wrong filter or bucketing in the serving path, wrong measure binding |
-| `ingestion` | Wrong at or before gold: bad dedup, dropped rows, wrong view expression, schema drift |
-| `ingestion` (identity) | People or org empty / mis-resolved, producer↔consumer mismatch |
-| `stand` (deploy path only) | Broken on a fresh install: missing config or wiring, chart or secret gap |
-
-The layer follows the *fix*, not the symptom — a wrong number from a gold view is an ingestion bug even though it surfaces in the UI.
+- **Don't label.** Component, team, release and planning labels are applied during grooming by the people who own that call, and a wrong one routes the bug to the wrong team. Describe the symptom; the owning team is identified during grooming.
 
 ## Body template — four headings
 
@@ -125,22 +102,30 @@ detail, no history, no scope. A reader triaging a list often reads only this lin
 stops a reviewer waving off a real defect as missing data. If it only reproduces from a given
 state, name the STATE ("a freshly migrated database"), never the environment.>
 
-## Root Cause
-<2–4 sentences. Name the file, view or expression and quote it, each reference linked to `main`.>
+## Additional information
+<The data the reproduction produced, and nothing you inferred from it. Whatever you ran and what
+it returned: counts at each layer, the API status and response body, the log or dbt error, the
+same check on a state where it works. Label each one with what produced it. If a value looks
+wrong, give the value you saw and the value the spec or the UI led you to expect — not a theory
+about where it went wrong.>
 
 ## Notes        ← optional, one line (e.g. `related to #N`)
 ```
 
+**No `## Root Cause` heading.** It used to be in this template, and removing it is the point of the observations-only rule: a cause written by someone who reproduced the bug but did not write the code reads as authoritative, and the assignee spends their first hour ruling it out. What you observed goes under Additional information; what it means is theirs to decide.
+
 **No `## Impact` heading.** It restates the Summary in longer words. Affected instances or states go next to the evidence in Steps; a knock-on effect is one line in Notes. Wanting the heading back means the Summary sentence is not carrying its weight.
 
-Additive when they sharpen the report: an **Examples** table (current-wrong → correct) for a rule, threshold, sign or mapping bug; a **Fix checklist** with each site linked when the fix spans several places. Link code, don't paste strings: `[file.ext#L79](https://github.com/constructorfabric/insight/blob/main/<path>#L79)`.
+Additive when it sharpens the report: an **Examples** table (observed → expected) for a rule, threshold, sign or mapping bug. No fix checklist and no code links — a list of sites to change is a diagnosis, and naming one wrong is worse than naming none.
 
 ## Write plainly
 
 One idea per sentence. Short declarative lines a tired on-call reader parses on the first pass. If a sentence has more than one comma-joined clause plus a dash-aside, split it. State what happens, then why.
 
 - ✗ *"Deploy-side, not migration-side: the hook is skipped/lost on a successful fresh install while Helm reports success, leaving the gold layer unbuilt (install-time logs were unavailable — the Job leaves no trace because it never ran)."*
-- ✓ *"The post-install hook never runs on a fresh install. Helm still reports success. No hook Job or Pod is ever created, so the gold layer stays unbuilt. The fix is deploy-side — the migration script works when run by hand."*
+- ✓ *"On a fresh install the gold layer stays unbuilt. Helm reports success. No hook Job or Pod exists afterwards. Running the migration script by hand builds the layer."*
+
+The second version is also the shape this skill asks for: four things observed, no claim about which side owns the fix.
 
 **Say each fact once.** Every fact lives in exactly one section. Repetition teaches the reader to skim, and skimming is how the one load-bearing line gets missed.
 
@@ -175,13 +160,21 @@ A real filed bug, condensed. Read it for calibration on how little text a comple
 >
 > The row is inserted despite the 500 — `SELECT field_name, operator, value FROM thresholds` returns it. The write path works and the read path does not, which is why one successful-looking create disables the endpoint for good. Reproduces on a freshly migrated database with no other data.
 >
-> ## Root Cause
-> The `value` column is `DECIMAL(20,6)` ([`m20260414_000001_init.rs#L86`](https://github.com/constructorfabric/insight/blob/main/src/backend/services/analytics/src/migration/m20260414_000001_init.rs#L86)) but the entity maps it to `f64` ([`entities.rs#L39`](https://github.com/constructorfabric/insight/blob/main/src/backend/services/analytics/src/infra/db/entities.rs#L39)), and sqlx-mysql cannot decode `NEWDECIMAL` into `f64` — the `column_type = "Decimal(…)"` annotation on the field does not change how the value is read back. Writes coerce server-side; reads fail during decode, and the handler wraps that as internal ([`handlers.rs#L1070`](https://github.com/constructorfabric/insight/blob/main/src/backend/services/analytics/src/api/handlers.rs#L1070)). The newer admin threshold table reads the same shape safely by casting in raw SQL.
+> ## Additional information
+> - Every later read of that metric's thresholds returns the same 500: the create's read-back, the list, an update and a delete.
+> - The row is in the table — `SELECT field_name, operator, value FROM thresholds` returns it with `value = 1.000000`.
+> - The admin threshold endpoints (`metric_threshold`) accept and return the same shape on the same instance, with no error.
+> - Server log, verbatim, at the moment of the failed read:
+>   ```
+>   failed to list thresholds error=Query Error: error occurred while decoding column
+>   "value": mismatched types; Rust type `core::option::Option<f64>` (as SQL type
+>   `DOUBLE`) is not compatible with SQL type `DECIMAL`
+>   ```
 >
 > ## Notes
-> `metric_threshold` (admin) is unaffected — different read path.
+> Found by the endpoint contract suite; the affected tests are currently skipped against this issue.
 
-Three things that example gets right, and they are the ones reports usually miss. The title is a symptom a user could have reported, with the diagnosis left for Root Cause. The "row is inserted despite the 500" line is load-bearing — without it a triager reads a 500 as a flaky write and moves on. And Root Cause stops at *where the defect is*, naming the safe read path as a hint without prescribing the fix.
+Three things that example gets right, and they are the ones reports usually miss. The title is a symptom a user could have reported. The "row is in the table" line is load-bearing — without it a triager reads a 500 as a flaky write and moves on. And every line under Additional information is something that was *run and observed*: the decode error is pasted, not paraphrased, and the working admin endpoint is offered as a contrast the assignee can use — not as a theory about what differs.
 
 ## Scrub the body
 
