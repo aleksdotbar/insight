@@ -177,13 +177,6 @@ def main() -> int:
         help="ignore the .env next to this script and use the inherited CLICKHOUSE_* variables "
         "(for pointing the audit at another cluster)",
     )
-    parser.add_argument(
-        "--allow-missing-relations",
-        action="store_true",
-        help="report absent relations as notes instead of findings, and audit whatever IS present. "
-        "For a warehouse that is not expected to hold every model — e.g. one built by applying the "
-        "connectors-ddl snapshot, which carries only the gold-referenced staging tables by design",
-    )
     args = parser.parse_args()
 
     if not args.no_env_file and load_env_file(SCRIPT_DIR / ".env"):
@@ -217,11 +210,6 @@ def main() -> int:
 
     findings: list[str] = []
     unchecked: list[str] = []
-    absent: list[str] = []
-
-    def report_absent(message: str) -> None:
-        """A relation the manifest expects but the warehouse lacks."""
-        (absent if args.allow_missing_relations else findings).append(message)
 
     # --- check 1: coverage -------------------------------------------------
     for node in sorted(models, key=lambda n: (n["schema"], n["name"])):
@@ -229,7 +217,7 @@ def main() -> int:
             continue
         schema, identifier = relation_of(node)
         if (schema, identifier) not in structure:
-            report_absent(f"coverage  {schema}.{identifier}: model in the manifest has no relation in the warehouse")
+            findings.append(f"coverage  {schema}.{identifier}: model in the manifest has no relation in the warehouse")
 
     # --- checks 2-4: contributor vs its union target ------------------------
     for target in sorted(groups):
@@ -264,7 +252,7 @@ def main() -> int:
                 # Ephemeral models are exempt from check 1 (they have no relation of
                 # their own), so a missing pass-through target must be reported here.
                 if node["config"]["materialized"] == "ephemeral":
-                    report_absent(
+                    findings.append(
                         f"coverage  {relation[0]}.{relation[1]}: read by the ephemeral contributor "
                         f"{node['name']} but absent from the warehouse"
                     )
@@ -300,10 +288,6 @@ def main() -> int:
         print(f"FAIL  {finding}")  # noqa: T201  — this IS the script's output
     for note in unchecked:
         print(f"UNCHECKED  {note}")  # noqa: T201
-    # Printed, never silent: --allow-missing-relations narrows what was compared,
-    # and a shrinking audit must be visible in the log that reports it passed.
-    for note in absent:
-        print(f"ABSENT  {note} (not a finding: --allow-missing-relations)")  # noqa: T201
 
     # --- diagnostics: which contributors disagree with each other ----------
     disagreements: list[str] = []
@@ -343,8 +327,7 @@ def main() -> int:
     breakdown = ", ".join(f"{count} {category}" for category, count in sorted(by_category.items()) if count)
     print(  # noqa: T201
         f"\n{len(findings)} finding(s) ({breakdown}), {len(unchecked)} unchecked, "
-        f"{len(absent)} absent, {len(groups)} union target(s), "
-        f"{len(structure)} relation(s) in the warehouse"
+        f"{len(groups)} union target(s), {len(structure)} relation(s) in the warehouse"
     )
     return 1 if findings else 0
 

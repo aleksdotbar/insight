@@ -1,28 +1,21 @@
 name: connectors-ddl
 
-# Validates the two contracts no other lane can see, against a real ClickHouse
-# built from scratch:
+# Validates the two contracts no other lane can see, against a ClickHouse built
+# from scratch by the real pipeline:
 #
-#   1. the committed connectors-ddl snapshot still applies to an empty cluster
-#      and still matches what the current connectors + dbt actually produce;
+#   1. the committed connectors-ddl snapshot still matches what the current
+#      connectors + dbt + migrations actually produce;
 #   2. every staging contributor still lines up field-for-field with its silver
 #      union target (check-field-parity.py).
 #
-# Two phases, each on its OWN throwaway ClickHouse:
-#
-#   Phase 1 — apply the committed snapshot to an empty cluster, exactly as a
-#     fresh deploy does via create-bronze-placeholders.sh, and audit whatever the
-#     snapshot carries.
-#   Phase 2 — a SECOND empty cluster: run the full bootstrap (real connector
-#     `discover`, the real destination-clickhouse connector, real dbt, real
-#     migrations), re-dump the snapshot and fail on any diff, then audit field
-#     parity strictly.
-#
-# Phase 2 must NOT inherit phase 1's cluster. create-bronze-placeholders.sh
-# applies `CREATE ... IF NOT EXISTS`, so a relation the committed snapshot still
-# carries but the current code no longer produces would survive into the fresh
-# dump, hide its own deletion from the diff, and break convergence — the same
-# reason bootstrap-db.sh sets BOOTSTRAP_SKIP_SNAPSHOT=1 during generation.
+# One empty ClickHouse, then straight into bootstrap-db.sh: real connector
+# `discover`, the real destination-clickhouse connector, real dbt, real
+# migrations. The committed snapshot is deliberately NOT applied first —
+# create-bronze-placeholders.sh issues `CREATE ... IF NOT EXISTS`, so a relation
+# the snapshot still carries but the current code no longer produces would
+# survive into the fresh dump, hide its own deletion from the diff and break
+# convergence. That is the same reason bootstrap-db.sh sets
+# BOOTSTRAP_SKIP_SNAPSHOT=1 during generation.
 #
 # PR-only, and only for PRs whose branch lives in this repository: the job runs
 # PR code and needs the HubSpot / Salesforce credentials whose CDK `discover`
@@ -54,6 +47,7 @@ jobs:
     timeout-minutes: 60
     env:
       BOOTSTRAP_DIR: src/ingestion/scripts/bootstrap-db
+      CLICKHOUSE_CONTAINER: connectors-ddl-clickhouse
       CLICKHOUSE_PORT: "8123"
       CLICKHOUSE_PROTOCOL: http
       CLICKHOUSE_USER: insight
@@ -92,9 +86,9 @@ jobs:
           set -euo pipefail
           # HubSpot and Salesforce build their catalogue from a live API, so their
           # `discover` cannot run on fake values. Without them seed-connectors.sh
-          # skips both connectors, their bronze never lands, and phase 2 dies in
-          # dbt — 20 minutes later, with a confusing error. Fail in 5 seconds
-          # instead, naming exactly what is missing.
+          # skips both connectors, their bronze never lands, and dbt dies — 20
+          # minutes later, with a confusing error. Fail in 5 seconds instead,
+          # naming exactly what is missing.
           missing=()
           for var in HUBSPOT_ACCESS_TOKEN SALESFORCE_CLIENT_ID SALESFORCE_CLIENT_SECRET SALESFORCE_INSTANCE_URL; do
             [[ -n "${!var:-}" ]] || missing+=("$var")
@@ -104,7 +98,7 @@ jobs:
             exit 1
           fi
 
-      - name: Start ClickHouse (phase 1)
+      - name: Start an empty ClickHouse
         run: |
           set -euo pipefail
           # The bridge gateway is the runner host as seen from inside a container:
@@ -114,43 +108,7 @@ jobs:
           host="$(docker network inspect bridge -f '{{ (index .IPAM.Config 0).Gateway }}')"
           echo "CLICKHOUSE_HOST=${host}" >> "$GITHUB_ENV"
           echo "CLICKHOUSE_URL=http://${host}:8123" >> "$GITHUB_ENV"
-          .github/workflows/scripts/start-clickhouse.sh ddl-phase1
-
-      - name: Build the dbt manifest
-        run: |
-          set -euo pipefail
-          # check-field-parity.py needs manifest.json for the staging -> silver tag
-          # mapping, and phase 1 audits BEFORE anything is built. A selector that
-          # matches nothing makes dbt parse the project, write the manifest and
-          # build zero models (exit 0) — and warms the pinned venv that phase 2
-          # reuses. run-dbt.sh always runs `dbt run`, hence the empty selection
-          # rather than `dbt parse`.
-          "${BOOTSTRAP_DIR}/run-dbt.sh" --select __manifest_only_no_such_model__
-
-      - name: Apply the committed snapshot
-        run: bash src/ingestion/scripts/create-bronze-placeholders.sh
-
-      - name: Field parity over the snapshot
-        run: |
-          set -euo pipefail
-          # --allow-missing-relations: the snapshot carries only the
-          # gold-referenced staging tables by design (dump-ddl.sh), so demanding a
-          # relation per model would fail every run for the wrong reason. Absent
-          # relations are printed, not counted. Everything else stays a hard
-          # failure: this proves the snapshot applies to an empty cluster and that
-          # what it does carry is internally consistent.
-          if ! "${BOOTSTRAP_DIR}/check-field-parity.py" --no-env-file --allow-missing-relations; then
-            echo "::error title=Field parity (snapshot)::The committed connectors-ddl snapshot is not field-consistent. Fix the staging/silver models, regenerate the snapshot, and commit it."
-            exit 1
-          fi
-
-      - name: Start ClickHouse (phase 2 — fresh cluster)
-        run: |
-          set -euo pipefail
-          # A brand-new container, NOT the phase 1 one: see the header comment on
-          # why generation must never see the previous snapshot.
-          docker rm -f ddl-phase1
-          .github/workflows/scripts/start-clickhouse.sh ddl-phase2
+          .github/workflows/scripts/start-clickhouse.sh "${CLICKHOUSE_CONTAINER}"
 
       - name: Bootstrap from connectors + dbt + migrations
         env:
@@ -158,7 +116,9 @@ jobs:
           SALESFORCE_CLIENT_ID: ${{ secrets.SALESFORCE_CLIENT_ID }}
           SALESFORCE_CLIENT_SECRET: ${{ secrets.SALESFORCE_CLIENT_SECRET }}
           SALESFORCE_INSTANCE_URL: ${{ secrets.SALESFORCE_INSTANCE_URL }}
-        run: "${BOOTSTRAP_DIR}/bootstrap-db.sh ${BOOTSTRAP_DIR}/connectors-config.yaml"
+        run: |
+          set -euo pipefail
+          "${BOOTSTRAP_DIR}/bootstrap-db.sh" "${BOOTSTRAP_DIR}/connectors-config.yaml"
 
       - name: Re-dump the snapshot and fail on drift
         run: |
@@ -184,17 +144,18 @@ jobs:
           path: ${{ runner.temp }}/connectors-ddl.diff
           if-no-files-found: ignore
 
-      - name: Field parity over the rebuilt warehouse
+      - name: Field parity
         run: |
           set -euo pipefail
-          # Strict: every model in the manifest must have a relation, and any
-          # column-set, order or type divergence — Nullable(T) vs T included — is
-          # a failure.
+          # Strict: every model in the manifest must have a relation (bootstrap-db
+          # just built all of them, so a gap means something failed quietly), and
+          # any column-set, order or type divergence — Nullable(T) vs T included —
+          # is a failure. manifest.json comes from the dbt run inside bootstrap-db.
           if ! "${BOOTSTRAP_DIR}/check-field-parity.py" --no-env-file; then
-            echo "::error title=Field parity (rebuilt)::A staging contributor does not line up with its silver union target. ClickHouse unions branches BY POSITION and widens types silently, so this is a data-correctness gate, not style."
+            echo "::error title=Field parity::A staging contributor does not line up with its silver union target. ClickHouse unions branches BY POSITION and widens types silently, so this is a data-correctness gate, not style."
             exit 1
           fi
 
       - name: ClickHouse logs
         if: failure()
-        run: docker logs --tail 200 ddl-phase2 2>&1 || docker logs --tail 200 ddl-phase1 2>&1 || true
+        run: docker logs --tail 200 "${CLICKHOUSE_CONTAINER}" 2>&1 || true

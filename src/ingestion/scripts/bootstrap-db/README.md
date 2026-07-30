@@ -94,7 +94,7 @@ A silver `class_*` model is a `UNION ALL` of every staging model tagged `silver:
 ./check-field-parity.py
 ```
 
-`.github/workflows/connectors-ddl.yml` runs this audit twice on every PR: once over a cluster carrying only the committed snapshot (with `--allow-missing-relations`, since the snapshot holds just the gold-referenced staging tables), and once — strictly — over a warehouse rebuilt from scratch by `bootstrap-db.sh`.
+`.github/workflows/connectors-ddl.yml` runs this audit on every PR, over a warehouse the lane rebuilds from scratch with `bootstrap-db.sh` — the same run whose re-dump gates the committed snapshot.
 
 Like `bootstrap-db.sh`, it sources the `.env` next to it and lets those values win over the inherited environment — a stale `CLICKHOUSE_HOST` exported in the current shell would otherwise beat the file the rest of the pipeline runs on. Pass `--no-env-file` to audit another cluster (say dev) from the exported variables instead.
 
