@@ -47,14 +47,31 @@ Throw it away with `docker rm -f bootstrap-db-clickhouse`.
 2. Review the file. Every required config field gets a fake value; that is enough for connectors with static stream schemas. Connectors that build schemas from a live API (`hubspot`, `salesforce`) need real credentials — replace `value` with `env` to take the value from an environment variable at run time, so secrets never land in the file:
 
    ```yaml
-   connectors:
-     hubspot:
-       path: crm/hubspot
-       config:
-         hubspot_access_token:
-           env: HUBSPOT_ACCESS_TOKEN
-         insight_tenant_id:
-           value: fake
+connectors:
+  hubspot:
+    path: crm/hubspot
+    config:
+      hubspot_access_token:
+        env: HUBSPOT_ACCESS_TOKEN
+      insight_source_id:
+        value: hubspot-acme-prod
+      insight_tenant_id:
+        value: fake
+  salesforce:
+    path: crm/salesforce
+    config:
+      insight_source_id:
+        value: salesforce-acme-prod
+      insight_tenant_id:
+        value: fake
+      salesforce_client_id:
+        env: SALESFORCE_CLIENT_ID
+      salesforce_client_secret:
+        env: SALESFORCE_CLIENT_SECRET
+      salesforce_instance_url:
+        env: SALESFORCE_INSTANCE_URL
+      salesforce_start_date:
+        value: "2024-01-01"
    ```
 
    The file contains no secrets and can be committed to the repository.
@@ -69,6 +86,22 @@ Throw it away with `docker rm -f bootstrap-db-clickhouse`.
 
    This creates the tables for every connector in the file (a failing connector is reported and skipped, the run continues), then runs all dbt models, then applies the ClickHouse migrations (`../apply-ch-migrations.sh`).
 
+## Auditing staging → silver field parity
+
+A silver `class_*` model is a `UNION ALL` of every staging model tagged `silver:<target>` (the `union_by_tag` macro). ClickHouse matches UNION branches **by position** and takes the column names from the first branch, so a contributor that renames, reorders or retypes a column does not fail the build — it silently misaligns data or widens the published silver type. The bootstrap warehouse is the only place where every model is materialised at once, which makes it the right place to check that:
+
+```bash
+./check-field-parity.py
+```
+
+Like `bootstrap-db.sh`, it sources the `.env` next to it and lets those values win over the inherited environment — a stale `CLICKHOUSE_HOST` exported in the current shell would otherwise beat the file the rest of the pipeline runs on. Pass `--no-env-file` to audit another cluster (say dev) from the exported variables instead.
+
+It reads `system.columns` for the structure and `../../dbt/target/manifest.json` for the staging → silver mapping (that mapping exists only in the dbt tags, not in the database). Every divergence is a hard failure — there is no baseline file and no warning tier, so a `Nullable(T)` vs `T` split fails just like a renamed column. Exit code 1 means findings, 2 means usage or connection error.
+
+The run also fails if a model present in the manifest has no relation in the warehouse: a connector whose `discover` failed would otherwise shrink the comparison silently and the audit would pass for the wrong reason.
+
+Contributors whose physical table is not owned by dbt are covered too. `jira__task_field_history` is an ephemeral pass-through (`SELECT * FROM {{ source(...) }}`) over `staging.jira__task_field_history`, a table written by the `jira-enrich` Rust binary whose DDL lives in the `create_task_field_history_staging` macro — see ADR-003. The audit follows the `source()` dependency to that table and checks it against the silver target, so a future YouTrack twin of the enrich table gets the same field-parity guard for free, provided it keeps the shape: an ephemeral pass-through model carrying the `silver:<target>` tag. An ephemeral model that transforms its input publishes columns no relation holds and is reported as UNCHECKED instead.
+
 ## Scripts
 
 | Script | What it does |
@@ -78,6 +111,7 @@ Throw it away with `docker rm -f bootstrap-db-clickhouse`.
 | `create-connector-tables.sh <connector-dir> <config.json>` | One connector: `discover` → configured catalog → `destination-clickhouse write` with a zero-record stream-status input (creates empty tables) → `dbt run --select <name>__bronze_promoted` (MergeTree → ReplacingMergeTree). |
 | `bootstrap-db.sh <config.yaml>` | Sources `pins.env` and `.env` (if present), runs `seed-connectors.sh`, runs all dbt models, runs `../apply-ch-migrations.sh`. |
 | `run-dbt.sh [dbt args]` | Helper: generates a profiles.yml from the `CLICKHOUSE_*` variables and runs `dbt run` in `src/ingestion/dbt`. |
+| `check-field-parity.py [--manifest PATH]` | Audits every staging contributor against its silver union target (column set, positional order, exact type) plus manifest-vs-warehouse coverage. Same `CLICKHOUSE_*` env contract as the other scripts. Non-zero exit on any finding. |
 | `dump-ddl.sh` | Dumps `SHOW CREATE` for every `bronze_*` table, the `person`/`identity`/`silver`/`insight` databases (tables and views), and the gold-referenced `staging` tables into `../connectors-ddl/*.sql` — the committed snapshot that `../create-bronze-placeholders.sh` applies on fresh clusters. **Run it manually** after `bootstrap-db.sh` (see step above) whenever a schema changes, and commit the diff; `.github/workflows/connectors-ddl-reminder.yml` only posts a reminder on `src/ingestion/**` PRs — it does not regenerate anything. |
 
 ## Image pins (pins.env)
