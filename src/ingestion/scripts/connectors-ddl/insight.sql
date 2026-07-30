@@ -2520,7 +2520,7 @@ FROM
     SELECT
         workspace_id AS tenant_id,
         lower(assumeNotNull(email)) AS entity_id,
-        coalesce(nullIf(toString(org_unit_id), ''), nullIf(department_name, '')) AS cohort_id
+        nullIf(department_name, '') AS cohort_id
     FROM silver.class_people
     WHERE (email IS NOT NULL) AND (email != '') AND (workspace_id IS NOT NULL) AND (workspace_id != '')
     ORDER BY
