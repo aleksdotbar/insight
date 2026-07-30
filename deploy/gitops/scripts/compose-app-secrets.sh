@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# compose-app-secrets.sh — derive insight-analytics-config and
-# insight-identity-config from the credentials already materialised in
-# the cluster's `insight-db-creds` Secret, plus the L2 service hosts
-# declared in environments/<env>/values.yaml.
+# compose-app-secrets.sh — derive the insight-{analytics,authenticator,
+# identity-resolution}-config Secrets from the credentials already
+# materialised in the cluster's `insight-db-creds` Secret, plus the L2
+# service hosts declared in environments/<env>/values.yaml.
 #
 # Why this exists: the chart auto-generates these "config" Secrets only
 # when `credentials.autoGenerate: true`. The gitops contract forbids
@@ -19,26 +19,21 @@
 # Inputs (env vars):
 #   ENV           required — selects environments/$ENV/values.yaml
 #   NS_APP        required — namespace where the Secrets land (insight)
-#   RELEASE       required — used to compute identity svc name
+#   RELEASE       required — used to compute identity-resolution svc name
 #
 # The script reads from `environments/$ENV/values.yaml`:
 #   .mariadb.host    .mariadb.port   .mariadb.username    .mariadb.database
 #   .clickhouse.host .clickhouse.port .clickhouse.username .clickhouse.database
 #   .redis.host      .redis.port
-#   .identity.databaseName       (defaults to "identity")
+#   .identityResolution.databaseName (defaults to "identity")
 #   .global.tenantDefaultId      (optional; empty disables the resolver
-#                                 on both identity and analytics.
-#                                 Single source of truth for the
-#                                 single-tenant UUID — matches the
-#                                 chart's `global.tenantDefaultId` knob
-#                                 which also drives api-gateway's
-#                                 single-tenant-tr-plugin.)
-#   .identity.orgChartSourceType (optional; empty falls back to the
-#                                 appsettings default `bamboohr`)
+#                                 on both identity-resolution and
+#                                 analytics. Single source of truth for
+#                                 the single-tenant UUID — matches the
+#                                 chart's `global.tenantDefaultId` knob.)
 #   .identityUrl                 (optional; the identity URL analytics +
-#                                 authenticator call — the .NET→Rust cutover
-#                                 switch. Empty = the historical .NET
-#                                 `http://<release>-identity:8082`.)
+#                                 authenticator call. Empty = the default
+#                                 `http://<release>-identity-resolution:8082`.)
 #
 # Cleartext passwords live only in this shell's memory; they are never
 # written to disk and never echoed.
@@ -63,31 +58,17 @@ MDB_USER=$(yq -r '.mariadb.username'         "$VALUES")
 MDB_DB=$(  yq -r '.mariadb.database'         "$VALUES")
 CH_HOST=$( yq -r '.clickhouse.host'          "$VALUES")
 CH_PORT=$( yq -r '.clickhouse.port  // 8123' "$VALUES")
-# Native (Octonica) port for the identity service — it speaks the native
-# protocol, not HTTP (CH_PORT above, used by analytics-api). Overridable via
-# .clickhouse.nativePort; defaults to the standard 9000.
-CH_NATIVE_PORT=$( yq -r '.clickhouse.nativePort // 9000' "$VALUES")
 CH_USER=$( yq -r '.clickhouse.username'      "$VALUES")
 CH_DB=$(   yq -r '.clickhouse.database'      "$VALUES")
 RD_HOST=$( yq -r '.redis.host'               "$VALUES")
 RD_PORT=$( yq -r '.redis.port       // 6379' "$VALUES")
-IDENTITY_DB=$(yq -r '.identity.databaseName       // "identity"' "$VALUES")
 TENANT_DEFAULT=$(yq -r '.global.tenantDefaultId          // ""' "$VALUES")
-IDENTITY_ORG_CHART_SOURCE=$(yq -r '.identity.orgChartSourceType // ""' "$VALUES")
 IDENTITY_RESOLUTION_BOOTSTRAP_ADMIN=$(yq -r '.identityResolution.bootstrapAdminPersonId // ""' "$VALUES")
-# Falls back to the .NET identity databaseName — the umbrella render fails
-# when both deploy with diverging names, so the fallback only fires on
-# Rust-only installs that didn't set it.
-IDENTITY_RESOLUTION_DB=$(yq -r '.identityResolution.databaseName // .identity.databaseName // "identity"' "$VALUES")
-# Which identity implementation the CONSUMERS (analytics, authenticator) call —
-# the .NET→Rust cutover switch (constructorfabric/insight#1602). Empty keeps
-# the historical default (the .NET `<release>-identity` Service), so existing
-# environments are untouched; the flip sets it to
-# `http://<release>-identity-resolution:8082`, and the ROLLBACK is clearing it
-# back (plus a rollout restart of analytics + authenticator — they read the
-# composed Secret at pod start).
+IDENTITY_RESOLUTION_DB=$(yq -r '.identityResolution.databaseName // "identity"' "$VALUES")
+# The identity URL the CONSUMERS (analytics, authenticator) call. Empty =
+# the identity-resolution Service (constructorfabric/insight#1602).
 IDENTITY_URL=$(yq -r '.identityUrl // ""' "$VALUES")
-[ -n "$IDENTITY_URL" ] && [ "$IDENTITY_URL" != "null" ] || IDENTITY_URL="http://${RELEASE}-identity:8082"
+[ -n "$IDENTITY_URL" ] && [ "$IDENTITY_URL" != "null" ] || IDENTITY_URL="http://${RELEASE}-identity-resolution:8082"
 
 # ── Authenticator OIDC (NGINX_BFF). issuerUrl/redirectUri may be Helm template
 #    strings in values.yaml; render {{ .Release.Name }}/{{ .Release.Namespace }}
@@ -259,53 +240,11 @@ EOF
 } | kubectl -n "$NS_APP" apply -f - >/dev/null
 echo "composed → $NS_APP/insight-authenticator-config"
 
-# `insight-identity-config` carries the .NET identity service's
-# IDENTITY__* config. The service applies its own DbUp migrations
-# against `${IDENTITY_DB}` at startup — see ADR-0006 (service-owned
-# migrations). Empty IDENTITY__identity__tenant_default_id disables
-# the config-default tenant resolver; callers must then send the
-# X-Insight-Tenant-Id header.
-{
-  cat <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: insight-identity-config
-  namespace: $NS_APP
-  annotations:
-    helm.sh/resource-policy: keep   # see analytics-config rationale above
-type: Opaque
-stringData:
-  IDENTITY__mariadb__url: "mysql://${MDB_USER}:${MDB_PW}@${MDB_HOST}:${MDB_PORT}/${IDENTITY_DB}"
-  # Gateway-JWT verification (NGINX_BFF R1). issuer = the authn-tls FQDN (equals
-  # the token iss); JWKS is fetched over plain http from the authenticator main
-  # port (identity validates iss as a string, RequireHttpsMetadata=false).
-  IDENTITY__identity__auth_gateway_issuer: "${GATEWAY_ISSUER}"
-  IDENTITY__identity__auth_gateway_jwks_url: "${GATEWAY_JWKS_URL}"
-  # ClickHouse for persons-seed (reads identity.identity_inputs). The identity
-  # service uses the NATIVE protocol (Octonica client, port 9000) — NOT the HTTP
-  # port (8123) analytics-api uses. Section \`clickhouse\` -> IDENTITY__clickhouse__*.
-  IDENTITY__clickhouse__host: "${CH_HOST}"
-  IDENTITY__clickhouse__port: "${CH_NATIVE_PORT}"
-  IDENTITY__clickhouse__user: "${CH_USER}"
-  IDENTITY__clickhouse__password: "${CH_PW}"
-  IDENTITY__clickhouse__database: "${CH_DB}"
-EOF
-  if [ -n "$TENANT_DEFAULT" ] && [ "$TENANT_DEFAULT" != "null" ]; then
-    echo "  IDENTITY__identity__tenant_default_id: \"${TENANT_DEFAULT}\""
-  fi
-  if [ -n "$IDENTITY_ORG_CHART_SOURCE" ] && [ "$IDENTITY_ORG_CHART_SOURCE" != "null" ]; then
-    echo "  IDENTITY__identity__org_chart_source_type: \"${IDENTITY_ORG_CHART_SOURCE}\""
-  fi
-} | kubectl -n "$NS_APP" apply -f - >/dev/null
-echo "composed → $NS_APP/insight-identity-config"
-
-# `insight-identity-resolution-config` carries the Rust identity-resolution
+# `insight-identity-resolution-config` carries the identity-resolution
 # service's leaf config (gears-rust env-override convention, like analytics).
-# It points at the SAME MariaDB identity database the .NET service owns and
-# migrates during the side-by-side transition, and reads ClickHouse over the
-# HTTP protocol (8123) via the shared insight-clickhouse client — NOT the
-# native port the .NET service uses.
+# It points at the MariaDB identity database the service owns and migrates,
+# and reads ClickHouse over the HTTP protocol (8123) via the shared
+# insight-clickhouse client.
 {
   cat <<EOF
 apiVersion: v1

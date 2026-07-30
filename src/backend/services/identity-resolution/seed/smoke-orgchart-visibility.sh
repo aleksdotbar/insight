@@ -8,14 +8,15 @@
 # Also covers the 401/403 admin gate.
 #
 # Assumes the service is reachable at $BASE_URL and the bootstrap admin
-# has already been minted (Program.cs runs BootstrapAdminRunner on
-# startup when IDENTITY__identity__bootstrap_admin_person_id is set).
+# has already been minted (the identity-resolution migrate step seeds it
+# when APP__gears__identity-resolution__config__bootstrap_admin_person_id
+# is set).
 #
 # Usage:
 #   BASE_URL=http://localhost:8082 \
 #   TENANT_ID=<uuid> \
 #   ADMIN_PERSON_ID=<uuid present in person_roles with role_id=admin> \
-#   ./src/backend/services/identity/seed/smoke-orgchart-visibility.sh
+#   ./src/backend/services/identity-resolution/seed/smoke-orgchart-visibility.sh
 #
 # Optional overrides:
 #   VIEWER_PERSON_ID, VIEWED_PERSON_ID — must exist in persons for this tenant.

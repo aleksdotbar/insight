@@ -18,7 +18,7 @@
 #       identity-resolution migrate
 #
 # Usage:
-#   ./src/backend/services/identity/seed/seed-persons.sh
+#   ./src/backend/services/identity-resolution/seed/seed-persons.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

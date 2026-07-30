@@ -8,10 +8,10 @@ list envelope, and the explicit implementation selection.
 from __future__ import annotations
 
 import pytest
-
-from identity.contract import list_response
 from lib import api_coverage
 from lib import identity as identity_lib
+
+from identity.contract import list_response
 
 pytestmark = pytest.mark.identity
 
@@ -31,19 +31,14 @@ def identity_suite():
 def _spec(paths: dict[str, dict[str, list[int]]]) -> dict:
     return {
         "paths": {
-            path: {
-                method: {"responses": {str(c): {} for c in codes}}
-                for method, codes in methods.items()
-            }
+            path: {method: {"responses": {str(c): {} for c in codes}} for method, codes in methods.items()}
             for path, methods in paths.items()
         }
     }
 
 
 def _ledger(rows: dict[tuple[str, str], list[int]]) -> list[dict]:
-    return [
-        {"method": m, "path": p, "statuses": statuses} for (m, p), statuses in rows.items()
-    ]
+    return [{"method": m, "path": p, "statuses": statuses} for (m, p), statuses in rows.items()]
 
 
 SEED_SPEC = _spec({"/v1/persons-seed": {"post": [200, 401, 403]}})
@@ -52,12 +47,8 @@ SEED_SPEC = _spec({"/v1/persons-seed": {"post": [200, 401, 403]}})
 def test_gate_fails_when_required_extra_unproven(identity_suite, monkeypatch) -> None:
     """Every operation touched, but the 202 REQUIRED_EXTRA never observed →
     FAIL and the markdown says so (the exact false-PASS this suite once had)."""
-    monkeypatch.setattr(
-        api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})}
-    )
-    report = api_coverage.build_report(
-        SEED_SPEC, _ledger({("POST", "/v1/persons-seed"): [401, 403]})
-    )
+    monkeypatch.setattr(api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})})
+    report = api_coverage.build_report(SEED_SPEC, _ledger({("POST", "/v1/persons-seed"): [401, 403]}))
     assert not report.passed
     violations = api_coverage.gate_violations(report)
     assert any("MISSING REQUIRED_EXTRA" in v and "202" in v for v in violations), violations
@@ -68,36 +59,24 @@ def test_gate_fails_when_required_extra_unproven(identity_suite, monkeypatch) ->
 def test_gate_passes_when_required_extra_observed(identity_suite, monkeypatch) -> None:
     # Narrow REQUIRED_EXTRA to the one op the synthetic spec declares — the
     # other entries would (correctly) report stale against a one-path spec.
-    monkeypatch.setattr(
-        api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})}
-    )
-    report = api_coverage.build_report(
-        SEED_SPEC, _ledger({("POST", "/v1/persons-seed"): [202, 401, 403]})
-    )
+    monkeypatch.setattr(api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})})
+    report = api_coverage.build_report(SEED_SPEC, _ledger({("POST", "/v1/persons-seed"): [202, 401, 403]}))
     assert report.passed, api_coverage.gate_violations(report)
     assert "✅ PASS" in api_coverage.render_markdown(report)
 
 
 def test_gate_fails_on_redundant_required_extra(identity_suite, monkeypatch) -> None:
     """The spec now declares the 202 → the entry must be dropped."""
-    monkeypatch.setattr(
-        api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})}
-    )
+    monkeypatch.setattr(api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})})
     spec = _spec({"/v1/persons-seed": {"post": [200, 202, 401, 403]}})
-    report = api_coverage.build_report(
-        spec, _ledger({("POST", "/v1/persons-seed"): [202, 401, 403]})
-    )
+    report = api_coverage.build_report(spec, _ledger({("POST", "/v1/persons-seed"): [202, 401, 403]}))
     assert not report.passed
-    assert any(
-        "REDUNDANT REQUIRED_EXTRA" in v for v in api_coverage.gate_violations(report)
-    )
+    assert any("REDUNDANT REQUIRED_EXTRA" in v for v in api_coverage.gate_violations(report))
 
 
 def test_gate_fails_on_stale_required_extra(identity_suite, monkeypatch) -> None:
     """The operation left the spec → the entry must be dropped."""
-    monkeypatch.setattr(
-        api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})}
-    )
+    monkeypatch.setattr(api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})})
     spec = _spec({"/v1/roles": {"get": [200, 401, 403]}})
     report = api_coverage.build_report(spec, _ledger({("GET", "/v1/roles"): [200, 401, 403]}))
     assert not report.passed
@@ -107,13 +86,9 @@ def test_gate_fails_on_stale_required_extra(identity_suite, monkeypatch) -> None
 def test_markdown_verdict_matches_violations(identity_suite, monkeypatch) -> None:
     """PASS in the markdown and a blocking violation are mutually exclusive —
     verdict, violations list, and exit predicate share one source of truth."""
-    monkeypatch.setattr(
-        api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})}
-    )
+    monkeypatch.setattr(api_coverage, "REQUIRED_EXTRA", {"POST /v1/persons-seed": frozenset({202})})
     for ledger in ([401, 403], [202, 401, 403]):
-        report = api_coverage.build_report(
-            SEED_SPEC, _ledger({("POST", "/v1/persons-seed"): ledger})
-        )
+        report = api_coverage.build_report(SEED_SPEC, _ledger({("POST", "/v1/persons-seed"): ledger}))
         md = api_coverage.render_markdown(report)
         if api_coverage.gate_violations(report):
             assert "❌ FAIL" in md and not report.passed
@@ -150,9 +125,13 @@ def test_list_response_rejects_non_list_items() -> None:
 def test_implementation_selection_is_explicit(monkeypatch) -> None:
     monkeypatch.delenv("E2E_IDENTITY_IMPLEMENTATION", raising=False)
     monkeypatch.delenv("E2E_IDENTITY_URL", raising=False)
-    assert identity_lib.implementation_from_env() == "dotnet"
+    assert identity_lib.implementation_from_env() == "rust"
     monkeypatch.setenv("E2E_IDENTITY_IMPLEMENTATION", "rust")
     assert identity_lib.implementation_from_env() == "rust"
+    # The retired .NET selection must fail fast, like any unknown value.
+    monkeypatch.setenv("E2E_IDENTITY_IMPLEMENTATION", "dotnet")
+    with pytest.raises(identity_lib.ApiSpawnError):
+        identity_lib.implementation_from_env()
     monkeypatch.setenv("E2E_IDENTITY_IMPLEMENTATION", "cobol")
     with pytest.raises(identity_lib.ApiSpawnError):
         identity_lib.implementation_from_env()
@@ -166,25 +145,24 @@ def test_external_url_mode_is_refused(monkeypatch) -> None:
         identity_lib.implementation_from_env()
 
 
-def test_deprecated_lookup_is_a_dotnet_capability() -> None:
-    assert identity_lib.supports_deprecated_person_lookup("dotnet")
+def test_deprecated_lookup_is_not_supported() -> None:
+    # Existed only in the retired .NET service; no implementation serves it.
     assert not identity_lib.supports_deprecated_person_lookup("rust")
 
 
 def test_containerized_clickhouse_is_a_rust_capability() -> None:
     assert identity_lib.supports_containerized_clickhouse("rust")
-    assert not identity_lib.supports_containerized_clickhouse("dotnet")
 
 
-def test_rust_gate_suite_skips_legacy_endpoint_dotnet_requires_it() -> None:
-    """Implementation-aware gate universes: an unexercised legacy endpoint is
-    a legitimate SKIP on identity-rust but a blocking MISSING on identity —
-    so the removal never hides a .NET regression, and the Rust run doesn't
-    fail on an approved removal (nor count a fallback 404 as coverage).
+def test_rust_gate_suite_skips_removed_endpoints() -> None:
+    """The spec universe still lists the ops dropped in the Rust service
+    (the legacy persons lookup, and the persons-seed POST per #1690 — both
+    approved removals); the identity-rust suite marks them as legitimate
+    SKIPs so the run doesn't fail on an approved removal (nor count a
+    fallback 404 as coverage).
 
     The synthetic spec must carry EVERY op on the rust SKIP_LIST (the gate
-    flags a skip absent from the spec as STALE) — so the persons-seed POST
-    (#1690, second approved removal) is included alongside the legacy lookup.
+    flags a skip absent from the spec as STALE).
     """
     spec = _spec(
         {
@@ -200,12 +178,6 @@ def test_rust_gate_suite_skips_legacy_endpoint_dotnet_requires_it() -> None:
         assert report.passed, api_coverage.gate_violations(report)
         assert "GET /v1/persons/{email}" in report.skipped
         assert "POST /v1/persons-seed" in report.skipped
-
-        api_coverage.select_suite("identity")
-        api_coverage.REQUIRED_EXTRA = {}
-        report = api_coverage.build_report(spec, ledger)
-        assert not report.passed
-        assert any("MISSING" in v for v in api_coverage.gate_violations(report))
     finally:
         api_coverage.select_suite("analytics")
 
@@ -215,7 +187,7 @@ def test_select_suite_is_reversible() -> None:
     (previously a silent no-op that left identity lists active)."""
     analytics_blocked = api_coverage.BLOCKED
     try:
-        api_coverage.select_suite("identity")
+        api_coverage.select_suite("identity-rust")
         assert api_coverage.BLOCKED is api_coverage.IDENTITY_BLOCKED
     finally:
         api_coverage.select_suite("analytics")

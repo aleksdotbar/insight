@@ -119,7 +119,7 @@ case "$cmd" in
             fi
         fi
         spec=/workspace/docs/components/backend/analytics/openapi.json
-        identity_spec=/workspace/docs/components/backend/identity/openapi.json
+        identity_spec=/workspace/docs/components/backend/identity-resolution/openapi.json
         run=(docker compose "${COMPOSE_FILES[@]}" -f compose/docker-compose.norebuild.yml run --rm --no-deps -T runner)
         rc=0
         if [ "$which" = all ] || [ "$which" = metrics ]; then
@@ -132,14 +132,7 @@ case "$cmd" in
         fi
         if [ "$which" = all ] || [ "$which" = identity ]; then
             echo "── identity endpoint coverage (gate) ──"
-            # The suppression lists are implementation-aware: a Rust run may
-            # legitimately skip the dropped legacy endpoint, a dotnet run must
-            # not. Match the gate to whichever implementation the suite ran.
-            identity_suite=identity
-            if [ "${E2E_IDENTITY_IMPLEMENTATION:-dotnet}" = "rust" ]; then
-                identity_suite=identity-rust
-            fi
-            "${run[@]}" python3 lib/api_coverage.py --suite "$identity_suite" --observed .artifacts/observed_identity_endpoints.json --spec "$identity_spec" || rc=1
+            "${run[@]}" python3 lib/api_coverage.py --suite identity-rust --observed .artifacts/observed_identity_endpoints.json --spec "$identity_spec" || rc=1
         fi
         exit "$rc"
         ;;

@@ -36,7 +36,7 @@ pub struct GearConfig {
     /// `ClickHouse` password.
     pub clickhouse_password: Option<String>,
 
-    /// Identity service base URL (e.g., `http://insight-identity:8082`).
+    /// Identity service base URL (e.g., `http://insight-identity-resolution:8082`).
     /// Optional — when empty, `person_ids` from `$filter` are used directly against
     /// `ClickHouse` without alias resolution (MVP mode).
     pub identity_url: String,
