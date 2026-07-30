@@ -689,11 +689,11 @@ All infrastructure and connector credentials are stored in Kubernetes Secrets. N
 | Secret | Namespace | Purpose | Required Keys | Created by |
 |--------|-----------|---------|---------------|------------|
 | `insight-db-creds` | `insight` | Auto-generated infra credentials (ClickHouse, MariaDB, Redis) | `clickhouse-password`, `mariadb-password`, `mariadb-root-password`, `redis-password` | umbrella chart `secrets.yaml` (`lookup`-based, idempotent across `helm upgrade`) |
-| `airbyte-auth-secrets` | `insight` | Airbyte internal auth | `instance-admin-password`, `instance-admin-client-id`, `instance-admin-client-secret`, `jwt-signature-secret` | Helm chart (auto) |
+| `airbyte-auth-secrets` | Airbyte's own (`airbyte.namespace` value; defaults to the app namespace) | Airbyte internal auth | `instance-admin-password`, `instance-admin-client-id`, `instance-admin-client-secret`, `jwt-signature-secret` | Airbyte Helm chart (auto). Consumers read it via the K8s API (never a `secretKeyRef` mirror), so split-namespace installs need no copy |
 | `insight-mariadb` | `insight` | MariaDB root + app credentials (Bitnami subchart's own Secret — read-only mirror of the relevant keys from `insight-db-creds`) | `mariadb-root-password`, `mariadb-password` | Bitnami MariaDB subchart (auto) |
 | `insight-{connector}-{source-id}` | `insight` | Per-connector credentials (see [ADR-0003](ADR/0003-k8s-secrets-credentials.md)) | Connector-specific (e.g. `azure_client_id`, `azure_client_secret`) | `secrets/apply.sh` |
 
-All Insight components share the release namespace (default `insight`); override with `INSIGHT_NAMESPACE` for non-default installs. Argo UI uses `--auth-mode=client` in production — authentication via K8s ServiceAccount Bearer tokens, no Secret required.
+All Insight components share the release namespace (default `insight`); override with `INSIGHT_NAMESPACE` for non-default installs. Airbyte is the exception: it may run as a separate release in its own namespace (`airbyte.namespace` Helm value), in which case its auth Secret is read cross-namespace via the K8s API under a Role scoped to that one Secret — never copied into the release namespace. Argo UI uses `--auth-mode=client` in production — authentication via K8s ServiceAccount Bearer tokens, no Secret required.
 
 **Resolution order** (all scripts):
 1. Read from K8s Secret — sole credential source for all environments

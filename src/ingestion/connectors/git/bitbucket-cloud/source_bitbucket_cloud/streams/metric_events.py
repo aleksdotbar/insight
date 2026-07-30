@@ -4,7 +4,14 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
-from source_bitbucket_cloud.streams.base import BitbucketIncrementalStream, BitbucketStream, schema, unique_key
+from source_bitbucket_cloud.streams.base import (
+    BitbucketIncrementalStream,
+    BitbucketStream,
+    repo_scope,
+    repo_state_key,
+    schema,
+    unique_key,
+)
 from source_bitbucket_cloud.streams.pr_base import PullRequestStateStream
 
 
@@ -23,7 +30,7 @@ class RepositorySnapshotStream(BitbucketStream):
             identity = record.get("uuid") or record.get("id") or record.get("name")
             if identity is None:
                 continue
-            entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, identity)
+            entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), identity)
             entity_keys.add(entity_key)
             projected = dict(record)
             projected.update(self.project(record))
@@ -85,8 +92,22 @@ class DeploymentsStream(RepositorySnapshotStream):
     resource = "deployments"
 
 
+def slim_pipeline(pipeline: Mapping[str, Any]) -> dict[str, Any]:
+    """Only what the child streams read; the full object is never cached."""
+    return {
+        "uuid": pipeline.get("uuid"),
+        "created_on": pipeline.get("created_on"),
+        "completed_on": pipeline.get("completed_on"),
+        "state": {"name": ((pipeline.get("state") or {}).get("name"))},
+    }
+
+
 class PipelineStateStream(BitbucketIncrementalStream):
     cursor_field = "created_on"
+
+    # The stream emitting full pipeline records (pipelines) always fetches and
+    # fills the slim cache; steps and test reports read it.
+    reads_selection_cache = True
 
     def repository_records(self, repo, bucket_id: int):
         del bucket_id
@@ -101,6 +122,21 @@ class PipelineStateStream(BitbucketIncrementalStream):
         raise NotImplementedError
 
     def pipeline_candidates(self, repo, prior: Mapping[str, Any]):
+        cache_key = (repo_state_key(repo), str(prior.get("created_on") or ""))
+        if self.reads_selection_cache:
+            cached = self._catalog.pipeline_selections.get(cache_key)
+            if cached is not None:
+                present, slim, cached_state = cached
+                return present, slim, dict(cached_state)
+        present, pipelines, new_state = self._fetch_pipelines(repo, prior)
+        self._catalog.pipeline_selections[cache_key] = (
+            present,
+            [slim_pipeline(p) for p in pipelines],
+            dict(new_state),
+        )
+        return present, pipelines, new_state
+
+    def _fetch_pipelines(self, repo, prior: Mapping[str, Any]):
         watermark = str(prior.get("created_on") or "")
         floor = None
         if watermark:
@@ -119,8 +155,14 @@ class PipelineStateStream(BitbucketIncrementalStream):
             if pipeline_uuid:
                 pipelines[pipeline_uuid] = pipeline
         for pipeline_uuid in prior.get("open") or []:
+            # 403 is tolerated here, not raised: Pipelines is a per-repository
+            # feature, so a denial means "no pipelines visible", not "this
+            # repository is unreadable". Letting it escape would mark the whole
+            # repository inaccessible and suppress its commits and pull requests.
             response = self._client.request(
-                "GET", self._client.repo_path(repo, f"pipelines/{pipeline_uuid}"), allow_not_found=True
+                "GET",
+                self._client.repo_path(repo, f"pipelines/{pipeline_uuid}"),
+                allow_statuses={403, 404},
             )
             if response is not None:
                 pipeline = response.json()
@@ -140,10 +182,11 @@ class PipelineStateStream(BitbucketIncrementalStream):
 
 class PipelinesStream(PipelineStateStream):
     name = "pipelines"
+    reads_selection_cache = False
 
     def pipeline_records(self, repo, pipeline: Mapping[str, Any]):
         pipeline_uuid = pipeline.get("uuid")
-        entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, pipeline_uuid)
+        entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), pipeline_uuid)
         projected = dict(pipeline)
         projected.update(
             {
@@ -183,7 +226,7 @@ class PipelineStepsStream(PipelineStateStream):
         entity_keys: set[str] = set()
         for step in steps:
             step_uuid = step.get("uuid")
-            entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, pipeline_uuid, step_uuid)
+            entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), pipeline_uuid, step_uuid)
             entity_keys.add(entity_key)
             projected = dict(step)
             projected.update(
@@ -230,11 +273,14 @@ class PipelineStepTestReportsStream(PipelineStateStream):
             step_uuid = step.get("uuid")
             generation = self.generation(repo.uuid, pipeline_uuid, step_uuid, "test_reports")
             path = self._client.repo_path(repo, f"pipelines/{pipeline_uuid}/steps/{step_uuid}/test_reports")
-            response = self._client.request("GET", path, allow_not_found=True)
+            # Tolerates 403 for the same reason as the pipeline refetch above: a
+            # feature-level denial must mark this snapshot unavailable, not the
+            # repository. `available` below already records it.
+            response = self._client.request("GET", path, allow_statuses={403, 404})
             count = 0
             if response is not None:
                 payload = response.json()
-                entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, pipeline_uuid, step_uuid)
+                entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), pipeline_uuid, step_uuid)
                 count = 1
                 yield self.item(
                     entity_key=entity_key,
@@ -279,8 +325,14 @@ class PipelineStepTestReportsStream(PipelineStateStream):
         )
 
 
+def slim_issue(issue: Mapping[str, Any]) -> dict[str, Any]:
+    return {"id": issue.get("id"), "updated_on": issue.get("updated_on")}
+
+
 class IssueStateStream(BitbucketIncrementalStream):
     cursor_field = "updated_on"
+
+    reads_selection_cache = True
 
     def repository_records(self, repo, bucket_id: int):
         del bucket_id
@@ -298,6 +350,21 @@ class IssueStateStream(BitbucketIncrementalStream):
         raise NotImplementedError
 
     def selected_issues(self, repo, prior):
+        cache_key = (repo_state_key(repo), str(prior.get("updated_on") or ""))
+        if self.reads_selection_cache:
+            cached = self._catalog.issue_selections.get(cache_key)
+            if cached is not None:
+                present, slim, cached_state = cached
+                return present, slim, dict(cached_state)
+        present, issues, new_state = self._fetch_issues(repo, prior)
+        self._catalog.issue_selections[cache_key] = (
+            present,
+            [slim_issue(i) for i in issues],
+            dict(new_state),
+        )
+        return present, issues, new_state
+
+    def _fetch_issues(self, repo, prior):
         watermark = str(prior.get("updated_on") or "")
         floor = self._start_date
         if watermark:
@@ -314,10 +381,11 @@ class IssueStateStream(BitbucketIncrementalStream):
 
 class IssuesStream(IssueStateStream):
     name = "issues"
+    reads_selection_cache = False
 
     def issue_records(self, repo, issue: Mapping[str, Any]):
         issue_id = issue.get("id")
-        entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, issue_id)
+        entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), issue_id)
         projected = dict(issue)
         projected.update(
             {
@@ -355,7 +423,7 @@ class IssueChildStream(IssueStateStream):
             identity = record.get("id") or record.get("uuid")
             if identity is None:
                 continue
-            entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, issue_id, identity)
+            entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), issue_id, identity)
             entity_keys.add(entity_key)
             projected = dict(record)
             projected.update(
@@ -419,7 +487,7 @@ class PRTasksStream(PullRequestStateStream):
             task_id = task.get("id")
             if task_id is None:
                 continue
-            entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, pr_id, task_id)
+            entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), pr_id, task_id)
             entity_keys.add(entity_key)
             projected = dict(task)
             projected.update(

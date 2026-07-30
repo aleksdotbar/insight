@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from source_bitbucket_cloud.streams.base import AUTHOR_RE, BitbucketIncrementalStream, schema, truncate, unique_key
+from source_bitbucket_cloud.streams.base import AUTHOR_RE, BitbucketIncrementalStream, repo_scope, schema, truncate, unique_key
 from source_bitbucket_cloud.streams.git_ranges import CommitRangeMixin
 
 
@@ -14,6 +14,14 @@ class CommitsStream(CommitRangeMixin, BitbucketIncrementalStream):
     def repository_records(self, repo, bucket_id: int) -> Iterable[Mapping[str, Any]]:
         del bucket_id
         prior = self.repository_state(repo)
+        repo_updated_on = str(repo.raw.get("updated_on") or "")
+        if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
+            # The repository has not been pushed to since the last successful
+            # pass (updated_on comes free with the workspace listing), so the
+            # branch heads cannot have moved: skip the branch listing and the
+            # range fetch entirely. This is what keeps the per-repository
+            # request budget at zero for the idle majority of a large fleet.
+            return
         _, current_heads = self.branch_snapshot(repo)
         current_head_shas = sorted(set(current_heads.values()))
         previous_head_shas = prior.get("head_shas") or []
@@ -23,13 +31,13 @@ class CommitsStream(CommitRangeMixin, BitbucketIncrementalStream):
                 if self._start_date and record.get("date") and str(record["date"])[:10] < self._start_date:
                     continue
                 yield record
-        self.commit_repository_state(repo, {"head_shas": current_head_shas})
+        self.commit_repository_state(repo, {"head_shas": current_head_shas, "repo_updated_on": repo_updated_on})
 
     def _record(self, repo, commit: Mapping[str, Any]) -> Mapping[str, Any]:
         sha = str(commit.get("hash") or "")
         author = self._identity(commit.get("author") or {})
         committer = self._identity(commit.get("committer") or {})
-        entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, sha)
+        entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), sha)
         return self.item(
             entity_key=entity_key,
             repository_uuid=repo.uuid,
