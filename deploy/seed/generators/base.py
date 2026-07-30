@@ -124,20 +124,29 @@ def _live_columns(
 
 
 def _coerce(value: object, ch_type: str) -> object:
-    """Widen a `date` to midnight `datetime` for DateTime-typed columns.
+    """Widen a `date` to midnight UTC `datetime` for DateTime-typed columns.
 
     The snapshot schema types some day-grain columns as `DateTime`/
     `DateTime64` where a generator supplies `datetime.date`; the driver then
     calls `.timestamp()` on it and raises. A date means midnight on that
     date, so the widening is lossless and unambiguous. Anything else is
     passed through untouched — this is not a general type converter.
+
+    The result MUST be timezone-aware. clickhouse-connect serialises
+    DateTime/DateTime64 with `int(x.timestamp())`, and `.timestamp()` on a
+    NAIVE datetime resolves it in the seeding *process's* local timezone. A
+    naive midnight therefore lands 8h early on a UTC+8 host — i.e. on the
+    previous calendar day once ClickHouse renders it in UTC — silently
+    misdating every affected row. That is invisible in the seed-sample
+    container (UTC) but real for the host-side run CONTRIBUTING.md
+    documents. `.timestamp()` on an AWARE datetime is host-independent.
     """
     if (
         isinstance(value, _dt.date)
         and not isinstance(value, _dt.datetime)
         and "DateTime" in ch_type
     ):
-        return _dt.datetime.combine(value, _dt.time())
+        return _dt.datetime.combine(value, _dt.time(), tzinfo=UTC)
     return value
 
 

@@ -47,6 +47,10 @@ SOURCE_ID = deterministic_uuid("git.source", "insight_github")
 PROJECT_KEY = "insight"
 REPO_SLUG = "insight/insight"
 
+# The change_type vocabulary gold/git_metric_observations recognises in its
+# change_type_label multiIf; anything else renders as the raw value.
+CHANGE_TYPES = ("added", "modified", "renamed", "deleted")
+
 
 def _eligible(roster: Sequence[Person]) -> list[Person]:
     """Persons whose team profile has any git weight."""
@@ -165,6 +169,13 @@ def seed_class_git_file_changes(
         "insight_tenant_id", "commit_hash", "project_key", "repo_slug",
         "source_id",
         "tenant_id", "file_path", "lines_added", "lines_removed", "_version",
+        # gold/git_metric_observations turns these into the `file_extension`
+        # and `change_type` dimensions on code_lines_added / lines_added /
+        # lines_removed, mapping '' -> '__unknown__'. Left unwritten they
+        # default to '', so both dimensions collapse to a single "Unknown"
+        # bucket — the same output as seeding nothing. A real connector
+        # derives them from the filename and the API status, so do the same.
+        "file_extension", "change_type",
     ]
     rows: list[tuple[object, ...]] = []
     version = 1
@@ -183,11 +194,23 @@ def seed_class_git_file_changes(
                 for j in range(rng.randint(1, 3)):
                     added = rng.randint(2, 180)
                     removed = rng.randint(0, 80)
+                    # Offset by the commit index too. `j` only ever reaches
+                    # 0-2, so indexing on `j` alone never selects the 4th
+                    # path — leaving gold's `file_extension` dimension at a
+                    # single bucket and its code/spec/config `category`
+                    # classifier without a config band, which is exactly what
+                    # this function's docstring says the path list is for.
+                    path = paths[(i + j) % len(paths)]
+                    extension = path.rsplit(".", 1)[-1] if "." in path else ""
+                    change_type = CHANGE_TYPES[
+                        deterministic_int("git.fc.change", sha_clean, str(j)) % len(CHANGE_TYPES)
+                    ]
                     rows.append((
                         tenant_uuid, sha_clean, PROJECT_KEY, REPO_SLUG,
                         SOURCE_ID,
-                        tenant_uuid, paths[j % len(paths)],
+                        tenant_uuid, path,
                         added, removed, version,
+                        extension, change_type,
                     ))
     return bulk_insert(client, "silver", "class_git_file_changes", cols, rows)
 
