@@ -44,7 +44,10 @@ A passkey is bound to the user's real Chrome profile and its platform authentica
 ```sh
 playwright-cli attach --cdp=chrome        # preferred: one checkbox, no restart
 playwright-cli attach --extension=chrome  # when CDP is blocked or the user prefers it
+export PLAYWRIGHT_CLI_SESSION=chrome      # every later command now targets that session
 ```
+
+**Attach names the session after the channel, not `default`.** `--cdp=chrome` creates a session called `chrome`, so an unqualified `goto` or `snapshot` afterwards talks to a different browser — or none. Either export `PLAYWRIGHT_CLI_SESSION` as above, or prefix each command (`playwright-cli -s=chrome snapshot`).
 
 If CDP fails with `Could not connect to chrome: DevToolsActivePort file not found`, the user has to open `chrome://inspect/#remote-debugging` and tick **"Allow remote debugging for this browser instance"**. Open the page for them if you like — `open -a "Google Chrome" "chrome://inspect/#remote-debugging"` — but the click is theirs. Their windows, tabs and session all survive, which is why this beats every alternative.
 
@@ -52,13 +55,14 @@ If CDP fails with `Could not connect to chrome: DevToolsActivePort file not foun
 
 **Detach, don't close.** While attached you are holding the user's own browser, and `playwright-cli close` closes *their* windows. Use `playwright-cli -s=<session> detach`. `playwright-cli list` tells you which sessions you launched yourself; those are the only ones safe to kill.
 
-Bank the session once you have it, so later runs skip auth entirely:
+Bank the session once you have it, so later runs skip auth entirely — but keep it out of `$EVIDENCE`. That directory gets attached to a public issue, and a saved state file is live session cookies:
 
 ```sh
-playwright-cli state-save "$EVIDENCE/stand-state.json"   # then state-load next time
+mkdir -p ~/.playwright-auth && chmod 700 ~/.playwright-auth
+playwright-cli -s=chrome state-save ~/.playwright-auth/stand-state.json   # state-load next time
 ```
 
-Re-save when it goes stale — the symptom is landing back on a login page.
+Re-save when it goes stale — the symptom is landing back on a login page — and delete it when the investigation ends.
 
 ## Know when the page is actually ready
 

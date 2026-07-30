@@ -45,10 +45,11 @@ Three checks that routinely change the plan.
 **Search first.** Never file a blind duplicate:
 
 ```sh
-gh issue list --repo constructorfabric/insight --state all --search "<key phrase>" --limit 100
+gh issue list --repo constructorfabric/insight --state open   --search "<key phrase>" --limit 50
+gh issue list --repo constructorfabric/insight --state closed --search "<key phrase>" --limit 50
 ```
 
-**Keep the limit high.** Closed issues rank after every open one, so a short window returns open matches only — a search for "threshold" gives 30 open and 0 closed at `--limit 30`, and 57 open plus 43 closed at 100. A closed match is the *more* urgent finding, since it means a regression.
+**Search the two states separately.** In a combined `--state all` search, closed issues rank after every open one, so they fall off the end of the window: "threshold" returns 30 open and 0 closed at `--limit 30`, and raising the limit only postpones the problem — enough open matches still crowd them out. Two queries guarantee you see both. A closed match is the *more* urgent finding, since it means a regression.
 
 Search more than once with different vocabulary — the metric key, the field name, the group title, the error code, the user-visible label. Same defect → add your evidence to the existing issue. A genuinely different symptom → file new and cross-link with a one-line `related to #N` (a bare link, not a "how this differs" writeup — that reads as noise).
 
@@ -91,8 +92,8 @@ detail, no history, no scope. A reader triaging a list often reads only this lin
 ## Steps to Reproduce
 1. <UI path, or the fastest isolated check — one query or command>
 2. <what to observe>
-3. <When the failure emits anything — exception, stack, HTTP status and body, dbt or ClickHouse
-   error — paste it verbatim in a fenced block, trimmed to the lines that identify the defect.>
+3. <what the call or query returned — the status, the visible result. The verbatim error text goes
+   under Additional information, so this stays a list of actions and outcomes.>
 
 **Expected:** <one line>
 **Actual:** <one line — the failure at that step, NOT a restatement of Summary>
@@ -148,17 +149,12 @@ A real filed bug, condensed. Read it for calibration on how little text a comple
 > ## Steps to Reproduce
 > 1. Create a metric, then `POST /v1/metrics/{id}/thresholds` with any valid body.
 > 2. Read them back: `GET /v1/metrics/{id}/thresholds`.
-> 3. Both calls return 500 `application/problem+json`, and the log names the decode:
->    ```
->    failed to list thresholds error=Query Error: error occurred while decoding column
->    "value": mismatched types; Rust type `core::option::Option<f64>` (as SQL type
->    `DOUBLE`) is not compatible with SQL type `DECIMAL`
->    ```
+> 3. Both calls return 500 `application/problem+json` (server log below).
 >
 > **Expected:** 201 with the created threshold, then 200 with the list.
 > **Actual:** 500 on the create and on every later read of that metric's thresholds.
 >
-> The row is inserted despite the 500 — `SELECT field_name, operator, value FROM thresholds` returns it. The write path works and the read path does not, which is why one successful-looking create disables the endpoint for good. Reproduces on a freshly migrated database with no other data.
+> Reproduces on a freshly migrated database with no other data.
 >
 > ## Additional information
 > - Every later read of that metric's thresholds returns the same 500: the create's read-back, the list, an update and a delete.
