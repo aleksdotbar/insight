@@ -76,6 +76,14 @@ BLOCKED: dict[str, frozenset[int]] = {
     "GET /v1/persons/{email}": frozenset({400, 403, 409}),
     # 403/404/409 boilerplate; the 200 happy-path needs seeded observation data (a `✗` gap)
     "POST /v1/metric-results": frozenset({403, 404, 409}),
+    # saved-query CRUD + run (#1965): 403 (auth disabled, no role gate — cross-tenant
+    # is 404 by opacity) and 409 (no conflict path) are `.standard_errors` boilerplate.
+    "GET /v1/queries": frozenset({400, 403, 404, 409}),  # boilerplate: list, no input/lookup/conflict
+    "POST /v1/queries": frozenset({403, 404, 409}),  # boilerplate (400 reachable: bad sql)
+    "GET /v1/queries/{id}": frozenset({403, 409}),  # boilerplate
+    "PUT /v1/queries/{id}": frozenset({403, 409}),  # boilerplate
+    "DELETE /v1/queries/{id}": frozenset({403, 409}),  # boilerplate
+    "POST /v1/queries/{id}/run": frozenset({403, 409}),  # boilerplate
 }
 
 # ── identity suite (identity/, #1753) ──────────────────────────────────────
