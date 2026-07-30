@@ -91,7 +91,7 @@ Usage:
   export CLICKHOUSE_PASSWORD=<from secret>
   export MARIADB_URL=mysql://insight:insight-pass@localhost:3306/identity
 
-  python3 src/backend/services/identity/seed/seed-persons-from-identity-input.py
+  python3 src/backend/services/identity-resolution/seed/seed-persons-from-identity-input.py
 """
 
 import base64
@@ -102,7 +102,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import unquote, urlparse
 
 
@@ -130,8 +130,8 @@ def _format_synced_at(synced_at: object, fallback: str) -> str:
         # Ensure microsecond precision
         dt = datetime.fromisoformat(s_norm)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")
     except (ValueError, TypeError):
         return fallback
 
@@ -148,9 +148,9 @@ def uuid7() -> uuid.UUID:
     rand = os.urandom(10)
     b = bytearray(16)
     b[0:6] = ts_ms.to_bytes(6, "big")
-    b[6] = 0x70 | (rand[0] & 0x0F)   # version 7 in high nibble
+    b[6] = 0x70 | (rand[0] & 0x0F)  # version 7 in high nibble
     b[7] = rand[1]
-    b[8] = 0x80 | (rand[2] & 0x3F)   # variant 10xx in top 2 bits
+    b[8] = 0x80 | (rand[2] & 0x3F)  # variant 10xx in top 2 bits
     b[9:16] = rand[3:10]
     return uuid.UUID(bytes=bytes(b))
 
@@ -172,8 +172,8 @@ except ImportError:
 # Longer values are rejected rather than silently truncated by INSERT
 # IGNORE. Truncation would let two distinct source-accounts or observations
 # collapse onto one key and poison the data.
-MAX_VALUE_ID_LEN         = 320   # VARCHAR(320) -- RFC 5321/5322 email upper bound
-MAX_VALUE_FULL_TEXT_LEN  = 512   # VARCHAR(512) -- display_name catch-all
+MAX_VALUE_ID_LEN = 320  # VARCHAR(320) -- RFC 5321/5322 email upper bound
+MAX_VALUE_FULL_TEXT_LEN = 512  # VARCHAR(512) -- display_name catch-all
 MAX_SOURCE_ACCOUNT_ID_LEN = 320  # VARCHAR(320) -- same domain as value_id
 
 # value_type values that hardcode-route into value_id vs value_full_text;
@@ -190,15 +190,7 @@ MAX_SOURCE_ACCOUNT_ID_LEN = 320  # VARCHAR(320) -- same domain as value_id
 #     Display name plus the BambooHR free-form attributes the
 #     C# service projects onto Person (first/last/department/
 #     division/job_title/status).
-VALUE_TYPES_FOR_VALUE_ID = {
-    "id",
-    "email",
-    "username",
-    "employee_id",
-    "parent_email",
-    "parent_id",
-    "parent_person_id",
-}
+VALUE_TYPES_FOR_VALUE_ID = {"id", "email", "username", "employee_id", "parent_email", "parent_id", "parent_person_id"}
 VALUE_TYPES_FOR_VALUE_FULL_TEXT = {
     "display_name",
     "first_name",
@@ -215,8 +207,8 @@ SYSTEM_AUTHOR_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
 
 # -- ClickHouse connection ------------------------------------------------
-CH_URL      = os.environ.get("CLICKHOUSE_URL", "http://localhost:30123")
-CH_USER     = os.environ.get("CLICKHOUSE_USER", "default")
+CH_URL = os.environ.get("CLICKHOUSE_URL", "http://localhost:30123")
+CH_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CH_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
 # Hard cap on the ClickHouse HTTP query. A stalled endpoint otherwise
 # hangs the whole one-shot seed indefinitely.
@@ -226,9 +218,7 @@ CH_TIMEOUT_SEC = int(os.environ.get("CLICKHOUSE_TIMEOUT_SEC", "60"))
 # from env and fed to urlopen; a mistaken value should error, not open a
 # local file (Bandit B310).
 if urllib.parse.urlparse(CH_URL).scheme not in ("http", "https"):
-    raise ValueError(
-        f"CLICKHOUSE_URL must use http:// or https:// scheme; got {CH_URL!r}"
-    )
+    raise ValueError(f"CLICKHOUSE_URL must use http:// or https:// scheme; got {CH_URL!r}")
 
 
 def ch_query(sql: str) -> list[dict]:
@@ -246,9 +236,7 @@ def ch_query(sql: str) -> list[dict]:
 # -- MariaDB connection ---------------------------------------------------
 def get_mariadb_conn():
     """Connect to MariaDB. Requires pymysql or mysql-connector-python."""
-    mariadb_url = os.environ.get(
-        "MARIADB_URL", "mysql://insight:insight-pass@localhost:3306/identity"
-    )
+    mariadb_url = os.environ.get("MARIADB_URL", "mysql://insight:insight-pass@localhost:3306/identity")
     # seed-persons.sh URL-encodes user/password via urllib.parse.quote() so
     # that passwords containing ':', '@', '/', or '%' do not break URL
     # parsing. urlparse returns the values still-encoded -- we unquote here
@@ -261,8 +249,7 @@ def get_mariadb_conn():
     database = parsed.path.lstrip("/") or "identity"
 
     return _mysql_driver.connect(
-        host=host, port=port, user=user, password=password,
-        database=database, charset="utf8mb4", autocommit=False,
+        host=host, port=port, user=user, password=password, database=database, charset="utf8mb4", autocommit=False
     )
 
 
@@ -288,14 +275,14 @@ def route_value(value_type: str, value: str) -> tuple[str | None, str | None, st
 
 # -- Main -----------------------------------------------------------------
 def main():
-    print("=== Seed: identity_inputs -> MariaDB persons + account_person_map + org_chart ===")
+    print("=== Seed: identity_inputs -> MariaDB persons + account_person_map + org_chart ===")  # noqa: T201 — operator progress output
 
     # 1. Read all identity_inputs rows from ClickHouse.
     #    ORDER BY _synced_at DESC within a source-account so that the
     #    email picked in step 3 is deterministically the latest
     #    observation -- essential for the "skip account if its current
     #    email already exists in persons" decision.
-    print("  Reading identity_inputs from ClickHouse...")
+    print("  Reading identity_inputs from ClickHouse...")  # noqa: T201 — operator progress output
     rows = ch_query("""
         SELECT
             toString(insight_tenant_id)     AS insight_tenant_id,
@@ -318,10 +305,10 @@ def main():
             value_type,
             value
     """)
-    print(f"  Read {len(rows)} rows")
+    print(f"  Read {len(rows)} rows")  # noqa: T201 — operator progress output
 
     if not rows:
-        print("  No data -- nothing to seed.")
+        print("  No data -- nothing to seed.")  # noqa: T201 — operator progress output
         return
 
     # 2. Group observations by source-account key.
@@ -329,15 +316,10 @@ def main():
     #    list of observations.
     accounts: dict[tuple, list[dict]] = defaultdict(list)
     for r in rows:
-        key = (
-            r["insight_tenant_id"],
-            r["insight_source_type"],
-            r["insight_source_id"],
-            r["source_account_id"],
-        )
+        key = (r["insight_tenant_id"], r["insight_source_type"], r["insight_source_id"], r["source_account_id"])
         accounts[key].append(r)
 
-    print("  Connecting to MariaDB...")
+    print("  Connecting to MariaDB...")  # noqa: T201 — operator progress output
     conn = get_mariadb_conn()
     cursor = conn.cursor()
 
@@ -364,12 +346,7 @@ def main():
     )
     known_accounts: dict[tuple[str, str, str, str], uuid.UUID] = {}
     for tenant_bytes, source_type, source_id_bytes, src_account, person_bytes in cursor.fetchall():
-        key = (
-            str(uuid.UUID(bytes=tenant_bytes)),
-            source_type,
-            str(uuid.UUID(bytes=source_id_bytes)),
-            src_account,
-        )
+        key = (str(uuid.UUID(bytes=tenant_bytes)), source_type, str(uuid.UUID(bytes=source_id_bytes)), src_account)
         known_accounts[key] = uuid.UUID(bytes=person_bytes)
 
     # 4. Load existing (tenant, normalized_email) set from persons.
@@ -392,10 +369,7 @@ def main():
         tenant_str = str(uuid.UUID(bytes=tenant_bytes))
         existing_emails.add((tenant_str, email_norm))
 
-    print(
-        f"  persons state: {len(known_accounts)} known bindings, "
-        f"{len(existing_emails)} existing emails"
-    )
+    print(f"  persons state: {len(known_accounts)} known bindings, {len(existing_emails)} existing emails")  # noqa: T201 — operator progress output
 
     # 5. Assign person_id per source-account. Single code path:
     #    - Known accounts reuse the mapped person_id (stable).
@@ -414,12 +388,12 @@ def main():
     #    the sole identity anchor for this seed.
     email_to_new_person: dict[tuple[str, str], uuid.UUID] = {}
     account_person: dict[tuple, uuid.UUID] = {}
-    account_reason: dict[tuple, str] = {}    # '' or 'pending-iresolution'
+    account_reason: dict[tuple, str] = {}  # '' or 'pending-iresolution'
 
-    reused_from_persons       = 0
-    minted                    = 0
-    pending_iresolution       = 0
-    skipped_no_email          = 0
+    reused_from_persons = 0
+    minted = 0
+    pending_iresolution = 0
+    skipped_no_email = 0
     skipped_oversized_account = 0
 
     # BambooHR-first ordering: BambooHR carries the canonical
@@ -494,13 +468,15 @@ def main():
         account_person[key] = person_uuid
         account_reason[key] = ""
 
-    print(
+    print(  # noqa: T201 — operator progress output
         f"  Accounts: reused={reused_from_persons}, minted={minted}, "
         f"pending-iresolution={pending_iresolution}, "
         f"skipped-no-email={skipped_no_email}"
     )
     if skipped_oversized_account:
-        print(f"  Accounts skipped -- source_account_id > {MAX_SOURCE_ACCOUNT_ID_LEN} characters: {skipped_oversized_account}")
+        print(  # noqa: T201 — operator progress output
+            f"  Accounts skipped -- source_account_id > {MAX_SOURCE_ACCOUNT_ID_LEN} characters: {skipped_oversized_account}"
+        )
 
     # 6. Build INSERT rows for persons observations.
     #    Hardcoded routing per value_type populates exactly one of
@@ -511,11 +487,11 @@ def main():
     #    chronological ordering inside `persons` and makes the SCD-2
     #    rebuild's LEAD(created_at) over multiple historical
     #    observations of the same account well-defined.
-    fallback_now = datetime.now(timezone.utc).strftime(
+    fallback_now = datetime.now(UTC).strftime(
         "%Y-%m-%d %H:%M:%S.%f"  # microsecond precision for TIMESTAMP(6)
     )
     insert_rows = []
-    oversized_value_id        = 0
+    oversized_value_id = 0
     oversized_value_full_text = 0
 
     for key, obs_list in accounts.items():
@@ -552,25 +528,29 @@ def main():
             # rows where the field is missing/unparsable (an
             # ingestion-pipeline bug, not a silent dataloss path).
             row_created_at = _format_synced_at(obs.get("_synced_at"), fallback_now)
-            insert_rows.append((
-                obs["value_type"],
-                source_type,
-                source_bin,
-                tenant_bin,
-                v_id,
-                v_ft,
-                v_any,
-                person_bin,
-                author_bin,
-                reason_for_account,
-                row_created_at,
-            ))
+            insert_rows.append(
+                (
+                    obs["value_type"],
+                    source_type,
+                    source_bin,
+                    tenant_bin,
+                    v_id,
+                    v_ft,
+                    v_any,
+                    person_bin,
+                    author_bin,
+                    reason_for_account,
+                    row_created_at,
+                )
+            )
 
-    print(f"  Rows to insert (pre-dedup): {len(insert_rows)}")
+    print(f"  Rows to insert (pre-dedup): {len(insert_rows)}")  # noqa: T201 — operator progress output
     if oversized_value_id:
-        print(f"  Observations skipped -- value_id > {MAX_VALUE_ID_LEN} characters: {oversized_value_id}")
+        print(f"  Observations skipped -- value_id > {MAX_VALUE_ID_LEN} characters: {oversized_value_id}")  # noqa: T201 — operator progress output
     if oversized_value_full_text:
-        print(f"  Observations skipped -- value_full_text > {MAX_VALUE_FULL_TEXT_LEN} characters: {oversized_value_full_text}")
+        print(  # noqa: T201 — operator progress output
+            f"  Observations skipped -- value_full_text > {MAX_VALUE_FULL_TEXT_LEN} characters: {oversized_value_full_text}"
+        )
 
     # 7. Write observations to persons via INSERT IGNORE. The
     #    uq_person_observation UNIQUE KEY (on value_effective) skips
@@ -579,10 +559,10 @@ def main():
     #    outside this script.
     cursor.execute("SELECT COUNT(*) FROM persons")
     existing_before = cursor.fetchone()[0]
-    print(f"  Existing persons rows before seed: {existing_before}")
+    print(f"  Existing persons rows before seed: {existing_before}")  # noqa: T201 — operator progress output
 
     if insert_rows:
-        print(f"  Upserting {len(insert_rows)} persons rows (INSERT IGNORE)...")
+        print(f"  Upserting {len(insert_rows)} persons rows (INSERT IGNORE)...")  # noqa: T201 — operator progress output
         cursor.executemany(
             """INSERT IGNORE INTO persons
                (value_type, insight_source_type, insight_source_id, insight_tenant_id,
@@ -597,7 +577,7 @@ def main():
     existing_after = cursor.fetchone()[0]
     added = existing_after - existing_before
     skipped_dups = len(insert_rows) - added
-    print(f"  Added: {added}, skipped as duplicates: {skipped_dups}, total: {existing_after}")
+    print(f"  Added: {added}, skipped as duplicates: {skipped_dups}, total: {existing_after}")  # noqa: T201 — operator progress output
 
     # 8. Rebuild account_person_map from persons (SCD2) via two-table
     #    swap. MariaDB TRUNCATE is DDL and implicitly commits, so it
@@ -609,7 +589,7 @@ def main():
     #    contents, never an empty intermediate. The old table is
     #    dropped after the swap and serves as a free rollback artifact
     #    if anything in the rename pair fails.
-    print("  Rebuilding account_person_map from persons (value_type='id')...")
+    print("  Rebuilding account_person_map from persons (value_type='id')...")  # noqa: T201 — operator progress output
     cursor.execute("DROP TABLE IF EXISTS account_person_map_next")
     cursor.execute("CREATE TABLE account_person_map_next LIKE account_person_map")
     cursor.execute(
@@ -702,7 +682,9 @@ def main():
     #    * Malformed parent_person_id values: REGEXP guards Source 1
     #      against non-UUID strings that would crash UNHEX or produce
     #      nonsense binary.
-    print("  Rebuilding org_chart from persons (parent_person_id + parent_email -> email JOIN, with active intervals)...")
+    print(  # noqa: T201 — operator progress output
+        "  Rebuilding org_chart from persons (parent_person_id + parent_email -> email JOIN, with active intervals)..."
+    )
     cursor.execute("DROP TABLE IF EXISTS org_chart_next")
     cursor.execute("CREATE TABLE org_chart_next LIKE org_chart")
     cursor.execute(
@@ -888,11 +870,7 @@ def main():
         """
     )
     cursor.execute("DROP TABLE IF EXISTS org_chart_old")
-    cursor.execute(
-        "RENAME TABLE "
-        "  org_chart      TO org_chart_old, "
-        "  org_chart_next TO org_chart"
-    )
+    cursor.execute("RENAME TABLE   org_chart      TO org_chart_old,   org_chart_next TO org_chart")
     cursor.execute("DROP TABLE org_chart_old")
     conn.commit()
 
@@ -946,15 +924,15 @@ def main():
     )
     children_only_historical = cursor.fetchone()[0]
 
-    print(f"  parent observations: parent_person_id={pp_total or 0}, parent_email={pe_total or 0}")
-    print(f"  edges: {current_edges} current, {historical_edges} historical")
+    print(f"  parent observations: parent_person_id={pp_total or 0}, parent_email={pe_total or 0}")  # noqa: T201 — operator progress output
+    print(f"  edges: {current_edges} current, {historical_edges} historical")  # noqa: T201 — operator progress output
     if parent_email_unresolved:
-        print(
+        print(  # noqa: T201 — operator progress output
             f"  WARN: {parent_email_unresolved} parent_email observations had no matching "
             f"email-bearer in persons (no stub created -- see ADR-0010)"
         )
     if children_only_historical:
-        print(
+        print(  # noqa: T201 — operator progress output
             f"  Note: {children_only_historical} children have only historical edges "
             f"(deactivated and not re-activated -- see ADR-0010 active-intervals)"
         )
@@ -984,7 +962,7 @@ def main():
     )
     two_hop_cycles = cursor.fetchone()[0]
     if two_hop_cycles:
-        print(f"  WARN: org_chart has {two_hop_cycles} two-hop cycles -- review source data")
+        print(f"  WARN: org_chart has {two_hop_cycles} two-hop cycles -- review source data")  # noqa: T201 — operator progress output
 
     # Summary
     cursor.execute("""
@@ -993,26 +971,26 @@ def main():
         GROUP BY value_type
         ORDER BY value_type
     """)
-    print("\n  persons by value_type:")
+    print("\n  persons by value_type:")  # noqa: T201 — operator progress output
     for row in cursor.fetchall():
-        print(f"    {row[0]}: {row[1]}")
+        print(f"    {row[0]}: {row[1]}")  # noqa: T201 — operator progress output
 
     cursor.execute("SELECT COUNT(DISTINCT person_id) FROM persons")
-    print(f"    unique persons: {cursor.fetchone()[0]}")
+    print(f"    unique persons: {cursor.fetchone()[0]}")  # noqa: T201 — operator progress output
     cursor.execute("SELECT COUNT(*) FROM account_person_map")
     total_map = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM account_person_map WHERE valid_to IS NULL")
     current_map = cursor.fetchone()[0]
-    print(f"    account_person_map rows: {total_map} ({current_map} current, {total_map - current_map} historical)")
+    print(f"    account_person_map rows: {total_map} ({current_map} current, {total_map - current_map} historical)")  # noqa: T201 — operator progress output
 
     cursor.execute("SELECT COUNT(*) FROM org_chart")
     total_edges = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM org_chart WHERE valid_to IS NULL")
     current_edges = cursor.fetchone()[0]
-    print(f"    org_chart edges: {total_edges} ({current_edges} current, {total_edges - current_edges} historical)")
+    print(f"    org_chart edges: {total_edges} ({current_edges} current, {total_edges - current_edges} historical)")  # noqa: T201 — operator progress output
 
     conn.close()
-    print("\n=== Seed complete ===")
+    print("\n=== Seed complete ===")  # noqa: T201 — operator progress output
 
 
 if __name__ == "__main__":
