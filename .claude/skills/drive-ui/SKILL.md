@@ -1,6 +1,6 @@
 ---
 name: drive-ui
-description: "Drive the Insight web UI in a real browser to see, verify, or capture evidence from any stand — a local compose or kind install, or a shared remote one. Use this whenever the task means LOOKING at the dashboard rather than reading its code: 'check the IC page', 'is that chart still broken', 'screenshot the metrics drilldown', 'reproduce it in the UI', 'grab evidence for a bug', 'open the stand and look at X', or any UI defect you are about to file. Read it BEFORE launching a browser at any remote stand, because the Entra-plus-passkey ones cannot be logged into from a browser you launched, and the wrong acquisition move costs the user a login they cannot complete. Also read it before blaming the UI for a wrong number — the check that settles it is here. The `playwright-cli` skill owns the commands; this skill owns getting an authenticated browser and capturing evidence someone can act on, and hands the issue itself to `file-bug-insight`."
+description: "Drive the Insight web UI in a real browser to see, verify, or capture evidence from any stand — a local compose or kind install, or a shared remote one. Use this whenever the task means LOOKING at the dashboard rather than reading its code: 'check the IC page', 'is that chart still broken', 'screenshot the metrics drilldown', 'reproduce it in the UI', 'grab evidence for a bug', 'open the stand and look at X', or any UI defect you are about to file. Read it BEFORE launching a browser at any remote stand, because the Entra-plus-passkey ones cannot be logged into from a browser you launched, and the wrong acquisition move costs the user a login they cannot complete. Also read it before reporting a wrong number as a UI defect — the data that decides it is captured here, and this skill collects observations rather than drawing conclusions from them. The `playwright-cli` skill owns the commands; this skill owns getting an authenticated browser and capturing evidence someone can act on, and hands the issue itself to `file-bug-insight`."
 disable-model-invocation: false
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill
@@ -85,16 +85,16 @@ Group cards expose `aria-label="Open <group title> details"`, which makes them s
 playwright-cli click "getByRole('button', { name: 'Open Git output details' })"
 ```
 
-## Before you blame the UI
+## Capture what is behind the number
 
-A wrong number on screen is usually not a frontend bug. Two commands settle it, and skipping them is how a gold-view defect gets filed against the SPA:
+A wrong number on screen may or may not come from the frontend, and you do not have to decide which. Two commands capture the evidence that decides it, and skipping them is how a gold-view defect gets filed against the SPA:
 
 ```sh
 playwright-cli console      # client-side errors behind a broken or empty widget
 playwright-cli requests     # then `request <n>` for the failing call's status and body
 ```
 
-If the API already returned the wrong value, the layer is `analytics` or below and the UI is just the messenger. `metric-parity` walks it the rest of the way down the medallion.
+Attach both to the report: the value on screen, and the value the API actually returned, pasted rather than characterised. Those two facts side by side are what a reader needs — leave what they imply to whoever picks the issue up. `metric-parity` collects the same question further down the medallion when you can reach it.
 
 ## Capture evidence someone can act on
 
@@ -114,4 +114,4 @@ Annotate before capturing rather than describing the element in prose afterwards
 
 ## When you can't get a browser
 
-The user may not have time to flip a toggle or sign in, and that is a normal outcome rather than a blocker. Say plainly what you could not verify, then get what you can from the code: dashboard composition in `insight-front` is data-driven, which often settles "are these two charts really the same" with no browser at all. A finding grounded in code plus an explicit "not visually confirmed" is honest and useful. A finding that implies visual confirmation it never got is neither.
+The user may not have time to flip a toggle or sign in, and that is a normal outcome rather than a blocker. Say plainly what you could not verify, and stop there. Reading the frontend source to work out what the page *would* have shown produces a conclusion, not an observation — and this skill exists to produce observations. "Not visually confirmed" is a complete and useful answer; a claim that implies visual confirmation it never got is neither honest nor useful.

@@ -71,7 +71,9 @@ Two things this grounding is *for*, beyond correctness:
   the section.
 - **Whether the feature's own framing still holds.** When the shipped code contradicts the issue —
   scope was dropped, scope was added, a "table" shipped as a general-purpose component — correct
-  the checks against reality and say so to the user.
+  the checks against reality and say so to the user. Report what you found, not what you think it
+  means: "the endpoint takes 4 filters, the issue lists 2" is checkable; "the filter work was
+  descoped" is a story about people you did not talk to.
 
 If the feature is a **port**, **consolidation**, or **rolling migration**, the headline check is
 almost always a **differential / parity gate** (old vs new on the same data) — and it is frequently
@@ -111,6 +113,11 @@ under Efficiency because it involves volume.
 ### 4. Write the section in the canonical format
 Follow the template below. Then edit it into the issue body, replacing the loose Testing block and
 preserving everything else (Goal, Scope, Acceptance, Planning).
+
+The section states what gets measured and how — never why something is broken or where a fix would
+go. Grounding often turns up a real defect; that belongs in its own issue via `file-bug-insight`,
+not in a paragraph here. Two different readers use these two artifacts, and a diagnosis buried in a
+feature's Testing section reaches neither.
 
 ### 5. Draft-or-push
 Show the checks for review first whenever you are changing what is tested — adding a gate, moving
