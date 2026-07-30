@@ -22,8 +22,12 @@ pytestmark = pytest.mark.identity
 @pytest.fixture
 def identity_suite():
     """Select the identity suite lists; `select_suite` is a reversible pure
-    lookup, so restoring = selecting the analytics defaults back."""
-    api_coverage.select_suite("identity")
+    lookup, so restoring = selecting the analytics defaults back. The suite's
+    real SKIP_LIST entry (the retired legacy lookup) is stale against the
+    synthetic one-path specs below, so clear it — the tests here exercise
+    REQUIRED_EXTRA, not the skips."""
+    api_coverage.select_suite("identity-rust")
+    api_coverage.SKIP_LIST = []
     yield
     api_coverage.select_suite("analytics")
 
