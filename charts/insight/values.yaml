@@ -191,7 +191,7 @@ ingestion:
   # `serviceaccount "argo-workflow" not found`.
   templates:
     enabled: true
-  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.07.30.04.44-af6eb88" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
+  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.07.30.09.36-fab0089" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
   # airbyte-sync poll-job tunables — see templates/ingestion/airbyte-sync.yaml.
   # The poll loop replaces a wall-clock deadline with a progress watchdog:
   # it tracks (status, bytesEmitted, recordsEmitted, stateMessagesEmitted)
@@ -271,6 +271,11 @@ clickhouse:
   # at startup live here.
   initDatabases:
     - insight
+    # Empty writable namespace for new gold / saved-query results / scratch
+    # (#1964). The read-only presentation_ro role + grant-less `presentation`
+    # user are provisioned by the clickhouse-migrate Hook (apply-ch-migrations
+    # -> provision-presentation-access.sh).
+    - presentation
   # When true (default), a post-install/post-upgrade Hook Job
   # (clickhouse-migrate-job) applies the gold-view migrations
   # (src/ingestion/scripts/migrations/*.sql) + ADR-0007 placeholders against
@@ -517,6 +522,16 @@ identityResolution:
   # auto-generated credentials (see templates/secrets.yaml). The subchart
   # consumes it via envFrom (overriding its mounted config ConfigMap).
   existingSecret: "insight-identity-resolution-config"
+  # Scheduled persons-seed (#1690): a CronJob runs `identity-resolution seed`
+  # daily to rebuild the identity org projection (persons / account_person_map
+  # / org_chart) from ClickHouse identity_inputs — without it the projection
+  # freezes at the last manual run and Team-view rosters go stale. Runs
+  # serialize on a per-tenant MariaDB advisory lock; input guards abort on an
+  # empty identity_inputs read or a tenant mismatch (`--force` overrides).
+  # Manual run: kubectl create job --from=cronjob/<release>-identity-resolution-seed ...
+  seed:
+    enabled: true
+    schedule: "30 6 * * *" # daily, after overnight syncs + the 06:00 data-quality run
   # Gateway-JWT verification (NGINX_BFF R1) — same wiring as analytics: the
   # oidc-authn-plugin resolves the authenticator's JWKS via OIDC discovery
   # over https on `issuer` and trusts its CA from the authn-tls cert Secret.
