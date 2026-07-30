@@ -1,0 +1,47 @@
+{#-
+  THE resolve point of the metrics identity rework: collapses the raw
+  `identity.identity_persons` observation log (see create_identity_persons /
+  the service's persons-sync) into the CURRENT `email -> person_id` map, for
+  gold observation models to LEFT JOIN:
+
+      LEFT JOIN ({{ resolve_person_id() }}) AS identity_map
+          ON identity_map.email = <entity_id expression>
+
+  Emits (email, person_id), one row per email. Resolution rule v1 —
+  latest-observation-wins: the newest `value_type='email'` row per normalized
+  email claims it (`created_at DESC, id DESC`; the id tiebreak makes
+  same-instant observations deterministic, matching the service's own
+  reader ordering). No tenant filter — single-tenant reality (#1550); the
+  tenant column is in the log when that changes.
+
+  This macro is deliberately the ONLY place resolution semantics live.
+  Future smarts — per-source maps ("this email as seen by git sources"),
+  tenant scoping, as_of resolution off `created_at` — change this body and
+  every consuming model picks it up on the next build. Consumers must not
+  re-derive person_id any other way.
+
+  NORMALIZATION CONTRACT: `lower(trimBoth(...))` — must stay identical to
+  the entity_id normalization in the observation models (e.g.
+  git_metric_observations: "Match the API's entity-id normalization exactly")
+  or the join silently misses.
+
+  Dedup note (check-dbt-conventions): identity_persons is a plain MergeTree
+  replaced wholesale by an atomic snapshot swap — no ReplacingMergeTree, no
+  duplicate row versions to collapse, so no FINAL here; LIMIT 1 BY picks the
+  resolution winner, not a dedup survivor.
+-#}
+
+{% macro resolve_person_id() %}
+    SELECT
+        lower(trimBoth(value_effective)) AS email,
+        person_id
+    FROM identity.identity_persons
+    WHERE value_type = 'email'
+      AND value_effective IS NOT NULL
+      AND trimBoth(value_effective) != ''
+    ORDER BY
+        email,
+        created_at DESC,
+        id DESC
+    LIMIT 1 BY email
+{% endmacro %}
