@@ -64,7 +64,8 @@ The API Gateway mounts this service at `/api/analytics`. All endpoints are versi
 | `cpt-insightspec-nfr-be-tenant-isolation` | Tenant data isolation | Query builder | `insight_tenant_id = ?` injected on every query from SecurityContext | Cross-tenant query test |
 | `cpt-insightspec-nfr-be-api-conventions` | RFC 9457, cursor pagination | All endpoints | `{ items, page_info }` envelopes, Problem Details errors, OData query conventions | Response format tests |
 | `cpt-insightspec-nfr-be-rate-limiting` | Per-route rate limiting | API Gateway (upstream) | Governor-based rate limiter | Load test |
-| `cpt-insightspec-nfr-be-idor-prevention` | IDOR on org_unit_id | Query engine | `org_unit_id` from `$filter` validated against user's AccessScope before query execution | Cross-org-unit query test |
+| `cpt-insightspec-nfr-be-idor-prevention` | IDOR on person entity ids | `POST /v1/metric-results` | Requested person ids filtered through identity's `POST /v1/visible-persons`; the whole request is refused when any one is not visible | Gate tests + e2e 403 cases |
+| `cpt-insightspec-nfr-be-idor-prevention-org-unit` | IDOR on org_unit_id | Query engine | Planned: `org_unit_id` from `$filter` validated against the caller's AccessScope before execution. Not implemented — the OData `$filter` path carries no visibility check | Cross-org-unit query test |
 
 ### 1.3 Architecture Layers
 
@@ -132,9 +133,11 @@ The service never exposes ClickHouse table names to the frontend. All queries go
 
 - [ ] `p1` - **ID**: `cpt-insightspec-principle-analytics-security-filters`
 
-Every ClickHouse query includes `insight_tenant_id` and org-unit scope filters injected from the SecurityContext and AccessScope. User-supplied OData `$filter` values are ANDed with security filters. Users can narrow their view but never widen it.
+Every ClickHouse query includes `insight_tenant_id`. User-supplied OData `$filter` values are ANDed with security filters, so users can narrow their view but never widen it.
 
-**IDOR prevention**: When the frontend includes `org_unit_id eq 'uuid'` in `$filter`, the query engine validates that the requested org unit is within the user's AccessScope before executing the query. Accepting a client-supplied UUID without authorization check would allow any user within a tenant to query any team's data by guessing or enumerating UUIDs.
+**IDOR prevention on person entities**: `POST /v1/metric-results` resolves the caller from the gateway JWT and asks identity, in one batch call, which of the requested person ids that caller may see (`POST /v1/visible-persons`). Any requested id outside the answer refuses the whole request with 403 — never a partial response, which would be indistinguishable from absent data. Reaching identity is required: an unconfigured or unreachable identity service is a server error, so an authorization backend that is down cannot read as "permitted".
+
+**Planned — IDOR prevention on org units**: validating `org_unit_id` from `$filter` against the caller's AccessScope is *not* implemented. The `POST /v1/metrics/{id}/query` and `POST /v1/metrics/queries` paths interpolate client-supplied `person_id` / `org_unit_id` filter values with no visibility check, so they remain reachable for any id in the tenant.
 
 **Why**: Tenant isolation and org-scoped visibility are enforced at the query level, not at the application level.
 
@@ -417,7 +420,7 @@ GET /v1/persons/{person_id}/aliases
 | 400 | `invalid_order_by` | Column not in metric's schema |
 | 404 | `metric_not_found` | Metric ID doesn't exist or is disabled |
 | 401 | `unauthorized` | Missing or invalid JWT |
-| 403 | `forbidden` | RBAC role insufficient or org_unit_id not in user's AccessScope |
+| 403 | `forbidden` | RBAC role insufficient, or a requested person id is outside the caller's visible set |
 
 ### 3.4 Internal Dependencies
 
