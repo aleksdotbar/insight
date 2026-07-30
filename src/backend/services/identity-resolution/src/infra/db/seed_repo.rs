@@ -60,6 +60,52 @@ impl SeedStore for MariaDbSeedStore<'_> {
     }
 }
 
+/// How the `persons` log is populated relative to one tenant — input to the
+/// CLI runner's wrong-tenant guard (see `seed_runner`): rows under OTHER
+/// tenants with none under the configured one means the operator is about to
+/// mint a parallel person universe (the #1550 failure mode), not seed a fresh
+/// install.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TenantPresence {
+    /// `persons` rows stored under the given tenant.
+    pub own_rows: i64,
+    /// `persons` rows stored under any other tenant.
+    pub other_rows: i64,
+}
+
+/// Count `persons` rows under the given tenant vs under any other tenant.
+///
+/// # Errors
+///
+/// Returns an error if the query fails.
+pub async fn tenant_presence(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+) -> anyhow::Result<TenantPresence> {
+    // SUM of a boolean is DECIMAL in MariaDB — CAST so the driver decodes i64.
+    const SQL: &str = r"
+        SELECT
+            CAST(COALESCE(SUM(insight_tenant_id = ?), 0) AS SIGNED)  AS own_rows,
+            CAST(COALESCE(SUM(insight_tenant_id <> ?), 0) AS SIGNED) AS other_rows
+        FROM persons
+    ";
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::MySql,
+            SQL,
+            [
+                tenant_id.as_bytes().to_vec().into(),
+                tenant_id.as_bytes().to_vec().into(),
+            ],
+        ))
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("tenant_presence query returned no row"))?;
+    Ok(TenantPresence {
+        own_rows: row.try_get("", "own_rows")?,
+        other_rows: row.try_get("", "other_rows")?,
+    })
+}
+
 /// Current `source_account_id → person_id` bindings for the tenant — the latest
 /// `value_type='id'` observation per account. Feeds the known-account branch of
 /// the resolver. Ported from `SqlPersonsSeed.KnownAccountBindings`.

@@ -68,6 +68,53 @@ pub async fn connect_single(database_url: &str) -> anyhow::Result<DatabaseConnec
     Ok(db)
 }
 
+/// Prefix of the per-tenant advisory lock serializing persons-seed runs.
+/// Cross-process AND cross-instance: the lock lives on the MariaDB server, so
+/// a cron Job, a manual Job, and a second Insight instance sharing the same
+/// database all serialize through it.
+const SEED_LOCK_PREFIX: &str = "persons-seed:";
+
+/// Try to take the per-tenant persons-seed advisory lock, without waiting
+/// (`GET_LOCK` timeout 0 — a concurrent run fails fast instead of queueing a
+/// stale re-run behind the active one). Session-scoped like the migration
+/// lock: call it on a [`connect_single`] connection and keep that connection
+/// alive for the whole run — the lock dies with the session, so a killed run
+/// can never leave it stuck.
+///
+/// # Errors
+///
+/// Returns an error if the query fails.
+pub async fn try_acquire_seed_lock(
+    db: &DatabaseConnection,
+    tenant_id: uuid::Uuid,
+) -> anyhow::Result<bool> {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let acquired: Option<i8> = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::MySql,
+            "SELECT GET_LOCK(?, 0)",
+            [format!("{SEED_LOCK_PREFIX}{tenant_id}").into()],
+        ))
+        .await?
+        .map(|r| r.try_get_by_index::<Option<i8>>(0))
+        .transpose()?
+        .flatten();
+    Ok(acquired == Some(1))
+}
+
+/// Best-effort release of the persons-seed lock; dropping the session releases
+/// it anyway, so a failure here is not worth propagating.
+pub async fn release_seed_lock(db: &DatabaseConnection, tenant_id: uuid::Uuid) {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let _ = db
+        .execute(Statement::from_sql_and_values(
+            DbBackend::MySql,
+            "SELECT RELEASE_LOCK(?)",
+            [format!("{SEED_LOCK_PREFIX}{tenant_id}").into()],
+        ))
+        .await;
+}
+
 /// Name of the cross-process advisory lock serializing schema migration runs.
 const MIGRATION_LOCK: &str = "identity_resolution_migrations";
 /// How long a second migrator waits for the lock before giving up (seconds).

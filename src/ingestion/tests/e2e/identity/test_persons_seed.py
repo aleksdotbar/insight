@@ -1,5 +1,4 @@
-"""Contract: the persons-seed write path — POST /v1/persons-seed + the
-operation-tracking reads.
+"""Contract: the persons-seed write path + the operation-tracking reads.
 
 The seed streams ClickHouse `identity.identity_inputs` and rebuilds the
 caller-tenant's persons / account_person_map / org_chart. It runs here under
@@ -8,16 +7,22 @@ the fixture tree the read tests depend on. The module fixture provisions the
 `identity.identity_inputs` table with a deterministic three-account roster:
 two accounts sharing an email (one person, two bindings) + one solo account.
 
-The end-to-end case (a COMPLETED seed verified through the read path) runs
-only where the implementation's ClickHouse reader works against the
-harness's containerized ClickHouse — see
+TRIGGER DIVERGENCE (#1690, accepted): the .NET service triggers the seed via
+`POST /v1/persons-seed` (async queue + poll); the Rust successor REMOVED the
+POST — the seed is CLI-only there (`identity-resolution seed`, run by the
+Helm CronJob / a manual Job; synchronous) and only the GET journal routes
+remain. Tests select the trigger through `_trigger_seed` and gate the
+POST-specific cases on `supports_seed_http_trigger`; the CLI-specific cases
+(input guards, advisory lock, exit codes) gate on `supports_seed_cli`. The
+POST cases die with the .NET service.
+
+The end-to-end case runs only where the implementation's ClickHouse reader
+works against the harness's containerized ClickHouse — see
 `lib.identity.supports_containerized_clickhouse`: the frozen .NET service's
 Octonica native-protocol handshake deadlocks against every containerized CH
-tried (works against the dev cluster's), so on `dotnet` that ONE case skips;
-the Rust implementation (HTTP ClickHouse client) runs it — and that is the
-run that matters as cutover acceptance. The other tests in this module only
-need operations to EXIST (queued/running is fine), so they run on both
-implementations and keep the coverage gate green.
+tried, so on `dotnet` that ONE case skips; the Rust implementation (HTTP
+ClickHouse client) runs it — and that is the run that matters as cutover
+acceptance.
 """
 
 from __future__ import annotations
@@ -38,7 +43,55 @@ SEED_SOURCE_ID = uuid.UUID("55555555-5555-5555-5555-555555555555")
 SHARED_EMAIL = "seeded.person@e2e.test"
 SOLO_EMAIL = "solo.person@e2e.test"
 
+# A tenant nothing ever seeds successfully: `persons` never has rows under it,
+# so the wrong-tenant guard must always refuse an unforced run for it.
+GUARD_TENANT = uuid.UUID("66666666-6666-6666-6666-666666666666")
+
+# Author the CLI stamps on its journal rows (no JWT on that path) — the
+# SYSTEM_AUTHOR nil-UUID convention shared with the legacy Python seed.
+SYSTEM_AUTHOR = "00000000-0000-0000-0000-000000000000"
+
 _OPERATION_TIMEOUT_S = 120.0
+
+_ROSTER: list[tuple[str, str, str]] = [
+    # (account, value_type, value) — two accounts share SHARED_EMAIL.
+    # Connectors emit a source-native `id` observation per account; the
+    # profile's `ids[]` is built from exactly those.
+    ("seed-acc-1", "email", SHARED_EMAIL),
+    ("seed-acc-1", "id", "seed-acc-1"),
+    ("seed-acc-1", "display_name", "Seeded Person"),
+    ("seed-acc-2", "email", SHARED_EMAIL),
+    ("seed-acc-2", "id", "seed-acc-2"),
+    ("seed-acc-3", "email", SOLO_EMAIL),
+    ("seed-acc-3", "id", "seed-acc-3"),
+    ("seed-acc-3", "display_name", "Solo Person"),
+]
+
+
+def _fill_roster(cfg: SessionConfig) -> None:
+    """TRUNCATE + INSERT the deterministic roster into identity_inputs."""
+    clickhouse.execute(cfg, "TRUNCATE TABLE identity.identity_inputs")
+    values = []
+    for i, (account, value_type, value) in enumerate(_ROSTER):
+        # Distinct _synced_at per row (production reality): the seed derives
+        # observation created_at from it, and the persons UNIQUE key
+        # (…, value_type, created_at) silently drops same-instant collisions —
+        # e.g. two accounts' `id` observations for the same person.
+        values.append(
+            "("
+            f"'{account}:{value_type}', "
+            f"'{seed.SEED_TENANT}', 'e2e-source', '{SEED_SOURCE_ID}', "
+            f"'{account}', '{value_type}', '{value}', "
+            f"'UPSERT', now64(3) - INTERVAL {len(_ROSTER) - i} SECOND, {i + 1}"
+            ")"
+        )
+    clickhouse.execute(
+        cfg,
+        "INSERT INTO identity.identity_inputs "  # noqa: S608 — every value is a fixed test literal above, no untrusted input
+        "(unique_key, insight_tenant_id, insight_source_type, insight_source_id,"
+        " source_account_id, value_type, value, operation_type, _synced_at, _version) VALUES "
+        + ", ".join(values),
+    )
 
 
 @pytest.fixture(scope="module")
@@ -64,42 +117,7 @@ def identity_inputs(compose_stack: SessionConfig):
         ) ENGINE = ReplacingMergeTree(_version) ORDER BY unique_key
         """,
     )
-    clickhouse.execute(compose_stack, "TRUNCATE TABLE identity.identity_inputs")
-
-    rows: list[tuple[str, str, str]] = [
-        # (account, value_type, value) — two accounts share SHARED_EMAIL.
-        # Connectors emit a source-native `id` observation per account; the
-        # profile's `ids[]` is built from exactly those.
-        ("seed-acc-1", "email", SHARED_EMAIL),
-        ("seed-acc-1", "id", "seed-acc-1"),
-        ("seed-acc-1", "display_name", "Seeded Person"),
-        ("seed-acc-2", "email", SHARED_EMAIL),
-        ("seed-acc-2", "id", "seed-acc-2"),
-        ("seed-acc-3", "email", SOLO_EMAIL),
-        ("seed-acc-3", "id", "seed-acc-3"),
-        ("seed-acc-3", "display_name", "Solo Person"),
-    ]
-    values = []
-    for i, (account, value_type, value) in enumerate(rows):
-        # Distinct _synced_at per row (production reality): the seed derives
-        # observation created_at from it, and the persons UNIQUE key
-        # (…, value_type, created_at) silently drops same-instant collisions —
-        # e.g. two accounts' `id` observations for the same person.
-        values.append(
-            "("
-            f"'{account}:{value_type}', "
-            f"'{seed.SEED_TENANT}', 'e2e-source', '{SEED_SOURCE_ID}', "
-            f"'{account}', '{value_type}', '{value}', "
-            f"'UPSERT', now64(3) - INTERVAL {len(rows) - i} SECOND, {i + 1}"
-            ")"
-        )
-    clickhouse.execute(
-        compose_stack,
-        "INSERT INTO identity.identity_inputs "  # noqa: S608 — every value is a fixed test literal above, no untrusted input
-        "(unique_key, insight_tenant_id, insight_source_type, insight_source_id,"
-        " source_account_id, value_type, value, operation_type, _synced_at, _version) VALUES "
-        + ", ".join(values),
-    )
+    _fill_roster(compose_stack)
     return compose_stack
 
 
@@ -110,13 +128,34 @@ def seed_api(identity_svc):
         yield c
 
 
+def _trigger_seed(identity_svc, seed_api) -> str:
+    """Trigger one seed run through the implementation's trigger and return
+    its operation id. POST (async) on .NET; the `seed` CLI on Rust —
+    synchronous, so the returned operation is already terminal there.
+
+    The CLI run is `--force`: the fixture dataset lives under TEST_TENANT_ID
+    while the seed runs under SEED_TENANT, which is exactly the wrong-tenant
+    shape the guard exists for — the guard's own contract is proven by the
+    unforced tests below.
+    """
+    if identity_svc.supports_seed_http_trigger:
+        r = seed_api.post("/v1/persons-seed", json={"mode": "link-by-email"})
+        assert r.status_code == 202, f"status={r.status_code} body={r.text}"
+        return r.json()["operation_id"]
+    res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+    assert res.returncode == 0, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+    r = seed_api.get("/v1/persons-seed?limit=1")
+    assert r.status_code == 200, f"status={r.status_code} body={r.text}"
+    rows = items_of(r.json())
+    assert rows, "a completed CLI run must be visible in the journal"
+    return rows[0]["operation_id"]
+
+
 @pytest.fixture
-def seed_operation(identity_inputs, seed_api) -> str:
+def seed_operation(identity_inputs, seed_api, identity_svc) -> str:
     """A freshly created seed operation's id — each dependent test owns its
     own operation instead of leaning on another test having run first."""
-    r = seed_api.post("/v1/persons-seed", json={"mode": "link-by-email"})
-    assert r.status_code == 202, f"status={r.status_code} body={r.text}"
-    return r.json()["operation_id"]
+    return _trigger_seed(identity_svc, seed_api)
 
 
 def _wait_completed(client, operation_id: str) -> dict:
@@ -133,7 +172,7 @@ def _wait_completed(client, operation_id: str) -> dict:
 
 
 def test_persons_seed_end_to_end(identity_inputs, seed_api, identity_svc) -> None:
-    """202 + Location → operation completes → the seeded person resolves,
+    """Seed run → operation completes → the seeded person resolves,
     with BOTH same-email accounts bound to one person."""
     if not identity_svc.supports_containerized_clickhouse:
         pytest.skip(
@@ -141,15 +180,18 @@ def test_persons_seed_end_to_end(identity_inputs, seed_api, identity_svc) -> Non
             "containerized ClickHouse (see module docstring); the Rust "
             "implementation runs this case"
         )
-    r = seed_api.post("/v1/persons-seed", json={"mode": "link-by-email"})
-    assert r.status_code == 202, f"status={r.status_code} body={r.text}"
-    operation_id = r.json()["operation_id"]
-    assert r.headers.get("location"), r.headers
+    operation_id = _trigger_seed(identity_svc, seed_api)
 
     op = _wait_completed(seed_api, operation_id)
     assert op["status"] == "completed", op
     summary = op.get("summary") or {}
     assert summary, op
+    if identity_svc.supports_seed_cli:
+        # CLI journal contract: system author (no JWT on that path) and the
+        # request records the trigger.
+        assert op["author_person_id"] == SYSTEM_AUTHOR, op
+        request = op.get("request") or {}
+        assert request.get("trigger") == "cli", op
 
     # Freshly minted person_ids come from the tenant-agnostic internal lookup
     # (no visibility gate — at this point NOBODY is in the seed admin's
@@ -204,12 +246,11 @@ def test_persons_seed_operations_listed(seed_operation, seed_api) -> None:
     assert matching[0]["insight_tenant_id"] == str(seed.SEED_TENANT), matching[0]
 
 
-def test_persons_seed_list_limit(seed_operation, seed_api) -> None:
+def test_persons_seed_list_limit(seed_operation, seed_api, identity_svc) -> None:
     """With at least two operations present (the fixture's + one more),
     limit=1 returns exactly one — an empty list would mean the filter is
     vacuously 'passing'."""
-    second = seed_api.post("/v1/persons-seed", json={"mode": "link-by-email"})
-    assert second.status_code == 202, f"status={second.status_code} body={second.text}"
+    _trigger_seed(identity_svc, seed_api)
     r = seed_api.get("/v1/persons-seed?limit=1")
     assert r.status_code == 200, f"status={r.status_code} body={r.text}"
     rows = items_of(r.json())
@@ -224,11 +265,11 @@ def test_persons_seed_list_status_filter(seed_operation, seed_api) -> None:
     The lifecycle is one-way (queued → running → completed|failed), so the
     inclusion check retries until a status read and the filtered list agree
     (the operation may transition between the two GETs — on a fast CI worker
-    it can cross two states in milliseconds), and the exclusion check uses
-    `queued`, which the operation can never re-enter once it was observed
-    past it. No terminal state is required — the worker may legitimately
-    still be running (or, on macOS Docker Desktop, stuck — see the module
-    docstring)."""
+    it can cross two states in milliseconds; a CLI-triggered run is terminal
+    already), and the exclusion check uses `queued`, which the operation can
+    never re-enter once it was observed past it. No terminal state is
+    required — the .NET worker may legitimately still be running (or, on
+    macOS Docker Desktop, stuck — see the module docstring)."""
     deadline = time.monotonic() + 30.0
     while True:
         r = seed_api.get(f"/v1/persons-seed/{seed_operation}")
@@ -251,11 +292,91 @@ def test_persons_seed_list_status_filter(seed_operation, seed_api) -> None:
         assert seed_operation not in {op["operation_id"] for op in excluded}, excluded
 
 
-def test_persons_seed_403_non_admin(bob_api) -> None:
+# ── POST trigger (dotnet-only; dies with the .NET service) ────────────────
+
+
+def test_persons_seed_403_non_admin(bob_api, identity_svc) -> None:
     """bob is not an admin anywhere — the seed trigger is refused."""
+    if not identity_svc.supports_seed_http_trigger:
+        pytest.skip("POST /v1/persons-seed removed in the Rust successor (#1690)")
     r = bob_api.post("/v1/persons-seed", json={"mode": "link-by-email"})
     assert r.status_code == 403, f"status={r.status_code} body={r.text}"
 
 
-def test_persons_seed_401_unauthenticated(anon_api) -> None:
+def test_persons_seed_401_unauthenticated(anon_api, identity_svc) -> None:
+    if not identity_svc.supports_seed_http_trigger:
+        pytest.skip("POST /v1/persons-seed removed in the Rust successor (#1690)")
     assert anon_api.post("/v1/persons-seed", json={"mode": "link-by-email"}).status_code == 401
+
+
+# ── CLI trigger (rust-only): guards, lock, exit codes (#1690) ─────────────
+
+
+def _operation_row(cfg: SessionConfig, tenant: uuid.UUID) -> dict | None:
+    """Newest `operations` row for a tenant, read straight from MariaDB —
+    guard-refused tenants have no admin, so the HTTP journal is unreadable
+    for them by design."""
+    with seed._connection(cfg) as conn, conn.cursor() as cur:  # noqa: SLF001 — harness-internal helper
+        cur.execute(
+            "SELECT status, error_message, HEX(author_person_id) AS author"
+            " FROM operations WHERE insight_tenant_id = %s"
+            " ORDER BY started_at DESC LIMIT 1",
+            (tenant.bytes,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row
+    status, error_message, author = row
+    return {"status": status, "error_message": error_message, "author": author}
+
+
+def test_seed_cli_wrong_tenant_guard(identity_inputs, identity_svc, compose_stack) -> None:
+    """An unforced run for a tenant `persons` has never seen — while other
+    tenants' rows exist — must refuse (exit 3) and journal the refusal:
+    seeding would mint a parallel person set under a wrong tenant (#1550)."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    res = identity_svc.run_seed_cli(tenant=str(GUARD_TENANT), force=False)
+    assert res.returncode == 3, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+    op = _operation_row(compose_stack, GUARD_TENANT)
+    assert op is not None, "the guard refusal must still write a journal row"
+    assert op["status"] == "failed", op
+    assert "tenant" in (op["error_message"] or ""), op
+
+
+def test_seed_cli_empty_input_guard(identity_inputs, identity_svc, compose_stack) -> None:
+    """An unforced run over an EMPTY identity_inputs must refuse (exit 3) —
+    an empty read means a broken/misconfigured pipeline, not 'no people'."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    clickhouse.execute(compose_stack, "TRUNCATE TABLE identity.identity_inputs")
+    try:
+        res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=False)
+        assert res.returncode == 3, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+        op = _operation_row(compose_stack, seed.SEED_TENANT)
+        assert op is not None and op["status"] == "failed", op
+        assert "identity_inputs" in (op["error_message"] or ""), op
+    finally:
+        # The module fixture fills once (module scope) — restore for the
+        # tests that run after this one.
+        _fill_roster(compose_stack)
+
+
+def test_seed_cli_lock_busy(identity_inputs, identity_svc, compose_stack) -> None:
+    """A run against a held per-tenant advisory lock fails fast with exit 2 —
+    the serialization that replaced the in-process queue (cron-vs-manual and
+    multi-instance overlap)."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    with seed._connection(compose_stack) as conn, conn.cursor() as cur:  # noqa: SLF001 — harness-internal helper
+        cur.execute("SELECT GET_LOCK(%s, 0)", (f"persons-seed:{seed.SEED_TENANT}",))
+        got = cur.fetchone()
+        assert got and next(iter(got if isinstance(got, tuple) else got.values())) == 1, got
+        try:
+            res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+            assert res.returncode == 2, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+        finally:
+            cur.execute("SELECT RELEASE_LOCK(%s)", (f"persons-seed:{seed.SEED_TENANT}",))
