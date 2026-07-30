@@ -59,7 +59,8 @@ Rules:
 ## Managed Source Ownership
 
 Managed observation sources and the cohort view are dbt gold models
-(`src/ingestion/gold/`), materialized as views in the `insight` database:
+(`src/ingestion/gold/`), materialized as views or MergeTree serving tables in
+the `insight` database:
 
 - `insight.ai_metric_observations`
 - `insight.metric_entity_cohorts_current`
@@ -81,7 +82,7 @@ contract; a source that needs different columns is a different source kind.
 
 Gold models are built at deploy time by the ClickHouse migrate hook
 (`dbt run --select tag:gold`, final step of
-`src/ingestion/scripts/apply-ch-migrations.sh`), so the views exist before
+`src/ingestion/scripts/apply-ch-migrations.sh`), so the relations exist before
 any connector sync — bronze/silver placeholders guarantee the DDL
 type-checks on a fresh cluster. Per-connector scoped dbt runs keep them
 current afterwards.
@@ -89,6 +90,54 @@ current afterwards.
 The cohort view is unique per `(tenant_id, entity_type, entity_id,
 cohort_key)`. The peer query relies on this; a dbt build-integrity test
 asserts it.
+
+## Metric Evidence Contract
+
+Each managed source may expose `<family>_metric_evidence` in the `insight`
+database:
+
+```sql
+tenant_id String,
+source_key String,
+entity_type String,
+entity_id String,
+metric_date Date,
+observed_at Nullable(DateTime64(3)),
+measure_key String,
+record_id String,
+record_kind String,
+granularity String,
+record_label String,
+contribution Nullable(Float64),
+subject_key Nullable(String),
+dimensions Array(Tuple(key String, value String, label Nullable(String))),
+details Map(String, String)
+```
+
+Evidence relations are MergeTree serving tables built from silver. Their
+ordering follows the evidence key access pattern, avoiding repeated silver
+reconstruction on read. Observation models derive their values from these
+evidence tables. Each source exposes one evidence relation and each measure
+has one granularity:
+
+- `event`: one source event, such as a commit.
+- `source_summary`: the finest summary preserved by silver.
+- `derived_population`: a source entity participating in a derived metric.
+
+The evidence contract has these limitations:
+
+- Summary-grain silver cannot produce event-grain evidence. AI and
+  collaboration currently expose source summaries or derived populations.
+  Git exposes commit and pull-request events, task duration metrics expose
+  issue events, and wiki page creation exposes page events; their remaining
+  measures use the finest summary grain preserved by silver.
+- Metric results and evidence are not transactionally snapshot-isolated from
+  each other during a dbt rebuild. They reconcile after the complete gold
+  build because observations derive from evidence.
+- Source links are omitted. Hosted services commonly use custom domains, and
+  the current silver contract does not preserve a canonical web base URL. A
+  future source registry can add a non-secret `web_base_url` keyed by source
+  instance and combine it with provider-specific record identifiers.
 
 ## Computations
 
