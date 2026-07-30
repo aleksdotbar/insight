@@ -195,9 +195,9 @@ The system **MUST** allow an analyst to create, list, fetch, update, delete, and
 
 #### Named Query Parameters
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-query-params`
+- [x] `p1` - **ID**: `cpt-presentation-fr-query-params`
 
-The system **MUST** support named query parameters, always injecting `tenant` from request context and supporting a `period` parameter. The `tenant` parameter **MUST NOT** be settable from client SQL. (#1966.)
+The system **MUST** support named query parameters, always injecting `tenant` from request context and supporting a `period` parameter supplied on the run request. The `tenant` parameter **MUST NOT** be settable from client SQL. Parameter values **MUST** be bound as ClickHouse server-side parameters (`{name:Type}`), never string-interpolated, so a value can never alter query structure. (Shipped, #1966.)
 
 **Rationale**: Consistent, safe parameterization; the tenant value is authoritative from context.
 
@@ -311,7 +311,7 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 **Stability**: unstable
 
-**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN. (CRUD + run shipped in #1965; named parameters follow in #1966.)
+**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN. (CRUD + run shipped in #1965; named parameters shipped in #1966.)
 
 **Breaking Change Policy**: Unstable in Phase A; contract hardens in a later phase.
 

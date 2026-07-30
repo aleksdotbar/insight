@@ -6,9 +6,9 @@
 //! gate on create, update, and run. Only `/run` reaches ClickHouse — it
 //! executes the stored SQL as `presentation_ro` and returns untyped JSON rows.
 //!
-//! Phase-A scope: named parameters (`tenant`/`period`, #1966) and the injected
-//! tenant-row filter (#1967) are separate sub-issues — `/run` here executes the
-//! stored single-SELECT as authored.
+//! Phase-A scope: `/run` binds named parameters server-side — `{tenant}` always
+//! (from context), `{period}` when supplied (#1966). The injected tenant-row
+//! filter (#1967) is a separate sub-issue.
 
 use std::sync::Arc;
 
@@ -25,7 +25,8 @@ use super::AppState;
 use super::error::SavedQueryError;
 use crate::domain::query_gate::validate_single_select;
 use crate::domain::saved_query::{
-    CreateSavedQueryRequest, RunResponse, SavedQuery, SavedQuerySummary, UpdateSavedQueryRequest,
+    CreateSavedQueryRequest, RunResponse, RunSavedQueryRequest, SavedQuery, SavedQuerySummary,
+    UpdateSavedQueryRequest,
 };
 use crate::infra::db::entities::saved_queries;
 
@@ -141,6 +142,7 @@ pub async fn run_saved_query(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
     Path(id): Path<Uuid>,
+    body: Option<Json<RunSavedQueryRequest>>,
 ) -> Result<impl IntoResponse, CanonicalError> {
     let saved = find_saved_query(&state, ctx.subject_tenant_id(), id).await?;
 
@@ -149,39 +151,74 @@ pub async fn run_saved_query(
     // single read (defense in depth alongside the `presentation_ro` grants).
     validate_single_select(&saved.sql).map_err(|e| invalid_sql_for(id, e))?;
 
-    // #1966 (named params) and #1967 (injected tenant-row filter) extend this
-    // path; Phase-A #1965 executes the stored single-SELECT as authored.
-    let rows = execute_read(&state, &saved.sql).await?;
+    // Named parameters (#1966): `{tenant}` is always bound from context; the
+    // optional `period` binds `{period}`. Both go through ClickHouse's
+    // server-side parameter interface, so a value can never alter the SQL. The
+    // injected tenant-row *filter* (#1967) is a separate concern.
+    let period = body.and_then(|Json(b)| b.period);
+    let rows = execute_read(
+        &state,
+        id,
+        &saved.sql,
+        ctx.subject_tenant_id(),
+        period.as_deref(),
+    )
+    .await?;
     Ok(Json(RunResponse { rows }))
 }
 
 /// Execute a single read statement against ClickHouse and parse the
 /// `JSONEachRow` stream into untyped rows — the same read path the metric query
-/// uses.
+/// uses. Binds the `tenant`/`period` named parameters server-side (#1966).
 async fn execute_read(
     state: &AppState,
+    id: Uuid,
     sql: &str,
+    tenant_id: Uuid,
+    period: Option<&str>,
 ) -> Result<Vec<serde_json::Value>, CanonicalError> {
     tracing::debug!(sql = %sql, "executing saved query");
 
-    let mut cursor = state
-        .ch
-        .query(sql)
-        .fetch_bytes("JSONEachRow")
-        .map_err(|e| {
-            tracing::error!(error = %e, sql = %sql, "ClickHouse query failed");
-            CanonicalError::internal("query execution failed").create()
-        })?;
+    // `.param` sets `param_<name>` on the request; the SQL references it as
+    // `{name:Type}`. `tenant` is always bound (unused by a query that omits it
+    // — ClickHouse ignores extra params); `period` only when supplied.
+    let mut query = state.ch.query(sql).param("tenant", tenant_id.to_string());
+    if let Some(period) = period {
+        query = query.param("period", period);
+    }
+
+    let mut cursor = query.fetch_bytes("JSONEachRow").map_err(|e| {
+        tracing::error!(error = %e, sql = %sql, "ClickHouse query failed");
+        classify_run_error(id, &e.to_string())
+    })?;
 
     let raw_bytes = cursor.collect().await.map_err(|e| {
         tracing::error!(error = %e, sql = %sql, "ClickHouse fetch failed");
-        CanonicalError::internal("query execution failed").create()
+        classify_run_error(id, &e.to_string())
     })?;
 
     parse_json_each_row(&raw_bytes).map_err(|e| {
         tracing::error!(error = %e, "failed to parse ClickHouse JSON response");
         CanonicalError::internal("failed to parse query results").create()
     })
+}
+
+/// Map a ClickHouse run error to a canonical error. A query that references a
+/// named parameter left unbound (e.g. `{period}` with no `period` supplied) is
+/// caller error (`UNKNOWN_QUERY_PARAMETER`, code 456) — surface it as a 400 so
+/// the console can prompt for the missing value rather than a bare 500.
+fn classify_run_error(id: Uuid, message: &str) -> CanonicalError {
+    if message.contains("UNKNOWN_QUERY_PARAMETER") || message.contains("Code: 456") {
+        return SavedQueryError::invalid_argument()
+            .with_resource(id.to_string())
+            .with_field_violation(
+                "period",
+                "query references a named parameter that was not supplied",
+                "MISSING",
+            )
+            .create();
+    }
+    CanonicalError::internal("query execution failed").create()
 }
 
 /// Parse a `JSONEachRow` byte stream (one JSON object per line) into untyped
@@ -254,10 +291,54 @@ fn model_to_summary(m: saved_queries::Model) -> SavedQuerySummary {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_json_each_row;
+    use super::{classify_run_error, parse_json_each_row};
     use serde_json::json;
+    use toolkit_canonical_errors::Problem;
+    use uuid::Uuid;
 
     type R = Result<(), Box<dyn std::error::Error>>;
+
+    fn status_of(
+        err: toolkit_canonical_errors::CanonicalError,
+    ) -> Result<serde_json::Value, serde_json::Error> {
+        Ok(serde_json::to_value(Problem::from(err))?["status"].clone())
+    }
+
+    /// A ClickHouse unbound-parameter error (code 456) is caller error → 400 on
+    /// the `period` field, not a bare 500 (#1966). Both the numeric code and the
+    /// symbolic name the server includes are matched.
+    #[test]
+    fn missing_named_param_is_a_400() -> R {
+        for msg in [
+            "bad response: Code: 456. DB::Exception: Substitution `period` is not set (UNKNOWN_QUERY_PARAMETER)",
+            "Code: 456. DB::Exception: Substitution `period` is not set",
+            "DB::Exception: ... (UNKNOWN_QUERY_PARAMETER)",
+        ] {
+            assert_eq!(
+                status_of(classify_run_error(Uuid::now_v7(), msg))?,
+                400,
+                "should be a 400: {msg:?}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Any other ClickHouse failure stays an opaque 500 — we do not leak engine
+    /// internals or misclassify a genuine server fault as caller error.
+    #[test]
+    fn other_ch_errors_stay_500() -> R {
+        for msg in [
+            "bad response: Code: 60. DB::Exception: Unknown table",
+            "network error: connection refused",
+        ] {
+            assert_eq!(
+                status_of(classify_run_error(Uuid::now_v7(), msg))?,
+                500,
+                "should be a 500: {msg:?}"
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn empty_input_yields_no_rows() -> R {

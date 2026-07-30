@@ -1643,6 +1643,18 @@
         ],
         "type": "object"
       },
+      "RunSavedQueryRequest": {
+        "description": "Optional parameters for `POST /v1/queries/{id}/run` (#1966).\n\nThe `{tenant}` parameter is always injected from the session context and is\nnever client-settable, so it is absent here. `period` is the first optional\nnamed parameter an author can reference as `{period:<Type>}`; it is bound as\na ClickHouse server-side parameter, never interpolated into the SQL text.",
+        "properties": {
+          "period": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "SavedQuery": {
         "description": "A saved query row.",
         "properties": {
@@ -4694,6 +4706,16 @@
     "/v1/queries/{id}/run": {
       "post": {
         "operationId": "analytics_api.queries.run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSavedQueryRequest"
+              }
+            }
+          },
+          "description": "Optional named parameters (`period`); `tenant` is always injected from context"
+        },
         "responses": {
           "200": {
             "content": {
