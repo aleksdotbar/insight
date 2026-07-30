@@ -42,7 +42,8 @@ Details and fixes in [create.md](workflows/create.md) §3.8.
 
 NEVER regenerate `connectors-config.yaml` wholesale — it overwrites the
 `env:` credential references (HubSpot/Salesforce) with fake `value:` entries.
-Generate one fragment: `./generate-connectors-config.sh '<category>/<name>'`.
+Generate one fragment:
+`cd src/ingestion/scripts/bootstrap-db && ./generate-connectors-config.sh '<category>/<name>'`.
 
 NEVER "fix" a legacy non-semver version on a connector that declares no
 `images:` block (`ai/openai`, `collaboration/slack`, `hr-directory/bamboohr` —

@@ -20,9 +20,9 @@ Checks
                   warned about: ADR-0015 §"Legacy non-semver values"
                   deliberately tolerates in-place legacy strings
                   (`2026.05.04`) and classifies them as `migration`.
-  2. config     — any connector contributing a `silver:class_people` staging
-                  model MUST have a `connectors-config.yaml` entry, or
-                  bootstrap-db never creates its bronze database.
+  2. config     — EVERY connector MUST have a `connectors-config.yaml` entry,
+                  or bootstrap-db never creates its bronze database and its
+                  silver models drop out of any regenerated DDL snapshot.
   3. depends_on — that same connector MUST be declared in class_people.sql's
                   `depends_on` list, per the convention stated in that file.
   4. cast-types — contributors MUST NOT explicitly cast the same class_people
@@ -140,24 +140,38 @@ def main(argv: list[str]) -> int:
                     "stale otherwise."
                 )
 
-        # ── 2-4. class_people contributors ───────────────────────────────────
+        # ── 2. bootstrap registration — EVERY connector, not just class_people
+        # contributors. A missing entry means bootstrap-db never creates the
+        # connector's bronze database, its dbt models fail Code: 81
+        # UNKNOWN_DATABASE, and whatever silver class they feed (class_people,
+        # class_task_*, class_collab_*, …) drops out of the snapshot.
         models = _class_people_models(connector_dir)
-        if not models:
-            continue
-
         if rel not in configured_paths:
+            consequence = (
+                "takes the shared silver.class_people union down with it"
+                if models
+                else "drops its silver models out of any regenerated snapshot"
+            )
             errors.append(
-                f"{rel}: contributes a `{CLASS_PEOPLE_TAG}` staging model but has "
-                "no entry in scripts/bootstrap-db/connectors-config.yaml — "
-                "bootstrap-db will not create its bronze database, so its dbt "
-                "models fail with UNKNOWN_DATABASE and take silver.class_people "
-                "down with them (see #2048). Add the entry with "
+                f"{rel}: no entry in scripts/bootstrap-db/connectors-config.yaml "
+                "— bootstrap-db will not create its bronze database, so its dbt "
+                f"models fail with UNKNOWN_DATABASE and it {consequence} "
+                "(see #2048). Add the entry with "
                 f"`./generate-connectors-config.sh '{rel}'`."
             )
 
+        # ── 3-4. class_people contributors only ─────────────────────────────
+        if not models:
+            continue
+
         for model in models:
             stem = model.stem
-            if f"ref('{stem}')" not in class_people_sql:
+            # Match the parse-time declaration line itself, not a bare
+            # ref('<stem>') that could appear in a comment or unrelated macro.
+            depends_on_re = re.compile(
+                rf"(?m)^\s*--\s*depends_on:\s*\{{\{{\s*ref\(\s*'{re.escape(stem)}'\s*\)\s*\}}\}}"
+            )
+            if not depends_on_re.search(class_people_sql):
                 errors.append(
                     f"{rel}: staging model {stem} is tagged "
                     f"`{CLASS_PEOPLE_TAG}` but has no "
