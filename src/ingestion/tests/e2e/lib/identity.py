@@ -285,6 +285,7 @@ class IdentityProcess:
         force: bool = False,
         mode: str | None = None,
         timeout_s: float = 300.0,
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """Run `identity-resolution seed` — the CLI trigger that replaced
         `POST /v1/persons-seed` (#1690). Synchronous: when it returns, the
@@ -302,6 +303,8 @@ class IdentityProcess:
         cmd = locate_rust_app(self.cfg)
         env = self._rust_env()
         env["APP__gears__identity-resolution__config__tenant_default_id"] = tenant
+        if extra_env:
+            env.update(extra_env)
         args = [*cmd, "-c", str(self._rig_config_path), "seed"]
         if mode is not None:
             args += ["--mode", mode]

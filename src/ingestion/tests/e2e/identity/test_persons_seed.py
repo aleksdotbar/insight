@@ -397,6 +397,67 @@ def test_seed_cli_empty_input_guard(identity_inputs, identity_svc, compose_stack
         _fill_roster(compose_stack)
 
 
+def test_seed_cli_failure_exits_1_and_journals(identity_inputs, identity_svc, compose_stack) -> None:
+    """A run that fails AFTER the journal row exists (here: unreachable
+    ClickHouse) exits 1 and leaves a failed operation carrying only the
+    generic message — raw driver/anyhow text must not leak to the journal,
+    which the GET endpoints return verbatim."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    res = identity_svc.run_seed_cli(
+        tenant=str(seed.SEED_TENANT),
+        force=True,
+        # Closed port → fast connection refusal on the identity_inputs read,
+        # which happens after the operations row is enqueued.
+        extra_env={"APP__gears__identity-resolution__config__clickhouse_url": "http://127.0.0.1:1"},
+    )
+    assert res.returncode == 1, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+    op = _operation_row(compose_stack, seed.SEED_TENANT)
+    assert op is not None and op["status"] == "failed", op
+    assert op["error_message"] == "persons-seed failed; see job logs", op
+
+
+def test_seed_cli_sweeps_zombie_operations(identity_inputs, identity_svc, compose_stack) -> None:
+    """A killed Job pod leaves its operations row `running` with no process
+    to resolve it — the next run's pre-seed sweep must fail rows older than
+    the cutoff (1h) and leave fresh ones alone (they may be a live run)."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+    stale = uuid.uuid4()
+    fresh = uuid.uuid4()
+    insert_sql = (
+        "INSERT INTO operations (operation_id, operation_type, status,"
+        " insight_tenant_id, author_person_id, started_at)"
+        " VALUES (%s, 'persons-seed', 'running', %s, %s,"
+        " UTC_TIMESTAMP(6) - INTERVAL %s MINUTE)"
+    )
+    with seed._connection(compose_stack) as conn, conn.cursor() as cur:  # noqa: SLF001 — harness-internal helper
+        cur.execute(insert_sql, (stale.bytes, seed.SEED_TENANT.bytes, uuid.UUID(int=0).bytes, 120))
+        cur.execute(insert_sql, (fresh.bytes, seed.SEED_TENANT.bytes, uuid.UUID(int=0).bytes, 5))
+    try:
+        res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+        assert res.returncode == 0, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+        with seed._connection(compose_stack) as conn, conn.cursor() as cur:  # noqa: SLF001
+            cur.execute(
+                "SELECT LOWER(HEX(operation_id)), status, error_message FROM operations"
+                " WHERE operation_id IN (%s, %s)",
+                (stale.bytes, fresh.bytes),
+            )
+            rows = {op_id: (status, message) for op_id, status, message in cur.fetchall()}
+        assert rows[stale.hex] == ("failed", "aborted by pod restart"), rows
+        assert rows[fresh.hex][0] == "running", rows
+    finally:
+        # The synthetic rows have no process behind them — drop them so the
+        # fresh one can't confuse later journal assertions.
+        with seed._connection(compose_stack) as conn, conn.cursor() as cur:  # noqa: SLF001
+            cur.execute(
+                "DELETE FROM operations WHERE operation_id IN (%s, %s)",
+                (stale.bytes, fresh.bytes),
+            )
+
+
 # ── input → org_chart correspondence (#1690: the projection itself) ───────
 
 
