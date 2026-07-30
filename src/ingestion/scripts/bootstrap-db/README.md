@@ -94,6 +94,8 @@ A silver `class_*` model is a `UNION ALL` of every staging model tagged `silver:
 ./check-field-parity.py
 ```
 
+`.github/workflows/connectors-ddl.yml` runs this audit twice on every PR: once over a cluster carrying only the committed snapshot (with `--allow-missing-relations`, since the snapshot holds just the gold-referenced staging tables), and once — strictly — over a warehouse rebuilt from scratch by `bootstrap-db.sh`.
+
 Like `bootstrap-db.sh`, it sources the `.env` next to it and lets those values win over the inherited environment — a stale `CLICKHOUSE_HOST` exported in the current shell would otherwise beat the file the rest of the pipeline runs on. Pass `--no-env-file` to audit another cluster (say dev) from the exported variables instead.
 
 It reads `system.columns` for the structure and `../../dbt/target/manifest.json` for the staging → silver mapping (that mapping exists only in the dbt tags, not in the database). Every divergence is a hard failure — there is no baseline file and no warning tier, so a `Nullable(T)` vs `T` split fails just like a renamed column. Exit code 1 means findings, 2 means usage or connection error.
@@ -112,7 +114,7 @@ Contributors whose physical table is not owned by dbt are covered too. `jira__ta
 | `bootstrap-db.sh <config.yaml>` | Sources `pins.env` and `.env` (if present), runs `seed-connectors.sh`, runs all dbt models, runs `../apply-ch-migrations.sh`. |
 | `run-dbt.sh [dbt args]` | Helper: generates a profiles.yml from the `CLICKHOUSE_*` variables and runs `dbt run` in `src/ingestion/dbt`. |
 | `check-field-parity.py [--manifest PATH]` | Audits every staging contributor against its silver union target (column set, positional order, exact type) plus manifest-vs-warehouse coverage. Same `CLICKHOUSE_*` env contract as the other scripts. Non-zero exit on any finding. |
-| `dump-ddl.sh` | Dumps `SHOW CREATE` for every `bronze_*` table, the `person`/`identity`/`silver`/`insight` databases (tables and views), and the gold-referenced `staging` tables into `../connectors-ddl/*.sql` — the committed snapshot that `../create-bronze-placeholders.sh` applies on fresh clusters. **Run it manually** after `bootstrap-db.sh` (see step above) whenever a schema changes, and commit the diff; `.github/workflows/connectors-ddl-reminder.yml` only posts a reminder on `src/ingestion/**` PRs — it does not regenerate anything. |
+| `dump-ddl.sh` | Dumps `SHOW CREATE` for every `bronze_*` table, the `person`/`identity`/`silver`/`insight` databases (tables and views), and the gold-referenced `staging` tables into `../connectors-ddl/*.sql` — the committed snapshot that `../create-bronze-placeholders.sh` applies on fresh clusters. **Run it manually** after `bootstrap-db.sh` (see step above) whenever a schema changes, and commit the diff. `.github/workflows/connectors-ddl.yml` re-runs the whole pipeline on every PR and fails when the committed snapshot no longer matches — it validates, it never commits. |
 
 ## Image pins (pins.env)
 
