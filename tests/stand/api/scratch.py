@@ -26,7 +26,14 @@ import uuid
 from collections.abc import Sequence
 from typing import Final
 
-from insight_stand import ApiClient, ApiResponse, JsonValue, analytics_path
+from insight_stand import (
+    ANALYTICS_PREFIX,
+    ApiClient,
+    ApiResponse,
+    JsonValue,
+    analytics_path,
+    identity_path,
+)
 
 #: Marks every row this suite creates, so a leak is identifiable on sight.
 SCRATCH_PREFIX: Final[str] = "stand-scratch"
@@ -50,6 +57,11 @@ NON_UUID: Final[str] = "not-a-uuid"
 #: Names handed out this session, checked for survivors at the end.
 _ISSUED: set[str] = set()
 
+#: Rows this session created that have NO name to namespace — a person-role
+#: assignment and a visibility grant are identified only by their id. Tracked as
+#: (listing path, id field, id) so the sweep can look for them the same way.
+_CREATED_IDS: list[tuple[str, str, str]] = []
+
 
 def scratch_name(tag: str) -> str:
     """A unique, greppable, attributable name — and register it for the sweep."""
@@ -60,6 +72,26 @@ def scratch_name(tag: str) -> str:
 
 def issued_names() -> frozenset[str]:
     return frozenset(_ISSUED)
+
+
+def tracked_ids() -> tuple[str, ...]:
+    return tuple(entry[2] for entry in _CREATED_IDS)
+
+
+def track(listing_path: str, id_field: str, value: JsonValue) -> str:
+    """Register a nameless created row, and return its id.
+
+    `create_*` helpers below name what they make; these are the resources that
+    have nothing to name, so the id is the only handle the sweep can use.
+
+    Tracked rows are never untracked, even after the test deletes them. That is
+    the point: `DELETE` on a temporal resource REVOKES rather than removes (see
+    `surviving_scratch_rows`), so leaving the id registered turns the sweep into
+    a second, independent check that the revoke actually landed.
+    """
+    assert isinstance(value, str), f"expected a string id for {id_field}, got {value!r}"
+    _CREATED_IDS.append((listing_path, id_field, value))
+    return value
 
 
 def _created(response: ApiResponse, what: str) -> dict[str, JsonValue]:
@@ -105,26 +137,67 @@ def create_saved_query(client: ApiClient, tag: str) -> dict[str, JsonValue]:
     return body
 
 
-def surviving_scratch_rows(client: ApiClient) -> list[str]:
-    """Any scratch row this session created and failed to clean up."""
-    if not _ISSUED:
+#: Named resources, and the listing that would still show a leaked one.
+_NAMED_LISTINGS: Final[tuple[str, ...]] = (
+    analytics_path("/v1/metrics"),
+    analytics_path("/v1/queries"),
+    identity_path("/v1/roles"),
+)
+
+
+def _listing_items(client: ApiClient, path: str) -> list[JsonValue]:
+    response = client.get(path)
+    if response.status_code != 200:
+        return []
+    body = response.json()
+    items = body.get("items") if isinstance(body, dict) else None
+    return items if isinstance(items, list) else []
+
+
+def surviving_scratch_rows(*, analytics: ApiClient, identity: ApiClient) -> list[str]:
+    """Any row this session created that is still in force on the stand.
+
+    Two clients because the two services have different callers: the identity
+    admin listings answer 403 to an ordinary persona, so only the admin operator
+    can see whether an admin row leaked.
+
+    **Still in force, not still present.** The two resource families delete
+    differently, and conflating them would make this either useless or a
+    permanent false alarm:
+
+    * Metrics, saved queries and roles are removed — soft-deleted or hard — and
+      stop being listed. Any appearance is a leak.
+    * Person-role assignments and visibility grants are TEMPORAL. `DELETE` sets
+      `valid_to`; the row stays and the listing keeps returning it. Only a row
+      still carrying `valid_to: null` was left in force.
+
+    So a tracked row is judged by `valid_to` when the listing reports one, and
+    by mere presence when it does not.
+    """
+    if not _ISSUED and not _CREATED_IDS:
         return []
 
+    def client_for(path: str) -> ApiClient:
+        return analytics if path.startswith(ANALYTICS_PREFIX) else identity
+
     leaked: list[str] = []
-    for listing in (analytics_path("/v1/metrics"), analytics_path("/v1/queries")):
-        response = client.get(listing)
-        if response.status_code != 200:
-            continue
-        body = response.json()
-        items = body.get("items") if isinstance(body, dict) else None
-        if not isinstance(items, list):
-            continue
-        for item in items:
+
+    for listing in _NAMED_LISTINGS:
+        for item in _listing_items(client_for(listing), listing):
             if not isinstance(item, dict):
                 continue
             name = item.get("name")
             if isinstance(name, str) and name in _ISSUED:
                 leaked.append(f"{listing} -> {name}")
+
+    for listing, id_field, value in _CREATED_IDS:
+        for item in _listing_items(client_for(listing), listing):
+            if not isinstance(item, dict) or item.get(id_field) != value:
+                continue
+            if "valid_to" in item and item["valid_to"] is not None:
+                continue  # revoked, which is what a delete does to these
+            leaked.append(f"{listing} -> {id_field}={value} still in force")
+
     return leaked
 
 
@@ -139,4 +212,6 @@ __all__: Sequence[str] = (
     "issued_names",
     "scratch_name",
     "surviving_scratch_rows",
+    "track",
+    "tracked_ids",
 )

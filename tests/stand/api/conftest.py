@@ -15,7 +15,13 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 
 import pytest
-from insight_stand import ApiClient, JsonValue, PersonaSession, analytics_path
+from insight_stand import (
+    ADMIN_OPERATOR_FIXTURE,
+    ApiClient,
+    JsonValue,
+    PersonaSession,
+    analytics_path,
+)
 
 from . import scratch
 
@@ -58,16 +64,19 @@ def no_scratch_rows_survive(
     reset by `test-stand down`. That is exactly the kind of failure that gets
     diagnosed as flakiness.
 
-    Costs nothing when no scratch resource was created: the registry is empty,
+    Costs nothing when no scratch resource was created: the registries are empty,
     so it returns before asking `session_for` for anything and the browser
     journey and the 401 sweep never pay for a login they do not need.
     """
     yield
 
-    if not scratch.issued_names():
+    if not scratch.issued_names() and not scratch.tracked_ids():
         return
 
-    leaked = scratch.surviving_scratch_rows(session_for("dev_lead").client)
+    leaked = scratch.surviving_scratch_rows(
+        analytics=session_for("dev_lead").client,
+        identity=session_for(ADMIN_OPERATOR_FIXTURE).client,
+    )
     assert not leaked, (
         "scratch resources survived the run — the stand is now dirty and the "
         "next run against it will see them:\n  " + "\n  ".join(leaked)
