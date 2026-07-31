@@ -251,7 +251,7 @@ class IdentityProcess:
         cmd = locate_rust_app(self.cfg)
         env = self._rust_env()
         if tenant is not None:
-            env["APP__gears__identity-resolution__config__tenant_default_id"] = tenant
+            env["APP__gears__identity_resolution__config__tenant_default_id"] = tenant
         if extra_env:
             env.update(extra_env)
         args = [*cmd, "-c", str(self._rig_config_path), "sync"]
