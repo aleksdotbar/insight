@@ -9,7 +9,7 @@
 #
 # Assumes the service is reachable at $BASE_URL and the bootstrap admin
 # has already been minted (the identity-resolution migrate step seeds it
-# when APP__gears__identity-resolution__config__bootstrap_admin_person_id
+# when APP__gears__identity_resolution__config__bootstrap_admin_person_id
 # is set).
 #
 # Usage:

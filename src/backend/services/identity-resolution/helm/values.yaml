@@ -23,10 +23,10 @@ resources:
 
 # Pre-provisioned Secret carrying the gears-rust host's leaf-config overrides
 # (injected via envFrom; they override the mounted config ConfigMap):
-#   APP__gears__identity-resolution__config__database_url
-#   APP__gears__identity-resolution__config__clickhouse_url|_database|_user|_password
-#   APP__gears__identity-resolution__config__tenant_default_id       (optional)
-#   APP__gears__identity-resolution__config__bootstrap_admin_person_id (optional)
+#   APP__gears__identity_resolution__config__database_url
+#   APP__gears__identity_resolution__config__clickhouse_url|_database|_user|_password
+#   APP__gears__identity_resolution__config__tenant_default_id       (optional)
+#   APP__gears__identity_resolution__config__bootstrap_admin_person_id (optional)
 #
 # The two optional fields drive the first-admin bootstrap in the migrate
 # initContainer (port of the .NET BootstrapAdminRunner): the configured person

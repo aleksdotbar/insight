@@ -6,6 +6,7 @@ mod catalog;
 pub(crate) mod error;
 mod handlers;
 mod metric_definitions;
+mod metric_drilldown;
 mod metric_results;
 mod saved_queries;
 
@@ -328,6 +329,24 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         )
         .standard_errors(openapi)
         .handler(saved_queries::run_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/metric-drilldown")
+        .operation_id("analytics_api.metric_drilldown.create")
+        .summary("List metric evidence")
+        .authenticated()
+        .no_license_required()
+        .json_request::<crate::domain::metric_drilldown::MetricDrilldownRequest>(
+            openapi,
+            "Metric evidence selection",
+        )
+        .json_response_with_schema::<crate::domain::metric_drilldown::MetricDrilldownResponse>(
+            openapi,
+            StatusCode::OK,
+            "Metric evidence",
+        )
+        .standard_errors(openapi)
+        .handler(metric_drilldown::query_metric_drilldown)
         .register(router, openapi);
 
     // Thresholds (legacy)

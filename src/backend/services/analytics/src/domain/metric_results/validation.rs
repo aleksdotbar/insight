@@ -550,7 +550,7 @@ fn parse_person_ids(ids: &[String]) -> Result<Vec<Uuid>, CanonicalError> {
     Ok(out)
 }
 
-fn normalize_key(field: &'static str, value: &str) -> Result<String, CanonicalError> {
+pub(crate) fn normalize_key(field: &'static str, value: &str) -> Result<String, CanonicalError> {
     let value = value.trim().to_ascii_lowercase();
     if value.is_empty() {
         return invalid(field, "value must not be empty");

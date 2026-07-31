@@ -415,7 +415,7 @@ def test_seed_cli_failure_exits_1_and_journals(identity_inputs, identity_svc, co
         force=True,
         # Closed port → fast connection refusal on the identity_inputs read,
         # which happens after the operations row is enqueued.
-        extra_env={"APP__gears__identity-resolution__config__clickhouse_url": "http://127.0.0.1:1"},
+        extra_env={"APP__gears__identity_resolution__config__clickhouse_url": "http://127.0.0.1:1"},
     )
     assert res.returncode == 1, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
 

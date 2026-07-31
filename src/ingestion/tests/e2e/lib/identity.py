@@ -251,7 +251,7 @@ class IdentityProcess:
         cmd = locate_rust_app(self.cfg)
         env = self._rust_env()
         if tenant is not None:
-            env["APP__gears__identity-resolution__config__tenant_default_id"] = tenant
+            env["APP__gears__identity_resolution__config__tenant_default_id"] = tenant
         if extra_env:
             env.update(extra_env)
         args = [*cmd, "-c", str(self._rig_config_path), "sync"]
@@ -293,7 +293,7 @@ class IdentityProcess:
         cmd = locate_rust_app(self.cfg)
         env = self._rust_env()
         if tenant is not None:
-            env["APP__gears__identity-resolution__config__tenant_default_id"] = tenant
+            env["APP__gears__identity_resolution__config__tenant_default_id"] = tenant
         if extra_env:
             env.update(extra_env)
         args = [*cmd, "-c", str(self._rig_config_path), "seed"]
@@ -318,20 +318,19 @@ class IdentityProcess:
     # -- rust ---------------------------------------------------------------
 
     def _rust_env(self) -> dict[str, str]:
-        """Leaf-config env overrides for the gears host (direct Popen execve
-        preserves the hyphenated gear-name segments)."""
+        """Leaf-config env overrides for the gears host."""
         env = os.environ.copy()
         env.update(
             {
                 "APP__gears__api-gateway__config__bind_addr": f"127.0.0.1:{self.port}",
                 "APP__gears__grpc-hub__config__listen_addr": f"uds:///tmp/identity-resolution-grpc-{self.port}.sock",
-                "APP__gears__identity-resolution__config__database_url": identity_dsn(self.cfg),
+                "APP__gears__identity_resolution__config__database_url": identity_dsn(self.cfg),
                 # The Rust service reads ClickHouse over HTTP (the shared
                 # insight-clickhouse client).
-                "APP__gears__identity-resolution__config__clickhouse_url": self.cfg.ch_http_url,
-                "APP__gears__identity-resolution__config__clickhouse_database": self.cfg.ch_database,
-                "APP__gears__identity-resolution__config__clickhouse_user": self.cfg.ch_user,
-                "APP__gears__identity-resolution__config__clickhouse_password": self.cfg.ch_password,
+                "APP__gears__identity_resolution__config__clickhouse_url": self.cfg.ch_http_url,
+                "APP__gears__identity_resolution__config__clickhouse_database": self.cfg.ch_database,
+                "APP__gears__identity_resolution__config__clickhouse_user": self.cfg.ch_user,
+                "APP__gears__identity_resolution__config__clickhouse_password": self.cfg.ch_password,
                 "RUST_LOG": env.get("RUST_LOG", "info"),
             }
         )

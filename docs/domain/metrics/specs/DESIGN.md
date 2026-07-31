@@ -149,6 +149,31 @@ granularity metadata. Missing, unchecked, or invalid evidence fails closed.
 `POST /v1/metric-results` and `GET /v1/metric-definitions` expose that
 capability; consumers omit evidence actions when it is absent.
 
+The evidence runtime owns presentation. It projects the internal contract into
+typed human-facing columns rather than exposing `record_kind`, input role,
+dimensions, or other storage fields directly:
+
+- source-summary and derived-population measures default to date plus value.
+- event measures declare reusable detail keys by `(source_key, measure_key)`,
+  such as ref, title, repository, author, or issue type.
+- selected chart dimensions are added from the typed `dimensions` array.
+- ratio metrics return daily columns named after their numerator and
+  denominator measures instead of an ambiguous value column.
+- unknown detail keys are humanized and treated as strings; fields requiring
+  another label or type are added to the centralized presentation registry.
+
+Presentation is source-measure metadata in runtime code today. It is declared
+once per reusable measure shape, never once per metric and never in frontend
+configuration.
+
+`POST /v1/metric-drilldown` accepts one metric, one person entity, a period,
+declared dimension filters, and an encoded continuation cursor. It returns the
+canonical selection, typed server-owned columns, projected evidence rows, and
+a next cursor. Ordering is ascending over the complete evidence key. The
+cursor is versioned and bound to the normalized selection and request tenant.
+It is not an authorization token and modifying its ordering key cannot widen
+the server-owned relation or selection.
+
 The evidence contract has these limitations:
 
 - Summary-grain silver cannot produce event-grain evidence. AI and
@@ -159,6 +184,12 @@ The evidence contract has these limitations:
 - Metric results and evidence are not transactionally snapshot-isolated from
   each other during a dbt rebuild. They reconcile after the complete gold
   build because observations derive from evidence.
+- Pagination is bound to the evidence table UUID. A rebuild during the
+  operation fails with `EVIDENCE_SNAPSHOT_EXPIRED`; the client must restart
+  the selection rather than mix rows from two builds. Previous table
+  snapshots are not retained.
+- Drilldown preserves the existing metric entity and tenant behavior. This
+  does not add identity-tree authorization or warehouse tenant enforcement.
 - Source links are omitted. Hosted services commonly use custom domains, and
   the current silver contract does not preserve a canonical web base URL. A
   future source registry can add a non-secret `web_base_url` keyed by source
