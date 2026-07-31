@@ -158,6 +158,8 @@ impl Gear for AnalyticsApiGear {
             validator.clone(),
         );
 
+        let contract_ch = ch.clone();
+
         let state = api::AppState {
             db,
             ch,
@@ -178,6 +180,12 @@ impl Gear for AnalyticsApiGear {
         // old `run_server`'s `tokio::spawn(validator.validate_all())`.
         tokio::spawn(async move {
             validator.validate_all().await;
+        });
+        // INVARIANT: periodic and never gating boot — the stamp lands after
+        // boot (post-install migrate hook) and a later in-place bump must
+        // surface without a pod restart.
+        tokio::spawn(async move {
+            crate::domain::contract_version::run(&contract_ch).await;
         });
         // Periodic, not one-shot: the managed observation views are
         // dbt-created after boot on a fresh deploy, and the registry has no
