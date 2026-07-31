@@ -49,7 +49,7 @@ WITH src AS (
         -- "2025-10-23T08:49:39Z"). `toDateOrNull` only handles
         -- YYYY-MM-DD; we parse via `parseDateTime64BestEffortOrNull`
         -- first then truncate to Date.
-        toDate(parseDateTime64BestEffortOrNull(properties_closedate)) AS close_date,
+        toDate32(parseDateTime64BestEffortOrNull(properties_closedate)) AS close_date,
         properties_hubspot_owner_id                     AS owner_id,
         -- Rep who logged / created the deal — distinct from owner_id, which
         -- can be the contact owner. Resolves to silver.class_crm_users
