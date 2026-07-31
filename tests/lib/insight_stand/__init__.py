@@ -33,14 +33,22 @@ from .api import (
     identity_path,
 )
 from .credentials import (
+    CALLBACK_PATH,
     LOGIN_PATH,
     SESSION_COOKIE_NAME,
     AnonymousCredentials,
     Credentials,
     RealLogin,
 )
-from .errors import LoginNotCompletedError, ManifestError, StandConnectionError, StandError
+from .errors import (
+    LoginNotCompletedError,
+    ManifestError,
+    PersonaError,
+    StandConnectionError,
+    StandError,
+)
 from .manifest import (
+    BOOLEAN_CAPABILITIES,
     MANIFEST_PATH,
     SUPPORTED_MANIFEST_VERSION,
     Capabilities,
@@ -50,16 +58,38 @@ from .manifest import (
     Realm,
     load_manifest,
 )
+from .personas import (
+    ADMIN_ROLE,
+    LEAD_ROLE,
+    MEMBER_ROLE,
+    PASSWORD_ENV,
+    REALM_EXPORT_PATH,
+    ROLE_TO_REALM_ROLES,
+    PersonaSession,
+    expected_realm_roles,
+    open_session,
+    persona_password,
+    resolve_by_realm_role,
+    verify_realm_roles,
+)
 from .stand import BASE_URL_ENV, StandEndpoint, resolve_base_url, resolve_endpoint
 from .wait import wait_for, wait_until
 
 __all__: Sequence[str] = (
+    "ADMIN_ROLE",
     "ANALYTICS_PREFIX",
     "BASE_URL_ENV",
+    "BOOLEAN_CAPABILITIES",
+    "CALLBACK_PATH",
     "GATEWAY_API_PREFIXES",
     "IDENTITY_PREFIX",
+    "LEAD_ROLE",
     "LOGIN_PATH",
     "MANIFEST_PATH",
+    "MEMBER_ROLE",
+    "PASSWORD_ENV",
+    "REALM_EXPORT_PATH",
+    "ROLE_TO_REALM_ROLES",
     "SESSION_COOKIE_NAME",
     "SUPPORTED_MANIFEST_VERSION",
     "AnonymousCredentials",
@@ -72,16 +102,23 @@ __all__: Sequence[str] = (
     "Manifest",
     "ManifestError",
     "Person",
+    "PersonaError",
+    "PersonaSession",
     "RealLogin",
     "Realm",
     "StandConnectionError",
     "StandEndpoint",
     "StandError",
     "analytics_path",
+    "expected_realm_roles",
     "identity_path",
     "load_manifest",
+    "open_session",
+    "persona_password",
     "resolve_base_url",
+    "resolve_by_realm_role",
     "resolve_endpoint",
+    "verify_realm_roles",
     "wait_for",
     "wait_until",
 )

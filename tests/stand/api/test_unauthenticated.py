@@ -61,14 +61,16 @@ def test_rejection_is_a_machine_readable_problem_document(api_client: ApiClient)
 def test_seeded_person_is_not_readable_without_a_session(
     api_client: ApiClient, stand_manifest: Manifest
 ) -> None:
-    """A record that definitely exists is still refused.
+    """A record that definitely exists, on a route that definitely works.
 
-    Targeting a seeded person rules out the boring explanation — that the 401s
-    above merely reflect a route with nothing behind it. `dev_lead` is the same
-    persona phase 6 will log in as and read successfully.
+    This rules out the boring explanation for the 401s above — that they merely
+    reflect a route with nothing behind it. The address matters: identity keys
+    this endpoint by EMAIL, and `/v1/persons/{uuid}` answers 404 even with a
+    valid session, so a uuid here would prove nothing. `test_authenticated.py`
+    reads this exact URL successfully with a session.
     """
     dev_lead = stand_manifest.fixture("dev_lead")
-    response = api_client.get(identity_path(f"/v1/persons/{dev_lead.uuid}"))
+    response = api_client.get(identity_path(f"/v1/persons/{dev_lead.email}"))
     assert response.status_code == 401, (
         f"expected 401 for seeded person {dev_lead.email} at {response.url}, "
         f"got {response.status_code}: {response.text[:400]}"
@@ -76,13 +78,19 @@ def test_seeded_person_is_not_readable_without_a_session(
 
 
 @pytest.mark.requires_ingestion
-def test_stand_declaring_ingestion_has_run_connectors(stand_manifest: Manifest) -> None:
-    """Worked example of the capability marker, and its first consumer.
+def test_requires_ingestion_probe(stand_manifest: Manifest) -> None:
+    """A probe for the capability marker, not an assertion about ingestion.
 
-    The compose stand seeds silver and gold directly — no connector ever runs —
-    so `capabilities.ingestion` is false and this test is SKIPPED with a
-    reported reason. That skip IS the demonstration: phases 6-8 mark
-    ingestion-dependent assertions the same way and they will lie dormant here
-    while running on a stand that does declare the capability.
+    Named honestly: on this stand its VALUE IS THE SKIP. The compose stand
+    seeds silver and gold directly — no connector ever runs — so
+    `capabilities.ingestion` is false, this is skipped with a reported reason,
+    and that is the behaviour phases 7-8 rely on when they mark
+    ingestion-dependent work the same way.
+
+    When it does run, the assertion is deliberately the same predicate the
+    marker gates on, which makes it a tautology and not a test of ingestion.
+    Real ingestion assertions belong to whoever builds a stand that declares
+    the capability; this exists so the marker has a live consumer and its skip
+    path is exercised on every run.
     """
     assert stand_manifest.capabilities.ingestion is True

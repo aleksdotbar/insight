@@ -42,9 +42,31 @@ def test_real_login_conforms_without_touching_the_network(
     assert login.is_authenticated() is False
 
 
+class _MarkerCredential:
+    """A credential distinguishable from the anonymous one, for the seam test."""
+
+    def headers(self) -> dict[str, str]:
+        return {"X-Insight-Test-Marker": "swapped"}
+
+    def is_authenticated(self) -> bool:
+        return True
+
+
 def test_api_client_accepts_any_conforming_credential(stand_base_url: str) -> None:
-    """`with_credentials` is the only seam auth arrives through."""
+    """`with_credentials` is the only seam auth arrives through.
+
+    The swapped-in credential is deliberately *distinguishable*: asserting on
+    the returned client's `headers()` is what makes this fail if
+    `with_credentials` ever dropped its argument or returned `self`.
+    """
+    marker = _MarkerCredential()
+    assert isinstance(marker, Credentials)
+
     anonymous = ApiClient(base_url=stand_base_url)
-    swapped = anonymous.with_credentials(AnonymousCredentials())
+    swapped = anonymous.with_credentials(marker)
+
+    assert swapped is not anonymous, "with_credentials mutated the original client"
     assert swapped.base_url == anonymous.base_url
-    assert swapped is not anonymous
+    assert swapped.credentials is marker
+    assert swapped.credentials.headers() == {"X-Insight-Test-Marker": "swapped"}
+    assert anonymous.credentials.headers() == {}, "the original client was contaminated"

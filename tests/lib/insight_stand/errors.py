@@ -32,6 +32,17 @@ class StandConnectionError(StandError):
     """
 
 
+class PersonaError(StandError):
+    """A persona cannot be used as a test identity.
+
+    Covers both halves of "who is this": no credential could be sourced for
+    them, or the roles the stand grants them are not the roles the roster says
+    they should have. Both are hard failures — a fixture that logs in as
+    somebody with unexpected authority makes every visibility assertion built
+    on it meaningless.
+    """
+
+
 class LoginNotCompletedError(StandError):
     """A real login was started but could not be carried to a session.
 

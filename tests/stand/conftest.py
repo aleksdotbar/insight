@@ -22,7 +22,7 @@ Two rules follow from that split:
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -35,12 +35,18 @@ if str(_LIB_PATH) not in sys.path:
     sys.path.insert(0, str(_LIB_PATH))
 
 from insight_stand import (  # noqa: E402  (import follows the sys.path bootstrap)
+    ADMIN_ROLE,
+    LEAD_ROLE,
+    MEMBER_ROLE,
     AnonymousCredentials,
     ApiClient,
     Manifest,
     ManifestError,
+    PersonaSession,
     StandConnectionError,
     StandEndpoint,
+    open_session,
+    resolve_by_realm_role,
     resolve_endpoint,
 )
 
@@ -201,7 +207,69 @@ def api_client(
 ) -> Iterator[ApiClient]:
     """Gateway-fronted client with NO credentials.
 
-    Authenticated clients arrive in phase 6, built by handing a `RealLogin` to
-    `ApiClient.with_credentials`.
+    For an authenticated client, take `.client` off a `PersonaSession` from
+    `login_as` below.
     """
     yield ApiClient(base_url=stand_base_url, credentials=anonymous_credentials)
+
+
+# ---------------------------------------------------------------------------
+# Person fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def login_as(
+    stand_manifest: Manifest, stand_base_url: str
+) -> Callable[[str], PersonaSession]:
+    """`login_as("dev_lead")` → a real, verified, logged-in session.
+
+    The argument is a key in the manifest's `fixtures{}` catalog — never an
+    email and never a UUID — so a roster reshuffle moves the person without
+    touching a single test. Unknown names fail naming what is available.
+
+    Every session is won by driving the deployed OIDC chain against Keycloak:
+    `/auth/login` → the real HTML login form → `/auth/callback` → `__Host-sid`.
+    Nothing here mints a token; that is the in-process rig's path, and using it
+    would mean this suite never exercises the login it exists to test.
+
+    Sessions are cached for the run and re-acquired automatically before the
+    stand's 10-minute session TTL can expire mid-suite.
+    """
+    cache: dict[str, PersonaSession] = {}
+
+    def _login_as(name: str) -> PersonaSession:
+        if name not in cache:
+            cache[name] = open_session(name, stand_manifest, stand_base_url)
+        return cache[name]
+
+    return _login_as
+
+
+@pytest.fixture(scope="session")
+def admin(
+    login_as: Callable[[str], PersonaSession], stand_manifest: Manifest
+) -> PersonaSession:
+    """A persona the realm granted `insight-admin`."""
+    return login_as(resolve_by_realm_role(stand_manifest, ADMIN_ROLE))
+
+
+@pytest.fixture(scope="session")
+def lead(
+    login_as: Callable[[str], PersonaSession], stand_manifest: Manifest
+) -> PersonaSession:
+    """A persona granted `insight-lead` but NOT `insight-admin`.
+
+    Excluding admins matters: the CEO holds both, so without it `lead` and
+    `admin` could resolve to the same person and every lead-vs-admin
+    comparison would pass vacuously.
+    """
+    return login_as(resolve_by_realm_role(stand_manifest, LEAD_ROLE, excluding=ADMIN_ROLE))
+
+
+@pytest.fixture(scope="session")
+def member(
+    login_as: Callable[[str], PersonaSession], stand_manifest: Manifest
+) -> PersonaSession:
+    """A persona the realm granted only `insight-member`."""
+    return login_as(resolve_by_realm_role(stand_manifest, MEMBER_ROLE))
