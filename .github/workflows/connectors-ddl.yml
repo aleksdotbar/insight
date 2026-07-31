@@ -17,11 +17,16 @@ name: connectors-ddl
 # convergence. That is the same reason bootstrap-db.sh sets
 # BOOTSTRAP_SKIP_SNAPSHOT=1 during generation.
 #
-# PR-only, and only for PRs whose branch lives in this repository: the job runs
-# PR code and needs the HubSpot / Salesforce credentials whose CDK `discover`
-# calls a live API, and secrets are not available to fork PRs. The trigger is
-# `pull_request`, never `pull_request_target` — that would run fork code with
-# access to those secrets.
+# Runs on PRs against main and on every commit that lands on main. The push run
+# is not redundant: a PR is validated against its own merge-base, so two PRs that
+# are each green apart — one adding a gold table, one regenerating the snapshot —
+# can still leave main drifted, and only a run on the merged tree sees that.
+#
+# PRs are gated on the branch living in this repository: the job runs PR code and
+# needs the HubSpot / Salesforce credentials whose CDK `discover` calls a live
+# API, and secrets are not available to fork PRs. The trigger is `pull_request`,
+# never `pull_request_target` — that would run fork code with access to those
+# secrets. Pushes always carry secrets, so they need no such guard.
 #
 # The job validates; it never commits. A stale snapshot is the author's to
 # regenerate (see the failure message).
@@ -29,10 +34,14 @@ name: connectors-ddl
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseding a PR push is free; superseding a main commit is not — that run is
+  # the only signal that this particular merged tree converges.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -41,8 +50,9 @@ jobs:
   connectors-ddl:
     name: connectors-ddl snapshot + field parity
     # Fork PR: no secrets, so `discover` for hubspot/salesforce cannot run. Skip
-    # up front instead of dying 20 minutes into the bootstrap.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # up front instead of dying 20 minutes into the bootstrap. A push to main is
+    # always in-repo, so it has no head repository to compare.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
