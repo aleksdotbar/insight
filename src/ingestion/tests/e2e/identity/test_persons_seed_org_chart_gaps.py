@@ -392,15 +392,23 @@ def test_ms_entra_connector_emits_no_org_chart_signal_yet(
     )
 
 
-def test_seed_and_subchart_project_arbitrary_depth_from_a_synced_chain(identity_svc, compose_stack: SessionConfig) -> None:
+def test_seed_and_subchart_project_arbitrary_depth_from_a_synced_chain(
+    identity_svc,
+    ch_seeder: CHSeeder,
+    dbt_runner: DbtRunner,
+    worker_ctx: WorkerContext,
+    compose_stack: SessionConfig,
+) -> None:
     """BR-8 ("any depth") is asserted elsewhere only against `test_subchart.py`'s
     hardcoded two-level fixture tree (alice -> bob -> carol), never against a
-    chain that actually flowed through identity_inputs + the seed. Build a
-    five-level chain (deeper than the fixed fixture) through the same
-    identity_inputs -> seed CLI path the other tests in this module use, and
-    prove both write (org_chart parent-per-level) and read
-    (GET /v1/subchart depth-per-level) reflect the full chain, not a depth the
-    seed or the API silently caps at 2."""
+    chain that actually flowed through a connector. Seed a five-level
+    `supervisorEmail` chain (deeper than the fixed fixture) into
+    `bronze_bamboohr.employees`, build the REAL bamboohr connector/dbt models
+    plus the shared `identity_inputs` union — same path as
+    `test_seed_org_chart_from_real_bamboohr_connector_pipeline` — then prove
+    both write (org_chart parent-per-level) and read (GET /v1/subchart
+    depth-per-level) reflect the full chain, not a depth the seed or the API
+    silently caps at 2."""
     if not identity_svc.supports_seed_cli:
         pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
 
@@ -408,15 +416,27 @@ def test_seed_and_subchart_project_arbitrary_depth_from_a_synced_chain(identity_
     chain_len = 5  # deeper than the fixed fixture's 2 levels; well under max_depth=16
     emails = [f"chain.{i}.{run_tag}@e2e.test" for i in range(chain_len)]
 
-    _ensure_identity_inputs_table(compose_stack)
-    rows: list[tuple[str, str, str]] = []
-    for i, email in enumerate(emails):
-        account = f"chain-{i}-{run_tag}"
-        rows.append((account, "email", email))
-        rows.append((account, "id", account))
-        if i > 0:
-            rows.append((account, "parent_email", emails[i - 1]))
-    _insert_raw_inputs(compose_stack, rows, run_tag=run_tag, version_start=1, source_type="bamboohr")
+    ch_seeder.truncate_touched()
+    ch_seeder.seed_bronze(
+        {
+            "bronze_bamboohr.employees": [
+                _bamboohr_employee(
+                    run_tag=run_tag,
+                    entity_id=f"chain-{i}-{run_tag}",
+                    email=emails[i],
+                    display_name=f"Chain Level {i}",
+                    supervisor_email=emails[i - 1] if i > 0 else None,
+                )
+                for i in range(chain_len)
+            ]
+        },
+        _BAMBOOHR_SCHEMAS,
+    )
+
+    staging, silver = dbt_runner.derive_selectors({("bronze_bamboohr", "employees")})
+    dbt_runner.build(" ".join(f"+{m}" for m in staging), worker_ctx=worker_ctx)
+    assert "identity_inputs" in silver, f"bamboohr__identity_inputs did not surface a silver:identity_inputs tag (silver={silver})"
+    dbt_runner.run("identity_inputs", worker_ctx=worker_ctx)
 
     res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
     assert res.returncode == 0, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
