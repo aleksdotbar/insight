@@ -58,8 +58,8 @@ WITH src AS (
         nullIf(arrayElement(
             JSONExtract(coalesce(associations_companies, '[]'), 'Array(String)'), 1
         ), '')                                          AS account_id,
-        toInt64(coalesce(properties_hs_is_closed, 'false') = 'true')     AS is_closed,
-        toInt64(coalesce(properties_hs_is_closed_won, 'false') = 'true') AS is_won,
+        toNullable(toInt64(coalesce(properties_hs_is_closed, 'false') = 'true'))     AS is_closed,
+        toNullable(toInt64(coalesce(properties_hs_is_closed_won, 'false') = 'true')) AS is_won,
         properties_hs_analytics_source                  AS lead_source,
         toFloat64OrNull(properties_hs_deal_stage_probability) AS probability,
         properties_dealtype                             AS deal_type,
