@@ -135,7 +135,7 @@ impl Gear for AnalyticsApiGear {
         let ch = insight_clickhouse::Client::new(ch_config);
 
         // Identity client.
-        let identity = infra::identity::IdentityClient::new(&cfg.identity_url);
+        let identity = infra::identity::IdentityClient::new(&cfg.identity_url)?;
 
         // Schema-validator (Refs #521). Held in AppState (admin-crud per-write
         // hook) and cloned into the post-init startup pass below.
