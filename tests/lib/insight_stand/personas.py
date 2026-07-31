@@ -48,12 +48,25 @@ ROLE_TO_REALM_ROLES: Final[Mapping[str, tuple[str, ...]]] = {
     "ceo": ("insight-admin", "insight-lead"),
     "lead": ("insight-lead",),
     "ic": ("insight-member",),
+    # The admin operator. Its realm role is NOT what grants it administrative
+    # authority — see `OPERATOR_PERSON_ROLE`.
+    "admin": ("insight-admin",),
 }
 
 # Which realm role makes a persona eligible for each role-aware fixture.
 ADMIN_ROLE: Final[str] = "insight-admin"
 LEAD_ROLE: Final[str] = "insight-lead"
 MEMBER_ROLE: Final[str] = "insight-member"
+
+#: Roster `role` of an account that administers the product instead of
+#: belonging to the organisation it measures. Such a person has no team and no
+#: place in the org chart; the seed grants it the `admin` row in
+#: `identity.person_roles`, which is the only thing that opens the admin-gated
+#: identity API.
+OPERATOR_PERSON_ROLE: Final[str] = "admin"
+
+#: The manifest fixture name for that account.
+ADMIN_OPERATOR_FIXTURE: Final[str] = "admin_operator"
 
 
 def _load_realm(path: Path | None = None) -> dict[str, Any] | None:
@@ -241,14 +254,24 @@ def open_session(
 
 
 def resolve_by_realm_role(manifest: Manifest, role: str, *, excluding: str | None = None) -> str:
-    """Pick the fixture name for a role-aware fixture, from the manifest.
+    """Pick the fixture name of an ORG MEMBER holding a realm role.
 
     Chosen by the role the persona actually holds rather than by a hardcoded
     name, so `lead` keeps meaning "somebody the realm made a lead" even if the
     roster is reshuffled. Sorted iteration keeps the choice deterministic.
+
+    Operator accounts are skipped, and that exclusion is load-bearing. The admin
+    operator holds `insight-admin` and its fixture name sorts first, so without
+    this it would win every admin lookup — and being outside the org chart it
+    sees nobody, which would make an admin-vs-lead visibility comparison pass
+    while proving nothing. This function answers "which member of the
+    organisation holds this role"; the operator is asked for by fixture name.
     """
     for fixture_name in sorted(manifest.fixtures):
-        roles = set(manifest.fixtures[fixture_name].realm_roles)
+        person = manifest.fixtures[fixture_name]
+        if person.role == OPERATOR_PERSON_ROLE:
+            continue
+        roles = set(person.realm_roles)
         if role in roles and (excluding is None or excluding not in roles):
             return fixture_name
     detail = f" (excluding holders of {excluding!r})" if excluding else ""
@@ -259,9 +282,11 @@ def resolve_by_realm_role(manifest: Manifest, role: str, *, excluding: str | Non
 
 
 __all__: Sequence[str] = (
+    "ADMIN_OPERATOR_FIXTURE",
     "ADMIN_ROLE",
     "LEAD_ROLE",
     "MEMBER_ROLE",
+    "OPERATOR_PERSON_ROLE",
     "PASSWORD_ENV",
     "REALM_EXPORT_PATH",
     "ROLE_TO_REALM_ROLES",

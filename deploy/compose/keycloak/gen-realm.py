@@ -4,9 +4,10 @@
 Reads the same roster builder the DB seeder uses
 (`deploy/seed/profiles.py::build_roster`) so every user in the realm
 matches a row in `identity.persons`, then emits an importable Keycloak
-realm JSON: 25 users, the `insight` + `insight-authenticator` clients,
-their 5 shared protocol mappers, the 4 team groups + `executive`, and
-the 3 realm roles.
+realm JSON: 26 users (the 25-person org plus the admin operator), the
+`insight` + `insight-authenticator` clients, their 5 shared protocol
+mappers, the 4 team groups + `executive` + `operations`, and the 3
+realm roles.
 
 Usage:
     python3 gen-realm.py --out deploy/compose/keycloak/realm-insight.generated.json
@@ -30,21 +31,38 @@ from profiles import Person, build_roster, get_dev_user_email  # noqa: E402
 REALM_NAME = "insight"
 DEV_PASSWORD = "insight-dev"
 
-TEAMS = ["development", "sales", "hr", "support", "executive"]
+# The 4 team org units, plus `executive` for the CEO and `operations` for the
+# admin operator. Every user is placed in the group matching their org unit, so
+# a value missing here makes the realm import fail on an unknown group.
+TEAMS = ["development", "sales", "hr", "support", "executive", "operations"]
+
+# Org unit for the admin operator. Its own unit rather than `executive`: the
+# operator administers the product and is not a member of the organisation
+# being measured, and putting it in with the CEO would say otherwise.
+OPERATOR_ORG_UNIT = "operations"
 
 REALM_ROLES = ["insight-admin", "insight-lead", "insight-member"]
 
-# Person.role -> realm roles the user is granted.
+# Person.role -> realm roles the user is granted. Indexed directly, so a roster
+# role missing from this table is a KeyError at generation time rather than a
+# user who silently logs in with no roles.
 _ROLE_TO_REALM_ROLES: dict[str, list[str]] = {
     "ceo": ["insight-admin", "insight-lead"],
     "lead": ["insight-lead"],
     "ic": ["insight-member"],
+    # The admin operator. `insight-admin` here is for consistency with the CEO
+    # and for the SPA's benefit — it is NOT what admits the operator to the
+    # admin API. That gate reads an active `admin` row in `identity.person_roles`
+    # and never looks at a realm role; the seed writes that row separately.
+    "admin": ["insight-admin"],
 }
 
 
 def _org_unit(person: Person) -> str:
-    """CEO has no team (Person.team is None) → the literal 'executive'."""
-    return person.team if person.team is not None else "executive"
+    """Team name, or the unit for the two people who have no team."""
+    if person.team is not None:
+        return person.team
+    return OPERATOR_ORG_UNIT if person.role == "admin" else "executive"
 
 
 def _protocol_mappers(tenant_id: str) -> list[dict]:

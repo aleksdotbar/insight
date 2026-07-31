@@ -34,11 +34,13 @@ MANIFEST_VERSION = 1
 # builds the Keycloak realm from this same roster. The two must agree exactly
 # or a persona will authenticate as someone the API does not recognise.
 REALM_NAME = "insight"                      # gen-realm.py REALM_NAME
-EXECUTIVE_ORG_UNIT = "executive"            # gen-realm.py _org_unit fallback
+EXECUTIVE_ORG_UNIT = "executive"            # gen-realm.py _org_unit, teamless
+OPERATOR_ORG_UNIT = "operations"            # gen-realm.py OPERATOR_ORG_UNIT
 ROLE_TO_REALM_ROLES: dict[str, list[str]] = {
     "ceo": ["insight-admin", "insight-lead"],
     "lead": ["insight-lead"],
     "ic": ["insight-member"],
+    "admin": ["insight-admin"],
 }
 
 # Compose-network-internal addresses: reachable from other containers on the
@@ -123,7 +125,15 @@ def seed_revision() -> str:
 def _persona(person: profiles.Person) -> dict[str, Any]:
     """One roster entry. Fields are named explicitly, never spread from the
     Person object, so a future attribute cannot leak into the document."""
-    org_unit = person.team if person.team is not None else EXECUTIVE_ORG_UNIT
+    # Mirrors gen-realm.py's `_org_unit`: teamless people are the CEO
+    # (executive) and the admin operator (operations, its own unit because it
+    # administers the product rather than belonging to the org).
+    if person.team is not None:
+        org_unit = person.team
+    elif person.role == "admin":
+        org_unit = OPERATOR_ORG_UNIT
+    else:
+        org_unit = EXECUTIVE_ORG_UNIT
     return {
         "email": person.email,
         "display_name": f"{person.first_name} {person.last_name}".strip(),
@@ -159,6 +169,12 @@ def _fixtures(personas: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         catalog["dev_lead"] = ref(by_uuid[profiles.DEV_LEAD_UUID])
     if profiles.CEO_UUID in by_uuid:
         catalog["ceo"] = ref(by_uuid[profiles.CEO_UUID])
+    # The admin operator holds the `admin` row in `identity.person_roles`, which
+    # is the ONLY thing that opens the admin-gated identity API — a realm role
+    # does not. It is deliberately outside the org chart, so a test using it
+    # cannot perturb any visibility assertion.
+    if profiles.ADMIN_OPERATOR_UUID in by_uuid:
+        catalog["admin_operator"] = ref(by_uuid[profiles.ADMIN_OPERATOR_UUID])
     for name, uuid in (
         ("sales_lead", profiles.SALES_LEAD_UUID),
         ("hr_lead", profiles.HR_LEAD_UUID),

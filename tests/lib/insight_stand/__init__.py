@@ -55,6 +55,7 @@ from .manifest import (
     load_manifest,
 )
 from .personas import (
+    ADMIN_OPERATOR_FIXTURE,
     ADMIN_ROLE,
     LEAD_ROLE,
     MEMBER_ROLE,
@@ -78,6 +79,7 @@ from .stand import BASE_URL_ENV, StandEndpoint, resolve_base_url, resolve_endpoi
 from .wait import wait_for, wait_until
 
 __all__: Sequence[str] = (
+    "ADMIN_OPERATOR_FIXTURE",
     "ADMIN_ROLE",
     "ANALYTICS_PREFIX",
     "BASE_URL_ENV",

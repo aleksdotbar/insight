@@ -134,7 +134,7 @@ def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaS
 
 
 def test_org_visibility_scope_differs_by_persona(
-    admin_session: PersonaSession, lead_session: PersonaSession, member_session: PersonaSession
+    realm_admin_session: PersonaSession, lead_session: PersonaSession, member_session: PersonaSession
 ) -> None:
     """One endpoint, three personas, three materially different answers.
 
@@ -151,13 +151,13 @@ def test_org_visibility_scope_differs_by_persona(
     Relationships are asserted rather than exact counts, so a roster change
     moves the numbers without inventing a failure.
     """
-    assert admin_session.has_realm_role(ADMIN_ROLE)
+    assert realm_admin_session.has_realm_role(ADMIN_ROLE)
     assert lead_session.has_realm_role(LEAD_ROLE) and not lead_session.has_realm_role(ADMIN_ROLE)
     assert member_session.has_realm_role(MEMBER_ROLE)
-    assert admin_session.email != lead_session.email, "admin and lead resolved to the same persona"
+    assert realm_admin_session.email != lead_session.email, "admin and lead resolved to the same persona"
 
     seen = {}
-    for session in (admin_session, lead_session, member_session):
+    for session in (realm_admin_session, lead_session, member_session):
         response = session.client.get(SUBCHART)
         assert response.status_code == 200, (
             f"{session.name} could not read {SUBCHART}: "
@@ -165,7 +165,7 @@ def test_org_visibility_scope_differs_by_persona(
         )
         seen[session.name] = _people(_roots(response))
 
-    admin_view = seen[admin_session.name]
+    admin_view = seen[realm_admin_session.name]
     lead_view = seen[lead_session.name]
     member_view = seen[member_session.name]
     assert member_view == set(), (
@@ -173,7 +173,7 @@ def test_org_visibility_scope_differs_by_persona(
     )
     assert lead_view, f"{lead_session.name} is a lead but sees nobody in the org chart"
     assert len(admin_view) > len(lead_view), (
-        f"{admin_session.name} (admin) sees {len(admin_view)} people and {lead_session.name} (lead) sees "
+        f"{realm_admin_session.name} (admin) sees {len(admin_view)} people and {lead_session.name} (lead) sees "
         f"{len(lead_view)} — an admin must see strictly more"
     )
     assert lead_view <= admin_view, (

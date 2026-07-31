@@ -7,6 +7,12 @@ The development-team lead's email is `DEV_USER_EMAIL`; the other 24
 persons get deterministic `email_<team>_<NN>@company.nonpresent`
 addresses.
 
+A 26th person, the ADMIN OPERATOR, is in the roster but not in the
+organisation: no team, no place in the org chart, no activity. It exists
+so the admin-gated API surface has a caller, and it is kept outside the
+org so that granting it cannot move a single metric or change what any
+other person can see. See `build_roster`.
+
 `TEAM_PROFILES` below maps a per-team source-type to a numeric
 multiplier (0 = no rows; 1 = baseline; >1 = heavier). The row
 generators consult these weights to decide which silver rows a given
@@ -31,6 +37,14 @@ CEO_UUID = "aaaaaaaa-0000-0000-0000-000000000001"
 SALES_LEAD_UUID = "aaaaaaaa-0000-0000-0000-000000000020"
 HR_LEAD_UUID = "aaaaaaaa-0000-0000-0000-000000000030"
 SUPPORT_LEAD_UUID = "aaaaaaaa-0000-0000-0000-000000000040"
+
+# The admin operator (see `ADMIN_ROLE_NAME`). Its own `cccccccc-` block rather
+# than an `aaaaaaaa-` lead slot, because it is not a member of the organisation.
+ADMIN_OPERATOR_UUID = "cccccccc-0000-0000-0000-000000000001"
+
+# Name of the `identity.roles` row the operator is granted. The row itself is
+# created by the identity-resolution migrations, not by this seed.
+ADMIN_ROLE_NAME = "admin"
 
 # Author for every dev-seed observation (Guid.Empty == "system").
 AUTHOR_PERSON_UUID = "00000000-0000-0000-0000-000000000000"
@@ -62,9 +76,9 @@ def _ic_uuid(team_id: int, n: int) -> str:
 class Person:
     uuid: str
     email: str
-    team: str | None  # None for CEO
-    role: str         # "ceo" | "lead" | "ic"
-    parent_uuid: str | None  # report-to chain
+    team: str | None  # None for the CEO and the admin operator
+    role: str         # "ceo" | "lead" | "ic" | "admin"
+    parent_uuid: str | None  # report-to chain; None = no org_chart edge
     first_name: str = ""     # assigned deterministically in build_roster
     last_name: str = ""
 
@@ -163,7 +177,7 @@ def build_email(person: str) -> str:
     return f"{person}@{COMPANY_EMAIL_SUFFIX}".lower()
 
 def build_roster(dev_user_email: str) -> list[Person]:
-    """Construct the 25-person roster anchored on `dev_user_email`."""
+    """The 25-person organisation anchored on `dev_user_email`, plus the operator."""
     if not dev_user_email:
         raise ValueError("DEV_USER_EMAIL is required to build the roster.")
 
@@ -199,10 +213,37 @@ def build_roster(dev_user_email: str) -> list[Person]:
                 parent_uuid=lead.uuid,
             ))
 
-    # Assign deterministic names by build-order index (CEO, leads, then ICs).
+    # The admin operator: an account that ADMINISTERS the product rather than a
+    # person the product measures. Deliberately outside the organisation, and
+    # both fields below are load-bearing rather than incidental:
+    #
+    #   parent_uuid=None  `seed_org_chart` emits an edge only for a person with
+    #                     a parent, so this produces NO org_chart row in either
+    #                     direction — nobody reports to the operator and the
+    #                     operator reports to nobody. Their own `/v1/subchart`
+    #                     is an empty forest, and no other person's view moves.
+    #   team=None         every activity generator skips a teamless person, so
+    #                     the operator contributes no silver rows and cannot
+    #                     shift a metric.
+    #
+    # Together those keep the operator invisible to every existing assertion.
+    # The CEO is teamless too, but IS in the org chart as a parent; this one is
+    # absent from it entirely.
+    admin_operator = Person(
+        uuid=ADMIN_OPERATOR_UUID,
+        email=build_email("email_admin_operator"),
+        team=None,
+        role="admin",
+        parent_uuid=None,
+    )
+
+    # Assign deterministic names by build-order index (CEO, leads, ICs, then the
+    # operator). The operator goes LAST so adding it cannot renumber anybody:
+    # the index drives `_name_at`, and inserting it earlier would rename all 25
+    # existing people and churn every display name in the seeded data.
     return [
         replace(p, first_name=fn, last_name=ln)
-        for i, p in enumerate([ceo, *leads, *ics])
+        for i, p in enumerate([ceo, *leads, *ics, admin_operator])
         for fn, ln in [_name_at(i)]
     ]
 

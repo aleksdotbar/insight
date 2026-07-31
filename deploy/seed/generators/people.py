@@ -95,6 +95,19 @@ def _supervisor_email(roster: Sequence[Person], p: Person) -> str | None:
     return None
 
 
+def _measured_persons(roster: Sequence[Person]) -> list[Person]:
+    """The people the product measures — the organisation, not its operators.
+
+    The admin operator is in the roster so it can log in and administer the
+    API, but it is not an employee: including it would add a headcount and a
+    BambooHR employee record for an account nobody works at. Every other
+    generator excludes it implicitly by filtering on `team`; these two iterate
+    the whole roster (the CEO is teamless and must stay in), so the exclusion
+    has to be explicit.
+    """
+    return [p for p in roster if p.role != "admin"]
+
+
 def seed_class_people(
     client: clickhouse_connect.driver.client.Client,
     roster: Sequence[Person],
@@ -111,7 +124,7 @@ def seed_class_people(
     # the dbt-materialised table, which has no such column.
     cols = ["unique_key", "email", "department_name", "workspace_id"]
     rows: list[tuple[object, ...]] = []
-    for p in roster:
+    for p in _measured_persons(roster):
         dept = _TEAM_DEPARTMENT.get(p.team or "", "Executive")
         rows.append((
             deterministic_uuid("class_people", p.email),
@@ -141,7 +154,7 @@ def seed_bamboohr_employees(
         "supervisor",
     ]
     rows: list[tuple[object, ...]] = []
-    for p in roster:
+    for p in _measured_persons(roster):
         full = _display_name(p)
         first, _, last = full.partition(" ")
         sup_email = _supervisor_email(roster, p)

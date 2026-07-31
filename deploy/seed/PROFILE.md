@@ -16,7 +16,7 @@ builder that writes `manifest.json`, so the two cannot disagree.
 | realm | `insight` |
 | anchor_date | `2026-06-30` |
 | data_window | `2026-05-02..2026-06-30` |
-| seed_revision | `43b14252f6b2f1cc` |
+| seed_revision | `6ec2b12537b76fa8` |
 | manifest_version | 1 |
 
 `anchor_date` is the last day carrying seeded activity. It is resolved
@@ -28,7 +28,7 @@ page was rendered against, not necessarily the one on your stand.
 
 ## Roster
 
-25 people. `uuid` is both the Keycloak user id and the
+26 people. `uuid` is both the Keycloak user id and the
 `identity.persons` person id, so a login and an API row refer to the same
 person.
 
@@ -59,6 +59,7 @@ person.
 | `email_support_03@company.nonpresent` | Elle Ivers | support | ic | insight-member | `bbbbbbbb-0000-0000-0000-000000040003` |
 | `email_support_04@company.nonpresent` | Reid Jansen | support | ic | insight-member | `bbbbbbbb-0000-0000-0000-000000040004` |
 | `email_support_05@company.nonpresent` | Wren Keir | support | ic | insight-member | `bbbbbbbb-0000-0000-0000-000000040005` |
+| `email_admin_operator@company.nonpresent` | Beau Lowe | — | admin | insight-admin | `cccccccc-0000-0000-0000-000000000001` |
 
 No password appears here or in `manifest.json`. Personas are referenced
 by identity; the shared local login secret lives in the compose env and
@@ -72,6 +73,7 @@ renaming one breaks every test that declares it.
 
 | fixture | email | team | role | uuid |
 |---|---|---|---|---|
+| `admin_operator` | `email_admin_operator@company.nonpresent` | — | admin | `cccccccc-0000-0000-0000-000000000001` |
 | `ceo` | `email_ceo@company.nonpresent` | — | ceo | `aaaaaaaa-0000-0000-0000-000000000001` |
 | `dev_lead` | `email_development_lead@company.nonpresent` | development | lead | `00000000-0000-0000-0000-000000000010` |
 | `development_ic` | `email_development_01@company.nonpresent` | development | ic | `bbbbbbbb-0000-0000-0000-000000010001` |

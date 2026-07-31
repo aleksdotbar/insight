@@ -36,6 +36,7 @@ if str(_LIB_PATH) not in sys.path:
     sys.path.insert(0, str(_LIB_PATH))
 
 from insight_stand import (  # noqa: E402  (import follows the sys.path bootstrap)
+    ADMIN_OPERATOR_FIXTURE,
     ADMIN_ROLE,
     LEAD_ROLE,
     MANIFEST_PATH,
@@ -319,11 +320,37 @@ def session_for(
 
 
 @pytest.fixture(scope="session")
-def admin_session(
+def realm_admin_session(
     session_for: Callable[[str], PersonaSession], stand_manifest: Manifest
 ) -> PersonaSession:
-    """A session for a persona the realm granted `insight-admin`."""
+    """An ORG MEMBER the realm granted `insight-admin` — in practice the CEO.
+
+    Named for the realm role on purpose, because that is all it is. No identity
+    endpoint reads `insight-admin`: the admin gate consults an active `admin`
+    row in `identity.person_roles` and this persona has none. Use it where the
+    point is a senior person's view of the organisation; use
+    `admin_operator_session` where the point is administrative authority.
+
+    Calling this `admin_session` was how the two got confused.
+    """
     return session_for(resolve_by_realm_role(stand_manifest, ADMIN_ROLE))
+
+
+@pytest.fixture(scope="session")
+def admin_operator_session(
+    session_for: Callable[[str], PersonaSession],
+) -> PersonaSession:
+    """The account that actually opens the admin-gated identity API.
+
+    It holds the `admin` row in `identity.person_roles`, which `require_admin`
+    resolves from the gateway JWT — the only thing that gate looks at.
+
+    Deliberately outside the org chart: no team, no edge in either direction. So
+    it contributes no activity data, sees nobody in `/v1/subchart`, and cannot
+    perturb a visibility assertion. That isolation is the reason it is a separate
+    person rather than a grant bolted onto the CEO.
+    """
+    return session_for(ADMIN_OPERATOR_FIXTURE)
 
 
 @pytest.fixture(scope="session")
@@ -333,7 +360,7 @@ def lead_session(
     """A session for a persona granted `insight-lead` but NOT `insight-admin`.
 
     Excluding admins matters: the CEO holds both, so without it `lead_session`
-    and `admin_session` could resolve to the same person and every
+    and `realm_admin_session` could resolve to the same person and every
     lead-vs-admin comparison would pass vacuously.
     """
     return session_for(resolve_by_realm_role(stand_manifest, LEAD_ROLE, excluding=ADMIN_ROLE))
