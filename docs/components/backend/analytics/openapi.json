@@ -550,6 +550,14 @@
         ],
         "type": "object"
       },
+      "EvidenceGranularity": {
+        "enum": [
+          "event",
+          "source_summary",
+          "derived_population"
+        ],
+        "type": "string"
+      },
       "GetMetricsRequest": {
         "additionalProperties": false,
         "description": "Request body for `POST /v1/catalog/get_metrics`.\n\n`tenant_id` is intentionally NOT accepted here — it is resolved server-side\nfrom the session by `tenant_middleware` (Refs #522 auth-trait). Allowing a\nbody-supplied `tenant_id` would open a cross-tenant disclosure surface.\n`deny_unknown_fields` enforces that defensively at the parser layer: a\ncaller that smuggles `\"tenant_id\": \"...\"` into the body gets a 400 instead\nof a silent ignore.",
@@ -707,6 +715,16 @@
           "direction": {
             "$ref": "#/components/schemas/MetricDirection"
           },
+          "drilldown": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MetricDrilldownCapability"
+              }
+            ]
+          },
           "explanation": {
             "type": [
               "string",
@@ -793,6 +811,24 @@
         ],
         "type": "object"
       },
+      "MetricDimensionFilterDto": {
+        "properties": {
+          "dimension": {
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "dimension",
+          "values"
+        ],
+        "type": "object"
+      },
       "MetricDimensionFilterRequest": {
         "properties": {
           "dimension": {
@@ -818,6 +854,20 @@
           "neutral"
         ],
         "type": "string"
+      },
+      "MetricDrilldownCapability": {
+        "properties": {
+          "granularity": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceGranularity"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "granularity"
+        ],
+        "type": "object"
       },
       "MetricFormat": {
         "enum": [
@@ -928,6 +978,16 @@
               "direction": {
                 "$ref": "#/components/schemas/MetricDirection"
               },
+              "drilldown": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricDrilldownCapability"
+                  }
+                ]
+              },
               "explanation": {
                 "type": [
                   "string",
@@ -942,6 +1002,9 @@
               },
               "metric_key": {
                 "type": "string"
+              },
+              "selection": {
+                "$ref": "#/components/schemas/MetricResultSelectionDto"
               },
               "short_label": {
                 "type": [
@@ -967,11 +1030,38 @@
               "label",
               "format",
               "direction",
-              "views"
+              "views",
+              "selection"
             ],
             "type": "object"
           }
         ]
+      },
+      "MetricResultSelectionDto": {
+        "properties": {
+          "entity": {
+            "$ref": "#/components/schemas/MetricResultsEntityDto"
+          },
+          "filters": {
+            "items": {
+              "$ref": "#/components/schemas/MetricDimensionFilterDto"
+            },
+            "type": "array"
+          },
+          "metric_key": {
+            "type": "string"
+          },
+          "period": {
+            "$ref": "#/components/schemas/MetricResultsPeriodDto"
+          }
+        },
+        "required": [
+          "metric_key",
+          "entity",
+          "period",
+          "filters"
+        ],
+        "type": "object"
       },
       "MetricResultViewDto": {
         "oneOf": [
@@ -1111,7 +1201,40 @@
         ],
         "type": "object"
       },
+      "MetricResultsEntityDto": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "ids"
+        ],
+        "type": "object"
+      },
       "MetricResultsPeriod": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "MetricResultsPeriodDto": {
         "properties": {
           "from": {
             "type": "string"
@@ -1641,6 +1764,18 @@
         "required": [
           "rows"
         ],
+        "type": "object"
+      },
+      "RunSavedQueryRequest": {
+        "description": "Optional parameters for `POST /v1/queries/{id}/run` (#1966).\n\nThe `{tenant}` parameter is always injected from the session context and is\nnever client-settable, so it is absent here. `period` is the first optional\nnamed parameter an author can reference as `{period:<Type>}`; it is bound as\na ClickHouse server-side parameter, never interpolated into the SQL text.",
+        "properties": {
+          "period": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "SavedQuery": {
@@ -4694,6 +4829,16 @@
     "/v1/queries/{id}/run": {
       "post": {
         "operationId": "analytics_api.queries.run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSavedQueryRequest"
+              }
+            }
+          },
+          "description": "Optional named parameters (`period`); `tenant` is always injected from context"
+        },
         "responses": {
           "200": {
             "content": {

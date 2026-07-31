@@ -195,9 +195,9 @@ The system **MUST** allow an analyst to create, list, fetch, update, delete, and
 
 #### Named Query Parameters
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-query-params`
+- [x] `p1` - **ID**: `cpt-presentation-fr-query-params`
 
-The system **MUST** support named query parameters, always injecting `tenant` from request context and supporting a `period` parameter. The `tenant` parameter **MUST NOT** be settable from client SQL. (#1966.)
+The system **MUST** support named query parameters, always injecting `tenant` from request context and supporting a `period` parameter supplied on the run request. The `tenant` parameter **MUST NOT** be settable from client SQL. Parameter values **MUST** be bound as ClickHouse server-side parameters (`{name:Type}`), never string-interpolated, so a value can never alter query structure. (Shipped, #1966.)
 
 **Rationale**: Consistent, safe parameterization; the tenant value is authoritative from context.
 
@@ -209,7 +209,9 @@ The system **MUST** support named query parameters, always injecting `tenant` fr
 
 - [ ] `p1` - **ID**: `cpt-presentation-fr-tenant-filter`
 
-The system **MUST** inject a literal tenant predicate (`insight_tenant_id = <ctx.tenant>`) server-side on every contract read, sourced from request context and not from client SQL. This **MUST** replace the current no-op filter. (#1967, coordinated with engineering #1829.)
+The system **MUST** inject a literal tenant predicate (`tenant_id = <ctx.tenant>`, the column the gold observation and cohort contract exposes) server-side on every contract read, sourced from request context and not from client SQL. This **MUST** replace the current no-op filter. (#1967, coordinated with engineering #1829.)
+
+**Status**: Shipped for the structured `metric_results` read path (#1967). The legacy per-metric `query_ref` path (`execute_metric_query`) is not yet scoped and stays outside the guarantee until it is restricted to tenant-safe sources or given per-query enforcement; the requirement stays open until all exposed contract-read paths enforce tenant scope.
 
 **Rationale**: Every read is tenant-scoped; client SQL cannot widen it.
 
@@ -219,9 +221,9 @@ The system **MUST** inject a literal tenant predicate (`insight_tenant_id = <ctx
 
 #### Contract Surface Documentation
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-contract-surface-doc`
+- [x] `p2` - **ID**: `cpt-presentation-fr-contract-surface-doc`
 
-The system **MUST** document the contract surface — the silver and identity objects presentation may read — so additive-only evolution can be checked against it. (#1968.)
+The system **MUST** document the contract surface — the silver and identity objects presentation may read — so additive-only evolution can be checked against it. (Shipped, #1968: [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) names the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and the `person.*`/`identity.*` objects as the stable read surface, with the additive-only rules.)
 
 **Rationale**: The contract must be explicit for both layers to evolve it safely and additively.
 
@@ -291,6 +293,8 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 **Threshold**: 0 cross-tenant rows returned in isolation testing.
 
+**Status**: Met for the structured `metric_results` read path (#1967, verified by compiler unit tests and the #1359 e2e). Not yet met for the legacy `execute_metric_query` path; the NFR stays open until isolation testing covers every exposed contract-read path.
+
 **Rationale**: Multi-tenant SaaS compliance requirement.
 
 ### 6.2 NFR Exclusions
@@ -311,7 +315,7 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 **Stability**: unstable
 
-**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN. (CRUD + run shipped in #1965; named parameters follow in #1966.)
+**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN. (CRUD + run shipped in #1965; named parameters shipped in #1966.)
 
 **Breaking Change Policy**: Unstable in Phase A; contract hardens in a later phase.
 
