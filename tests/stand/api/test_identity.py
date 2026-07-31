@@ -31,9 +31,17 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from insight_stand import ADMIN_ROLE, LEAD_ROLE, MEMBER_ROLE, PersonaSession, identity_path
+from insight_stand import (
+    ADMIN_ROLE,
+    LEAD_ROLE,
+    MEMBER_ROLE,
+    Manifest,
+    PersonaSession,
+    identity_path,
+)
 
-from .schemas import SubchartForest
+from .schemas import ProblemDocument, Subchart, SubchartForest
+from .scratch import UNKNOWN_ID
 
 #: Caller-derived org subchart — takes no person argument, so what comes back
 #: identifies whoever the session belongs to. 401 anonymous (swept in
@@ -157,3 +165,73 @@ def test_two_leads_of_different_teams_see_different_people(
     assert not (dev_view & sales_view), (
         f"leads of different teams share {sorted(dev_view & sales_view)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The by-person route
+# ---------------------------------------------------------------------------
+
+SUBCHART_OF = identity_path("/v1/subchart")
+
+
+def _subtree(session: PersonaSession, person_uuid: str) -> Subchart:
+    response = session.client.get(f"{SUBCHART_OF}/{person_uuid}")
+    assert response.status_code == 200, (
+        f"{session.name} could not read the subtree of {person_uuid}: "
+        f"{response.status_code} {response.text[:300]}"
+    )
+    return response.parse(Subchart)
+
+
+def test_subchart_of_self_is_200(lead_session: PersonaSession) -> None:
+    """Distinct from the forest: this route takes an explicit person.
+
+    Asking for oneself is the case that cannot be confused with anything else —
+    the root that comes back must be the caller.
+    """
+    subtree = _subtree(lead_session, lead_session.person.uuid)
+    assert str(subtree.root.person_id) == lead_session.person.uuid
+    assert subtree.root.email == lead_session.email
+
+
+def test_subchart_of_a_visible_report_is_200(
+    lead_session: PersonaSession, stand_manifest: Manifest
+) -> None:
+    """A lead can root the tree at somebody they can see."""
+    report = stand_manifest.fixture("development_ic")
+    assert str(_subtree(lead_session, report.uuid).root.person_id) == report.uuid
+
+
+def test_subchart_of_someone_out_of_scope_is_404_not_403(
+    lead_session: PersonaSession, stand_manifest: Manifest
+) -> None:
+    """Out of scope is indistinguishable from not existing. That is the point.
+
+    A 403 would confirm the person exists — turning this endpoint into an
+    oracle for "is <uuid> somebody in this company?" for any authenticated
+    caller. Answering 404, byte for byte the same as for a uuid nobody holds, is
+    what stops it leaking membership.
+
+    Verified as a pair on purpose: asserting the 404 alone would also pass if
+    the route had simply stopped working, so the in-scope 200 above and the
+    unknown-uuid 404 below bracket it.
+    """
+    outsider = stand_manifest.fixture("sales_ic")
+    response = lead_session.client.get(f"{SUBCHART_OF}/{outsider.uuid}")
+    assert response.status_code == 404, (
+        f"a lead asking for {outsider.email}, who is outside their scope, got "
+        f"{response.status_code} — anything but 404 discloses that the person exists: "
+        f"{response.text[:300]}"
+    )
+
+    unknown = lead_session.client.get(f"{SUBCHART_OF}/{UNKNOWN_ID}")
+    assert unknown.status_code == 404
+    assert response.parse(ProblemDocument).title == unknown.parse(ProblemDocument).title, (
+        "the out-of-scope and never-existed answers differ, so the difference is observable"
+    )
+
+
+def test_subchart_of_an_unknown_person_is_404(lead_session: PersonaSession) -> None:
+    response = lead_session.client.get(f"{SUBCHART_OF}/{UNKNOWN_ID}")
+    assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
+    assert response.parse(ProblemDocument).status == 404
