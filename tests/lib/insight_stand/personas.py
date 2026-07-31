@@ -25,7 +25,7 @@ from typing import Any, Final
 from .api import ApiClient
 from .errors import PersonaError
 from .manifest import Manifest, Person
-from .session import StandSession
+from .session import LoginSession
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
 
@@ -185,7 +185,7 @@ class PersonaSession:
 
     name: str
     person: Person
-    session: StandSession
+    session: LoginSession
     client: ApiClient
 
     @property
@@ -225,7 +225,7 @@ def open_session(
     """
     person = manifest.fixture(name)
     verify_realm_roles(person, realm_path=realm_path)
-    session = StandSession(
+    session = LoginSession(
         base_url=base_url,
         email=person.email,
         password=persona_password(person.email, realm_path=realm_path),

@@ -38,6 +38,8 @@ if str(_LIB_PATH) not in sys.path:
 from insight_stand import (  # noqa: E402  (import follows the sys.path bootstrap)
     ADMIN_ROLE,
     LEAD_ROLE,
+    MANIFEST_PATH,
+    MANIFEST_PATH_ENV,
     MEMBER_ROLE,
     ApiClient,
     Manifest,
@@ -45,6 +47,7 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
     PersonaSession,
     StandConnectionError,
     StandEndpoint,
+    default_manifest_path,
     open_session,
     resolve_by_realm_role,
     resolve_endpoint,
@@ -58,18 +61,20 @@ CAPABILITY_MARKERS: dict[str, str] = {
 }
 
 _MANIFEST: Manifest | None = None
+_MANIFEST_PATH: Path | None = None
+_ENDPOINT: StandEndpoint | None = None
 
 
 def _manifest() -> Manifest:
-    """Load the manifest once per session from its frozen path.
+    """Load the manifest once per session, from wherever the run was pointed.
 
-    The path is fixed at `deploy/seed/manifest.json` and has no env knob: it is
-    where the seed writes, and letting a run point somewhere else would let a
-    green suite describe a stand it never touched.
+    `pytest_configure` resolves the path; every message about the stand quotes
+    the `source_path` that came back, so a suite can always name the document
+    it believed.
     """
     global _MANIFEST
     if _MANIFEST is None:
-        _MANIFEST = Manifest.load()
+        _MANIFEST = Manifest.load(_MANIFEST_PATH)
     return _MANIFEST
 
 
@@ -83,6 +88,79 @@ def _manifest() -> Manifest:
 # `-ra` that keeps every skip reported with its reason. They are deliberately
 # NOT re-registered here: two declarations of the same marker are two places to
 # drift, and the project config is the one a reader looks at first.
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """`--stand-manifest`, for parity with pytest-base-url's `--base-url`.
+
+    A run is aimed by two facts: WHERE the stand is, and WHAT it was seeded
+    with. The first already had a command-line flag, contributed by
+    pytest-base-url; this gives the second one too, so aiming a run is one
+    command line rather than a command line plus an environment variable.
+
+    Deliberately no matching ini key. A default base URL can reasonably be
+    pinned in committed config; the path to a particular run's manifest cannot,
+    and an ini key would be one more place for a stale answer to hide.
+    """
+    parser.addoption(
+        "--stand-manifest",
+        metavar="path",
+        default=None,
+        help=(
+            "seed manifest describing the stand under test "
+            f"(default: ${MANIFEST_PATH_ENV}, else {MANIFEST_PATH})"
+        ),
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Resolve the stand's address into pytest-base-url's own option.
+
+    pytest-base-url — installed as a dependency of pytest-playwright — already
+    owns the idea of "the address under test". It offers three ways to set one
+    (`--base-url`, the `base_url` ini key, `$PYTEST_BASE_URL`), folds them into
+    `config.option.base_url`, and serves the result from a session-scoped
+    `base_url` fixture. pytest-playwright reads exactly that fixture to set
+    `base_url` on every browser context.
+
+    None of those three can name THIS stand: its address is only known at run
+    time, from `$INSIGHT_STAND_BASE_URL` or the `GATEWAY_PORT` in the env file
+    the stand itself wrote. The wiring is therefore to fill the plugin's option
+    rather than to shadow its fixture — and to fill it only when the operator
+    has not, so `--base-url` and friends keep their documented precedence. In
+    return everything downstream behaves as the plugin documents it: the
+    `base_url` fixture, the `baseurl:` line in the run header, and
+    `--verify-base-url`.
+
+    One resolved address, reached one way. The browser and the API clients
+    cannot end up pointed at different stands, because there is no second value
+    for them to disagree about.
+    """
+    global _ENDPOINT, _MANIFEST_PATH
+
+    chosen = config.getoption("--stand-manifest")
+    _MANIFEST_PATH = Path(str(chosen)) if chosen else default_manifest_path()
+
+    # Both sources are read here, exactly as pytest-base-url's own
+    # `pytest_configure` reads them, because that hook has not run yet: pytest
+    # calls conftest hooks BEFORE entry-point plugin hooks, so by the time the
+    # plugin folds its ini key into the option this has already filled it.
+    # Checking only the option would silently ignore a `base_url` ini setting.
+    configured = config.getoption("base_url", default=None) or config.getini("base_url")
+    if configured:
+        _ENDPOINT = StandEndpoint(
+            base_url=str(configured).rstrip("/"),
+            source="--base-url / $PYTEST_BASE_URL / base_url ini",
+        )
+    else:
+        try:
+            _ENDPOINT = resolve_endpoint()
+        except StandConnectionError as exc:
+            # Same "refuse to start" contract as an unusable manifest below,
+            # just earlier: a suite that cannot say where the stand is has
+            # nothing to test.
+            raise pytest.UsageError(str(exc)) from exc
+    config.option.base_url = _ENDPOINT.base_url
 
 
 def pytest_collection_modifyitems(
@@ -170,16 +248,27 @@ def stand_manifest() -> Manifest:
 
 @pytest.fixture(scope="session")
 def stand_endpoint() -> StandEndpoint:
-    """Where the stand is, plus which file or variable said so."""
-    try:
-        return resolve_endpoint()
-    except StandConnectionError as exc:
-        pytest.fail(str(exc), pytrace=False)
+    """Where the stand is, plus which file or variable said so.
+
+    The `source` half is why this exists alongside `base_url`: a connection
+    failure can then name the file or variable that produced the address which
+    did not answer, instead of only that it did not.
+    """
+    if _ENDPOINT is None:  # pragma: no cover - pytest_configure always runs
+        raise pytest.UsageError("the stand endpoint was never resolved")
+    return _ENDPOINT
 
 
 @pytest.fixture(scope="session")
-def stand_base_url(stand_endpoint: StandEndpoint) -> str:
-    return stand_endpoint.base_url
+def stand_base_url(base_url: str) -> str:
+    """The stand's address, taken from pytest-base-url.
+
+    Deliberately NOT resolved again here. This is the same fixture
+    pytest-playwright reads to configure every browser context, so an API
+    client built from it is addressing the stand the browser is driving by
+    construction rather than by coincidence.
+    """
+    return base_url
 
 
 @pytest.fixture

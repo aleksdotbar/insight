@@ -1,14 +1,29 @@
-"""200 — what a real session buys.
+"""The identity-resolution service, through the gateway.
 
-Every session here was won by driving the deployed OIDC chain against
-Keycloak: `/auth/login`, the real HTML login form, `/auth/callback`,
-`__Host-sid`. No token is minted anywhere in this suite. That distinction is
-the point — a minted bearer would prove the analytics service verifies a JWT,
-which the in-process rig already proves, and would say nothing about whether a
-person can log in to the deployed product.
+Per `deploy/compose/gateway/routes.yaml`, `/api/identity` reaches
+`identity-resolution:8082` — the Rust service. The .NET `insight-identity` that
+used to answer here was removed upstream in favour of it (epic #1602) and the
+gateway was repointed.
 
-`test_unauthenticated.py` asserts the 401 half on the same paths, imported
-from `routes` so the two cannot drift apart.
+Organised by SERVICE, not by auth state, against one path constant per route.
+The 401 half is not here: `test_gateway.py` sweeps it over every operation in
+`operations.py` at once, since refusing an anonymous caller is the gateway's
+uniform behaviour rather than anything identity does. The success cases below
+are what make that sweep mean "refused" instead of "there was nothing there" —
+the gateway answers 401 for paths that do not exist too.
+
+NOT here: `/v1/persons/{email}`. The committed contract at
+`docs/components/backend/identity-resolution/openapi.json` still declares it on
+this service, but identity-resolution answers 404 — only
+`/internal/persons/by-email/{email}` (service principals) survived the port.
+The capability itself is not gone: **analytics** serves `/v1/persons/{email}`
+and returns 200, so it belongs in an analytics module when one grows to
+cover it.
+
+Every session below was won by driving the deployed OIDC chain against
+Keycloak. No token is minted anywhere in this suite: a minted bearer would
+prove the service verifies a JWT, which the in-process rig already covers, and
+would say nothing about whether a person can log in to the deployed product.
 """
 
 from __future__ import annotations
@@ -16,9 +31,21 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 
 import pytest
-from insight_stand import ADMIN_ROLE, LEAD_ROLE, MEMBER_ROLE, ApiResponse, JsonValue, PersonaSession
+from insight_stand import (
+    ADMIN_ROLE,
+    LEAD_ROLE,
+    MEMBER_ROLE,
+    ApiResponse,
+    JsonValue,
+    PersonaSession,
+    identity_path,
+)
 
-from .routes import METRICS, SUBCHART
+#: Caller-derived org subchart — takes no person argument, so what comes back
+#: identifies whoever the session belongs to. 401 anonymous, 200 with a
+#: session (swept in `test_gateway.py`), and populated from the seeded org
+#: chart.
+SUBCHART = identity_path("/v1/subchart")
 
 type Node = Mapping[str, JsonValue]
 
@@ -62,29 +89,12 @@ def _people(roots: Sequence[Node]) -> set[str]:
     return {str(node["email"]) for node in _nodes(roots) if node.get("email")}
 
 
-def test_analytics_metrics_is_200_with_a_session(lead_session: PersonaSession) -> None:
-    """The counterpart to `test_analytics_metrics_is_401_without_a_session`.
+def test_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
+    """Same url the gateway sweep refuses anonymously; a session is the only
+    difference.
 
-    Same URL, same stand; the session is the only difference. A 200 carrying an
-    empty body would be a different defect, so the catalog is checked too.
-    """
-    response = lead_session.client.get(METRICS)
-    assert response.status_code == 200, (
-        f"expected 200 for {lead_session.email} at {response.url}, "
-        f"got {response.status_code}: {response.text[:400]}"
-    )
-    body = response.json()
-    assert isinstance(body, dict) and body.get("items"), (
-        f"authenticated metrics response carried no items: {response.text[:400]}"
-    )
-
-
-def test_identity_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
-    """The counterpart to `test_identity_subchart_is_401_without_a_session`.
-
-    Same URL, same stand; the session is the only difference. Populated from
-    the seeded org chart, so it also rules out the boring explanation for the
-    401 — that the route had nothing behind it.
+    Populated from the seeded org chart, so it also rules out the boring
+    explanation for that 401 — that the route had nothing behind it.
     """
     response = lead_session.client.get(SUBCHART)
     assert response.status_code == 200, (

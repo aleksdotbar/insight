@@ -1,10 +1,15 @@
 """Typed model of the seed manifest.
 
 The manifest is the stand's self-description: what was seeded, who exists, what
-the stand can do. It is written by `deploy/seed/seed.py` to a FROZEN path with
-no env knob:
+the stand can do. `deploy/seed/seed.py` writes it to one place:
 
     deploy/seed/manifest.json
+
+A reader may be told to look elsewhere — `$INSIGHT_STAND_MANIFEST`, or pytest's
+`--stand-manifest` — because a runner that does not share the repo's filesystem
+has to get the file from somewhere. What is NOT configurable is having one: a
+run with no manifest aborts rather than falling back to a default, since a
+defaulted manifest turns "this stand was never seeded" into a green suite.
 
 The field shape mirrored here comes from the phase-3 schema document
 (`out/manifest-schema.md`) field for field — nothing is invented, guessed or
@@ -23,6 +28,7 @@ Two similarly-named things are deliberately kept apart:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,10 +36,31 @@ from typing import Any, Final
 
 from .errors import ManifestError
 
-# The frozen location the seed writes to, resolved from this file:
+# The location the seed writes to, resolved from this file:
 #   tests/lib/insight_stand/manifest.py -> ../../../
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
 MANIFEST_PATH: Final[Path] = _REPO_ROOT / "deploy" / "seed" / "manifest.json"
+
+# Point a runner at a manifest it can actually reach. Named the same way as
+# $INSIGHT_STAND_BASE_URL and $INSIGHT_STAND_ENV_FILE in stand.py.
+MANIFEST_PATH_ENV: Final[str] = "INSIGHT_STAND_MANIFEST"
+
+
+def default_manifest_path(environ: Mapping[str, str] | None = None) -> Path:
+    """Where to read the manifest from when the caller does not say.
+
+    `$INSIGHT_STAND_MANIFEST` first, then the path the seed writes.
+
+    The override earns its place in containers. `MANIFEST_PATH` is derived from
+    THIS FILE's location, so in an image that holds the tree at `/tests` it
+    resolves to `/deploy/seed/manifest.json` — and a bind mount then has to
+    reproduce that arithmetic exactly, or the suite reports an unseeded stand.
+    Naming the file is the honest alternative to guessing where `parents[3]`
+    landed.
+    """
+    env = os.environ if environ is None else environ
+    override = (env.get(MANIFEST_PATH_ENV) or "").strip()
+    return Path(override) if override else MANIFEST_PATH
 
 # The schema revision this model was written against. A stand emitting a
 # different version is a hard error, not something to parse optimistically.
@@ -206,11 +233,12 @@ class Manifest:
     def load(cls, path: Path | None = None) -> Manifest:
         """Read and parse the manifest, or raise `ManifestError`.
 
-        `path` defaults to the frozen `deploy/seed/manifest.json`. It exists
-        only so a test can point at a deliberately-broken document; nothing in
-        the suite derives the real location from anywhere else.
+        Most specific first: an explicit `path`, then `$INSIGHT_STAND_MANIFEST`,
+        then the path the seed writes. Whichever wins is carried on the parsed
+        manifest as `source_path`, so every message about the stand can name the
+        document it read.
         """
-        target = Path(path) if path is not None else MANIFEST_PATH
+        target = Path(path) if path is not None else default_manifest_path()
         try:
             raw = target.read_text(encoding="utf-8")
         except FileNotFoundError as exc:
@@ -353,11 +381,13 @@ def load_manifest(path: Path | None = None) -> Manifest:
 __all__: Sequence[str] = (
     "BOOLEAN_CAPABILITIES",
     "MANIFEST_PATH",
+    "MANIFEST_PATH_ENV",
     "SUPPORTED_MANIFEST_VERSION",
     "Capabilities",
     "GoldenMetric",
     "Manifest",
     "Person",
     "Realm",
+    "default_manifest_path",
     "load_manifest",
 )

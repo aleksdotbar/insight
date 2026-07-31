@@ -46,7 +46,7 @@ def _cookie_failure(page: Page, origin: str, found: list[Cookie]) -> str:
 @pytest.mark.requires_seed("dev_lead")
 def test_login_lands_on_authenticated_view(
     page: Page,
-    stand_base_url: str,
+    base_url: str,
     session_for: Callable[[str], PersonaSession],
 ) -> None:
     # `session_for` resolves the persona through the manifest's fixture catalog
@@ -65,11 +65,11 @@ def test_login_lands_on_authenticated_view(
     # No sign-in click: an unauthenticated visit starts the OIDC chain itself,
     # so the browser is already sitting on Keycloak's form by now.
     keycloak_login_page.fill_and_submit(persona.email, persona.password)
-    page.wait_for_url(f"{stand_base_url}/**")
+    page.wait_for_url(f"{base_url}/**")
 
-    cookies = page.context.cookies(stand_base_url)
+    cookies = page.context.cookies(base_url)
     session_cookies = [c for c in cookies if c["name"] == SESSION_COOKIE_NAME]
-    assert len(session_cookies) == 1, _cookie_failure(page, stand_base_url, cookies)
+    assert len(session_cookies) == 1, _cookie_failure(page, base_url, cookies)
 
     cookie = session_cookies[0]
     # The `__Host-` prefix is a contract, not decoration: host-locked, path-/,

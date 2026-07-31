@@ -1272,7 +1272,10 @@ containers to report healthy.
           block until a gold metric proves dbt has refreshed.
   seed    Re-seed the running stand (default target: all).
   test    Run the stand suite against an already-up stand. Passes extra
-          arguments through to pytest.
+          arguments through to pytest — no `--` separator.
+          The suite aims itself at this stand; override with pytest's own
+          --base-url <url> and --stand-manifest <path> when pointing it
+          somewhere else.
   down    Stop the stand and REMOVE its volumes, so the next `up` starts
           from empty databases.
 

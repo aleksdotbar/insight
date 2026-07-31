@@ -28,7 +28,7 @@ description = "Deployed-stand test suite for Insight: shared library plus API an
 requires-python = ">=3.13"
 dependencies = [
     "pytest>=8",
-    # Sync HTTP with a cookie jar — the session transport RealLogin needs.
+    # Sync HTTP with a cookie jar — the session transport LoginSession needs.
     "httpx>=0.27",
     # Pinned to the Playwright version baked into the ui-tests base image
     # (deploy/compose/ui-tests.Dockerfile). If these drift, the pip package
@@ -44,15 +44,20 @@ dev = [
 ]
 
 # The library lives under lib/; the suite under stand/ is collected by pytest
-# and is deliberately not packaged.
+# and is deliberately not packaged. `where` is the whole filter — lib/ holds the
+# library and nothing else, so an `include` pattern on top of it would only be a
+# second place to edit when a second package appears.
 [tool.setuptools.packages.find]
 where = ["lib"]
-include = ["insight_stand*"]
 
 [tool.pytest.ini_options]
-# `-r s` keeps skips visible: without it a `-q` run prints a bare `s` and no
-# reason, which turns a skipped browser journey into an invisible one.
+# `-ra` keeps skips visible with their reason: without it a `-q` run prints a
+# bare `s`, which turns a skipped browser journey into an invisible one.
 addopts = "-ra --strict-markers --strict-config"
+# `base_url` (pytest-base-url, via pytest-playwright) is deliberately NOT set
+# here. A stand's address is only known at run time, so tests/stand/conftest.py
+# fills the option from $INSIGHT_STAND_BASE_URL or the stand's own env file —
+# and only when `--base-url` / $PYTEST_BASE_URL / this key has not set it.
 markers = [
     "requires_seed(*names): stand fixtures this test needs, validated against the manifest's fixture catalog at COLLECTION time",
     "requires_ingestion: needs a stand whose manifest declares the 'ingestion' capability; skipped with a reason when it does not",

@@ -1,7 +1,10 @@
 """Browser wiring for the UI journeys.
 
-The browser drives `stand_base_url` — the same URL the API clients use. One
-address for the whole suite, resolved once in `tests/stand/conftest.py`.
+The browser's base URL is not set here. `tests/stand/conftest.py` resolves the
+stand once into pytest-base-url's `base_url` option, and pytest-playwright
+already reads that fixture to configure every context — so `page.goto("/")`
+lands on the stand, and a journey that needs the address asks for `base_url`
+and gets the one the browser was actually given.
 
 That URL has to be `localhost`-based, and not for convenience. `__Host-`
 prefixed cookies are only stored from a **trustworthy** origin, and over plain
@@ -23,9 +26,6 @@ redirect URI matches, so one configuration serves both.
 
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
 from playwright.sync_api import expect
 
 # Playwright's own defaults are already generous where it matters — 30s for
@@ -34,17 +34,3 @@ from playwright.sync_api import expect
 # and raising it is what lets the journeys use web-first assertions instead of
 # sleeping or retrying.
 expect.set_options(timeout=15_000)
-
-
-@pytest.fixture(scope="session")
-def browser_context_args(
-    browser_context_args: dict[str, Any], stand_base_url: str
-) -> dict[str, Any]:
-    """Give every context the stand as its base URL.
-
-    Journeys then navigate by path (`page.goto("/")`) and
-    `expect(page).to_have_url(...)` reads cleanly. Extends pytest-playwright's
-    own fixture rather than replacing it, so options contributed by the plugin
-    or a CLI flag survive.
-    """
-    return {**browser_context_args, "base_url": stand_base_url}

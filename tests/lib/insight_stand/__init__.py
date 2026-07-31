@@ -7,7 +7,7 @@ Four things live here, and nothing else:
   and seeded facts.
 * `stand` — where the stand is: base-URL resolution for a host-side or
   in-network runner.
-* `session` — `StandSession`, the one way a request proves who it is.
+* `session` — `LoginSession`, the one way a request proves who it is.
 * `api` — the gateway-fronted HTTP client.
 * `wait` — bounded polling for eventually-consistent state.
 
@@ -44,12 +44,14 @@ from .errors import (
 from .manifest import (
     BOOLEAN_CAPABILITIES,
     MANIFEST_PATH,
+    MANIFEST_PATH_ENV,
     SUPPORTED_MANIFEST_VERSION,
     Capabilities,
     GoldenMetric,
     Manifest,
     Person,
     Realm,
+    default_manifest_path,
     load_manifest,
 )
 from .personas import (
@@ -70,7 +72,7 @@ from .session import (
     CALLBACK_PATH,
     LOGIN_PATH,
     SESSION_COOKIE_NAME,
-    StandSession,
+    LoginSession,
 )
 from .stand import BASE_URL_ENV, StandEndpoint, resolve_base_url, resolve_endpoint
 from .wait import wait_for, wait_until
@@ -86,6 +88,7 @@ __all__: Sequence[str] = (
     "LEAD_ROLE",
     "LOGIN_PATH",
     "MANIFEST_PATH",
+    "MANIFEST_PATH_ENV",
     "MEMBER_ROLE",
     "PASSWORD_ENV",
     "REALM_EXPORT_PATH",
@@ -98,6 +101,7 @@ __all__: Sequence[str] = (
     "GoldenMetric",
     "JsonValue",
     "LoginNotCompletedError",
+    "LoginSession",
     "Manifest",
     "ManifestError",
     "Person",
@@ -109,8 +113,8 @@ __all__: Sequence[str] = (
     "StandConnectionError",
     "StandEndpoint",
     "StandError",
-    "StandSession",
     "analytics_path",
+    "default_manifest_path",
     "expected_realm_roles",
     "identity_path",
     "load_manifest",

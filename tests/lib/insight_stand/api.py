@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from .session import StandSession
+from .session import LoginSession
 
 #: Anything `json.loads` can return. Recursive, so a caller indexing into a
 #: decoded body keeps a real type instead of falling off into `Any`.
@@ -88,12 +88,12 @@ class ApiClient:
 
     `session is None` means genuinely unauthenticated — no header is attached
     at all — so a 401 assertion is testing the stand rather than a mistake in
-    the test. The session is re-read on every request, so a `StandSession` that
+    the test. The session is re-read on every request, so a `LoginSession` that
     re-acquires mid-run is picked up without rebuilding the client.
     """
 
     base_url: str
-    session: StandSession | None = None
+    session: LoginSession | None = None
     timeout_s: float = 30.0
 
     def __post_init__(self) -> None:
@@ -101,7 +101,7 @@ class ApiClient:
 
     # -- construction ------------------------------------------------------
 
-    def with_session(self, session: StandSession) -> ApiClient:
+    def with_session(self, session: LoginSession) -> ApiClient:
         """A sibling client at the same stand, authenticated as that session."""
         return ApiClient(base_url=self.base_url, session=session, timeout_s=self.timeout_s)
 
@@ -114,8 +114,19 @@ class ApiClient:
         *,
         params: QueryParams | None = None,
         json_body: JsonValue = None,
+        content: str | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> ApiResponse:
+        """Issue one request. `json_body` and `content` are exclusive.
+
+        `content` sends the body verbatim, with whatever `Content-Type` the
+        caller sets — which is the only way to assert the 415 contract, since a
+        body the service must REFUSE on its media type cannot be expressed as
+        `json=`.
+        """
+        if json_body is not None and content is not None:
+            raise ValueError("pass json_body or content, not both")
+
         import httpx
 
         url = f"{self.base_url}{self._checked_path(path)}"
@@ -125,7 +136,12 @@ class ApiClient:
 
         with httpx.Client(timeout=self.timeout_s, follow_redirects=False) as client:
             response = client.request(
-                method, url, params=params, json=json_body, headers=merged
+                method,
+                url,
+                params=params,
+                json=json_body,
+                content=content,
+                headers=merged,
             )
         return ApiResponse(
             status_code=response.status_code,
@@ -163,20 +179,26 @@ class ApiClient:
         path: str,
         *,
         json_body: JsonValue = None,
+        content: str | None = None,
         params: QueryParams | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> ApiResponse:
-        return self.request("POST", path, json_body=json_body, params=params, headers=headers)
+        return self.request(
+            "POST", path, json_body=json_body, content=content, params=params, headers=headers
+        )
 
     def put(
         self,
         path: str,
         *,
         json_body: JsonValue = None,
+        content: str | None = None,
         params: QueryParams | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> ApiResponse:
-        return self.request("PUT", path, json_body=json_body, params=params, headers=headers)
+        return self.request(
+            "PUT", path, json_body=json_body, content=content, params=params, headers=headers
+        )
 
     # -- guards ------------------------------------------------------------
 

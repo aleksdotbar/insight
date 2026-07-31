@@ -1,6 +1,6 @@
 """A session on the stand: winning one, holding it, attaching it.
 
-`StandSession` is the one thing a request can carry to prove who it is, and it
+`LoginSession` is the one thing a request can carry to prove who it is, and it
 is a session cookie obtained by actually logging in at the stand's IdP. That is
 the only kind that proves anything about the deployed product. Minting a bearer
 token is the in-process rig's path
@@ -60,7 +60,7 @@ _FORM_ERROR_RE = re.compile(
 
 
 @dataclass
-class StandSession:
+class LoginSession:
     """A session on the stand, won by logging in for real at its own IdP.
 
     Drives the deployed five-step chain end to end, with no shortcut at any
@@ -101,7 +101,7 @@ class StandSession:
     _session_cookie: str | None = field(default=None, init=False, repr=False)
     _acquired_at: float = field(default=0.0, init=False, repr=False)
 
-    # -- Credentials -------------------------------------------------------
+    # -- what a request carries --------------------------------------------
 
     def headers(self) -> dict[str, str]:
         if self._session_cookie is None or self._is_stale():
@@ -231,5 +231,5 @@ __all__: Sequence[str] = (
     "DEFAULT_MAX_SESSION_AGE_S",
     "LOGIN_PATH",
     "SESSION_COOKIE_NAME",
-    "StandSession",
+    "LoginSession",
 )
