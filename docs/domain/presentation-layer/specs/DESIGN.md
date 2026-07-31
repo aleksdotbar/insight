@@ -264,19 +264,21 @@ The second, independent barrier behind the query gate: once analytics connects a
 
 ##### Why this component exists
 
-Plain CRUD over stored queries so a new analytics slice needs no engineering change and no re-ingest. The one new surface Phase A adds ("Data Analytics"). CRUD + run shipped (#1965); named parameters follow in #1966.
+Plain CRUD over stored queries so a new analytics slice needs no engineering change and no re-ingest. The one new surface Phase A adds ("Data Analytics"). CRUD + run shipped (#1965); named parameters (`tenant`/`period`) shipped (#1966).
 
 ##### Responsibility scope
 
 - CRUD over `presentation.queries` (the `saved_queries` service-DB table), tenant-scoped from the session `SecurityContext`. Handlers mirror the metric CRUD in `api::handlers`; delete is a hard delete.
 - Validate SQL via the query gate (`validate_single_select`) on create, update, **and** run — the run-side re-validation keeps a stored SQL from reaching ClickHouse as anything but a single read.
 - Run: execute the stored single-SELECT read-only as `presentation_ro` and return untyped JSON rows (`JSONEachRow`, same shape as the existing metric query path).
+- Bind named parameters on run (#1966): `{tenant}` is always bound from the session `SecurityContext` (never client-settable); `{period}` is bound when supplied on the run request body. Values are passed as ClickHouse server-side parameters (`Query::param` → `param_<name>`), so a value can never change query structure; the gate already tolerates `{name:Type}` placeholders. A query that references a parameter left unbound (e.g. `{period}` with no period supplied) fails as a 400, not a 5xx.
 
 ##### Responsibility boundaries
 
 - Does NOT carry metric metadata, thresholds, or passports — those are Phase B.
 - Does NOT bypass the gate.
-- Does NOT yet inject named parameters (`tenant`/`period`, #1966) or the tenant-row filter (#1967) — #1965 executes the stored SQL as authored; those cross-cutting concerns extend the run path in their own sub-issues.
+- Does NOT string-interpolate parameter values — binding is server-side only.
+- Does NOT yet inject the tenant-row filter (#1967) — the run path binds the `{tenant}` *value* but does not yet add an `insight_tenant_id = {tenant}` predicate to queries that omit it; that cross-cutting concern lands in its own sub-issue.
 
 ##### Related components (by ID)
 
@@ -356,9 +358,9 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 | `GET` | `/v1/queries/{id}` | Fetch one | unstable |
 | `PUT` | `/v1/queries/{id}` | Update (re-validates SQL) | unstable |
 | `DELETE` | `/v1/queries/{id}` | Delete | unstable |
-| `POST` | `/v1/queries/{id}/run` | Execute read-only as `presentation_ro`, return rows (tenant filter injected in #1967) | unstable |
+| `POST` | `/v1/queries/{id}/run` | Execute read-only as `presentation_ro`, return rows; optional body `{ "period": "<value>" }` binds `{period}`; `{tenant}` always bound from context (tenant-row *filter* deferred to #1967 — the run path binds the tenant value but adds no `insight_tenant_id` predicate yet) | unstable |
 
-`run` executes as `presentation_ro` and returns untyped JSON rows, the same shape as the existing metric query path. No metric metadata, thresholds, or passports in Phase A.
+`run` executes as `presentation_ro` and returns untyped JSON rows, the same shape as the existing metric query path. The request body is optional; named parameters (`tenant`/`period`, #1966) are bound as ClickHouse server-side parameters. No metric metadata, thresholds, or passports in Phase A.
 
 ### 3.4 Internal Dependencies
 

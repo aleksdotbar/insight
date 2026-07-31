@@ -310,6 +310,11 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Run a saved query")
         .authenticated()
         .no_license_required()
+        .json_request::<saved_query::RunSavedQueryRequest>(
+            openapi,
+            "Optional named parameters (`period`); `tenant` is always injected from context",
+        )
+        .request_optional()
         .json_response_with_schema::<saved_query::RunResponse>(
             openapi,
             StatusCode::OK,

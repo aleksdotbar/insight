@@ -17,7 +17,7 @@ pub enum MetricFormat {
     Percent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricComputation {
     Sum,
@@ -26,12 +26,39 @@ pub enum MetricComputation {
     DistinctCount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricInputRole {
     Value,
     Numerator,
     Denominator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceGranularity {
+    Event,
+    SourceSummary,
+    DerivedPopulation,
+}
+
+impl EvidenceGranularity {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Event => "event",
+            Self::SourceSummary => "source_summary",
+            Self::DerivedPopulation => "derived_population",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "event" => Some(Self::Event),
+            "source_summary" => Some(Self::SourceSummary),
+            "derived_population" => Some(Self::DerivedPopulation),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +92,9 @@ impl SourceKind {
 /// a dbt model plus registry seed rows — no code change here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObservationRelation(String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceRelation(String);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CohortSource {
@@ -218,20 +248,7 @@ impl ObservationRelation {
     /// lowercase `snake_case` ending in `_metric_observations`, with a
     /// non-empty family prefix. Anything else is a configuration error.
     pub fn parse(value: &str) -> Option<Self> {
-        let family = value.strip_suffix("_metric_observations")?;
-        if family.is_empty() {
-            return None;
-        }
-        let mut chars = family.chars();
-        let starts_alpha = chars.next().is_some_and(|c| c.is_ascii_lowercase());
-        let rest_ok = family
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
-        if starts_alpha && rest_ok {
-            Some(Self(value.to_owned()))
-        } else {
-            None
-        }
+        parse_relation(value, "_metric_observations").map(Self)
     }
 
     pub fn table_ref(&self) -> (&'static str, &str) {
@@ -243,6 +260,30 @@ impl ObservationRelation {
     pub fn source_ref(&self) -> &str {
         &self.0
     }
+}
+
+impl EvidenceRelation {
+    pub const DATABASE: &'static str = "insight";
+
+    pub fn parse(value: &str) -> Option<Self> {
+        parse_relation(value, "_metric_evidence").map(Self)
+    }
+
+    pub fn table_ref(&self) -> (&'static str, &str) {
+        (Self::DATABASE, &self.0)
+    }
+
+    pub fn source_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+fn parse_relation(value: &str, suffix: &str) -> Option<String> {
+    let family = value.strip_suffix(suffix)?;
+    let mut chars = family.chars();
+    let starts_alpha = chars.next().is_some_and(|c| c.is_ascii_lowercase());
+    let rest_ok = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    (starts_alpha && rest_ok).then(|| value.to_owned())
 }
 
 impl CohortSource {
@@ -401,6 +442,17 @@ mod tests {
         ] {
             assert_eq!(MetricInputRole::from_db(role.as_db()), Some(role));
         }
+        for granularity in [
+            EvidenceGranularity::Event,
+            EvidenceGranularity::SourceSummary,
+            EvidenceGranularity::DerivedPopulation,
+        ] {
+            assert_eq!(
+                EvidenceGranularity::from_db(granularity.as_db()),
+                Some(granularity)
+            );
+        }
+        assert_eq!(EvidenceGranularity::from_db("unknown"), None);
         let relation = ObservationRelation::parse("ai_metric_observations")
             .unwrap_or_else(|| panic!("builtin relation name must parse"));
         let (_, table) = relation.table_ref();
@@ -415,6 +467,10 @@ mod tests {
         ] {
             assert_eq!(SourceKind::from_db(kind.as_db()), Some(kind));
         }
+        let evidence = EvidenceRelation::parse("ai_metric_evidence")
+            .unwrap_or_else(|| panic!("builtin evidence must parse"));
+        assert_eq!(evidence.table_ref(), ("insight", "ai_metric_evidence"));
+        assert_eq!(evidence.source_ref(), "ai_metric_evidence");
     }
 
     #[test]

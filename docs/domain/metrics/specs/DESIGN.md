@@ -124,6 +124,19 @@ has one granularity:
 - `source_summary`: the finest summary preserved by silver.
 - `derived_population`: a source entity participating in a derived metric.
 
+Definitions do not declare a separate drilldown strategy. The runtime resolves
+the definition's existing input roles and source measures, requires every input
+to use the same evidence relation, and compiles the evidence selection from
+that metadata. A new metric over existing evidence-backed measures therefore
+inherits drilldown without metric-specific SQL, backend branches, or frontend
+configuration.
+
+The schema validator probes every standard column. Drilldown capability is
+absent until the probe is definitively healthy and every metric input has
+granularity metadata. Missing, unchecked, or invalid evidence fails closed.
+`POST /v1/metric-results` and `GET /v1/metric-definitions` expose that
+capability; consumers omit evidence actions when it is absent.
+
 The evidence contract has these limitations:
 
 - Summary-grain silver cannot produce event-grain evidence. AI and
@@ -326,10 +339,20 @@ type MetricResult = {
   format: "integer" | "decimal" | "currency" | "percent"
   direction: "higher_is_better" | "lower_is_better" | "neutral"
   views: MetricResultView[]
+  selection: {
+    metric_key: string
+    entity: { type: string; ids: string[] }
+    period: { from: string; to: string }
+    filters: Array<{ dimension: string; values: string[] }>
+  }
+  drilldown?: {
+    granularity: Array<"event" | "source_summary" | "derived_population">
+  }
 } & (
   | { computation: "sum" }
   | { computation: "ratio"; scale: number }
   | { computation: "median" }
+  | { computation: "distinct_count" }
 )
 ```
 
