@@ -10,7 +10,7 @@
 
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilter,
-    QueryResult, Statement,
+    QueryResult, Statement, Value,
 };
 use uuid::Uuid;
 
@@ -64,6 +64,82 @@ pub async fn resolve_person_ids_by_email(
 
     let rows = db.query_all(stmt).await?;
     person_ids_from_rows(rows)
+}
+
+/// Batch form of [`resolve_person_ids_by_email`], returning `(index,
+/// person_id, stored_email)` per current match, where `index` is the offset in
+/// `emails`. Group by index: no rows means nobody, one means resolved, more
+/// than one means ambiguous. Keyed by index because `value_id` is
+/// `utf8mb4_unicode_ci` — matching is case-, accent- and pad-insensitive, so the
+/// stored text cannot be mapped back reliably. `stored_email` is that stored
+/// spelling, for callers that key by the email bytes.
+///
+/// # Errors
+///
+/// Returns an error if the query fails or a stored `person_id` is not 16 bytes.
+pub async fn resolve_person_ids_by_emails(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    emails: &[String],
+) -> anyhow::Result<Vec<(usize, Uuid, String)>> {
+    if emails.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // INVARIANT: only generated indices are interpolated; every email is bound.
+    // `inputs` is a materialised UNION, so its column carries the session
+    // charset and collation; CONVERT + COLLATE pins matching to the column's own
+    // regardless of what the connection negotiated.
+    let inputs = (0..emails.len())
+        .map(|idx| format!("SELECT {idx} AS idx, ? AS email"))
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+
+    let sql = format!(
+        "WITH ranked AS (
+            SELECT
+                person_id,
+                value_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY insight_tenant_id, person_id, insight_source_type, insight_source_id, value_type
+                    ORDER BY created_at DESC, id DESC
+                ) AS rn
+            FROM persons
+            WHERE insight_tenant_id = ?
+              AND value_type = 'email'
+        ),
+        inputs AS ({inputs})
+        SELECT DISTINCT i.idx AS idx, r.person_id AS person_id, r.value_id AS stored_email
+        FROM inputs i
+        JOIN ranked r
+          ON  r.rn = 1
+          AND r.value_id = CONVERT(i.email USING utf8mb4) COLLATE utf8mb4_unicode_ci"
+    );
+
+    let mut values: Vec<Value> = Vec::with_capacity(emails.len() + 1);
+    values.push(tenant_id.as_bytes().to_vec().into());
+    values.extend(emails.iter().map(|email| email.trim().to_owned().into()));
+
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::MySql,
+            &sql,
+            values,
+        ))
+        .await?;
+
+    rows.iter()
+        .map(|r| {
+            let idx: i64 = r.try_get("", "idx")?;
+            let person_id: Vec<u8> = r.try_get("", "person_id")?;
+            let stored_email: String = r.try_get("", "stored_email")?;
+            Ok((
+                usize::try_from(idx)?,
+                Uuid::from_slice(&person_id)?,
+                stored_email,
+            ))
+        })
+        .collect()
 }
 
 /// Tenant-AGNOSTIC email → `person_id` resolution for the login bootstrap (the

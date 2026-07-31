@@ -42,9 +42,7 @@ pub async fn get_person(
 
     // Forward the caller's gateway JWT to identity (G1): this is a user-context
     // fan-out, so it propagates the incoming Authorization header verbatim.
-    let authorization = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok());
+    let authorization = super::forwarded_authorization(&headers);
 
     let person = state
         .identity
