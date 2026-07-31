@@ -166,16 +166,30 @@ def _ensure_identity_inputs_table(cfg: SessionConfig) -> None:
     )
 
 
-def _insert_raw_inputs(cfg: SessionConfig, rows: list[tuple[str, str, str]], *, run_tag: str, version_start: int) -> None:
+def _insert_raw_inputs(
+    cfg: SessionConfig,
+    rows: list[tuple[str, str, str]],
+    *,
+    run_tag: str,
+    version_start: int,
+    source_type: str = "e2e-cycle-source",
+) -> None:
     """Hand-insert observation rows into identity_inputs — same shape as
     `test_persons_seed.py::_insert_inputs`, kept local so this module does not
-    depend on test collection order in another file."""
+    depend on test collection order in another file.
+
+    `source_type` defaults to a harness-only value — fine for write-side-only
+    assertions (raw SQL on org_chart), but `GET /v1/subchart` filters by the
+    rig's CONFIGURED `org_chart_source_type` (`bamboohr`, see lib/identity.py)
+    and silently returns nothing for any other source, so a test that reads
+    through that endpoint must pass `source_type="bamboohr"`.
+    """
     values = []
     for i, (account, value_type, value) in enumerate(rows):
         values.append(
             "("
             f"'{run_tag}:{account}:{value_type}:{version_start + i}', "
-            f"'{seed.SEED_TENANT}', 'e2e-cycle-source', '77777777-7777-7777-7777-777777777777', "
+            f"'{seed.SEED_TENANT}', '{source_type}', '77777777-7777-7777-7777-777777777777', "
             f"'{account}', '{value_type}', '{value}', "
             f"'UPSERT', now64(3) - INTERVAL {len(rows) - i} SECOND, "
             f"{version_start + i}"
@@ -291,6 +305,11 @@ def test_seed_and_subchart_survive_a_circular_manager_chain(identity_svc, compos
         ],
         run_tag=run_tag,
         version_start=1,
+        # GET /v1/subchart below only traverses org_chart rows matching the
+        # rig's configured org_chart_source_type ("bamboohr") — any other
+        # value makes the read return an empty (root-only) tree regardless of
+        # what got written, silently defeating the read-side assertion.
+        source_type="bamboohr",
     )
 
     res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
@@ -316,9 +335,11 @@ def test_seed_and_subchart_survive_a_circular_manager_chain(identity_svc, compos
             _walk(child, depth + 1)
 
     _walk(r.json()["root"], 0)
-    # Bounded by the harness's configured max_depth=16 (lib/identity.py) — a
-    # true infinite loop would never reach this assertion at all.
-    assert max(depths) <= 16, f"subchart descent on a cycle exceeded the server's max_depth cap: {depths}"
+    # Must actually descend the cycle (proves the recursion ran, not just
+    # that the endpoint returned something), yet stay bounded by the harness's
+    # configured max_depth=16 (lib/identity.py) — a true infinite loop would
+    # never reach this assertion at all.
+    assert 2 <= max(depths) <= 16, f"subchart descent on a cycle was not bounded as expected: {depths}"
 
 
 def test_ms_entra_connector_emits_no_org_chart_signal_yet(
@@ -369,3 +390,61 @@ def test_ms_entra_connector_emits_no_org_chart_signal_yet(
         "Rewrite this test into a real org-chart projection proof (mirroring "
         "active_directory__manager_identity_inputs.sql) instead of asserting absence."
     )
+
+
+def test_seed_and_subchart_project_arbitrary_depth_from_a_synced_chain(identity_svc, compose_stack: SessionConfig) -> None:
+    """BR-8 ("any depth") is asserted elsewhere only against `test_subchart.py`'s
+    hardcoded two-level fixture tree (alice -> bob -> carol), never against a
+    chain that actually flowed through identity_inputs + the seed. Build a
+    five-level chain (deeper than the fixed fixture) through the same
+    identity_inputs -> seed CLI path the other tests in this module use, and
+    prove both write (org_chart parent-per-level) and read
+    (GET /v1/subchart depth-per-level) reflect the full chain, not a depth the
+    seed or the API silently caps at 2."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+
+    run_tag = uuid.uuid4().hex[:10]
+    chain_len = 5  # deeper than the fixed fixture's 2 levels; well under max_depth=16
+    emails = [f"chain.{i}.{run_tag}@e2e.test" for i in range(chain_len)]
+
+    _ensure_identity_inputs_table(compose_stack)
+    rows: list[tuple[str, str, str]] = []
+    for i, email in enumerate(emails):
+        account = f"chain-{i}-{run_tag}"
+        rows.append((account, "email", email))
+        rows.append((account, "id", account))
+        if i > 0:
+            rows.append((account, "parent_email", emails[i - 1]))
+    _insert_raw_inputs(compose_stack, rows, run_tag=run_tag, version_start=1, source_type="bamboohr")
+
+    res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+    assert res.returncode == 0, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+    person_ids = [_person_id_by_email(identity_svc, email) for email in emails]
+
+    # Write side: every level's OPEN parent is exactly the level above it.
+    for i in range(1, chain_len):
+        assert _open_parent(compose_stack, person_ids[i]) == _hex(person_ids[i - 1]), (
+            f"level {i} did not project a parent edge to level {i - 1}"
+        )
+    assert _open_parent(compose_stack, person_ids[0]) is None, "the root of the chain must have no open parent"
+
+    # Read side: the subtree rooted at the top must nest all `chain_len`
+    # levels — a depth cap baked into the seed or the API would truncate this.
+    with identity_svc.client(sub=person_ids[0], tenant=str(seed.SEED_TENANT)) as api:
+        r = api.get(f"/v1/subchart/{person_ids[0]}", params={"depth": chain_len})
+    assert r.status_code == 200, f"status={r.status_code} body={r.text}"
+
+    depth_by_person: dict[str, int] = {}
+
+    def _walk(node: dict, depth: int) -> None:
+        depth_by_person[node["person_id"]] = depth
+        for child in node.get("subordinates", []):
+            _walk(child, depth + 1)
+
+    _walk(r.json()["root"], 0)
+    for i, person_id in enumerate(person_ids):
+        assert depth_by_person.get(person_id) == i, (
+            f"level {i} ({person_id}) surfaced at depth {depth_by_person.get(person_id)!r} in the subchart, expected {i}"
+        )
