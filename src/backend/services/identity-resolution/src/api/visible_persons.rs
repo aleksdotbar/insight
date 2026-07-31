@@ -147,6 +147,7 @@ mod tests {
             "ada@example.com".to_owned(),
             "   ".to_owned(),
             "bob@example.com".to_owned(),
+            "   bob@example.com".to_owned(),
         ])
         .expect("a non-empty list");
 

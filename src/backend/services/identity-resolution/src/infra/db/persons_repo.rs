@@ -87,8 +87,9 @@ pub async fn resolve_person_ids_by_emails(
     }
 
     // INVARIANT: only generated indices are interpolated; every email is bound.
-    // `inputs` is a materialised UNION, so its column would carry the session
-    // collation — the explicit COLLATE pins matching to the column's own.
+    // `inputs` is a materialised UNION, so its column carries the session
+    // charset and collation; CONVERT + COLLATE pins matching to the column's own
+    // regardless of what the connection negotiated.
     let inputs = (0..emails.len())
         .map(|idx| format!("SELECT {idx} AS idx, ? AS email"))
         .collect::<Vec<_>>()
@@ -112,7 +113,7 @@ pub async fn resolve_person_ids_by_emails(
         FROM inputs i
         JOIN ranked r
           ON  r.rn = 1
-          AND r.value_id = i.email COLLATE utf8mb4_unicode_ci"
+          AND r.value_id = CONVERT(i.email USING utf8mb4) COLLATE utf8mb4_unicode_ci"
     );
 
     let mut values: Vec<Value> = Vec::with_capacity(emails.len() + 1);
