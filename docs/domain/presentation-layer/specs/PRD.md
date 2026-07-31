@@ -221,9 +221,9 @@ The system **MUST** inject a literal tenant predicate (`tenant_id = <ctx.tenant>
 
 #### Contract Surface Documentation
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-contract-surface-doc`
+- [x] `p2` - **ID**: `cpt-presentation-fr-contract-surface-doc`
 
-The system **MUST** document the contract surface — the silver and identity objects presentation may read — so additive-only evolution can be checked against it. (#1968.)
+The system **MUST** document the contract surface — the silver and identity objects presentation may read — so additive-only evolution can be checked against it. (Shipped, #1968: [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) names the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and the `person.*`/`identity.*` objects as the stable read surface, with the additive-only rules.)
 
 **Rationale**: The contract must be explicit for both layers to evolve it safely and additively.
 
