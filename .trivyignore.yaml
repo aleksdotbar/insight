@@ -6,7 +6,7 @@
 # pass `-w /src`, so it is picked up from the repository root.
 
 misconfigurations:
-  - id: DS-0002
+  - id: AVD-DS-0002
     paths:
       - "src/ingestion/tests/e2e/compose/Dockerfile.runner"
     statement: >-
