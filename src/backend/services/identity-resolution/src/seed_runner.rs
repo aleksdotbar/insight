@@ -255,8 +255,13 @@ async fn guarded_seed(
 /// The pure tenant-resolution decision (split out for unit tests): an
 /// explicitly configured tenant always wins; an empty config falls back to
 /// the SOLE tenant present in the persons log; anything ambiguous refuses
-/// with an operator-facing message.
-fn resolve_tenant(configured: &str, distinct_in_persons: &[Uuid]) -> Result<Uuid, String> {
+/// with an operator-facing message. `pub(crate)`: the sync runner journals
+/// its runs under the same resolved tenant (its GET journal routes are
+/// tenant-scoped, so a made-up tenant would hide the rows from admins).
+pub(crate) fn resolve_tenant(
+    configured: &str,
+    distinct_in_persons: &[Uuid],
+) -> Result<Uuid, String> {
     let configured = configured.trim();
     if !configured.is_empty() {
         return Uuid::parse_str(configured).map_err(|e| format!("invalid tenant_default_id: {e}"));
