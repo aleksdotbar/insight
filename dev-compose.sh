@@ -643,17 +643,31 @@ YML
             protobuf-compiler libprotobuf-dev pkg-config libssl-dev cmake > /dev/null
           cargo build --release$bin_flags
           mkdir -p /out/analytics /out/authenticator /out/identity-resolution
+          # Publish with cat + cmp, NOT cp or install. /out is a macOS bind
+          # mount; cp there fails with \"error deallocating ...: Invalid
+          # argument\" AFTER writing a SHORT file (observed 34787328 of
+          # 49532680 bytes for analytics) and install aborts outright. Worse,
+          # \`cp X Y && chmod Y\` hides the failure from set -e entirely --
+          # bash exempts every command in an && list but the last -- so the
+          # build stayed green and shipped a truncated binary that segfaults
+          # the instant it is exec'd. cmp makes a bad copy fatal, here.
           if [ -f /target/release/analytics ]; then
-            [ ! -d /out/analytics/analytics ] || rm -rf /out/analytics/analytics
-            cp /target/release/analytics /out/analytics/analytics && chmod 0755 /out/analytics/analytics
+            rm -rf /out/analytics/analytics
+            cat /target/release/analytics > /out/analytics/analytics
+            chmod 0755 /out/analytics/analytics
+            cmp -s /target/release/analytics /out/analytics/analytics || { echo 'ERROR: /out/analytics/analytics copied corrupt' >&2; exit 1; }
           fi
           if [ -f /target/release/authenticator ]; then
-            [ ! -d /out/authenticator/authenticator ] || rm -rf /out/authenticator/authenticator
-            cp /target/release/authenticator /out/authenticator/authenticator && chmod 0755 /out/authenticator/authenticator
+            rm -rf /out/authenticator/authenticator
+            cat /target/release/authenticator > /out/authenticator/authenticator
+            chmod 0755 /out/authenticator/authenticator
+            cmp -s /target/release/authenticator /out/authenticator/authenticator || { echo 'ERROR: /out/authenticator/authenticator copied corrupt' >&2; exit 1; }
           fi
           if [ -f /target/release/identity-resolution ]; then
-            [ ! -d /out/identity-resolution/identity-resolution ] || rm -rf /out/identity-resolution/identity-resolution
-            cp /target/release/identity-resolution /out/identity-resolution/identity-resolution && chmod 0755 /out/identity-resolution/identity-resolution
+            rm -rf /out/identity-resolution/identity-resolution
+            cat /target/release/identity-resolution > /out/identity-resolution/identity-resolution
+            chmod 0755 /out/identity-resolution/identity-resolution
+            cmp -s /target/release/identity-resolution /out/identity-resolution/identity-resolution || { echo 'ERROR: /out/identity-resolution/identity-resolution copied corrupt' >&2; exit 1; }
           fi
         "
     fi
@@ -947,17 +961,26 @@ cmd_build() {
         protobuf-compiler libprotobuf-dev pkg-config libssl-dev cmake > /dev/null
       cargo build --release$bin_flags
       mkdir -p /out/analytics /out/authenticator /out/identity-resolution
+      # cat + cmp, not cp/install -- see the identical block in cmd_up for why
+      # a plain cp here silently ships a truncated, instantly-segfaulting
+      # binary.
       if [ -f /target/release/analytics ]; then
-        [ ! -d /out/analytics/analytics ] || rm -rf /out/analytics/analytics
-        cp /target/release/analytics /out/analytics/analytics && chmod 0755 /out/analytics/analytics
+        rm -rf /out/analytics/analytics
+        cat /target/release/analytics > /out/analytics/analytics
+        chmod 0755 /out/analytics/analytics
+        cmp -s /target/release/analytics /out/analytics/analytics || { echo 'ERROR: /out/analytics/analytics copied corrupt' >&2; exit 1; }
       fi
       if [ -f /target/release/authenticator ]; then
-        [ ! -d /out/authenticator/authenticator ] || rm -rf /out/authenticator/authenticator
-        cp /target/release/authenticator /out/authenticator/authenticator && chmod 0755 /out/authenticator/authenticator
+        rm -rf /out/authenticator/authenticator
+        cat /target/release/authenticator > /out/authenticator/authenticator
+        chmod 0755 /out/authenticator/authenticator
+        cmp -s /target/release/authenticator /out/authenticator/authenticator || { echo 'ERROR: /out/authenticator/authenticator copied corrupt' >&2; exit 1; }
       fi
       if [ -f /target/release/identity-resolution ]; then
-        [ ! -d /out/identity-resolution/identity-resolution ] || rm -rf /out/identity-resolution/identity-resolution
-        cp /target/release/identity-resolution /out/identity-resolution/identity-resolution && chmod 0755 /out/identity-resolution/identity-resolution
+        rm -rf /out/identity-resolution/identity-resolution
+        cat /target/release/identity-resolution > /out/identity-resolution/identity-resolution
+        chmod 0755 /out/identity-resolution/identity-resolution
+        cmp -s /target/release/identity-resolution /out/identity-resolution/identity-resolution || { echo 'ERROR: /out/identity-resolution/identity-resolution copied corrupt' >&2; exit 1; }
       fi
     "
   }

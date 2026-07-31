@@ -653,10 +653,19 @@ services:
         apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev pkg-config libssl-dev cmake > /dev/null
         cargo build --release --bin analytics --bin authenticator
         mkdir -p /out/analytics /out/authenticator
-        [ ! -d /out/analytics/analytics ] || rm -rf /out/analytics/analytics
-        [ ! -d /out/authenticator/authenticator ] || rm -rf /out/authenticator/authenticator
-        cp /target/release/analytics /out/analytics/analytics && chmod 0755 /out/analytics/analytics
-        cp /target/release/authenticator /out/authenticator/authenticator && chmod 0755 /out/authenticator/authenticator
+        rm -rf /out/analytics/analytics
+        rm -rf /out/authenticator/authenticator
+        # cat + cmp, never cp/install: /out is a macOS bind mount where cp
+        # fails with "error deallocating: Invalid argument" AFTER writing a
+        # SHORT file, and `cp X Y && chmod Y` hides that from set -e (bash
+        # exempts every command in an && list but the last), shipping a
+        # truncated binary that segfaults on exec. cmp makes it fatal here.
+        cat /target/release/analytics > /out/analytics/analytics
+        chmod 0755 /out/analytics/analytics
+        cmp -s /target/release/analytics /out/analytics/analytics || { echo 'ERROR: /out/analytics/analytics copied corrupt' >&2; exit 1; }
+        cat /target/release/authenticator > /out/authenticator/authenticator
+        chmod 0755 /out/authenticator/authenticator
+        cmp -s /target/release/authenticator /out/authenticator/authenticator || { echo 'ERROR: /out/authenticator/authenticator copied corrupt' >&2; exit 1; }
 
   build-frontend:
     profiles: ["build"]
