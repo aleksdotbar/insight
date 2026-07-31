@@ -32,8 +32,26 @@ use toolkit_security::SecurityContext;
 pub async fn get_person(
     Extension(state): Extension<Arc<AppState>>,
     headers: axum::http::HeaderMap,
-    Path(email): Path<String>,
+    Path(person_id): Path<String>,
 ) -> Result<impl IntoResponse, CanonicalError> {
+    // The path key is the canonical person id since the identity cutover: a
+    // pre-cutover email URL is a loud 400, not a 404 that reads as "no such
+    // person". The nil UUID is syntactically valid but never a person. Parsed
+    // before the backend check, so the client error does not depend on whether
+    // identity happens to be configured.
+    let parsed = Uuid::parse_str(person_id.trim())
+        .ok()
+        .filter(|id| !id.is_nil())
+        .ok_or_else(|| {
+            PersonError::invalid_argument()
+                .with_field_violation(
+                    "person_id",
+                    "person_id must be a person UUID",
+                    "invalid_person_id",
+                )
+                .create()
+        })?;
+
     if !state.identity.is_configured() {
         return Err(
             CanonicalError::internal("identity resolution service not configured").create(),
@@ -46,7 +64,7 @@ pub async fn get_person(
 
     let person = state
         .identity
-        .get_person(&email, authorization)
+        .get_person(parsed, authorization)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "identity resolution request failed");
@@ -59,7 +77,7 @@ pub async fn get_person(
             CanonicalError::internal("failed to serialize person").create()
         })?)),
         None => Err(PersonError::not_found("person not found")
-            .with_resource(email)
+            .with_resource(person_id)
             .create()),
     }
 }

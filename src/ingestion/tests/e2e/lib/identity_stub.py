@@ -2,9 +2,11 @@
 
 A minimal loopback HTTP backend the analytics identity fan-outs resolve against:
 
-- `POST {identity_url}/v1/profiles` with `{value_type:"email", value:<email>}` —
-  a canned profile for a seeded email (→ 200) and 404 for every other, so the
-  persons endpoint exercises its real 200/404 contract.
+- `POST {identity_url}/v1/profiles` — a canned profile for a seeded person
+  (→ 200) and 404 for every other, so the persons endpoint exercises its real
+  200/404 contract. Both key forms are served: `{value_type:"person_id",
+  value:<uuid>}`, which is what the analytics persons facade sends since the
+  identity cutover, and `{value_type:"email", value:<email>}`.
 - `POST {identity_url}/v1/visible-persons` — the person UUIDs the caller may
   see (the identity-cutover contract), which the metric-results authorization
   gate compares against the requested ids. The reply is the intersection of
@@ -80,6 +82,12 @@ def person_id_for(email: str) -> str:
     return str(_uuid.uuid5(_PERSONA_NAMESPACE, email.strip().lower()))
 
 
+# The seeded person's canonical id, and one that resolves to nobody: the
+# analytics persons facade is keyed by person_id since the identity cutover.
+SEEDED_PERSON_ID = person_id_for(SEEDED_EMAIL)
+UNKNOWN_PERSON_ID = "019e2810-0000-7000-8000-0000000000ff"
+
+
 _PROFILES_PATH = "/v1/profiles"
 _VISIBLE_PERSONS_PATH = "/v1/visible-persons"
 
@@ -117,10 +125,16 @@ class _Handler(BaseHTTPRequestHandler):
         )
 
     def _send_profile(self, body: dict[str, Any]) -> None:
-        email = body.get("value", "")
-        person = self.server.people.get(email)  # type: ignore[attr-defined]
+        value = body.get("value", "")
+        people: dict[str, dict[str, Any]] = self.server.people  # type: ignore[attr-defined]
+        if body.get("value_type") == "person_id":
+            key = {person_id_for(email): email for email in people}.get(str(value).lower())
+            person = people.get(key) if key else None
+        else:
+            person = people.get(value)
+
         if person is None:
-            self._send(404, {"error": "person not found", "value": email})
+            self._send(404, {"error": "person not found", "value": value})
         else:
             self._send(200, person)
 

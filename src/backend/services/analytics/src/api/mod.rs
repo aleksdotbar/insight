@@ -386,9 +386,9 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .register(router, openapi);
 
     // Person lookup (delegates to Identity service)
-    router = OperationBuilder::get("/v1/persons/{email}")
+    router = OperationBuilder::get("/v1/persons/{person_id}")
         .operation_id("analytics_api.persons.get")
-        .summary("Resolve a person by email")
+        .summary("Resolve a person by canonical person id")
         .authenticated()
         .no_license_required()
         .json_response_with_schema::<Person>(openapi, StatusCode::OK, "Person")

@@ -39,7 +39,7 @@ ClickHouse coordinates for the persons-seed reader, and — when set —
 
 | Endpoint | Description |
 |---|---|
-| `POST /v1/profiles` | Profile lookup by email or source-native id. Body-form replacement for the retired path-form `GET /v1/persons/{email}` (dropped with the .NET decommission — zero callers). |
+| `POST /v1/profiles` | Profile lookup by `value_type`: `email` (tenant-wide), `id` (source-native account id, needs both source fields), or `person_id` (the canonical UUID — the key the metrics runtime and the SPA routes use since the identity cutover). Body-form replacement for the retired path-form `GET /v1/persons/{email}` (dropped with the .NET decommission — zero callers). |
 | `POST /v1/visible-persons` | Filters a list of canonical person ids (UUIDs) to the ones the caller may see. Authenticated, not admin-gated — the caller comes from the gateway JWT, so the answer is always their own visible set (ADR-0015). |
 | `GET /health` | DB ping. 200 / 503. |
 | `GET /healthz` | Process liveness. 200 `text/plain "ok"`. |

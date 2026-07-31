@@ -219,8 +219,8 @@ def _collect_metrics(cfg: SessionConfig) -> None:
 def identity_stub():
     """In-process loopback Identity stub (lib.identity_stub).
 
-    The rig runs no Identity service, so GET /v1/persons/{email} would 500
-    ("identity not configured"). This stub resolves one seeded email (→ 200) and
+    The rig runs no Identity service, so GET /v1/persons/{person_id} would 500
+    ("identity not configured"). This stub resolves one seeded person (→ 200) and
     404s the rest, so the persons endpoint exercises its real 200/404 contract
     (#1691). Started before `analytics` (which depends on it) so its URL is known
     when the binary boots — the analytics IdentityClient reads identity_url once

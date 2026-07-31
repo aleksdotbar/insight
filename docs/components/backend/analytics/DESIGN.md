@@ -147,7 +147,9 @@ Every ClickHouse query includes `insight_tenant_id`. User-supplied OData `$filte
 
 The frontend sends Insight person IDs (golden records from Identity Resolution). The service resolves them to source-specific aliases transparently. The frontend never knows about emails, usernames, or source account IDs.
 
-**Why**: Source-specific identifiers are an implementation detail. The frontend works with a unified person model.
+Since the identity cutover this holds for every person-keyed route: `POST /v1/metric-results` takes canonical person UUIDs in `entity.ids`, and `GET /v1/persons/{person_id}` — the profile facade that delegates to identity's `POST /v1/profiles` — takes the same key, so an id read off a metric result resolves to a profile with no second mapping. A pre-cutover email in either position is a 400, never a 404 that would read as "no such person".
+
+**Why**: Source-specific identifiers are an implementation detail. The frontend works with a unified person model. One key across the routes means a caller never has to hold two identifiers for the same person.
 
 #### Server-Side Threshold Evaluation
 

@@ -4261,7 +4261,7 @@
         "summary": "Update a threshold"
       }
     },
-    "/v1/persons/{email}": {
+    "/v1/persons/{person_id}": {
       "get": {
         "operationId": "analytics_api.persons.get",
         "responses": {
@@ -4351,7 +4351,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Resolve a person by email"
+        "summary": "Resolve a person by canonical person id"
       }
     },
     "/v1/queries": {

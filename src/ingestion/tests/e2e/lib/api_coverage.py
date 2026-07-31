@@ -72,8 +72,8 @@ BLOCKED: dict[str, frozenset[int]] = {
     "PUT /v1/metrics/{id}/thresholds/{tid}": frozenset({200, 403, 409}),  # 200=#1663
     "DELETE /v1/metrics/{id}/thresholds/{tid}": frozenset({204, 403, 409}),  # 204=#1663
     "POST /v1/admin/metric-thresholds": frozenset({404, 409}),  # 404 boilerplate; 409=#1664
-    # persons 200/404 covered via the in-process Identity stub (#1691); rest boilerplate
-    "GET /v1/persons/{email}": frozenset({400, 403, 409}),
+    # persons 200/404/400 covered via the in-process Identity stub (#1691)
+    "GET /v1/persons/{person_id}": frozenset({403, 409}),
     # 404/409 boilerplate; 403 IS reachable (person outside the caller's visible set)
     "POST /v1/metric-results": frozenset({404, 409}),
     # saved-query CRUD + run (#1965): 403 (auth disabled, no role gate — cross-tenant

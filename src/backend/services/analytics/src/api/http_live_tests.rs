@@ -320,7 +320,7 @@ async fn get_person_forwards_authorization_then_5xx_on_dead_identity() -> TestRe
     };
     let app = app(db, Uuid::now_v7());
     let req = Request::builder()
-        .uri("/v1/persons/nobody@example.com")
+        .uri("/v1/persons/019e2810-0000-7000-8000-000000000001")
         .header("authorization", "Bearer test-gateway-jwt")
         .body(Body::empty())?;
     let resp = app.oneshot(req).await?;
@@ -329,6 +329,24 @@ async fn get_person_forwards_authorization_then_5xx_on_dead_identity() -> TestRe
         "dead identity should map to 5xx, got {}",
         resp.status()
     );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
+async fn get_person_rejects_a_pre_cutover_email_path_without_calling_identity() -> TestResult {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let app = app(db, Uuid::now_v7());
+    let req = Request::builder()
+        .uri("/v1/persons/nobody@example.com")
+        .header("authorization", "Bearer test-gateway-jwt")
+        .body(Body::empty())?;
+    let resp = app.oneshot(req).await?;
+    // 400, not the 5xx a dead identity would give: the parse happens first, so
+    // a stale email URL never reaches the identity hop.
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
 
