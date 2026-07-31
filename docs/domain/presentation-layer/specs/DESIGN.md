@@ -54,7 +54,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-query-params` | Named parameters, `tenant` always injected from context (not client SQL), `period` supported |
 | `cpt-presentation-fr-tenant-filter` | Literal leading `tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` (and the peer-cohort CTE reads) — replacing the no-op. `tenant_id` is the column the gold observation and cohort contract exposes (silver's `insight_tenant_id`, aliased to `tenant_id` in gold); filtering on it sidesteps the #1596 name drift, which affects other tables, not this read surface. Shipped for the structured `metric_results` read path (#1967). The legacy per-metric `query_ref` path (`execute_metric_query`) remains unscoped and is explicitly outside this guarantee until protected — see the component boundaries below. |
 | `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary in [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md): the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and `person.*`/`identity.*` objects, with the additive-only rules and the granted `insight` legacy gold. Shipped (#1968) |
-| `cpt-presentation-fr-contract-version-stamp` | Contract version stamp so presentation detects the surface it was built against |
+| `cpt-presentation-fr-contract-version-stamp` | Engineering stamps `silver.contract_version` (single-row constant view, ledgerless CH migration); analytics pins `PINNED_CONTRACT_VERSION` and verifies the stamp in a periodic post-boot sweep, logging a mismatch or missing stamp without gating boot. Shipped (#1969) |
 | `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart |
 | `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only synthetic backend, FE-only variation |
 | `cpt-presentation-fr-preview-auth` | Single fixed callback with a Redis-backed opaque `state` return path, validated at store time |
@@ -314,6 +314,31 @@ Builds contract SQL and owns the single shared `WHERE` where the tenant predicat
 
 ---
 
+#### Contract Version Stamp
+
+- [x] `p3` - **ID**: `cpt-presentation-component-contract-version`
+
+##### Why this component exists
+
+Additive-only evolution is only checkable against a named surface *version*. The stamp makes the deployed contract surface machine-detectable, so a presentation build knows whether the surface it was built against is the one it is running on. Shipped (#1969).
+
+##### Responsibility scope
+
+- Engineering side: `silver.contract_version`, a single-row constant view (`version UInt32`), created by the ledgerless ClickHouse migration `20260731000000_contract-version-stamp.sql` (`CREATE OR REPLACE VIEW`, re-applied on every deploy). Part of the contract surface; readable by `presentation_ro` via the existing `silver.*` grant. Bumped in place per [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) §5.
+- Presentation side: the analytics service pins `PINNED_CONTRACT_VERSION` (`domain/contract_version.rs`) and verifies the stamp in a periodic post-boot sweep (same cadence rationale as the metric-definition validator: the stamp is created by the migrate hook after the service boots, and a later in-place bump must surface without a restart). State transitions are logged — match at info, a mismatch at error, a missing/unreadable stamp at warn — and the probe never gates readiness (a ClickHouse outage at boot must not delay boot).
+
+##### Responsibility boundaries
+
+- Does NOT enforce compatibility — additive-only evolution (the principle above) is what keeps an older pin working on a newer surface; the stamp only makes drift visible.
+- Does NOT version individual tables or columns — one version for the whole surface, bumped per the CONTRACT-SURFACE.md §5 procedure.
+
+##### Related components (by ID)
+
+- `cpt-presentation-component-read-only-role` — grants the read the probe uses
+- `cpt-presentation-component-metric-compiler` — the main consumer of the surface the version names
+
+---
+
 #### Preview Environment Router
 
 - [ ] `p2` - **ID**: `cpt-presentation-component-preview-router`
@@ -381,6 +406,7 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 | Aspect | Value |
 |--------|-------|
 | Contract | Read-only: silver (`class_*`, `fct_*`, `mtr_*`, `dim_*`), identity (`person.*`, `identity.*`), legacy gold in `insight`. Full surface + additive-only rules: [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) |
+| Contract version | `silver.contract_version` single-row view; analytics pins `PINNED_CONTRACT_VERSION` and verifies it in a periodic post-boot sweep (#1969) |
 | Presentation namespace | New `presentation` DB: `SELECT` + `CREATE`/`INSERT` for new gold, results, scratch |
 | Access | Executed as the grant-less `presentation` user, whose only privileges come via the `presentation_ro` role (SELECT on contract; CREATE/INSERT only in `presentation`) |
 | Read semantics | `FINAL` on silver `ReplacingMergeTree` reads |
@@ -496,8 +522,9 @@ Ordered by quick win; each step ships value or safety on its own, and no step de
 2. **`presentation_ro` role + empty `presentation` DB** (safety, done, #1963/#1964) — role + grant-less `presentation` user in CH bootstrap (`bootstrap-db/provision-presentation-access.sh`); empty DB via `clickhouse.initDatabases` + `apply-ch-migrations.sh`; analytics connects as the `presentation` user (existing `clickhouse_user`/`clickhouse_password` config → `gear.rs` `with_auth`), its password a required credential provisioned before analytics needs it.
 3. **Saved-query CRUD** (value) — CRUD + run shipped (#1965): the `saved_queries` service-DB entity plus migration, handlers and routes per section 3.3, reusing the existing `JSONEachRow` read path for `/run`. Named parameters (#1966) extend the run path next.
 4. **Tenant filter** (correctness, #1967) — replace the no-op with the injected predicate in the compiler's shared `WHERE`; `insight_tenant_id` first in `ORDER BY` for new gold; cover with an e2e metric test (`src/ingestion/tests/e2e`). Coordinated with engineering #1829.
-5. **Query console** (value, FE, #1970) — thin stable app on the saved-query API: auth shell, author, list, run, render table / auto-chart. Tier-2 "promote to card" can follow.
-6. **Preview environments** (infra, FE, #1971-#1973) — path-based `/exp/<name>` on a shared read-only synthetic backend; Redis-`state` return path; one route object per experiment; manual `kubectl`/`helm`.
+5. **Contract surface + version stamp** (stability, done, #1968/#1969) — the surface and additive-only rules named in CONTRACT-SURFACE.md; `silver.contract_version` stamped by migration and pinned/verified by analytics in a periodic sweep.
+6. **Query console** (value, FE, #1970) — thin stable app on the saved-query API: auth shell, author, list, run, render table / auto-chart. Tier-2 "promote to card" can follow.
+7. **Preview environments** (infra, FE, #1971-#1973) — path-based `/exp/<name>` on a shared read-only synthetic backend; Redis-`state` return path; one route object per experiment; manual `kubectl`/`helm`.
 
 Deferred: relocate legacy gold from `insight` to `presentation` (#1979-#1981); CI-driven preview provisioning (after the nginx-to-Envoy move).
 

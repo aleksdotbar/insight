@@ -67,7 +67,31 @@ Engine `ReplacingMergeTree(updated_at)`; read with `FINAL`.
 | `identity.aliases` | Resolved alias → person mapping. | `id`, `insight_tenant_id`, `person_id`, `value_type`, `value` |
 | `identity.identity_inputs` | Raw alias observations feeding resolution. | `insight_tenant_id`, `value_type`, `value`, `source_account_id`, `operation_type` |
 
-### 2.3 Legacy gold (`insight.*`)
+### 2.3 Contract version stamp (`silver.contract_version`)
+
+The machine-readable version of this surface (#1969,
+`cpt-presentation-fr-contract-version-stamp`). A single-row constant view:
+
+| Column | Type | Meaning |
+|--------|------|---------|
+| `version` | `UInt32` | The contract-surface version currently deployed. |
+
+**Current version: 1** (the surface as documented by #1968).
+
+Stamped by the ledgerless ClickHouse migration
+`src/ingestion/scripts/migrations/20260731000000_contract-version-stamp.sql`
+(re-applied on every deploy; `CREATE OR REPLACE VIEW` keeps it idempotent).
+Readable by `presentation_ro` through the existing `silver.*` grant.
+
+Presentation pins the version it was built against
+(`PINNED_CONTRACT_VERSION` in the analytics service,
+`src/backend/services/analytics/src/domain/contract_version.rs`) and verifies
+the stamp in a periodic post-boot probe (the stamp is created by the migrate
+hook after the service boots, and a later in-place bump must surface without a
+restart): a mismatch or a missing stamp is logged loudly on every state
+change but never gates readiness.
+
+### 2.4 Legacy gold (`insight.*`)
 
 Existing gold views/tables that presentation keeps reading unchanged
 (`cpt-presentation-principle-relabel-not-migrate`). These are **not extended**
@@ -115,9 +139,12 @@ When Engineering changes a contract object:
    engine change, tenant column preserved).
 2. Update the family/object lists here if a new stable object or column is
    introduced.
-3. Bump the contract version stamp (#1969,
-   `cpt-presentation-fr-contract-version-stamp`) so presentation can detect the
-   surface it was built against.
+3. Bump the contract version stamp (§2.3) in all three places together: the
+   constant in `20260731000000_contract-version-stamp.sql` (edited in place),
+   its copy in the `connectors-ddl/silver.sql` snapshot, and the
+   **Current version** line above. Presentation raises its
+   `PINNED_CONTRACT_VERSION` when it adopts the new surface; until then its
+   periodic probe reports the mismatch.
 
 A change that cannot be expressed additively is a new contract version and a
 coordinated migration, not a Phase-A contract edit.
