@@ -281,7 +281,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-analytics,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=analytics-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=analytics-${{ matrix.arch }},ignore-error=true
+          # Cache writes from PR runs land in branch-isolated caches invisible to other refs, yet still consume the shared 10 GB repo quota — only main/dispatch runs export.
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=analytics-{0},ignore-error=true', matrix.arch) || '' }}
       - name: Export digest
         if: needs.changes.outputs.should_push == 'true'
         run: |
@@ -381,7 +382,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-authenticator,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=authenticator-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=authenticator-${{ matrix.arch }},ignore-error=true
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=authenticator-{0},ignore-error=true', matrix.arch) || '' }}
       - name: Export digest
         if: needs.changes.outputs.should_push == 'true'
         run: |
@@ -481,7 +482,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-gateway,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=gateway-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=gateway-${{ matrix.arch }},ignore-error=true
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=gateway-{0},ignore-error=true', matrix.arch) || '' }}
       - name: Export digest
         if: needs.changes.outputs.should_push == 'true'
         run: |
@@ -584,7 +585,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-identity-resolution,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=identity-resolution-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=identity-resolution-${{ matrix.arch }},ignore-error=true
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=identity-resolution-{0},ignore-error=true', matrix.arch) || '' }}
       - name: Export digest
         if: needs.changes.outputs.should_push == 'true'
         run: |
@@ -708,7 +709,7 @@ jobs:
           push: false
           tags: insight-toolbox:ci-validate
           cache-from: type=gha,scope=toolbox-amd64
-          cache-to: type=gha,mode=max,scope=toolbox-amd64,ignore-error=true
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && 'type=gha,mode=max,scope=toolbox-amd64,ignore-error=true' || '' }}
 
       - name: Validate dbt project (dbt parse)
         if: matrix.arch == 'amd64'
@@ -748,7 +749,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-toolbox,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=toolbox-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=toolbox-${{ matrix.arch }},ignore-error=true
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=toolbox-{0},ignore-error=true', matrix.arch) || '' }}
 
       - name: Export digest
         if: needs.changes.outputs.should_push == 'true'
@@ -860,7 +861,7 @@ jobs:
           # Scope cache per (image name, arch) so unrelated connectors and
           # cross-arch builds don't evict each other.
           cache-from: type=gha,scope=${{ matrix.entry.name }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.entry.name }}-${{ matrix.arch }},ignore-error=true
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope={0}-{1},ignore-error=true', matrix.entry.name, matrix.arch) || '' }}
       - name: Export digest
         if: needs.changes.outputs.should_push == 'true'
         run: |
