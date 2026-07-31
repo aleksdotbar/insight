@@ -207,9 +207,11 @@ The system **MUST** support named query parameters, always injecting `tenant` fr
 
 #### Server-Injected Tenant Filter
 
-- [x] `p1` - **ID**: `cpt-presentation-fr-tenant-filter`
+- [ ] `p1` - **ID**: `cpt-presentation-fr-tenant-filter`
 
 The system **MUST** inject a literal tenant predicate (`tenant_id = <ctx.tenant>`, the column the gold observation and cohort contract exposes) server-side on every contract read, sourced from request context and not from client SQL. This **MUST** replace the current no-op filter. (#1967, coordinated with engineering #1829.)
+
+**Status**: Shipped for the structured `metric_results` read path (#1967). The legacy per-metric `query_ref` path (`execute_metric_query`) is not yet scoped and stays outside the guarantee until it is restricted to tenant-safe sources or given per-query enforcement; the requirement stays open until all exposed contract-read paths enforce tenant scope.
 
 **Rationale**: Every read is tenant-scoped; client SQL cannot widen it.
 
@@ -285,11 +287,13 @@ The system **MUST** guarantee that no presentation-side operation can write, alt
 
 #### Tenant Read Isolation
 
-- [x] `p1` - **ID**: `cpt-presentation-nfr-tenant-isolation`
+- [ ] `p1` - **ID**: `cpt-presentation-nfr-tenant-isolation`
 
 Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless of client SQL.
 
 **Threshold**: 0 cross-tenant rows returned in isolation testing.
+
+**Status**: Met for the structured `metric_results` read path (#1967, verified by compiler unit tests and the #1359 e2e). Not yet met for the legacy `execute_metric_query` path; the NFR stays open until isolation testing covers every exposed contract-read path.
 
 **Rationale**: Multi-tenant SaaS compliance requirement.
 
