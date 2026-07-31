@@ -21,6 +21,11 @@ dev = [
 [project.scripts]
 source-github-copilot = "source_github_copilot.source:main"
 
+[tool.uv]
+# airbyte-cdk pins nltk==3.9.1 (fixed CRITICAL CVE-2025-14009); the image installs 3.10.0
+# over it (see Dockerfile), so keep the resolved dependency graph on the same version.
+override-dependencies = ["nltk>=3.10.0"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

@@ -27,6 +27,16 @@ dev = [
     "pytest-cov>=5.0",
 ]
 
+[tool.uv]
+# airbyte-cdk 6.60.x pins nltk and langchain-core to exact versions carrying fixed
+# CRITICALs (CVE-2025-14009, CVE-2025-68664). Neither is reachable from the mock
+# harness: nltk serves the file-based unstructured parser and langchain-core the
+# vector-db sink, and no nocode manifest uses either.
+override-dependencies = [
+    "nltk>=3.9.3",
+    "langchain-core>=0.3.81",
+]
+
 [tool.pytest.ini_options]
 # Collection is owned by harness_plugin (root-level module, loaded early via
 # -p): a bare `pytest` run collects the harness's `meta/` tests plus every
