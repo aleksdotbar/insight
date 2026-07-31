@@ -36,5 +36,8 @@ COPY *.py ./
 COPY generators ./generators/
 RUN pip install .
 
+RUN useradd -U -u 1000 -m appuser
+USER 1000
+
 ENTRYPOINT ["python", "seed.py"]
 CMD ["all"]

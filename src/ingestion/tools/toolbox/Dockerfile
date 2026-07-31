@@ -24,3 +24,8 @@ RUN pip install --no-cache-dir dbt-clickhouse
 # Copy entire ingestion project
 COPY . /ingestion
 WORKDIR /ingestion
+
+# dbt writes logs/ and target/ under the project root, so the tree must belong
+# to the runtime user.
+RUN useradd -U -u 1000 -m appuser && chown -R 1000:1000 /ingestion
+USER 1000
