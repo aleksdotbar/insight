@@ -20,6 +20,7 @@ use crate::domain::metric_results::{
     demux_period_rows, enforce_view_row_limit, plan_queries, plan_rankings, validate_request,
 };
 use toolkit_security::SecurityContext;
+use uuid::Uuid;
 
 const QUERY_CONCURRENCY: usize = 4;
 // Client-side bound on one view query, network stalls included. The
@@ -103,7 +104,9 @@ pub async fn query_metric_results(
             metric_key: metric.def.key().to_owned(),
             entity: crate::domain::metric_results::MetricResultsEntityDto {
                 r#type: req.entity_type.clone(),
-                ids: req.entity_ids.clone(),
+                // Wire seam: `ids` echoes the request selection as person
+                // UUIDs (canonical string form) since the identity cutover.
+                ids: req.person_ids.iter().map(Uuid::to_string).collect(),
             },
             period: crate::domain::metric_results::MetricResultsPeriodDto {
                 from: req.from.to_string(),

@@ -49,16 +49,23 @@ pub fn build_period_view(
     req: &ValidatedMetricResultsRequest,
     rows: Vec<PeriodQueryRow>,
 ) -> MetricResultViewDto {
-    let values_by_entity: HashMap<String, Option<f64>> = rows
+    let values_by_person: HashMap<String, Option<f64>> = rows
         .into_iter()
-        .map(|row| (row.entity_id, row.value))
+        .map(|row| (row.person_id, row.value))
         .collect();
+    // Wire seam: the response field keeps its pre-cutover name `entity_id`
+    // but carries the person UUID (canonical string form) since the identity
+    // cutover. One rule for every view builder in this module.
     let values = req
-        .entity_ids
+        .person_ids
         .iter()
-        .map(|entity_id| PeriodValueDto {
-            entity_id: entity_id.clone(),
-            value: values_by_entity.get(entity_id).copied().flatten(),
+        .map(|person_id| {
+            let person_id = person_id.to_string();
+            let value = values_by_person.get(&person_id).copied().flatten();
+            PeriodValueDto {
+                entity_id: person_id,
+                value,
+            }
         })
         .collect();
     MetricResultViewDto::Period { values }
@@ -75,9 +82,9 @@ pub fn build_timeseries_view(
     let mut by_series: BTreeMap<SeriesKey, SeriesData> = BTreeMap::new();
 
     if dimensions.is_empty() {
-        for entity_id in &req.entity_ids {
+        for person_id in &req.person_ids {
             by_series
-                .entry((entity_id.clone(), false, Vec::new()))
+                .entry((person_id.to_string(), false, Vec::new()))
                 .or_insert_with(|| SeriesData::new(None, false, None));
         }
     }
@@ -90,7 +97,7 @@ pub fn build_timeseries_view(
             row_dimensions(&row.extra, dimensions)?
         };
         let data = by_series
-            .entry((row.entity_id, remainder, dims))
+            .entry((row.person_id, remainder, dims))
             .or_insert_with(|| SeriesData::new(row.rank, remainder, row.group_label.clone()));
         if row.is_total != 0 {
             data.total = row.value;
@@ -162,7 +169,7 @@ pub fn build_peer_view(rows: Vec<PeerQueryRow>) -> MetricResultViewDto {
         values: rows
             .into_iter()
             .map(|row| PeerValueDto {
-                entity_id: row.entity_id,
+                entity_id: row.person_id,
                 target_value: row.target_value,
                 p25: row.p25,
                 median: row.median,
@@ -183,7 +190,7 @@ pub fn build_breakdown_view(
         .into_iter()
         .map(|row| {
             Ok(BreakdownValueDto {
-                entity_id: row.entity_id,
+                entity_id: row.person_id,
                 dimensions: row_dimensions(&row.extra, dimensions)?
                     .into_iter()
                     .map(|(key, value, label)| MetricDimensionDto { key, value, label })
@@ -213,9 +220,9 @@ pub fn build_histogram_view(
         counts: HashMap<u32, u64>,
     }
 
-    let mut by_entity: HashMap<String, EntityBins> = HashMap::new();
+    let mut by_person: HashMap<String, EntityBins> = HashMap::new();
     for row in rows {
-        let entry = by_entity.entry(row.entity_id).or_insert(EntityBins {
+        let entry = by_person.entry(row.person_id).or_insert(EntityBins {
             lo: row.entity_lo,
             hi: row.entity_hi,
             counts: HashMap::new(),
@@ -226,10 +233,11 @@ pub fn build_histogram_view(
 
     let bin_total = u32::try_from(HISTOGRAM_BINS).unwrap_or(u32::MAX);
     let values = req
-        .entity_ids
+        .person_ids
         .iter()
-        .map(|entity_id| {
-            let bins = match by_entity.get(entity_id) {
+        .map(|person_id| {
+            let person_id = person_id.to_string();
+            let bins = match by_person.get(&person_id) {
                 None => Vec::new(),
                 // Bounds satisfy hi >= lo by construction; a collapsed range
                 // (all values identical) renders as one [v, v] bin.
@@ -254,7 +262,7 @@ pub fn build_histogram_view(
                 }
             };
             HistogramValueDto {
-                entity_id: entity_id.clone(),
+                entity_id: person_id,
                 bins,
             }
         })
@@ -349,6 +357,8 @@ fn json_string(value: Option<&serde_json::Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use uuid::Uuid;
+
     use super::*;
     use crate::domain::metric_definitions::definition::ValueTransform;
     use chrono::NaiveDate;
@@ -429,14 +439,14 @@ mod tests {
     }
 
     fn histogram_row(
-        entity_id: &str,
+        person_id: &str,
         bin_idx: u32,
         lo: f64,
         hi: f64,
         count: u64,
     ) -> HistogramQueryRow {
         HistogramQueryRow {
-            entity_id: entity_id.to_owned(),
+            person_id: person_id.to_owned(),
             bin_idx,
             entity_lo: lo,
             entity_hi: hi,
@@ -444,10 +454,16 @@ mod tests {
         }
     }
 
-    fn request(entity_ids: Vec<&str>, from: &str, to: &str) -> ValidatedMetricResultsRequest {
+    fn request(person_ids: Vec<&str>, from: &str, to: &str) -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
             entity_type: "person".to_owned(),
-            entity_ids: entity_ids.into_iter().map(str::to_owned).collect(),
+            person_ids: person_ids
+                .into_iter()
+                .map(|id| match Uuid::parse_str(id) {
+                    Ok(person_id) => person_id,
+                    Err(error) => panic!("bad test person id {id}: {error}"),
+                })
+                .collect(),
             from: match NaiveDate::parse_from_str(from, "%Y-%m-%d") {
                 Ok(date) => date,
                 Err(error) => panic!("bad test date {from}: {error}"),
@@ -462,24 +478,35 @@ mod tests {
 
     #[test]
     fn period_view_keeps_missing_sum_null_and_request_order() {
-        let req = request(vec!["b@x.io", "a@x.io"], "2026-01-01", "2026-01-31");
+        let req = request(
+            vec![
+                "00000000-0000-0000-0000-00000000000b",
+                "00000000-0000-0000-0000-00000000000a",
+            ],
+            "2026-01-01",
+            "2026-01-31",
+        );
         let rows = vec![PeriodQueryRow {
-            entity_id: "a@x.io".to_owned(),
+            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             value: Some(5.0),
         }];
         let MetricResultViewDto::Period { values } = build_period_view(&sum_metric(), &req, rows)
         else {
             panic!("expected period view");
         };
-        assert_eq!(values[0].entity_id, "b@x.io");
+        assert_eq!(values[0].entity_id, "00000000-0000-0000-0000-00000000000b");
         assert_eq!(values[0].value, None);
-        assert_eq!(values[1].entity_id, "a@x.io");
+        assert_eq!(values[1].entity_id, "00000000-0000-0000-0000-00000000000a");
         assert_eq!(values[1].value, Some(5.0));
     }
 
     #[test]
     fn period_view_keeps_ratio_nulls() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-31");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-31",
+        );
         let MetricResultViewDto::Period { values } =
             build_period_view(&ratio_metric(), &req, Vec::new())
         else {
@@ -491,7 +518,11 @@ mod tests {
     #[test]
     fn period_view_keeps_median_nulls() {
         // A median of no events is unknowable, never zero.
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-31");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-31",
+        );
         let MetricResultViewDto::Period { values } =
             build_period_view(&median_metric(), &req, Vec::new())
         else {
@@ -502,7 +533,11 @@ mod tests {
 
     #[test]
     fn period_view_keeps_missing_distinct_count_null() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-31");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-31",
+        );
         let MetricResultViewDto::Period { values } =
             build_period_view(&distinct_count_metric(), &req, Vec::new())
         else {
@@ -513,11 +548,18 @@ mod tests {
 
     #[test]
     fn histogram_view_densifies_fixed_bins_and_lists_every_entity() {
-        let req = request(vec!["a@x.io", "b@x.io"], "2026-01-01", "2026-01-31");
-        // a@x.io observed bins 0 and 9 over range [0, 100].
+        let req = request(
+            vec![
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+            ],
+            "2026-01-01",
+            "2026-01-31",
+        );
+        // person A observed bins 0 and 9 over range [0, 100].
         let rows = vec![
-            histogram_row("a@x.io", 0, 0.0, 100.0, 3),
-            histogram_row("a@x.io", 9, 0.0, 100.0, 1),
+            histogram_row("00000000-0000-0000-0000-00000000000a", 0, 0.0, 100.0, 3),
+            histogram_row("00000000-0000-0000-0000-00000000000a", 9, 0.0, 100.0, 1),
         ];
         let MetricResultViewDto::Histogram { values } = build_histogram_view(&req, rows) else {
             panic!("expected histogram view");
@@ -525,7 +567,7 @@ mod tests {
         assert_eq!(values.len(), 2);
 
         let a = &values[0];
-        assert_eq!(a.entity_id, "a@x.io");
+        assert_eq!(a.entity_id, "00000000-0000-0000-0000-00000000000a");
         assert_eq!(a.bins.len(), 10);
         assert_eq!(a.bins[0].count, 3);
         assert!((a.bins[0].lo - 0.0).abs() < f64::EPSILON);
@@ -539,14 +581,24 @@ mod tests {
 
         // Entity with no events stays listed with honest empty bins.
         let b = &values[1];
-        assert_eq!(b.entity_id, "b@x.io");
+        assert_eq!(b.entity_id, "00000000-0000-0000-0000-00000000000b");
         assert!(b.bins.is_empty());
     }
 
     #[test]
     fn histogram_view_collapses_identical_values_to_single_bin() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-31");
-        let rows = vec![histogram_row("a@x.io", 0, 7.5, 7.5, 4)];
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-31",
+        );
+        let rows = vec![histogram_row(
+            "00000000-0000-0000-0000-00000000000a",
+            0,
+            7.5,
+            7.5,
+            4,
+        )];
         let MetricResultViewDto::Histogram { values } = build_histogram_view(&req, rows) else {
             panic!("expected histogram view");
         };
@@ -558,9 +610,13 @@ mod tests {
 
     #[test]
     fn timeseries_densifies_all_buckets_per_entity() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-03");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-03",
+        );
         let rows = vec![TimeseriesQueryRow {
-            entity_id: "a@x.io".to_owned(),
+            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             bucket_start: "2026-01-02".to_owned(),
             value: Some(3.0),
             is_total: 0,
@@ -584,7 +640,14 @@ mod tests {
 
     #[test]
     fn ungrouped_timeseries_emits_series_for_entities_without_rows() {
-        let req = request(vec!["a@x.io", "b@x.io"], "2026-01-01", "2026-01-02");
+        let req = request(
+            vec![
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+            ],
+            "2026-01-01",
+            "2026-01-02",
+        );
         let Ok(MetricResultViewDto::Timeseries { series, .. }) =
             build_timeseries_view(&ratio_metric(), &req, Bucket::Day, &[], Vec::new())
         else {
@@ -601,12 +664,16 @@ mod tests {
 
     #[test]
     fn dimensioned_timeseries_groups_by_observed_dimensions() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-02");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-02",
+        );
         let mut extra = HashMap::new();
         extra.insert("dim_0_value".to_owned(), json!("cursor"));
         extra.insert("dim_0_label".to_owned(), json!("Cursor"));
         let rows = vec![TimeseriesQueryRow {
-            entity_id: "a@x.io".to_owned(),
+            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             bucket_start: "2026-01-01".to_owned(),
             value: Some(2.0),
             is_total: 0,
@@ -630,13 +697,17 @@ mod tests {
 
     #[test]
     fn bounded_timeseries_carries_totals_ranks_and_remainder_metadata() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-02");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-02",
+        );
         let mut dimensions = HashMap::new();
         dimensions.insert("dim_0_value".to_owned(), json!("cursor"));
         dimensions.insert("dim_0_label".to_owned(), json!("Cursor"));
         let rows = vec![
             TimeseriesQueryRow {
-                entity_id: "a@x.io".to_owned(),
+                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: "2026-01-01".to_owned(),
                 value: Some(2.0),
                 is_total: 0,
@@ -646,7 +717,7 @@ mod tests {
                 extra: dimensions.clone(),
             },
             TimeseriesQueryRow {
-                entity_id: "a@x.io".to_owned(),
+                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: String::new(),
                 value: Some(3.0),
                 is_total: 1,
@@ -656,7 +727,7 @@ mod tests {
                 extra: dimensions,
             },
             TimeseriesQueryRow {
-                entity_id: "a@x.io".to_owned(),
+                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: "2026-01-01".to_owned(),
                 value: Some(4.0),
                 is_total: 0,
@@ -666,7 +737,7 @@ mod tests {
                 extra: HashMap::new(),
             },
             TimeseriesQueryRow {
-                entity_id: "a@x.io".to_owned(),
+                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: String::new(),
                 value: Some(5.0),
                 is_total: 1,
@@ -723,9 +794,13 @@ mod tests {
 
     #[test]
     fn missing_dimension_alias_is_internal_error() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-02");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-02",
+        );
         let rows = vec![TimeseriesQueryRow {
-            entity_id: "a@x.io".to_owned(),
+            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             bucket_start: "2026-01-01".to_owned(),
             value: Some(2.0),
             is_total: 0,
@@ -746,7 +821,7 @@ mod tests {
         extra.insert("dim_0_value".to_owned(), serde_json::Value::Null);
         extra.insert("dim_0_label".to_owned(), serde_json::Value::Null);
         let rows = vec![BreakdownQueryRow {
-            entity_id: "a@x.io".to_owned(),
+            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             value: Some(1.0),
             extra,
         }];
@@ -822,11 +897,27 @@ mod tests {
 
     #[test]
     fn histogram_wire_shape_uses_view_tag() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-31");
-        let view = build_histogram_view(&req, vec![histogram_row("a@x.io", 0, 1.0, 1.0, 2)]);
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-31",
+        );
+        let view = build_histogram_view(
+            &req,
+            vec![histogram_row(
+                "00000000-0000-0000-0000-00000000000a",
+                0,
+                1.0,
+                1.0,
+                2,
+            )],
+        );
         let json = serde_json::to_value(&view).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(json["view"], "histogram");
-        assert_eq!(json["values"][0]["entity_id"], "a@x.io");
+        assert_eq!(
+            json["values"][0]["entity_id"],
+            "00000000-0000-0000-0000-00000000000a"
+        );
         assert_eq!(json["values"][0]["bins"][0]["count"], 2);
         assert_eq!(json["values"][0]["bins"][0]["lo"], 1.0);
         assert_eq!(json["values"][0]["bins"][0]["hi"], 1.0);
@@ -834,14 +925,31 @@ mod tests {
 
     #[test]
     fn view_size_counts_histogram_bins() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-31");
-        let view = build_histogram_view(&req, vec![histogram_row("a@x.io", 2, 0.0, 10.0, 1)]);
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-31",
+        );
+        let view = build_histogram_view(
+            &req,
+            vec![histogram_row(
+                "00000000-0000-0000-0000-00000000000a",
+                2,
+                0.0,
+                10.0,
+                1,
+            )],
+        );
         assert_eq!(view_size(&view), 10);
     }
 
     #[test]
     fn view_size_counts_densified_points() {
-        let req = request(vec!["a@x.io"], "2026-01-01", "2026-01-10");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000a"],
+            "2026-01-01",
+            "2026-01-10",
+        );
         let Ok(view) = build_timeseries_view(&sum_metric(), &req, Bucket::Day, &[], Vec::new())
         else {
             panic!("expected timeseries view");
@@ -853,7 +961,7 @@ mod tests {
     fn view_limit_rejects_cardinality_dependent_results() {
         let values = (0..=row_limit())
             .map(|index| PeriodValueDto {
-                entity_id: format!("p{index}@x.io"),
+                entity_id: Uuid::from_u128(index as u128 + 1).to_string(),
                 value: Some(1.0),
             })
             .collect();
@@ -870,7 +978,11 @@ mod tests {
             clamp_min: Some(0.0),
             clamp_max: Some(100.0),
         });
-        let req = request(vec!["absent@x.io"], "2026-01-01", "2026-01-31");
+        let req = request(
+            vec!["00000000-0000-0000-0000-00000000000c"],
+            "2026-01-01",
+            "2026-01-31",
+        );
         let MetricResultViewDto::Period { values } = build_period_view(&def, &req, vec![]) else {
             panic!("expected period view");
         };

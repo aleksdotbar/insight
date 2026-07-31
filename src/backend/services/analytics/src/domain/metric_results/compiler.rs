@@ -1,6 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write;
 
+use uuid::Uuid;
+
 use serde::Deserialize;
 
 use super::batch::ResolvedGroupLimit;
@@ -32,13 +34,13 @@ pub struct CompiledQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct PeriodQueryRow {
-    pub entity_id: String,
+    pub person_id: String,
     pub value: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TimeseriesQueryRow {
-    pub entity_id: String,
+    pub person_id: String,
     pub bucket_start: String,
     pub value: Option<f64>,
     pub is_total: u8,
@@ -57,7 +59,7 @@ pub struct RankingQueryRow {
 
 #[derive(Debug, Deserialize)]
 pub struct PeerQueryRow {
-    pub entity_id: String,
+    pub person_id: String,
     pub target_value: Option<f64>,
     pub p25: Option<f64>,
     pub median: Option<f64>,
@@ -70,7 +72,7 @@ pub struct PeerQueryRow {
 
 #[derive(Debug, Deserialize)]
 pub struct BreakdownQueryRow {
-    pub entity_id: String,
+    pub person_id: String,
     pub value: Option<f64>,
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -81,7 +83,7 @@ pub struct BreakdownQueryRow {
 /// the bounds so displayed edges of empty and observed bins cannot drift.
 #[derive(Debug, Deserialize)]
 pub struct HistogramQueryRow {
-    pub entity_id: String,
+    pub person_id: String,
     pub bin_idx: u32,
     pub entity_lo: f64,
     pub entity_hi: f64,
@@ -97,18 +99,18 @@ pub(crate) fn compile_period_batch_query(
     let mut params = Vec::new();
     let selects = item_value_selects(defs, &mut params, period_alias);
     let metric_scope = shared_observation_where(defs, req, filters, &mut params);
-    params.extend(req.entity_ids.iter().cloned());
-    let entities = placeholders(req.entity_ids.len());
+    params.extend(req.person_ids.iter().map(Uuid::to_string));
+    let person_id_params = placeholders(req.person_ids.len());
     let observation_table = batch_observation_table(defs);
     let limit = query_row_limit();
     let inner = format!(
         r"
         SELECT
-            entity_id{selects}
+            toString(assumeNotNull(person_id)) AS person_id{selects}
         FROM {observation_table}
         WHERE {metric_scope}
-          AND entity_id IN ({entities})
-        GROUP BY entity_id
+          AND person_id IN ({person_id_params})
+        GROUP BY person_id
         LIMIT {limit}
         "
     );
@@ -129,19 +131,19 @@ pub(crate) fn compile_timeseries_query(
     }
     let mut params = metric_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.entity_ids.iter().cloned());
-    let entities = placeholders(req.entity_ids.len());
+    params.extend(req.person_ids.iter().map(Uuid::to_string));
+    let person_id_params = placeholders(req.person_ids.len());
     let bucket = bucket_expr(bucket);
     let (dim_select, dim_group) = dimension_select_group(dimensions);
     let bucket_group = if dim_group.is_empty() {
-        format!("entity_id, {bucket}")
+        format!("person_id, {bucket}")
     } else {
-        format!("entity_id, {bucket}, {dim_group}")
+        format!("person_id, {bucket}, {dim_group}")
     };
     let total_group = if dim_group.is_empty() {
-        "entity_id".to_owned()
+        "person_id".to_owned()
     } else {
-        format!("entity_id, {dim_group}")
+        format!("person_id, {dim_group}")
     };
     let observation_table = observation_table(def.observation_relation());
     let limit = query_row_limit();
@@ -149,7 +151,7 @@ pub(crate) fn compile_timeseries_query(
     let inner = format!(
         r"
         SELECT
-            entity_id,
+            toString(assumeNotNull(person_id)) AS person_id,
             toString({bucket}) AS bucket_start{dim_select},
             {value_expr} AS value,
             toUInt8(grouping({bucket})) AS is_total,
@@ -159,9 +161,9 @@ pub(crate) fn compile_timeseries_query(
         FROM {observation_table}
         WHERE {metric_where}
           {filter_where}
-          AND entity_id IN ({entities})
+          AND person_id IN ({person_id_params})
         GROUP BY GROUPING SETS (({bucket_group}), ({total_group}))
-        ORDER BY entity_id, is_total, bucket_start
+        ORDER BY person_id, is_total, bucket_start
         LIMIT {limit}
         ",
         metric_where = metric_where(def),
@@ -180,8 +182,8 @@ pub(crate) fn compile_group_ranking_query(
     let mut params = grouped_value_params(def);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.entity_ids.iter().cloned());
-    let entities = placeholders(req.entity_ids.len());
+    params.extend(req.person_ids.iter().map(Uuid::to_string));
+    let person_id_params = placeholders(req.person_ids.len());
     let (dim_select, dim_group, dim_order) = ranking_dimension_select_group(dimensions);
     let observation_table = observation_table(def.observation_relation());
     let value_expr = grouped_value_expr(def);
@@ -193,7 +195,7 @@ pub(crate) fn compile_group_ranking_query(
         FROM {observation_table}
         WHERE {metric_where}
           {filter_where}
-          AND entity_id IN ({entities})
+          AND person_id IN ({person_id_params})
         GROUP BY {dim_group}
         ",
         metric_where = metric_where(def),
@@ -221,8 +223,8 @@ fn compile_capped_timeseries_query(
 ) -> CompiledQuery {
     let mut params = metric_where_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.entity_ids.iter().cloned());
-    let entities = placeholders(req.entity_ids.len());
+    params.extend(req.person_ids.iter().map(Uuid::to_string));
+    let person_id_params = placeholders(req.person_ids.len());
     let bucket = bucket_expr(bucket);
     let raw_dimensions = dimensions.iter().enumerate().fold(
         String::new(),
@@ -257,7 +259,7 @@ fn compile_capped_timeseries_query(
             FROM {observation_table}
             WHERE {metric_where}
               {filter_where}
-              AND entity_id IN ({entities})
+              AND person_id IN ({person_id_params})
         ),
         ranked AS (
             SELECT
@@ -272,19 +274,19 @@ fn compile_capped_timeseries_query(
         ),
         aggregated AS (
             SELECT
-                entity_id,
+                person_id,
                 bucket_start,
                 group_rank,
                 {value_expr} AS value,
                 toUInt8(grouping(bucket_start)) AS is_total
             FROM filtered
             GROUP BY GROUPING SETS (
-                (entity_id, bucket_start, group_rank),
-                (entity_id, group_rank)
+                (person_id, bucket_start, group_rank),
+                (person_id, group_rank)
             )
         )
         SELECT
-            entity_id,
+            toString(assumeNotNull(person_id)) AS person_id,
             toString(bucket_start) AS bucket_start
             {dimension_select},
             {value} AS value,
@@ -293,7 +295,7 @@ fn compile_capped_timeseries_query(
             toUInt8(group_rank = 0) AS remainder,
             if(group_rank = 0, toNullable('Other'), CAST(NULL AS Nullable(String))) AS group_label
         FROM aggregated
-        ORDER BY entity_id, group_rank, is_total, bucket_start
+        ORDER BY person_id, group_rank, is_total, bucket_start
         LIMIT {limit}
         ",
         metric_where = metric_where(def),
@@ -383,13 +385,13 @@ pub(crate) fn compile_breakdown_query(
 ) -> CompiledQuery {
     let mut params = metric_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.entity_ids.iter().cloned());
-    let entities = placeholders(req.entity_ids.len());
+    params.extend(req.person_ids.iter().map(Uuid::to_string));
+    let person_id_params = placeholders(req.person_ids.len());
     let (dim_select, dim_group) = dimension_select_group(dimensions);
     let group = if dim_group.is_empty() {
-        "entity_id".to_owned()
+        "person_id".to_owned()
     } else {
-        format!("entity_id, {dim_group}")
+        format!("person_id, {dim_group}")
     };
     let observation_table = observation_table(def.observation_relation());
     let limit = query_row_limit();
@@ -397,14 +399,14 @@ pub(crate) fn compile_breakdown_query(
     let inner = format!(
         r"
         SELECT
-            entity_id{dim_select},
+            toString(assumeNotNull(person_id)) AS person_id{dim_select},
             {value_expr} AS value
         FROM {observation_table}
         WHERE {metric_where}
           {filter_where}
-          AND entity_id IN ({entities})
+          AND person_id IN ({person_id_params})
         GROUP BY {group}
-        ORDER BY entity_id
+        ORDER BY person_id
         LIMIT {limit}
         ",
         metric_where = metric_where(def),
@@ -446,8 +448,8 @@ pub(crate) fn compile_histogram_query(
 ) -> CompiledQuery {
     let mut params = metric_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.entity_ids.iter().cloned());
-    let entities = placeholders(req.entity_ids.len());
+    params.extend(req.person_ids.iter().map(Uuid::to_string));
+    let person_id_params = placeholders(req.person_ids.len());
     let observation_table = observation_table(def.observation_relation());
     let bins = HISTOGRAM_BINS;
     let max_bin = HISTOGRAM_BINS - 1;
@@ -456,24 +458,24 @@ pub(crate) fn compile_histogram_query(
         r"
         WITH raw_events AS (
             SELECT
-                entity_id,
+                person_id,
                 assumeNotNull({event_value}) AS event_value
             FROM {observation_table}
             WHERE {metric_where}
               {filter_where}
-              AND entity_id IN ({entities})
+              AND person_id IN ({person_id_params})
               AND value IS NOT NULL
         ),
         events AS (
             SELECT
-                entity_id,
+                person_id,
                 event_value,
-                min(event_value) OVER (PARTITION BY entity_id) AS entity_lo,
-                max(event_value) OVER (PARTITION BY entity_id) AS entity_hi
+                min(event_value) OVER (PARTITION BY person_id) AS entity_lo,
+                max(event_value) OVER (PARTITION BY person_id) AS entity_hi
             FROM raw_events
         )
         SELECT
-            events.entity_id AS entity_id,
+            toString(assumeNotNull(events.person_id)) AS person_id,
             if(
                 events.entity_hi = events.entity_lo,
                 0,
@@ -485,8 +487,8 @@ pub(crate) fn compile_histogram_query(
             any(events.entity_hi) AS entity_hi,
             toUInt64(count()) AS bin_count
         FROM events
-        GROUP BY entity_id, bin_idx
-        ORDER BY entity_id, bin_idx
+        GROUP BY person_id, bin_idx
+        ORDER BY person_id, bin_idx
         LIMIT {limit}
         ",
         metric_where = metric_where(def),
@@ -495,12 +497,13 @@ pub(crate) fn compile_histogram_query(
     CompiledQuery { sql, params }
 }
 
-// The cohort join shape relies on the gold contract that a person has at
-// most one cohort row per (entity_type, cohort_key): the model ends in
-// `LIMIT 1 BY tenant_id, entity_id` and assert_metric_entity_cohorts_unique
-// asserts it at every dbt build. If that contract ever loosened (multi-cohort
-// membership), the GROUP BY below would blend pools and double-weight shared
-// peers — a state the dbt test exists to catch loudly; no SQL hardening here.
+// The cohort view is unique per EMAIL (`LIMIT 1 BY tenant_id, entity_id`,
+// asserted by assert_metric_entity_cohorts_unique at every dbt build) — but
+// the join key here is person_id, and two HR emails resolving to ONE person
+// would yield two cohort rows for that person. The `LIMIT 1 BY person_id`
+// in the CTEs below hardens the person grain at read time (ordered by
+// cohort_id for a deterministic survivor) so a duplicate can never blend
+// pools or double-weight a peer.
 pub(crate) fn compile_peer_batch_query(
     defs: &[&MetricDefinition],
     req: &ValidatedMetricResultsRequest,
@@ -510,17 +513,80 @@ pub(crate) fn compile_peer_batch_query(
     let mut params = Vec::new();
     params.push(req.entity_type.clone());
     params.push(cohort_key.to_owned());
-    params.extend(req.entity_ids.iter().cloned());
+    params.extend(req.person_ids.iter().map(Uuid::to_string));
     params.push(req.entity_type.clone());
     params.push(cohort_key.to_owned());
     let value_selects = item_value_selects(defs, &mut params, period_alias);
     let metric_scope = shared_observation_where(defs, req, filters, &mut params);
 
-    let entities = placeholders(req.entity_ids.len());
+    let person_id_params = placeholders(req.person_ids.len());
     let observation_table = batch_observation_table(defs);
     let cohort_table = cohort_table(CohortSource::MetricEntityCohortsCurrent);
     let limit = query_row_limit();
 
+    let (carried, stats_selects, target_group) = peer_item_selects(defs);
+
+    let sql = format!(
+        r"
+        WITH
+        targets AS (
+            SELECT
+                assumeNotNull(person_id) AS person_id,
+                cohort_id
+            FROM {cohort_table}
+            WHERE entity_type = ?
+              AND cohort_key = ?
+              AND person_id IN ({person_id_params})
+              AND cohort_id IS NOT NULL
+            ORDER BY person_id, cohort_id
+            LIMIT 1 BY person_id
+        ),
+        cohort AS (
+            SELECT
+                assumeNotNull(person_id) AS person_id,
+                cohort_id
+            FROM {cohort_table}
+            WHERE entity_type = ?
+              AND cohort_key = ?
+              AND cohort_id IN (SELECT cohort_id FROM targets)
+              AND person_id IS NOT NULL
+            ORDER BY person_id, cohort_id
+            LIMIT 1 BY person_id
+        ),
+        metric_values AS (
+            SELECT
+                assumeNotNull(person_id) AS person_id{value_selects}
+            FROM {observation_table}
+            WHERE {metric_scope}
+              AND person_id IS NOT NULL
+            GROUP BY person_id
+        ),
+        entity_values AS (
+            SELECT
+                cohort.person_id AS person_id,
+                cohort.cohort_id AS cohort_id{carried}
+            FROM cohort
+            LEFT JOIN metric_values
+                ON metric_values.person_id = cohort.person_id
+        )
+        SELECT
+            toString(targets.person_id) AS person_id{stats_selects}
+        FROM targets
+        LEFT JOIN entity_values AS target_values
+            ON target_values.person_id = targets.person_id
+        LEFT JOIN entity_values AS peer
+            ON peer.cohort_id = targets.cohort_id
+        GROUP BY targets.person_id{target_group}
+        LIMIT {limit}
+        SETTINGS join_use_nulls = 1
+        "
+    );
+    CompiledQuery { sql, params }
+}
+
+// Per-item select fragments of the peer query: the carried (transformed)
+// value column, the guarded stats block, and the GROUP BY tail.
+fn peer_item_selects(defs: &[&MetricDefinition]) -> (String, String, String) {
     let mut carried = String::new();
     let mut stats_selects = String::new();
     let mut target_group = String::new();
@@ -536,7 +602,7 @@ pub(crate) fn compile_peer_batch_query(
                 {carried_value} AS {value}"
         );
         let observed = format!("peer.{value} IS NOT NULL");
-        let pool = format!("uniqExactIf(peer.entity_id, {observed})");
+        let pool = format!("uniqExactIf(peer.person_id, {observed})");
         // One `quantilesExactIf` over the pool yields all three quartiles in a
         // single sort; the three `[i]` indexes reference the identical
         // aggregate, which ClickHouse computes once. min/max come back from
@@ -564,57 +630,7 @@ pub(crate) fn compile_peer_batch_query(
         );
         let _ = write!(target_group, ", target_values.{value}");
     }
-
-    let sql = format!(
-        r"
-        WITH
-        targets AS (
-            SELECT DISTINCT
-                entity_id,
-                cohort_id
-            FROM {cohort_table}
-            WHERE entity_type = ?
-              AND cohort_key = ?
-              AND entity_id IN ({entities})
-              AND cohort_id IS NOT NULL
-        ),
-        cohort AS (
-            SELECT DISTINCT
-                entity_id,
-                cohort_id
-            FROM {cohort_table}
-            WHERE entity_type = ?
-              AND cohort_key = ?
-              AND cohort_id IN (SELECT cohort_id FROM targets)
-        ),
-        metric_values AS (
-            SELECT
-                entity_id{value_selects}
-            FROM {observation_table}
-            WHERE {metric_scope}
-            GROUP BY entity_id
-        ),
-        entity_values AS (
-            SELECT
-                cohort.entity_id AS entity_id,
-                cohort.cohort_id AS cohort_id{carried}
-            FROM cohort
-            LEFT JOIN metric_values
-                ON metric_values.entity_id = cohort.entity_id
-        )
-        SELECT
-            targets.entity_id AS entity_id{stats_selects}
-        FROM targets
-        LEFT JOIN entity_values AS target_values
-            ON target_values.entity_id = targets.entity_id
-        LEFT JOIN entity_values AS peer
-            ON peer.cohort_id = targets.cohort_id
-        GROUP BY targets.entity_id{target_group}
-        LIMIT {limit}
-        SETTINGS join_use_nulls = 1
-        "
-    );
-    CompiledQuery { sql, params }
+    (carried, stats_selects, target_group)
 }
 
 fn item_value_selects(
@@ -744,7 +760,7 @@ fn transformed_batch(
     format!(
         r"
         SELECT
-            entity_id{selects}
+            person_id{selects}
         FROM ({inner})
         "
     )
@@ -1077,7 +1093,7 @@ mod tests {
     fn request() -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
             entity_type: "person".to_owned(),
-            entity_ids: vec!["a@x.io".to_owned(), "b@x.io".to_owned()],
+            person_ids: vec![Uuid::from_u128(0xa), Uuid::from_u128(0xb)],
             from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default(),
             to: NaiveDate::from_ymd_opt(2026, 1, 31).unwrap_or_default(),
             metrics: Vec::new(),
@@ -1104,7 +1120,7 @@ mod tests {
                 .sql
                 .contains("(source_key, measure_key) IN ((?, ?), (?, ?), (?, ?))")
         );
-        assert!(query.sql.contains("GROUP BY entity_id"));
+        assert!(query.sql.contains("GROUP BY person_id"));
         assert_eq!(
             query.params,
             vec![
@@ -1126,9 +1142,9 @@ mod tests {
                 "accepted_lines",
                 "ai_usage",
                 "tool_use_offered",
-                // entities
-                "a@x.io",
-                "b@x.io",
+                // person ids
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
             ]
         );
     }
@@ -1161,8 +1177,8 @@ mod tests {
                 "accepted_edit_actions",
                 "ai_usage",
                 "tool_use_offered",
-                "a@x.io",
-                "b@x.io",
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
             ]
         );
     }
@@ -1214,7 +1230,7 @@ mod tests {
             ..ValueTransform::default()
         });
         let query = compile_group_ranking_query(&def, &request(), &["tool".to_owned()], &[], 10);
-        assert!(!query.sql.contains("GROUP BY entity_id"));
+        assert!(!query.sql.contains("GROUP BY person_id"));
         assert!(query.sql.contains("2.0 * (value) AS value"));
         assert!(query.sql.contains("WHERE value IS NOT NULL"));
         assert!(query.sql.contains("ORDER BY value DESC, dim_0_value"));
@@ -1241,7 +1257,7 @@ mod tests {
             );
             assert!(query.sql.contains("AS group_rank"));
             assert!(query.sql.contains("GROUP BY GROUPING SETS"));
-            assert!(query.sql.contains("(entity_id, group_rank)"));
+            assert!(query.sql.contains("(person_id, group_rank)"));
             assert!(query.sql.contains("toNullable('Other')"));
             assert!(query.sql.contains("group_rank = 0"));
             assert!(!query.sql.contains("WHERE group_rank > 0"));
@@ -1302,7 +1318,7 @@ mod tests {
         assert!(
             query
                 .sql
-                .contains("GROUP BY entity_id, dim_0_value, dim_0_label")
+                .contains("GROUP BY person_id, dim_0_value, dim_0_label")
         );
     }
 
@@ -1320,8 +1336,8 @@ mod tests {
             vec![
                 "person",
                 "org_unit",
-                "a@x.io",
-                "b@x.io",
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
                 "person",
                 "org_unit",
                 "ai_usage",
@@ -1354,14 +1370,14 @@ mod tests {
         let query = compile_peer_batch_query(&[&sum, &ratio], &request(), "org_unit", &[]);
         for item in 0..2 {
             let guard =
-                format!("uniqExactIf(peer.entity_id, peer.m{item} IS NOT NULL) >= {MIN_PEER_N}");
+                format!("uniqExactIf(peer.person_id, peer.m{item} IS NOT NULL) >= {MIN_PEER_N}");
             assert_eq!(
                 query.sql.matches(&guard).count(),
                 5,
                 "every percentile/min/max must carry the per-item disclosure guard"
             );
             assert!(query.sql.contains(&format!(
-                "toUInt64(uniqExactIf(peer.entity_id, peer.m{item} IS NOT NULL)) AS m{item}_n"
+                "toUInt64(uniqExactIf(peer.person_id, peer.m{item} IS NOT NULL)) AS m{item}_n"
             )));
             assert!(query.sql.contains(&format!("AS m{item}_target")));
         }
@@ -1373,14 +1389,16 @@ mod tests {
             )));
         }
         assert!(!query.sql.contains("quantileExactIf(0.25)"));
-        // Duplicate cohort membership must not fan out the pool.
-        assert_eq!(query.sql.matches("SELECT DISTINCT").count(), 2);
+        // Duplicate cohort membership must not fan out the pool: since the
+        // cutover the person grain is hardened with LIMIT 1 BY person_id in
+        // both cohort CTEs (two emails can resolve to one person).
+        assert_eq!(query.sql.matches("LIMIT 1 BY person_id").count(), 2);
         // Honest-null must not depend on server config or column typing.
         assert!(query.sql.contains("SETTINGS join_use_nulls = 1"));
         assert!(
             query
                 .sql
-                .contains("GROUP BY targets.entity_id, target_values.m0, target_values.m1")
+                .contains("GROUP BY targets.person_id, target_values.m0, target_values.m1")
         );
     }
 
@@ -1540,16 +1558,16 @@ mod tests {
         assert!(
             query
                 .sql
-                .contains("min(event_value) OVER (PARTITION BY entity_id) AS entity_lo")
+                .contains("min(event_value) OVER (PARTITION BY person_id) AS entity_lo")
         );
         assert!(
             query
                 .sql
-                .contains("max(event_value) OVER (PARTITION BY entity_id) AS entity_hi")
+                .contains("max(event_value) OVER (PARTITION BY person_id) AS entity_hi")
         );
         assert!(query.sql.contains("least(9,"));
         assert!(query.sql.contains("* 10 /"));
-        assert!(query.sql.contains("GROUP BY entity_id, bin_idx"));
+        assert!(query.sql.contains("GROUP BY person_id, bin_idx"));
         assert!(query.sql.contains("events.entity_hi = events.entity_lo"));
         // Bounds come from a window pass, not a self-join back to the events.
         assert!(!query.sql.contains("JOIN"));
