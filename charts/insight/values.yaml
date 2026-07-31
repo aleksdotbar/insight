@@ -38,10 +38,10 @@
 ##    only entrance to the cluster internals; the other services are
 ##    reachable only through it. This matches the Constructor Platform
 ##    integration contract.
-##    Identity (`identity`) is OPTIONAL (deploy-flag, off by default) —
-##    it is the .NET 9 persons-store service that owns the `identity`
-##    MariaDB database (per ADR-0006), reads observation history from
-##    ClickHouse `identity.identity_inputs`, and is NOT an OIDC provider.
+##    Identity Resolution (`identityResolution`) is OPTIONAL (deploy-flag,
+##    off by default) — it is the Rust persons-store service that owns the
+##    `identity` MariaDB database (per ADR-0006), reads observation history
+##    from ClickHouse `identity.identity_inputs`, and is NOT an OIDC provider.
 ##
 ## 5. Resolved infra coordinates (URLs, hosts) live in a single ConfigMap
 ##    named `{release}-platform` (see templates/platform-config.yaml).
@@ -99,9 +99,9 @@ global:
     # have to allow "insecure" images — otherwise the chart refuses to deploy.
     allowInsecureImages: true
   # Optional single-tenant seed UUID. NGINX_BFF: the request tenant comes ONLY
-  # from the signed gateway JWT (the api-gateway plugin + identity's default
-  # fallback were removed), so this no longer affects request-time tenant — it
-  # only feeds the analytics metric-catalog fallback + identity's bootstrap-admin
+  # from the signed gateway JWT (the api-gateway plugin default fallback was
+  # removed), so this no longer affects request-time tenant — it only feeds the
+  # analytics metric-catalog fallback + identity-resolution's bootstrap-admin
   # seed. Empty (default) = no default anywhere; a missing tenant fails closed.
   tenantDefaultId: ""
 # ═══════════════════════════════════════════════════════════════════════════
@@ -191,7 +191,7 @@ ingestion:
   # `serviceaccount "argo-workflow" not found`.
   templates:
     enabled: true
-  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.07.30.09.36-fab0089" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
+  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.07.30.13.51-82a2751" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
   # airbyte-sync poll-job tunables — see templates/ingestion/airbyte-sync.yaml.
   # The poll loop replaces a wall-clock deadline with a progress watchdog:
   # it tracks (status, bytesEmitted, recordsEmitted, stateMessagesEmitted)
@@ -256,7 +256,6 @@ ingestion:
 clickhouse:
   host: "" # MUST be set (external L2 ClickHouse host)
   port: 8123 # RFC standard for CH HTTP
-  nativePort: 9000 # native (Octonica) protocol port — the identity service uses this, not the HTTP port
   protocol: http # http|https for the Bronze airbyte/destination-clickhouse 2.x connection
   database: "" # MUST be set
   username: "" # MUST be set
@@ -438,67 +437,16 @@ analytics:
     caCertSecret: "insight-authenticator-authn-tls-cert"
     caCertPaths:
       - /etc/insight/authn-ca/ca.crt
-# ─── Identity (.NET 9) ───────────────────────────────────────────────────
+# ─── Identity Resolution (Rust identity service, epic #1602) ─────────────
 # The persons-store API. Reads from MariaDB `persons` written by the seed
-# pipeline (src/backend/services/identity/seed/seed-persons-from-identity-input.py)
-# fed off ClickHouse `identity.identity_inputs`. Off by default — enable
-# only after at least one connector sync has populated `identity_inputs`
-# and the seed has written `persons` rows.
-identity:
-  deploy: false
-  replicaCount: 1
-  image:
-    repository: ghcr.io/constructorfabric/insight-identity
-    tag: "" # MUST be set (e.g. "0.1.0")
-    pullPolicy: IfNotPresent
-  resources:
-    requests: {cpu: 50m, memory: 96Mi}
-    limits: {cpu: 250m, memory: 384Mi}
-  # MariaDB database the service owns. The service applies its own DbUp
-  # migrations (src/backend/services/identity/src/Insight.Identity.Infrastructure/Migrations/)
-  # at startup against this database — see ADR-0006 (service-owned migrations).
-  databaseName: "identity"
-  # Default tenant comes from `global.tenantDefaultId`. Empty global value
-  # disables the config-default resolver entirely; callers then MUST send
-  # `X-Insight-Tenant-Id` or the API returns 400
-  # `urn:insight:error:tenant_unresolved`.
-  # Which `org_chart.insight_source_type` drives the supervisor /
-  # subordinates projection on /v1/persons and /v1/profiles. Empty
-  # string falls back to the appsettings default `bamboohr`; set
-  # explicitly here to pin the active source per environment.
-  orgChartSourceType: ""
-  # First-admin seed for the OrgChart Visibility CRUD endpoints
-  # (#346 step 5). On pod start, BootstrapAdminRunner idempotently
-  # inserts an `admin` row in `person_roles` for the
-  # (tenant_default_id, this person UUID, Roles.Admin) triple — but
-  # only when no active admin assignment for that triple exists yet.
-  # The person UUID MUST already exist in `persons` for the same
-  # tenant (the foreign-key contract on `person_roles.person_id`,
-  # see DESIGN §3.8); operators should seed the person row out-of-
-  # band via the regular ingestion pipeline before flipping this.
-  # Empty string disables the runner — the chicken-and-egg between
-  # admin-gated CRUD and an empty `person_roles` must then be
-  # broken by direct SQL.
-  bootstrapAdminPersonId: ""
-  # When deploy=true the umbrella also generates `insight-identity-config`
-  # with IDENTITY__* env vars sourced from the auto-generated MariaDB
-  # credentials in `insight-db-creds`.
-  existingSecret: "insight-identity-config"
-# ─── Identity Resolution (Rust port of identity, epic #1602) ─────────────
-# Deployed SIDE-BY-SIDE with the .NET `identity` service during the cutover:
-# both serve the same API surface over the same MariaDB `identity` database.
-# Traffic stays on the .NET service until the gateway route + the analytics/
-# authenticator identity URLs are flipped to
-# `http://<release>-identity-resolution:8082`; rollback = revert those values.
+# pipeline (src/backend/services/identity-resolution/seed/seed-persons-from-identity-input.py)
+# fed off ClickHouse `identity.identity_inputs`. NOT an OIDC provider.
+# Off by default — enable only after at least one connector sync has
+# populated `identity_inputs` and the seed has written `persons` rows.
+# Consumers reach it at `http://<release>-identity-resolution:8082`.
 # SCHEMA OWNER: identity-resolution's migrate initContainer applies the
-# ported migrations + first-admin bootstrap (idempotent over what the .NET
-# DbUp already applied; the frozen .NET service applies nothing new).
-# Fresh SIDE-BY-SIDE install caveat: the .NET startup DbUp takes no shared
-# lock with the Rust migrator, so on a brand-new database the two may
-# interleave the same idempotent DDL; every statement is guarded
-# (IF [NOT] EXISTS), so the worst case is a transient .NET pod restart that
-# converges on the next attempt. Existing databases (full DbUp ledger) and
-# Rust-only installs have a single migrator and no race at all.
+# migrations + first-admin bootstrap against `databaseName` — see ADR-0006
+# (service-owned migrations).
 identityResolution:
   deploy: false
   replicaCount: 1
@@ -509,10 +457,9 @@ identityResolution:
   resources:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: 500m, memory: 512Mi}
-  # MariaDB database — the SAME one the .NET identity service uses during
-  # the transition (the render fails if the two names diverge).
+  # MariaDB database the service owns.
   databaseName: "identity"
-  # First-admin seed (port of the .NET BootstrapAdminRunner): on migrate,
+  # First-admin seed: on migrate,
   # this person UUID gets an active `admin` assignment in
   # `global.tenantDefaultId`, idempotently. The person row must already
   # exist in `persons` for that tenant. Empty string disables the runner.

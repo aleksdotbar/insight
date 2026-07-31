@@ -7,22 +7,17 @@ the fixture tree the read tests depend on. The module fixture provisions the
 `identity.identity_inputs` table with a deterministic three-account roster:
 two accounts sharing an email (one person, two bindings) + one solo account.
 
-TRIGGER DIVERGENCE (#1690, accepted): the .NET service triggers the seed via
-`POST /v1/persons-seed` (async queue + poll); the Rust successor REMOVED the
-POST — the seed is CLI-only there (`identity-resolution seed`, run by the
-Helm CronJob / a manual Job; synchronous) and only the GET journal routes
-remain. Tests select the trigger through `_trigger_seed` and gate the
-POST-specific cases on `supports_seed_http_trigger`; the CLI-specific cases
-(input guards, advisory lock, exit codes) gate on `supports_seed_cli`. The
-POST cases die with the .NET service.
+TRIGGER (#1690): the retired .NET service triggered the seed via
+`POST /v1/persons-seed` (async queue + poll); the Rust service REMOVED the
+POST — the seed is CLI-only (`identity-resolution seed`, run by the Helm
+CronJob / a manual Job; synchronous) and only the GET journal routes remain.
+Tests select the trigger through `_trigger_seed` and gate the POST-specific
+cases on `supports_seed_http_trigger`; the CLI-specific cases (input guards,
+advisory lock, exit codes) gate on `supports_seed_cli`.
 
-The end-to-end case runs only where the implementation's ClickHouse reader
-works against the harness's containerized ClickHouse — see
-`lib.identity.supports_containerized_clickhouse`: the frozen .NET service's
-Octonica native-protocol handshake deadlocks against every containerized CH
-tried, so on `dotnet` that ONE case skips; the Rust implementation (HTTP
-ClickHouse client) runs it — and that is the run that matters as cutover
-acceptance.
+The end-to-end case (a COMPLETED seed verified through the read path) is
+gated on `lib.identity.supports_containerized_clickhouse` — always true for
+the Rust service (HTTP ClickHouse client).
 """
 
 from __future__ import annotations
@@ -31,11 +26,11 @@ import time
 import uuid
 
 import pytest
-
-from identity.contract import items_of
 from lib import clickhouse
 from lib import identity_seed as seed
 from lib.config import SessionConfig
+
+from identity.contract import items_of
 
 pytestmark = [pytest.mark.identity, pytest.mark.mutating]
 
@@ -207,11 +202,7 @@ def test_persons_seed_end_to_end(identity_inputs, seed_api, identity_svc) -> Non
     """Seed run → operation completes → the seeded person resolves,
     with BOTH same-email accounts bound to one person."""
     if not identity_svc.supports_containerized_clickhouse:
-        pytest.skip(
-            "the .NET Octonica reader deadlocks against the harness's "
-            "containerized ClickHouse (see module docstring); the Rust "
-            "implementation runs this case"
-        )
+        pytest.skip("implementation cannot read the harness's containerized ClickHouse")
     operation_id = _trigger_seed(identity_svc, seed_api)
 
     op = _wait_completed(seed_api, operation_id)
@@ -311,8 +302,7 @@ def test_persons_seed_list_status_filter(seed_operation, seed_api) -> None:
         if seed_operation in {op["operation_id"] for op in included}:
             break
         assert time.monotonic() < deadline, (
-            f"status read and ?status= filter never agreed within 30s "
-            f"(last read: {current}; filtered: {included})"
+            f"status read and ?status= filter never agreed within 30s (last read: {current}; filtered: {included})"
         )
         time.sleep(0.2)
     assert all(op["status"] == current for op in included), included
@@ -425,7 +415,7 @@ def test_seed_cli_failure_exits_1_and_journals(identity_inputs, identity_svc, co
         force=True,
         # Closed port → fast connection refusal on the identity_inputs read,
         # which happens after the operations row is enqueued.
-        extra_env={"APP__gears__identity-resolution__config__clickhouse_url": "http://127.0.0.1:1"},
+        extra_env={"APP__gears__identity_resolution__config__clickhouse_url": "http://127.0.0.1:1"},
     )
     assert res.returncode == 1, f"rc={res.returncode}\n{res.stdout}\n{res.stderr}"
 
