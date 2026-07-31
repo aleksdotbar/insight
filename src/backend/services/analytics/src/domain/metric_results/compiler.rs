@@ -511,7 +511,10 @@ pub(crate) fn compile_histogram_query(
 // COMPLETE membership set, so it runs over the unfiltered table and the
 // target-cohort filter applies OUTSIDE it — filtering first would hide the
 // conflicting row and wave the person through (a member of target cohort A
-// who is also in B must stay excluded).
+// who is also in B must stay excluded). The aggregate's alias is
+// `resolved_cohort_id`, NOT `cohort_id`: shadowing the source column makes
+// ClickHouse substitute the aggregate into the outer WHERE
+// (ILLEGAL_AGGREGATION, code 184).
 pub(crate) fn compile_peer_batch_query(
     defs: &[&MetricDefinition],
     req: &ValidatedMetricResultsRequest,
@@ -538,23 +541,26 @@ pub(crate) fn compile_peer_batch_query(
         r"
         WITH
         targets AS (
-            SELECT
-                assumeNotNull(person_id) AS person_id,
-                any(cohort_id) AS cohort_id
-            FROM {cohort_table}
-            WHERE entity_type = ?
-              AND cohort_key = ?
-              AND person_id IN ({person_id_params})
-              AND cohort_id IS NOT NULL
-            GROUP BY person_id
-            HAVING uniqExact(cohort_id) = 1
-        ),
-        cohort AS (
-            SELECT person_id, cohort_id
+            SELECT person_id, resolved_cohort_id AS cohort_id
             FROM (
                 SELECT
                     assumeNotNull(person_id) AS person_id,
-                    any(cohort_id) AS cohort_id
+                    any(cohort_id) AS resolved_cohort_id
+                FROM {cohort_table}
+                WHERE entity_type = ?
+                  AND cohort_key = ?
+                  AND person_id IN ({person_id_params})
+                  AND cohort_id IS NOT NULL
+                GROUP BY person_id
+                HAVING uniqExact(cohort_id) = 1
+            )
+        ),
+        cohort AS (
+            SELECT person_id, resolved_cohort_id AS cohort_id
+            FROM (
+                SELECT
+                    assumeNotNull(person_id) AS person_id,
+                    any(cohort_id) AS resolved_cohort_id
                 FROM {cohort_table}
                 WHERE entity_type = ?
                   AND cohort_key = ?
@@ -563,7 +569,7 @@ pub(crate) fn compile_peer_batch_query(
                 GROUP BY person_id
                 HAVING uniqExact(cohort_id) = 1
             )
-            WHERE cohort_id IN (SELECT cohort_id FROM targets)
+            WHERE resolved_cohort_id IN (SELECT cohort_id FROM targets)
         ),
         metric_values AS (
             SELECT
@@ -1422,7 +1428,7 @@ mod tests {
         };
         let Some(pool_filter) = query
             .sql
-            .find("WHERE cohort_id IN (SELECT cohort_id FROM targets)")
+            .find("WHERE resolved_cohort_id IN (SELECT cohort_id FROM targets)")
         else {
             panic!("pool CTE must filter by the targets' cohorts");
         };
