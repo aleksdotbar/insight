@@ -1,13 +1,19 @@
-"""Generate (or verify) `stand/api/schemas/analytics.py` from the committed spec.
+"""Generate (or verify) the generated half of `stand/api/schemas/` from the committed specs.
 
     uv run --project tests --frozen python tests/generate_schemas.py
     uv run --project tests --frozen python tests/generate_schemas.py --check
 
-`docs/components/backend/analytics/openapi.json` is itself generated from the
-handlers' own types (`cargo run -p analytics -- openapi`) and drift-gated in CI
-by `.github/workflows/openapi-specs.yml`. Generating pydantic models from it
-therefore introduces no second source of truth — the models describe the very
-structs that serialize the wire.
+One entry per backend service the stand talks to. A service is GENERATED only
+when its published document actually describes response bodies; the rest are
+declared here with the reason they cannot be, and `--check` verifies that reason
+still holds. So the day a service starts publishing bodies — the analytics
+document is proof that it happens — the check says "generate it" instead of the
+gap sitting unnoticed behind a comment.
+
+Generating is sound for analytics because its document is itself generated from
+the handlers' own types (`cargo run -p analytics -- openapi`) and drift-gated in
+CI by `.github/workflows/openapi-specs.yml`. There is no second source of truth
+— the models describe the very structs that serialize the wire.
 
 The output is COMMITTED. A test run must never need the generator, which is a
 dev-only dependency and absent from the ui-tests image; `--check` is what keeps
@@ -23,16 +29,18 @@ statement about the repository. The same reasoning retired
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 _TESTS = Path(__file__).resolve().parent
 _REPO_ROOT = _TESTS.parent
-
-SPEC = _REPO_ROOT / "docs" / "components" / "backend" / "analytics" / "openapi.json"
-OUTPUT = _TESTS / "stand" / "api" / "schemas" / "analytics.py"
+_SPECS = _REPO_ROOT / "docs" / "components" / "backend"
+_SCHEMAS = _TESTS / "stand" / "api" / "schemas"
 
 # `--disable-timestamp` matters: without it every run writes a new header and
 # `--check` can never pass. `--extra-fields forbid` is the generated half's
@@ -52,7 +60,7 @@ CODEGEN_ARGS = (
     "--formatters", "ruff-check",
 )
 
-HEADER = '''"""Analytics response shapes — GENERATED, do not edit.
+ANALYTICS_HEADER = '''"""Analytics response shapes — GENERATED, do not edit.
 
 Regenerate with:
 
@@ -79,40 +87,184 @@ service serialises timestamps with no offset. See `common.UnzonedDatetime`.
 '''
 
 
-def generate() -> str:
-    """Run the generator and return the module source, header included."""
+@dataclass(frozen=True)
+class Generated:
+    """A service whose document describes bodies: models are generated and committed."""
+
+    name: str
+    spec: Path
+    output: Path
+    header: str
+    #: Apply the pinned `AwareDatetime` → `UnzonedDatetime` deviation (see
+    #: `common.UnzonedDatetime`). Per-service because it is a claim about how
+    #: THAT service serialises timestamps, not a house style.
+    unzoned_datetime: bool = False
+
+
+@dataclass(frozen=True)
+class Bodyless:
+    """A service whose document cannot be generated from — with the reason.
+
+    `--check` re-derives the reason instead of trusting it: the entry fails the
+    moment the document starts describing a body, which is the signal to promote
+    it to `Generated`.
+    """
+
+    name: str
+    spec: Path
+    reason: str
+
+
+TARGETS: tuple[Generated | Bodyless, ...] = (
+    Generated(
+        name="analytics",
+        spec=_SPECS / "analytics" / "openapi.json",
+        output=_SCHEMAS / "analytics.py",
+        header=ANALYTICS_HEADER,
+        unzoned_datetime=True,
+    ),
+    # 3.1.0, generated offline by `authenticator openapi` and drift-gated in CI
+    # alongside analytics — so the provenance is sound and this is not a trust
+    # problem. It declares every success body as a bare `{"type": "object"}`
+    # with no properties, because those handlers answer untyped JSON: there is
+    # nothing to generate but the shared `Problem`.
+    Bodyless(
+        name="authenticator",
+        spec=_SPECS / "authenticator" / "openapi.json",
+        reason="every success body is declared `type: object` with no properties",
+    ),
+    # NGINX + Lua (`access_by_lua`), no binary that could emit a document and no
+    # `openapi.json` under docs/components/backend/gateway/. What the edge emits
+    # of its own — the 401 problem envelope — is `common.ProblemDocument`;
+    # everything else it answers with is an upstream body, covered by that
+    # service's models once the request is proxied.
+    Bodyless(
+        name="gateway",
+        spec=_SPECS / "gateway" / "openapi.json",
+        reason="publishes no OpenAPI document (NGINX + Lua)",
+    ),
+    # The committed document is still the retired .NET one: it declares
+    # `/v1/persons/{email}` (identity answers 404 — the path moved to
+    # analytics), declares `POST /v1/persons-seed` (405), spells the subchart
+    # parameter `{personId}` where the service serves `{person_id}`, omits both
+    # persons-sync operations, and lists only `200` for all 18 operations while
+    # declaring a body for none of them. `identity.py` is hand-written from the
+    # Rust DTOs until the service emits its own document (it has no `openapi`
+    # subcommand yet, unlike analytics and authenticator).
+    Bodyless(
+        name="identity-resolution",
+        spec=_SPECS / "identity-resolution" / "openapi.json",
+        reason="the committed document is the retired .NET contract, and declares no bodies",
+    ),
+)
+
+
+def modellable_bodies(spec_path: Path) -> list[str]:
+    """The success responses a generator could turn into a model: those whose
+    schema declares properties, an `items`, or a `$ref`. Empty for a document
+    that does not exist.
+
+    SUCCESS responses only, and reached through the responses rather than by
+    listing `components.schemas`: a document may declare component schemas for
+    its REQUEST bodies (the .NET identity contract declares five) while
+    describing no response at all, and request models are not what this module
+    generates. Error responses are excluded because every service declares the
+    same `Problem`, hand-written once as `common.ProblemDocument`.
+    """
+    if not spec_path.is_file():
+        return []
+
+    spec: dict[str, Any] = json.loads(spec_path.read_text(encoding="utf-8"))
+    found: list[str] = []
+
+    paths: dict[str, dict[str, Any]] = spec.get("paths") or {}
+    for path, operations in sorted(paths.items()):
+        for method, operation in sorted(operations.items()):
+            responses: dict[str, Any] = operation.get("responses") or {}
+            for status, response in sorted(responses.items()):
+                if not status.isdigit() or int(status) >= 300:
+                    continue
+                for media in (response.get("content") or {}).values():
+                    schema = media.get("schema") or {}
+                    if {"properties", "$ref", "items"} & set(schema):
+                        found.append(f"{method.upper()} {path} {status}")
+
+    return found
+
+
+def generate(target: Generated) -> str:
+    """Run the generator for `target` and return the module source, header included."""
     with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "analytics.py"
+        out = Path(tmp) / target.output.name
         subprocess.run(
-            ["datamodel-codegen", "--input", str(SPEC), *CODEGEN_ARGS, "--output", str(out)],
+            ["datamodel-codegen", "--input", str(target.spec), *CODEGEN_ARGS, "--output", str(out)],
             check=True,
             capture_output=True,
             text=True,
         )
         body = out.read_text(encoding="utf-8")
 
-    # The generator's own two-line provenance comment is replaced by HEADER,
-    # which says the same thing plus what a reader needs to know about trusting
-    # these models.
+    # The generator's own two-line provenance comment is replaced by the target's
+    # header, which says the same thing plus what a reader needs to know about
+    # trusting these models.
     lines = body.splitlines(keepends=True)
     while lines and lines[0].startswith("#"):
         lines.pop(0)
     source = "".join(lines).lstrip("\n")
 
-    # The single pinned deviation — see `common.UnzonedDatetime`. Applied here
-    # rather than by hand because the file is regenerated: an edit would be lost,
-    # and this way `--check` still passes on a clean tree.
+    if target.unzoned_datetime:
+        source = _substitute_unzoned_datetime(source)
+
+    return target.header + source
+
+
+def _substitute_unzoned_datetime(source: str) -> str:
+    """The single pinned deviation — see `common.UnzonedDatetime`. Applied here
+    rather than by hand because the file is regenerated: an edit would be lost,
+    and this way `--check` still passes on a clean tree."""
     source = source.replace("AwareDatetime", "UnzonedDatetime")
     source = source.replace("from pydantic import UnzonedDatetime, ", "from pydantic import ")
     source = source.replace("from pydantic import UnzonedDatetime\n", "")
     # After `from __future__`, which must stay the first statement in the module.
-    source = source.replace(
+    return source.replace(
         "from __future__ import annotations\n",
         "from __future__ import annotations\n\nfrom .common import UnzonedDatetime\n",
         1,
     )
 
-    return HEADER + source
+
+def write(target: Generated) -> None:
+    target.output.write_text(generate(target), encoding="utf-8")
+    print(f"wrote {target.output}")
+
+
+def check(target: Generated) -> str | None:
+    """None when the committed module matches a fresh generation, else why not."""
+    current = target.output.read_text(encoding="utf-8") if target.output.is_file() else ""
+    if current == generate(target):
+        print(f"{target.output.name} is up to date")
+        return None
+
+    return (
+        f"{target.output} is STALE — the committed models no longer match "
+        f"{target.spec.name}.\n"
+        "Regenerate:  uv run --project tests --frozen python tests/generate_schemas.py"
+    )
+
+
+def check_bodyless(target: Bodyless) -> str | None:
+    """None while the service still describes no body, else what to do about it."""
+    found = modellable_bodies(target.spec)
+    if not found:
+        print(f"{target.name}: nothing to generate — {target.reason}")
+        return None
+
+    listed = ", ".join(found[:5]) + (f", … ({len(found)} total)" if len(found) > 5 else "")
+    return (
+        f"{target.name} now describes bodies ({listed}) — the reason it is listed as "
+        f"Bodyless ({target.reason}) no longer holds.\n"
+        "Promote it to a Generated entry in TARGETS."
+    )
 
 
 def main() -> int:
@@ -120,27 +272,29 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="exit non-zero if the committed module differs from a fresh generation",
+        help="exit non-zero if a committed module differs from a fresh generation",
     )
     args = parser.parse_args()
 
-    fresh = generate()
-    if not args.check:
-        OUTPUT.write_text(fresh, encoding="utf-8")
-        print(f"wrote {OUTPUT}")
-        return 0
+    problems: list[str] = []
+    for target in TARGETS:
+        # A Bodyless claim is verified in BOTH modes: a document that started
+        # describing bodies is news whichever way the script was invoked.
+        if isinstance(target, Bodyless):
+            problem = check_bodyless(target)
+        elif args.check:
+            problem = check(target)
+        else:
+            write(target)
+            problem = None
 
-    current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.exists() else ""
-    if current == fresh:
-        print(f"{OUTPUT.name} is up to date")
-        return 0
+        if problem:
+            problems.append(problem)
 
-    print(
-        f"{OUTPUT} is STALE — the committed models no longer match {SPEC.name}.\n"
-        "Regenerate:  uv run --project tests --frozen python tests/generate_schemas.py",
-        file=sys.stderr,
-    )
-    return 1
+    for problem in problems:
+        print(problem, file=sys.stderr)
+
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":
