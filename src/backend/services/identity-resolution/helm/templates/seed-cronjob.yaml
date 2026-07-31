@@ -77,7 +77,7 @@ spec:
                 # Standalone installs that don't carry the tenant in their
                 # Secret set this; the umbrella wires the Secret from
                 # global.tenantDefaultId instead and validates it at render.
-                - name: APP__gears__identity-resolution__config__tenant_default_id
+                - name: APP__gears__identity_resolution__config__tenant_default_id
                   value: {{ . | quote }}
               {{- end }}
               securityContext:
