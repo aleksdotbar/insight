@@ -609,20 +609,17 @@ impl MetricDefinitionValidator {
     }
 }
 
-// The columns the RUNTIME actually reads — a deliberate subset of the tables'
-// physical shape. `person_id` (present in every observation table and the
-// cohort view since the metrics person_id rework, see gold/schema.yml and the
-// metrics DESIGN "Source Measure Observation Contract") is intentionally NOT
-// probed yet: nothing here consumes it, and requiring it would flip
-// schema_status to error on any deployment whose gold tables predate the
-// rework — gating metric availability on the next dbt rebuild for no
-// reader's benefit. Add it to BOTH lists in the same change that switches
-// the compiler/entity contract to person_id.
+// The columns the RUNTIME actually reads. `person_id` joined both lists in
+// the same change that switched the compiler to person_id filtering (the
+// identity cutover) — a table without it would fail every query at SQL time
+// with a 500, so the schema probe now catches it upfront and marks the
+// source unavailable instead.
 const OBSERVATION_COLUMNS: &[&str] = &[
     "tenant_id",
     "source_key",
     "entity_type",
     "entity_id",
+    "person_id",
     "metric_date",
     "observed_at",
     "measure_key",
@@ -656,6 +653,7 @@ const COHORT_COLUMNS: &[&str] = &[
     "tenant_id",
     "entity_type",
     "entity_id",
+    "person_id",
     "cohort_key",
     "cohort_id",
 ];

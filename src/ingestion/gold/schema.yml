@@ -129,13 +129,11 @@ models:
         description: >
           Canonical person from the identity log (resolve_person_id macro),
           resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. Additive: nothing at runtime
-          reads it yet (the API still keys on entity_id); it joins the
-          published contract at the person_id API cutover. Deliberately
-          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
-          gating metric availability on a column nothing consumes would
-          make a deploy wait on the next dbt rebuild for no reader's
-          benefit.
+          — honest absence, never a guess. THE runtime key since the
+          identity cutover: every metric query filters and groups by it,
+          NULL rows are excluded from results, and the analytics
+          validator's OBSERVATION_COLUMNS require the column. entity_id
+          stays the source-native email key of the table.
       - name: metric_date
         description: "Observation date"
         tests:
@@ -220,13 +218,11 @@ models:
         description: >
           Canonical person from the identity log (resolve_person_id macro),
           resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. Additive: nothing at runtime
-          reads it yet (the API still keys on entity_id); it joins the
-          published contract at the person_id API cutover. Deliberately
-          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
-          gating metric availability on a column nothing consumes would
-          make a deploy wait on the next dbt rebuild for no reader's
-          benefit.
+          — honest absence, never a guess. THE runtime key since the
+          identity cutover: every metric query filters and groups by it,
+          NULL rows are excluded from results, and the analytics
+          validator's OBSERVATION_COLUMNS require the column. entity_id
+          stays the source-native email key of the table.
       - name: metric_date
         description: >
           Observation date: commit date for commit-derived measures,
@@ -315,13 +311,11 @@ models:
         description: >
           Canonical person from the identity log (resolve_person_id macro),
           resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. Additive: nothing at runtime
-          reads it yet (the API still keys on entity_id); it joins the
-          published contract at the person_id API cutover. Deliberately
-          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
-          gating metric availability on a column nothing consumes would
-          make a deploy wait on the next dbt rebuild for no reader's
-          benefit.
+          — honest absence, never a guess. THE runtime key since the
+          identity cutover: every metric query filters and groups by it,
+          NULL rows are excluded from results, and the analytics
+          validator's OBSERVATION_COLUMNS require the column. entity_id
+          stays the source-native email key of the table.
       - name: metric_date
         description: "Observation date (activity date per source)."
         tests:
@@ -420,13 +414,11 @@ models:
         description: >
           Canonical person from the identity log (resolve_person_id macro),
           resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. Additive: nothing at runtime
-          reads it yet (the API still keys on entity_id); it joins the
-          published contract at the person_id API cutover. Deliberately
-          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
-          gating metric availability on a column nothing consumes would
-          make a deploy wait on the next dbt rebuild for no reader's
-          benefit.
+          — honest absence, never a guess. THE runtime key since the
+          identity cutover: every metric query filters and groups by it,
+          NULL rows are excluded from results, and the analytics
+          validator's OBSERVATION_COLUMNS require the column. entity_id
+          stays the source-native email key of the table.
       - name: metric_date
         description: >
           Observation date: close date for closed-issue measures, transition
@@ -553,13 +545,11 @@ models:
         description: >
           Canonical person from the identity log (resolve_person_id macro),
           resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. Additive: nothing at runtime
-          reads it yet (the API still keys on entity_id); it joins the
-          published contract at the person_id API cutover. Deliberately
-          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
-          gating metric availability on a column nothing consumes would
-          make a deploy wait on the next dbt rebuild for no reader's
-          benefit.
+          — honest absence, never a guess. THE runtime key since the
+          identity cutover: every metric query filters and groups by it,
+          NULL rows are excluded from results, and the analytics
+          validator's OBSERVATION_COLUMNS require the column. entity_id
+          stays the source-native email key of the table.
       - name: metric_date
         description: >
           Observation date: page creation date for pages_created, edit day
@@ -621,9 +611,10 @@ models:
         description: >
           Canonical person from the identity log (resolve_person_id macro),
           resolved at build time; NULL when identity does not know the HR email
-          — usually a seeding gap on the identity side. Additive: the peer
-          compiler still joins on entity_id; person_id joins COHORT_COLUMNS
-          at the API cutover (see the observation models' person_id note).
+          — usually a seeding gap on the identity side. THE peer join key
+          since the identity cutover (COHORT_COLUMNS require it); NULL rows
+          never enter peer pools, and a person whose emails claim different
+          cohorts is excluded from peer comparison rather than tie-broken.
       - name: cohort_key
         description: "Cohort basis identifier"
         tests:

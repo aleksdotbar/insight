@@ -14,6 +14,8 @@ pub struct MetricResultsRequest {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct MetricResultsEntity {
     pub r#type: String,
+    /// Canonical person UUIDs (since the identity cutover; the
+    /// pre-cutover email shape is rejected with a 400).
     pub ids: Vec<String>,
 }
 
@@ -112,6 +114,8 @@ pub struct MetricResultSelectionDto {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct MetricResultsEntityDto {
     pub r#type: String,
+    /// Canonical person UUIDs (since the identity cutover; the
+    /// pre-cutover email shape is rejected with a 400).
     pub ids: Vec<String>,
 }
 

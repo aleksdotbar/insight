@@ -24,13 +24,26 @@ from api.endpoint_helpers import text_body_request
 pytestmark = pytest.mark.api
 
 
-def _request(*, metrics, entity_ids=("e2e-nobody@example.com",), period=("2026-01-01", "2026-01-31")):
-    """A well-formed metric-results body with overridable parts."""
+def _request(*, metrics, entity_ids=("00000000-0000-0000-0000-00000000e2e0",), period=("2026-01-01", "2026-01-31")):
+    """A well-formed metric-results body with overridable parts.
+
+    entity ids are person UUIDs since the identity cutover; the default is a
+    valid-but-unassigned "nobody" UUID so validation passes and compute paths
+    answer with honest emptiness."""
     return {
         "entity": {"type": "person", "ids": list(entity_ids)},
         "period": {"from": period[0], "to": period[1]},
         "metrics": metrics,
     }
+
+
+def test_metric_results_400_non_uuid_person_ids(api) -> None:
+    """entity.ids must be person UUIDs since the identity cutover; the
+    pre-cutover email shape is a loud 400, never a silent empty result."""
+    body = _request(metrics=[{"metric_key": "git.commits", "views": [{"view": "period"}]}],
+                    entity_ids=("somebody@example.com",))
+    r = api.post("/v1/metric-results", json=body)
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
 
 
 def test_metric_results_400_empty_metrics(api) -> None:

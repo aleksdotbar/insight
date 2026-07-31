@@ -500,10 +500,12 @@ pub(crate) fn compile_histogram_query(
 // The cohort view is unique per EMAIL (`LIMIT 1 BY tenant_id, entity_id`,
 // asserted by assert_metric_entity_cohorts_unique at every dbt build) — but
 // the join key here is person_id, and two HR emails resolving to ONE person
-// would yield two cohort rows for that person. The `LIMIT 1 BY person_id`
-// in the CTEs below hardens the person grain at read time (ordered by
-// cohort_id for a deterministic survivor) so a duplicate can never blend
-// pools or double-weight a peer.
+// can yield two cohort rows for that person. The CTEs below collapse to
+// person grain with `HAVING uniqExact(cohort_id) = 1`: agreeing duplicates
+// merge into one row, and a person whose emails claim DIFFERENT cohorts is
+// EXCLUDED — contested membership is never resolved by a tie-break
+// (honest-NULL, the epic's never-silently-assign stance); the operator-side
+// fix is the org assignment, not a lexicographic guess here.
 pub(crate) fn compile_peer_batch_query(
     defs: &[&MetricDefinition],
     req: &ValidatedMetricResultsRequest,
@@ -532,26 +534,26 @@ pub(crate) fn compile_peer_batch_query(
         targets AS (
             SELECT
                 assumeNotNull(person_id) AS person_id,
-                cohort_id
+                any(cohort_id) AS cohort_id
             FROM {cohort_table}
             WHERE entity_type = ?
               AND cohort_key = ?
               AND person_id IN ({person_id_params})
               AND cohort_id IS NOT NULL
-            ORDER BY person_id, cohort_id
-            LIMIT 1 BY person_id
+            GROUP BY person_id
+            HAVING uniqExact(cohort_id) = 1
         ),
         cohort AS (
             SELECT
                 assumeNotNull(person_id) AS person_id,
-                cohort_id
+                any(cohort_id) AS cohort_id
             FROM {cohort_table}
             WHERE entity_type = ?
               AND cohort_key = ?
               AND cohort_id IN (SELECT cohort_id FROM targets)
               AND person_id IS NOT NULL
-            ORDER BY person_id, cohort_id
-            LIMIT 1 BY person_id
+            GROUP BY person_id
+            HAVING uniqExact(cohort_id) = 1
         ),
         metric_values AS (
             SELECT
@@ -1389,10 +1391,14 @@ mod tests {
             )));
         }
         assert!(!query.sql.contains("quantileExactIf(0.25)"));
-        // Duplicate cohort membership must not fan out the pool: since the
-        // cutover the person grain is hardened with LIMIT 1 BY person_id in
-        // both cohort CTEs (two emails can resolve to one person).
-        assert_eq!(query.sql.matches("LIMIT 1 BY person_id").count(), 2);
+        // Duplicate cohort membership must not fan out the pool, and a
+        // CONTESTED membership (one person, different cohorts via different
+        // emails) must be excluded, never tie-broken — person grain via
+        // GROUP BY + the uniqExact guard in both cohort CTEs.
+        assert_eq!(
+            query.sql.matches("HAVING uniqExact(cohort_id) = 1").count(),
+            2
+        );
         // Honest-null must not depend on server config or column typing.
         assert!(query.sql.contains("SETTINGS join_use_nulls = 1"));
         assert!(

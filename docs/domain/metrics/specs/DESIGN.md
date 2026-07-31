@@ -48,12 +48,15 @@ Rules:
 - `entity_type` and `entity_id` identify the measured entity.
 - `person_id` is the canonical person resolved from the identity log at
   build time (`resolve_person_id` dbt macro; NULL = identity does not know
-  the email). ADDITIVE, not yet consumed: the runtime still keys on
-  `entity_id`, and the schema validator's `OBSERVATION_COLUMNS` /
-  `COHORT_COLUMNS` deliberately exclude it until the person_id API cutover
-  — probing for a column nothing reads would gate metric availability on
-  the next dbt rebuild after a deploy, for no reader's benefit. The cohort
-  view carries the same column under the same rule.
+  the email). Since the identity cutover it is THE runtime key: every
+  metric query filters, groups and reports by it, unresolved rows
+  (NULL `person_id`) are excluded from every result rather than guessed,
+  and the schema validator's `OBSERVATION_COLUMNS` / `COHORT_COLUMNS`
+  require the column. `entity_id` remains the source-native email key of
+  the tables and the wire FIELD NAME in responses (carrying the person
+  UUID). The cohort view carries `person_id` under the same rules; a
+  person whose emails claim different cohorts is excluded from peer
+  comparison (contested membership is never tie-broken).
 - `observed_at` is reserved for future point-in-time semantics.
 - `subject_key` carries the counted subject for distinct-count measures (a
   date, a tool) and is NULL on every other measure's rows.
@@ -444,9 +447,10 @@ Request caps, checked before any per-request enumeration work:
 - at most 1000 entity ids per request.
 - at most 400 days per period.
 
-Entity id normalization is a property of the entity type: `person` ids are
-emails and are trimmed and lowercased to match observation sources, which
-emit lowercased emails; other entity types are trimmed only.
+Entity ids for `person` are canonical person UUIDs since the identity
+cutover: trimmed, parsed as UUIDs (any casing / hyphenless accepted,
+canonicalized on echo), deduplicated. A non-UUID value — including the
+pre-cutover email shape — is a client error, never a silent empty result.
 
 Reject with a client error when:
 
