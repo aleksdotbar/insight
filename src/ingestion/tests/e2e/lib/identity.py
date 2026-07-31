@@ -97,6 +97,14 @@ def supports_seed_cli(implementation: str) -> bool:
     return implementation == "rust"
 
 
+def supports_persons_sync(implementation: str) -> bool:
+    """Whether the binary has the `sync` subcommand (copy the `persons` log
+    into ClickHouse `identity.identity_persons`, the metrics email→person_id
+    resolve source) + its GET journal routes. A NEW Rust-only surface,
+    deliberately never backported to the frozen, outgoing .NET service."""
+    return implementation == "rust"
+
+
 def supports_strict_input_validation(implementation: str) -> bool:
     """Strict input validation added by the Rust service (reviewed on epic
     #1602): too-long revoke `reason` → 400, present-but-nil
@@ -214,6 +222,49 @@ class IdentityProcess:
     @property
     def supports_seed_cli(self) -> bool:
         return supports_seed_cli(self.implementation)
+
+    @property
+    def supports_persons_sync(self) -> bool:
+        return supports_persons_sync(self.implementation)
+
+    def run_sync_cli(
+        self,
+        *,
+        tenant: str | None,
+        force: bool = False,
+        timeout_s: float = 300.0,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run `identity-resolution sync` — copy the `persons` log into
+        ClickHouse `identity.identity_persons`. Synchronous: when it returns,
+        the run's `operations` row is terminal. Exit codes: 0 ok / 1 failed /
+        2 lock busy / 3 empty-log guard.
+
+        `tenant` scopes the run's JOURNAL row (the copy itself is
+        tenant-agnostic); pass the tenant whose admin will read the journal.
+        """
+        if not self.supports_persons_sync:
+            raise ApiSpawnError(
+                f"the sync CLI exists only on the rust implementation "
+                f"(selected: {self.implementation})"
+            )
+        cmd = locate_rust_app(self.cfg)
+        env = self._rust_env()
+        if tenant is not None:
+            env["APP__gears__identity-resolution__config__tenant_default_id"] = tenant
+        if extra_env:
+            env.update(extra_env)
+        args = [*cmd, "-c", str(self._rig_config_path), "sync"]
+        if force:
+            args.append("--force")
+        return subprocess.run(  # noqa: S603 — harness-controlled argv
+            args,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
 
     def run_seed_cli(
         self,

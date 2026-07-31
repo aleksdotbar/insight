@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS insight.ai_metric_observations
     `source_key` String,
     `entity_type` String,
     `entity_id` String,
+    `person_id` Nullable(UUID),
     `metric_date` Date,
     `observed_at` Nullable(DateTime64(3)),
     `measure_key` String,
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS insight.collab_metric_observations
     `source_key` String,
     `entity_type` String,
     `entity_id` String,
+    `person_id` Nullable(UUID),
     `metric_date` Date,
     `observed_at` Nullable(DateTime64(3)),
     `measure_key` String,
@@ -126,6 +128,7 @@ CREATE TABLE IF NOT EXISTS insight.git_metric_observations
     `source_key` String,
     `entity_type` String,
     `entity_id` String,
+    `person_id` Nullable(UUID),
     `metric_date` Date,
     `observed_at` Nullable(DateTime64(3)),
     `measure_key` String,
@@ -193,6 +196,7 @@ CREATE TABLE IF NOT EXISTS insight.task_metric_observations
     `source_key` String,
     `entity_type` String,
     `entity_id` String,
+    `person_id` Nullable(UUID),
     `metric_date` Date,
     `observed_at` Nullable(DateTime64(3)),
     `measure_key` String,
@@ -267,6 +271,7 @@ CREATE TABLE IF NOT EXISTS insight.wiki_metric_observations
     `source_key` String,
     `entity_type` String,
     `entity_id` String,
+    `person_id` Nullable(UUID),
     `metric_date` Date,
     `observed_at` Nullable(DateTime64(3)),
     `measure_key` String,
@@ -2580,6 +2585,62 @@ FROM system.one
 WHERE 0
 ;
 
+CREATE OR REPLACE VIEW insight.identity_resolution_coverage
+(
+    `source_key` String,
+    `observation_rows` UInt64,
+    `unresolved_rows` UInt64,
+    `unresolved_people` UInt64,
+    `match_rate_pct` Float64
+)
+AS WITH observation_rows AS
+    (
+        SELECT
+            source_key,
+            entity_id,
+            person_id
+        FROM insight.git_metric_observations
+        UNION ALL
+        SELECT
+            source_key,
+            entity_id,
+            person_id
+        FROM insight.ai_metric_observations
+        UNION ALL
+        SELECT
+            source_key,
+            entity_id,
+            person_id
+        FROM insight.collab_metric_observations
+        UNION ALL
+        SELECT
+            source_key,
+            entity_id,
+            person_id
+        FROM insight.task_metric_observations
+        UNION ALL
+        SELECT
+            source_key,
+            entity_id,
+            person_id
+        FROM insight.wiki_metric_observations
+        UNION ALL
+        SELECT
+            'hr_cohorts' AS source_key,
+            entity_id,
+            person_id
+        FROM insight.metric_entity_cohorts_current
+    )
+SELECT
+    source_key,
+    count() AS observation_rows,
+    countIf(person_id IS NULL) AS unresolved_rows,
+    uniqExactIf(entity_id, person_id IS NULL) AS unresolved_people,
+    round((100 * countIf(person_id IS NOT NULL)) / count(), 1) AS match_rate_pct
+FROM observation_rows
+GROUP BY source_key
+;
+
 CREATE OR REPLACE VIEW insight.jira_closed_tasks
 (
     `person_id` String,
@@ -2649,6 +2710,7 @@ CREATE OR REPLACE VIEW insight.metric_entity_cohorts_current
     `tenant_id` String,
     `entity_type` String,
     `entity_id` String,
+    `person_id` Nullable(UUID),
     `cohort_key` String,
     `cohort_id` Nullable(String)
 )
@@ -2656,6 +2718,7 @@ AS SELECT
     assumeNotNull(tenant_id) AS tenant_id,
     'person' AS entity_type,
     assumeNotNull(entity_id) AS entity_id,
+    if(identity_map.email != '', toNullable(identity_map.person_id), CAST(NULL, 'Nullable(UUID)')) AS person_id,
     'org_unit' AS cohort_key,
     cohort_id
 FROM
@@ -2674,7 +2737,20 @@ FROM
     LIMIT 1 BY
         tenant_id,
         entity_id
-)
+) AS people
+LEFT JOIN
+(
+    SELECT
+        lower(trimBoth(value_effective)) AS email,
+        person_id
+    FROM identity.identity_persons
+    WHERE (value_type = 'email') AND (value_effective IS NOT NULL) AND (trimBoth(value_effective) != '')
+    ORDER BY
+        email ASC,
+        created_at DESC,
+        id DESC
+    LIMIT 1 BY email
+) AS identity_map ON identity_map.email = lower(trimBoth(people.entity_id))
 WHERE (tenant_id IS NOT NULL) AND (tenant_id != '') AND (entity_id IS NOT NULL) AND (entity_id != '')
 ;
 
