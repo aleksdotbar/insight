@@ -74,8 +74,8 @@ BLOCKED: dict[str, frozenset[int]] = {
     "POST /v1/admin/metric-thresholds": frozenset({404, 409}),  # 404 boilerplate; 409=#1664
     # persons 200/404 covered via the in-process Identity stub (#1691); rest boilerplate
     "GET /v1/persons/{email}": frozenset({400, 403, 409}),
-    # 403/404/409 boilerplate; the 200 happy-path needs seeded observation data (a `✗` gap)
-    "POST /v1/metric-results": frozenset({403, 404, 409}),
+    # 404/409 boilerplate; 403 IS reachable (person outside the caller's visible set)
+    "POST /v1/metric-results": frozenset({404, 409}),
     # saved-query CRUD + run (#1965): 403 (auth disabled, no role gate — cross-tenant
     # is 404 by opacity) and 409 (no conflict path) are `.standard_errors` boilerplate.
     "GET /v1/queries": frozenset({400, 403, 404, 409}),  # boilerplate: list, no input/lookup/conflict

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::Extension;
+use axum::http::HeaderMap;
 use futures::stream::{self, StreamExt};
 use serde::de::DeserializeOwned;
 use toolkit_canonical_errors::CanonicalError;
@@ -19,6 +20,7 @@ use crate::domain::metric_results::{
     build_period_view, build_ranked_groups, build_timeseries_view, demux_peer_rows,
     demux_period_rows, enforce_view_row_limit, plan_queries, plan_rankings, validate_request,
 };
+use crate::domain::person_visibility::authorize_entity_ids;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
 
@@ -32,10 +34,23 @@ const QUERY_FETCH_TIMEOUT: Duration = Duration::from_mins(1);
 pub async fn query_metric_results(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
+    headers: HeaderMap,
     Json(req): Json<MetricResultsRequest>,
 ) -> Result<Json<MetricResultsResponse>, CanonicalError> {
     let tenant_id = ctx.subject_tenant_id();
     let req = validate_request(&state.db, tenant_id, req).await?;
+    // Visibility gate BEFORE any ClickHouse work: the caller may only query
+    // persons inside their visible set (identity /v1/visible-persons, by
+    // person UUID since the cutover). Service principals bypass.
+    authorize_entity_ids(
+        &state.identity,
+        &ctx,
+        super::forwarded_authorization(&headers),
+        &req.entity_type,
+        &req.person_ids,
+    )
+    .await?;
+
     let metric_keys = req
         .metrics
         .iter()

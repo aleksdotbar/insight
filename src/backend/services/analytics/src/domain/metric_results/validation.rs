@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::api::error::MetricError;
 use crate::domain::metric_definitions::{ComputationSpec, MetricDefinition, load_definitions};
+use crate::domain::person_visibility::normalize_person_id;
 use crate::domain::schema_validator::parse::parse_metric_key;
 
 use super::dto::{
