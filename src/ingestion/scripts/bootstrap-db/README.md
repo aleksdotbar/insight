@@ -86,6 +86,53 @@ connectors:
 
    This creates the tables for every connector in the file (a failing connector is reported and skipped, the run continues), then runs all dbt models, then applies the ClickHouse migrations (`../apply-ch-migrations.sh`).
 
+## Everything from scratch, one block
+
+The full cycle — throwaway ClickHouse, fresh `.env`, bootstrap, snapshot re-dump, field-parity audit, cleanup — as a single copy-paste. Only prerequisite: `HUBSPOT_ACCESS_TOKEN`, `SALESFORCE_INSTANCE_URL`, `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET` exported in the current shell (their `discover` calls the live APIs). **Overwrites `.env`** next to the scripts.
+
+```bash
+cd src/ingestion/scripts/bootstrap-db
+
+: "${HUBSPOT_ACCESS_TOKEN:?export real credentials first}"
+: "${SALESFORCE_INSTANCE_URL:?}" "${SALESFORCE_CLIENT_ID:?}" "${SALESFORCE_CLIENT_SECRET:?}"
+
+source pins.env
+docker rm -f bootstrap-db-clickhouse 2>/dev/null
+docker run -d --name bootstrap-db-clickhouse -p 8123:8123 \
+  -e CLICKHOUSE_USER=insight -e CLICKHOUSE_PASSWORD=insight -e CLICKHOUSE_DB=insight \
+  -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
+  "${CLICKHOUSE_SERVER_IMAGE}"
+
+# The address must work from this machine AND from inside the connector
+# containers: macOS → the LAN IP; Linux → the docker bridge gateway.
+CH_HOST="$(ipconfig getifaddr en0 2>/dev/null \
+  || docker network inspect bridge -f '{{ (index .IPAM.Config 0).Gateway }}')"
+cat > .env <<EOF
+CLICKHOUSE_HOST=${CH_HOST}
+CLICKHOUSE_PORT=8123
+CLICKHOUSE_PROTOCOL=http
+CLICKHOUSE_USER=insight
+CLICKHOUSE_PASSWORD=insight
+CLICKHOUSE_DATABASE=insight
+HUBSPOT_ACCESS_TOKEN=${HUBSPOT_ACCESS_TOKEN}
+SALESFORCE_INSTANCE_URL=${SALESFORCE_INSTANCE_URL}
+SALESFORCE_CLIENT_ID=${SALESFORCE_CLIENT_ID}
+SALESFORCE_CLIENT_SECRET=${SALESFORCE_CLIENT_SECRET}
+EOF
+
+until curl -sf "http://localhost:8123/ping" >/dev/null; do sleep 1; done
+
+./bootstrap-db.sh connectors-config.yaml
+
+set -a; source .env; set +a   # dump-ddl.sh expects the CLICKHOUSE_* vars exported
+./dump-ddl.sh              # refresh ../connectors-ddl/*.sql; commit the diff if any
+./check-field-parity.py    # exit 1 on field-contract failures
+
+docker rm -f bootstrap-db-clickhouse
+```
+
+Roughly 15–20 minutes end to end, most of it connector `discover` pulls and dbt. Skip the last `docker rm` to keep the warehouse around for poking at (`dump-ddl.sh` and `check-field-parity.py` can be re-run against it as long as the container lives).
+
 ## Auditing staging → silver field parity
 
 A silver `class_*` model is a `UNION ALL` of every staging model tagged `silver:<target>` (the `union_by_tag` macro). ClickHouse matches UNION branches **by position** and takes the column names from the first branch, so a contributor that renames, reorders or retypes a column does not fail the build — it silently misaligns data or widens the published silver type. The bootstrap warehouse is the only place where every model is materialised at once, which makes it the right place to check that:
@@ -94,7 +141,7 @@ A silver `class_*` model is a `UNION ALL` of every staging model tagged `silver:
 ./check-field-parity.py
 ```
 
-`.github/workflows/connectors-ddl.yml` runs this audit on every PR against `main` and on every commit that lands on `main`, over a warehouse the lane rebuilds from scratch with `bootstrap-db.sh` — the same run whose re-dump gates the committed snapshot. The push run catches what a PR cannot: two PRs green apart can still leave `main` drifted, since each was validated against its own merge-base.
+`.github/workflows/connectors-ddl.yml` runs this audit on every same-repository PR against `main` (fork PRs are skipped: the lane needs repo secrets) and on every commit that lands on `main`, over a warehouse the lane rebuilds from scratch with `bootstrap-db.sh` — the same run whose re-dump gates the committed snapshot. The push run catches what a PR cannot: two PRs green apart can still leave `main` drifted, since each was validated against its own merge-base.
 
 Like `bootstrap-db.sh`, it sources the `.env` next to it and lets those values win over the inherited environment — a stale `CLICKHOUSE_HOST` exported in the current shell would otherwise beat the file the rest of the pipeline runs on. Pass `--no-env-file` to audit another cluster (say dev) from the exported variables instead.
 
@@ -114,7 +161,7 @@ Contributors whose physical table is not owned by dbt are covered too. `jira__ta
 | `bootstrap-db.sh <config.yaml>` | Sources `pins.env` and `.env` (if present), runs `seed-connectors.sh`, runs all dbt models, runs `../apply-ch-migrations.sh`. |
 | `run-dbt.sh [dbt args]` | Helper: generates a profiles.yml from the `CLICKHOUSE_*` variables and runs `dbt run` in `src/ingestion/dbt`. |
 | `check-field-parity.py [--manifest PATH]` | Audits every staging contributor against its silver union target (column set, positional order, exact type) plus manifest-vs-warehouse coverage. Same `CLICKHOUSE_*` env contract as the other scripts. Non-zero exit on any finding. |
-| `dump-ddl.sh` | Dumps `SHOW CREATE` for every `bronze_*` table, the `person`/`identity`/`silver`/`insight` databases (tables and views), and the gold-referenced `staging` tables into `../connectors-ddl/*.sql` — the committed snapshot that `../create-bronze-placeholders.sh` applies on fresh clusters. **Run it manually** after `bootstrap-db.sh` (see step above) whenever a schema changes, and commit the diff. `.github/workflows/connectors-ddl.yml` re-runs the whole pipeline on every PR and on every commit to `main`, and fails when the committed snapshot no longer matches — it validates, it never commits. |
+| `dump-ddl.sh` | Dumps `SHOW CREATE` for every `bronze_*` table, the `person`/`identity`/`silver`/`insight` databases (tables and views), and the gold-referenced `staging` tables into `../connectors-ddl/*.sql` — the committed snapshot that `../create-bronze-placeholders.sh` applies on fresh clusters. **Run it manually** after `bootstrap-db.sh` (see step above) whenever a schema changes, and commit the diff. `.github/workflows/connectors-ddl.yml` re-runs the whole pipeline on every same-repository PR and on every commit to `main`, and fails when the committed snapshot no longer matches — it validates, it never commits. |
 
 ## Image pins (pins.env)
 

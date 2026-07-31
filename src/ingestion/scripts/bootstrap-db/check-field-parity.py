@@ -112,7 +112,11 @@ def env(name: str) -> str:
 
 
 def query(sql: str) -> str:
-    url = f"{env('CLICKHOUSE_PROTOCOL')}://{env('CLICKHOUSE_HOST')}:{env('CLICKHOUSE_PORT')}/"
+    protocol = env("CLICKHOUSE_PROTOCOL")
+    # Fail fast on a typo'd .env; also pins the urllib scheme (no file:// etc).
+    if protocol not in ("http", "https"):
+        sys.exit(f"CLICKHOUSE_PROTOCOL must be http or https, got {protocol!r}")
+    url = f"{protocol}://{env('CLICKHOUSE_HOST')}:{env('CLICKHOUSE_PORT')}/"
     request = urllib.request.Request(
         url,
         data=sql.encode(),

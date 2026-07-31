@@ -121,6 +121,7 @@ jobs:
           .github/workflows/scripts/start-clickhouse.sh "${CLICKHOUSE_CONTAINER}"
 
       - name: Bootstrap from connectors + dbt + migrations
+        id: bootstrap
         env:
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
           SALESFORCE_CLIENT_ID: ${{ secrets.SALESFORCE_CLIENT_ID }}
@@ -155,6 +156,10 @@ jobs:
           if-no-files-found: ignore
 
       - name: Field parity
+        # Runs even when the snapshot drifted: the two gates are independent, and a
+        # PR that breaks both should learn both in one run instead of one per push.
+        # A failed bootstrap is different — there is no warehouse to audit.
+        if: steps.bootstrap.outcome == 'success'
         run: |
           set -euo pipefail
           # Every model in the manifest must have a relation (bootstrap-db just
