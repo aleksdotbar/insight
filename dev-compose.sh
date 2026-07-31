@@ -143,8 +143,8 @@ Options:
   --instance=NAME           Isolate containers, networks, and volumes as
                             insight-NAME. Default: insight.
                             Use worktree to derive NAME from the checkout.
-                            Concurrent instances also need distinct host
-                            ports in their env files.
+                            Full instances cannot run concurrently because
+                            published host ports are shared.
   --env-file=PATH           Alternate dotenv file. Default: .env.compose.
 
 Out-of-scope:
@@ -645,7 +645,7 @@ YML
     "${compose_cmd[@]}" logs --no-color --tail=80 >&2 || true
     if [[ -n "$instance" &&
           ( "$instance_mariadb_fresh" == "true" || "$instance_clickhouse_fresh" == "true" ) ]]; then
-      echo "ERROR: stack startup failed; removing partial instance state." >&2
+      echo "ERROR: stack startup failed; removing newly created database state." >&2
       "${compose_cmd[@]}" ${profiles[@]+"${profiles[@]}"} down --remove-orphans >/dev/null 2>&1 || true
       if [[ "$instance_mariadb_fresh" == "true" ]]; then
         docker volume rm "${COMPOSE_PROJECT_NAME}_mariadb-data" >/dev/null 2>&1 || true
@@ -845,7 +845,7 @@ cmd_down() {
     echo "Wiping host-side build artefacts (deploy/compose/build/)..."
     rm -rf deploy/compose/build/
   elif [[ "$wipe" == "true" ]]; then
-    echo "Preserving shared host-side build artefacts for other instances."
+    echo "Preserving worktree build artefacts."
   fi
   echo "Done."
 }
