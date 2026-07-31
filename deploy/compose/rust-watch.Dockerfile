@@ -13,6 +13,6 @@ WORKDIR /workspace
 # from the image path, ownership included, so these must belong to the runtime
 # user before the volume is created.
 RUN useradd -U -u 1000 -m appuser \
-    && mkdir -p /target \
+    && mkdir -p /target /usr/local/cargo/registry /usr/local/cargo/git \
     && chown -R 1000:1000 /target /usr/local/cargo/registry /usr/local/cargo/git
 USER 1000
