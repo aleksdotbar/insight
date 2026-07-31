@@ -458,6 +458,7 @@ mod tests {
                 Err(error) => panic!("bad test date {to}: {error}"),
             },
             metrics: Vec::new(),
+            enforce_tenant_scope: true,
         }
     }
 
