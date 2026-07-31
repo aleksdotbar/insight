@@ -72,7 +72,8 @@ impl From<Operation> for PersonsSeedOperationResponse {
 
 /// Surface a stored JSON column as a parsed value (not a double-encoded string);
 /// `None` for absent/empty/unparseable. Mirrors the .NET `ParseOrNull`.
-fn parse_or_null(json: Option<&str>) -> Option<serde_json::Value> {
+/// `pub(crate)`: shared with the persons-sync journal (same wire conventions).
+pub(crate) fn parse_or_null(json: Option<&str>) -> Option<serde_json::Value> {
     let s = json?;
     if s.is_empty() {
         return None;
@@ -83,7 +84,7 @@ fn parse_or_null(json: Option<&str>) -> Option<serde_json::Value> {
 /// Format a DB `DateTime` (naive) as ISO-8601 with a `T` separator, matching the
 /// .NET `System.Text.Json` `DateTime` output (`NaiveDateTime::to_string` uses a
 /// space, which breaks ISO-8601 parsers).
-fn fmt_ts(dt: sea_orm::prelude::DateTime) -> String {
+pub(crate) fn fmt_ts(dt: sea_orm::prelude::DateTime) -> String {
     dt.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()
 }
 
@@ -162,7 +163,7 @@ pub async fn list_persons_seed(
 
 /// Map the `?status=` query to a filter. An unknown/blank value is ignored
 /// (returns all statuses), matching the .NET `_ => null` — not a 400.
-fn status_filter(raw: Option<&str>) -> Option<OperationStatus> {
+pub(crate) fn status_filter(raw: Option<&str>) -> Option<OperationStatus> {
     match raw {
         Some("queued") => Some(OperationStatus::Queued),
         Some("running") => Some(OperationStatus::Running),
