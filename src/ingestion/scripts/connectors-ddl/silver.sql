@@ -1190,3 +1190,9 @@ ORDER BY unique_key
 SETTINGS allow_nullable_key = 1, replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
+CREATE OR REPLACE VIEW silver.contract_version
+(
+    `version` UInt32
+)
+AS SELECT toUInt32(1) AS version;
+

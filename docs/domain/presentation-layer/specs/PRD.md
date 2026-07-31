@@ -231,9 +231,9 @@ The system **MUST** document the contract surface — the silver and identity ob
 
 #### Contract Version Stamp
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-contract-version-stamp`
+- [x] `p2` - **ID**: `cpt-presentation-fr-contract-version-stamp`
 
-The system **MUST** stamp a contract version so presentation can detect the contract surface it was built against. (#1969.)
+The system **MUST** stamp a contract version so presentation can detect the contract surface it was built against. The stamp **MUST** be readable through the contract itself, and presentation **MUST** pin the version it was built against and report a mismatch without refusing to serve. (Shipped, #1969: `silver.contract_version` single-row view stamped by a ClickHouse migration; the analytics service pins `PINNED_CONTRACT_VERSION` and verifies the stamp in a periodic post-boot probe. See [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) §2.3.)
 
 **Rationale**: Additive-only changes are safer to reason about with an explicit version.
 
