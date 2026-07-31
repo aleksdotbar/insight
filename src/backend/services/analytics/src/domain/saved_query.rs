@@ -59,6 +59,18 @@ pub struct UpdateSavedQueryRequest {
     pub sql: Option<String>,
 }
 
+/// Optional parameters for `POST /v1/queries/{id}/run` (#1966).
+///
+/// The `{tenant}` parameter is always injected from the session context and is
+/// never client-settable, so it is absent here. `period` is the first optional
+/// named parameter an author can reference as `{period:<Type>}`; it is bound as
+/// a ClickHouse server-side parameter, never interpolated into the SQL text.
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
+pub struct RunSavedQueryRequest {
+    #[serde(default)]
+    pub period: Option<String>,
+}
+
 /// Result of `POST /v1/queries/{id}/run`.
 ///
 /// `rows` carry a per-query dynamic schema (the `SELECT` columns vary), so each
@@ -85,10 +97,23 @@ impl toolkit::api::api_dto::ResponseApiDto for SavedQueryListResponse {}
 impl toolkit::api::api_dto::ResponseApiDto for RunResponse {}
 impl toolkit::api::api_dto::RequestApiDto for CreateSavedQueryRequest {}
 impl toolkit::api::api_dto::RequestApiDto for UpdateSavedQueryRequest {}
+impl toolkit::api::api_dto::RequestApiDto for RunSavedQueryRequest {}
 
 #[cfg(test)]
 mod tests {
-    use super::UpdateSavedQueryRequest;
+    use super::{RunSavedQueryRequest, UpdateSavedQueryRequest};
+
+    /// The run body is optional and its `period` defaults to absent: `{}` and an
+    /// omitted `period` both parse to `None`; a value parses through.
+    #[test]
+    fn run_request_period_is_optional() -> Result<(), Box<dyn std::error::Error>> {
+        let empty: RunSavedQueryRequest = serde_json::from_str("{}")?;
+        assert_eq!(empty.period, None);
+
+        let set: RunSavedQueryRequest = serde_json::from_str(r#"{"period": "2026-01"}"#)?;
+        assert_eq!(set.period.as_deref(), Some("2026-01"));
+        Ok(())
+    }
 
     /// The triple-state `description` deserializer: absent → unchanged (`None`),
     /// explicit `null` → clear (`Some(None)`), value → set (`Some(Some(..))`).
