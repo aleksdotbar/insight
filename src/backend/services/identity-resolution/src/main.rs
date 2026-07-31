@@ -15,6 +15,7 @@ mod gear;
 mod infra;
 mod migration;
 mod seed_runner;
+mod sync_runner;
 
 // System gears — linked via inventory for the REST host and the gateway-JWT auth
 // pipeline. `use … as _;` is load-bearing: the gears register through `inventory`
@@ -71,9 +72,20 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+    /// Copy the `persons` log into ClickHouse `identity.identity_persons`
+    /// (the metrics email→`person_id` resolve source) and exit. Same execution
+    /// model as `seed` — Helm `CronJob` / manual Job; pairs naturally as
+    /// "sync after seed". Exit codes: 0 ok / 1 failed / 2 another run holds
+    /// the lock / 3 refused by the empty-log guard.
+    Sync {
+        /// Override the empty-log guard (publish an empty snapshot).
+        #[arg(long)]
+        force: bool,
+    },
 }
 
-/// Exit codes of the `seed` subcommand, mirrored in the Job monitoring docs.
+/// Exit codes of the `seed` / `sync` subcommands (one shared scheme),
+/// mirrored in the Job monitoring docs.
 const EXIT_SEED_FAILED: i32 = 1;
 const EXIT_SEED_LOCK_BUSY: i32 = 2;
 const EXIT_SEED_GUARD: i32 = 3;
@@ -105,6 +117,24 @@ async fn main() -> Result<()> {
                 }
                 Err(seed_runner::SeedRunError::Failed(e)) => {
                     tracing::error!(error = %format!("{e:#}"), "persons-seed failed");
+                    std::process::exit(EXIT_SEED_FAILED);
+                }
+            }
+        }
+        Commands::Sync { force } => {
+            init_subcommand_logging();
+            match gear::run_sync(&config, force).await {
+                Ok(()) => Ok(()),
+                Err(sync_runner::SyncRunError::LockBusy) => {
+                    tracing::warn!("another persons-sync run holds the lock; exiting");
+                    std::process::exit(EXIT_SEED_LOCK_BUSY);
+                }
+                Err(sync_runner::SyncRunError::Guard(msg)) => {
+                    tracing::error!(%msg, "persons-sync refused by the empty-log guard");
+                    std::process::exit(EXIT_SEED_GUARD);
+                }
+                Err(sync_runner::SyncRunError::Failed(e)) => {
+                    tracing::error!(error = %format!("{e:#}"), "persons-sync failed");
                     std::process::exit(EXIT_SEED_FAILED);
                 }
             }
