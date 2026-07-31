@@ -450,7 +450,12 @@ Request caps, checked before any per-request enumeration work:
 Entity ids for `person` are canonical person UUIDs since the identity
 cutover: trimmed, parsed as UUIDs (any casing / hyphenless accepted,
 canonicalized on echo), deduplicated. A non-UUID value — including the
-pre-cutover email shape — is a client error, never a silent empty result.
+pre-cutover email shape — is a client error, never a silent empty result, and
+so is the nil UUID, which is syntactically valid but never a person.
+
+The id cap counts SUBMITTED ids, before they are parsed: blanks are skipped
+and duplicates collapse, so capping the parsed count would let a padded
+request through and pay for the parse of every entry first.
 
 Reject with a client error when:
 
@@ -470,19 +475,28 @@ Reject with a client error when:
 
 ## Authorization
 
-v1 decision: any authenticated member of a tenant may query metric results
-for any entity ids in that tenant. Peer views expose aggregates only (no peer
-entity ids); period, timeseries, and breakdown views expose per-entity values.
-Entity-level scoping (self, reports, role-based) is deferred to the real
-authorization system; this endpoint must adopt it when it lands.
+Entity-level scoping is enforced, not deferred. The caller is resolved from
+the gateway JWT, and identity answers in one batch call which of the requested
+person ids that caller may see (`POST /v1/visible-persons`: self, active
+grants, a tenant-wide wildcard grant, and org-chart descendants). One id
+outside the answer refuses the WHOLE request with 403 — never a partial
+response, which is indistinguishable from absent data. The check runs before
+any ClickHouse work.
 
-Warehouse tenant isolation is not implemented platform-wide: compiled queries
-do not filter on the warehouse `tenant_id` column, matching the rest of the
-platform's single-tenant posture. The control-plane tenant id has no defined
-mapping to the warehouse `tenant_id` strings stamped at ingestion; defining
-that mapping and adding the predicate (one place: the compiler's shared WHERE
-clause) is the multi-tenant unlock. The observation and cohort contracts keep
-the column so that change needs no contract migration.
+Reaching identity is mandatory: an unconfigured or unreachable identity
+service is a server error, so an authorization backend that is down can never
+read as "permitted". Service principals bypass the gate. `person` is the only
+entity type with a rule; any other type fails closed.
+
+Peer views expose aggregates only (no peer entity ids); period, timeseries,
+and breakdown views expose per-entity values — for ids the caller is allowed
+to see.
+
+Warehouse tenant isolation is enforced in the compiler: every observation and
+cohort read leads with `tenant_id = ?`, bound from the request. The
+control-plane tenant id and the warehouse `tenant_id` strings stamped at
+ingestion still have no defined mapping, which is the remaining multi-tenant
+unlock.
 
 Schema validation checks:
 

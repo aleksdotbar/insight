@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use toolkit_canonical_errors::CanonicalError;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
@@ -59,33 +57,30 @@ async fn authorize_person_ids(
         return Err(unavailable());
     }
 
-    if authorization.is_none() {
+    let Some(authorization) = authorization else {
         tracing::error!(caller = %caller, "no Authorization header to forward to identity");
         return Err(unavailable());
-    }
+    };
 
     let visible = identity
-        .visible_person_ids(person_ids, authorization)
+        .visible_person_ids(person_ids, Some(authorization))
         .await
         .map_err(|e| {
             tracing::error!(error = %e, caller = %caller, "visibility check failed");
             unavailable()
         })?;
 
-    let unmatched = unmatched_ids(&visible, person_ids);
-    if unmatched.is_empty() {
+    // Only the count leaves this function: which ids were refused is not told
+    // to the caller (an id they may not see is not theirs to learn about).
+    let unmatched = person_ids
+        .iter()
+        .filter(|person_id| !visible.contains(*person_id))
+        .count();
+    if unmatched == 0 {
         return Ok(());
     }
 
-    Err(denied(caller, unmatched.len()))
-}
-
-fn unmatched_ids(visible: &HashSet<Uuid>, person_ids: &[Uuid]) -> Vec<Uuid> {
-    person_ids
-        .iter()
-        .filter(|person_id| !visible.contains(*person_id))
-        .copied()
-        .collect()
+    Err(denied(caller, unmatched))
 }
 
 // INVARIANT: the gate's only 403 — identity answered "not visible". Anything
@@ -113,8 +108,13 @@ fn unavailable() -> CanonicalError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test setup panics on a broken fixture"
+)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use axum::Router;
@@ -198,6 +198,42 @@ mod tests {
         status_of(
             authorize_entity_ids(identity, ctx, Some("Bearer tok"), "person", person_ids).await,
         )
+    }
+
+    #[tokio::test]
+    async fn an_entity_type_with_no_authorization_rule_fails_closed() {
+        let identity = spawn_identity(&[SELF_PERSON]).await;
+        let ctx = ctx_for("user", CALLER);
+
+        // Ids are parsed as person UUIDs for every entity type, but only
+        // `person` has a rule here. A first non-person type must land its own
+        // rule rather than inherit person semantics silently.
+        assert_eq!(
+            status_of(
+                authorize_entity_ids(
+                    &identity,
+                    &ctx,
+                    Some("Bearer tok"),
+                    "org_unit",
+                    &[SELF_PERSON]
+                )
+                .await,
+            ),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+
+    #[tokio::test]
+    async fn a_service_principal_bypasses_the_gate_for_any_entity_type() {
+        let identity = spawn_identity(&[]).await;
+        let ctx = ctx_for(SERVICE_SUBJECT_TYPE, CALLER);
+
+        assert_eq!(
+            status_of(
+                authorize_entity_ids(&identity, &ctx, None, "org_unit", &[STRANGER_PERSON]).await,
+            ),
+            StatusCode::OK,
+        );
     }
 
     #[tokio::test]

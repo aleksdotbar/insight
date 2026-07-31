@@ -51,6 +51,15 @@ def test_metric_results_400_non_uuid_person_ids(api) -> None:
     assert r.status_code == 400, f"status={r.status_code} body={r.text}"
 
 
+def test_metric_results_400_nil_uuid_person_id(api) -> None:
+    """The nil UUID parses but is never a person; it must be a client error, not
+    an identity round trip the gate would report as a server fault."""
+    body = _request(metrics=[{"metric_key": "git.commits", "views": [{"view": "period"}]}],
+                    entity_ids=("00000000-0000-0000-0000-000000000000",))
+    r = api.post("/v1/metric-results", json=body)
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+
+
 def test_metric_results_400_empty_metrics(api) -> None:
     """`metrics` must not be empty — rejected by validate_request_shape before
     any ClickHouse access (deterministic, no seeded data required)."""

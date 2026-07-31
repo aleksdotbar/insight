@@ -587,10 +587,12 @@ models:
     description: >
       Current cohort membership per entity for peer comparison. One row per
       (tenant, entity_type, entity_id, cohort_key) — uniqueness is asserted by
-      tests/gold/assert_metric_entity_cohorts_unique.sql and relied on by the
-      analytics service peer view (join fan-out would corrupt percentiles). The
-      column set is a published contract probed by the analytics service schema
-      validator (`COHORT_COLUMNS`).
+      tests/gold/assert_metric_entity_cohorts_unique.sql. That uniqueness is per
+      EMAIL, which does not imply uniqueness per person: since the identity
+      cutover the peer view joins on person_id and collapses to person grain
+      itself, because two emails can resolve to one person. The column set is a
+      published contract probed by the analytics service schema validator
+      (`COHORT_COLUMNS`).
     columns:
       - name: tenant_id
         description: "Tenant isolation field"

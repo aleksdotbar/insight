@@ -108,9 +108,15 @@ def _connection(cfg: SessionConfig) -> pymysql.connections.Connection:
     )
 
 
+# One row of the persons observation log, in INSERT column order:
+# (value_type, source_type, source_id, tenant_id, value_id, value_full_text,
+#  person_id, author_person_id) — uuids as raw bytes, as MariaDB stores them.
+ObservationRow = tuple[str, str, bytes, bytes, str | None, str | None, bytes, bytes]
+
+
 def _observation_rows(
     tenant: uuid.UUID, person: uuid.UUID, email: str, account: str, name: str, dept: str, title: str
-) -> list[tuple]:
+) -> list[ObservationRow]:
     """(value_type, value_id, value_full_text) observation triples for one person."""
     rows: list[tuple[str, str | None, str | None]] = [
         ("email", email, None),
@@ -126,7 +132,7 @@ def _observation_rows(
     ]
 
 
-def _emailless_observation_rows(tenant: uuid.UUID, person: uuid.UUID) -> list[tuple]:
+def _emailless_observation_rows(tenant: uuid.UUID, person: uuid.UUID) -> list[ObservationRow]:
     """Observations for a person with NO email: the person-id key must resolve
     them anyway (the email key structurally cannot)."""
     rows: list[tuple[str, str | None, str | None]] = [

@@ -14,6 +14,9 @@ hidden candidate is indistinguishable from a missing one (404).
 
 from __future__ import annotations
 
+import uuid
+
+import httpx
 import pytest
 
 from identity.contract import AMBIGUOUS_STATUSES, problem
@@ -22,11 +25,11 @@ from lib import identity_seed as seed
 pytestmark = pytest.mark.identity
 
 
-def _resolve_email(client, email):
+def _resolve_email(client: httpx.Client, email: str) -> httpx.Response:
     return client.post("/v1/profiles", json={"value_type": "email", "value": email})
 
 
-def _resolve_person_id(client, person_id):
+def _resolve_person_id(client: httpx.Client, person_id: uuid.UUID | str) -> httpx.Response:
     return client.post(
         "/v1/profiles", json={"value_type": "person_id", "value": str(person_id)}
     )

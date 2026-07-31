@@ -70,6 +70,9 @@ def _seed_identity_persons(cfg: SessionConfig, emails: list[str]) -> None:
     normally fed by the identity-resolution persons-sync — the rig plays that
     role here).
     """
+    # NOT worker-scoped: the resolve_person_id macro names `identity` literally,
+    # so a per-worker suffix here would leave gold reading an unseeded table.
+    # Enabling xdist for this suite has to make the macro schema-aware first.
     clickhouse.ensure_database(cfg, "identity")
     clickhouse.execute(
         cfg,

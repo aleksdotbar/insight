@@ -114,7 +114,7 @@ fn read_err(e: anyhow::Error) -> CanonicalError {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "test setup panics on a broken fixture")]
 mod tests {
     use super::*;
 

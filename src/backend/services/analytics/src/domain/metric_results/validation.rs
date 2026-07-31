@@ -197,13 +197,17 @@ fn validate_request_shape(req: &MetricResultsRequest) -> Result<RequestShape, Ca
     }
 
     let entity_type = normalize_entity_type(&req.entity.r#type)?;
-    let person_ids = parse_person_ids(&req.entity.ids)?;
-    if person_ids.len() > MAX_PERSON_IDS {
+    // The cap counts SUBMITTED ids, and is checked before parsing them: the
+    // parsed count is smaller (blanks are skipped, duplicates collapse), so
+    // capping it would let a caller pad a request past the bound and pay for
+    // the parse of every entry first.
+    if req.entity.ids.len() > MAX_PERSON_IDS {
         return invalid(
             "entity.ids",
             format!("at most {MAX_PERSON_IDS} entity ids per request"),
         );
     }
+    let person_ids = parse_person_ids(&req.entity.ids)?;
     let from = parse_date("period.from", &req.period.from)?;
     let to = parse_date("period.to", &req.period.to)?;
     if from > to {
@@ -511,13 +515,10 @@ pub(crate) fn normalize_entity_type(entity_type: &str) -> Result<String, Canonic
 // the lowercased email); `Uuid::parse_str` accepts any casing and hyphenless
 // forms, and re-rendering canonicalizes — no bespoke normalization left.
 //
-// DELIBERATE CONTRACT: entity ids are parsed as person UUIDs for EVERY entity
-// type, and the visibility gate has an authorization rule for `person` only
-// (any other type is a fail-closed 500). Every registry entity type is
-// `person` today. A first non-person type must land BOTH halves — its own id
-// shape here and its own gate rule — rather than inherit person semantics
-// silently; until then this error message is accurate for every request the
-// registry can produce.
+// INVARIANT: ids are parsed as person UUIDs for EVERY entity type, which holds
+// only while every registry entity type is `person`. The other half of the
+// invariant lives in the visibility gate, pinned by
+// `an_entity_type_with_no_authorization_rule_fails_closed`.
 fn parse_person_ids(ids: &[String]) -> Result<Vec<Uuid>, CanonicalError> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::with_capacity(ids.len());
@@ -776,6 +777,34 @@ mod tests {
         let ids: Vec<String> = (0..=MAX_PERSON_IDS)
             .map(|i| Uuid::from_u128(i as u128 + 1).to_string())
             .collect();
+        let req = shape_request(
+            ids.iter().map(String::as_str).collect(),
+            "2026-01-01",
+            "2026-01-31",
+            vec!["ai.x"],
+        );
+        assert!(validate_request_shape(&req).is_err());
+    }
+
+    #[test]
+    fn blank_ids_cannot_pad_a_request_past_the_id_cap() {
+        let mut ids: Vec<String> = (0..MAX_PERSON_IDS)
+            .map(|i| Uuid::from_u128(i as u128 + 1).to_string())
+            .collect();
+        ids.push("   ".to_owned());
+        let req = shape_request(
+            ids.iter().map(String::as_str).collect(),
+            "2026-01-01",
+            "2026-01-31",
+            vec!["ai.x"],
+        );
+        assert!(validate_request_shape(&req).is_err());
+    }
+
+    #[test]
+    fn duplicate_ids_cannot_pad_a_request_past_the_id_cap() {
+        let ids: Vec<String> =
+            std::iter::repeat_n(Uuid::from_u128(1).to_string(), MAX_PERSON_IDS + 1).collect();
         let req = shape_request(
             ids.iter().map(String::as_str).collect(),
             "2026-01-01",

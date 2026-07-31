@@ -33,8 +33,9 @@ def test_caller_sees_their_own_subtree_and_not_an_unrelated_person(api) -> None:
 def test_an_explicit_grant_makes_a_person_outside_the_subtree_visible(bob_api) -> None:
     """bob is not admin and `hidden` is not in his line; the seeded grant is the
     only reason he may see them."""
-    visible = set(_check(bob_api, [seed.HIDDEN]).json()["visible"])
-    assert str(seed.HIDDEN) in visible
+    r = _check(bob_api, [seed.HIDDEN])
+    assert r.status_code == 200, f"status={r.status_code} body={r.text}"
+    assert str(seed.HIDDEN) in set(r.json()["visible"])
 
 
 def test_an_unknown_person_id_is_absent_rather_than_an_error(api) -> None:
@@ -47,7 +48,9 @@ def test_an_unknown_person_id_is_absent_rather_than_an_error(api) -> None:
 
 def test_a_person_in_another_tenant_is_never_visible(api) -> None:
     """eve belongs to a different tenant; tenant scoping precedes visibility."""
-    assert _check(api, [seed.EVE]).json()["visible"] == []
+    r = _check(api, [seed.EVE])
+    assert r.status_code == 200, f"status={r.status_code} body={r.text}"
+    assert r.json()["visible"] == []
 
 
 def test_a_non_uuid_id_is_a_400(api) -> None:
