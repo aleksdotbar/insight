@@ -106,6 +106,10 @@ fn build_state(db: DatabaseConnection, identity: IdentityClient) -> AppState {
 /// Fixed test subject id. Handlers filter by tenant, not subject (subject only
 /// surfaces in audit `actor_subject`).
 const TEST_PERSON: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0001);
+/// A person the loopback identity reports as visible to the caller.
+const VISIBLE_PERSON: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0002);
+/// A person it does not — the gate's 403 case.
+const HIDDEN_PERSON: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0003);
 
 /// Mount the real operation table with the `SecurityContext` injected directly
 /// for `tenant`, **bypassing** the host authn pipeline — the
@@ -129,13 +133,13 @@ fn app_with_identity(db: DatabaseConnection, tenant: Uuid, identity: IdentityCli
 }
 
 /// Loopback identity serving `POST /v1/visible-persons` — answers with the
-/// intersection of the requested emails and `visible`.
-async fn spawn_identity(visible: &[&str]) -> Result<IdentityClient, Box<dyn std::error::Error>> {
+/// intersection of the requested person ids and `visible`.
+async fn spawn_identity(visible: &[Uuid]) -> Result<IdentityClient, Box<dyn std::error::Error>> {
     let visible = Arc::new(
         visible
             .iter()
-            .map(|e| (*e).to_owned())
-            .collect::<std::collections::HashSet<String>>(),
+            .copied()
+            .collect::<std::collections::HashSet<Uuid>>(),
     );
 
     let app = Router::new().route(
@@ -143,13 +147,14 @@ async fn spawn_identity(visible: &[&str]) -> Result<IdentityClient, Box<dyn std:
         axum::routing::post(move |axum::Json(req): axum::Json<Value>| {
             let visible = Arc::clone(&visible);
             async move {
-                let granted = req["emails"]
+                let granted = req["person_ids"]
                     .as_array()
                     .map(|ids| {
                         ids.iter()
                             .filter_map(|v| v.as_str())
-                            .filter(|email| visible.contains(*email))
-                            .map(str::to_owned)
+                            .filter_map(|v| Uuid::parse_str(v).ok())
+                            .filter(|person_id| visible.contains(person_id))
+                            .map(|person_id| person_id.to_string())
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
@@ -167,9 +172,10 @@ async fn spawn_identity(visible: &[&str]) -> Result<IdentityClient, Box<dyn std:
     Ok(IdentityClient::new(&format!("http://{addr}"))?)
 }
 
-fn metric_results_body(entity_ids: &[&str]) -> Value {
+fn metric_results_body(person_ids: &[Uuid]) -> Value {
+    let ids = person_ids.iter().map(Uuid::to_string).collect::<Vec<_>>();
     json!({
-        "entity": {"type": "person", "ids": entity_ids},
+        "entity": {"type": "person", "ids": ids},
         "period": {"from": "2026-01-01", "to": "2026-01-31"},
         "metrics": [{"metric_key": "ai.accepted_lines", "views": [{"view": "period"}]}],
     })
@@ -254,13 +260,13 @@ async fn metric_results_forbids_a_person_outside_the_callers_visible_set() -> Te
     let Some(db) = connect_or_skip().await else {
         return Ok(());
     };
-    let identity = spawn_identity(&["report@example.com"]).await?;
+    let identity = spawn_identity(&[VISIBLE_PERSON]).await?;
     let app = app_with_identity(db, Uuid::now_v7(), identity);
 
     let req = json_req(
         "POST",
         "/v1/metric-results",
-        &metric_results_body(&["ceo@example.com"]),
+        &metric_results_body(&[HIDDEN_PERSON]),
     )?;
     let resp = app.oneshot(req).await?;
 
@@ -275,27 +281,29 @@ async fn metric_results_forbids_a_person_outside_the_callers_visible_set() -> Te
 #[tokio::test]
 #[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
 async fn metric_results_does_not_deny_a_person_inside_the_callers_visible_set() -> TestResult {
-    // ClickHouse is unreachable here, so an admitted request cannot reach a 200;
-    // what this pins is that the gate did not reject it. The status alone is not
-    // evidence of anything further — a gate failure and a ClickHouse failure are
-    // both 500.
+    // ClickHouse is unreachable here, so an admitted request cannot reach a
+    // 200; what this pins is that the gate did not reject it. Asserting the
+    // exact 500 (not merely `!= 403`) is deliberate: a 400 from validation
+    // would satisfy a not-forbidden assertion and hide a request that never
+    // reached the gate at all.
     let Some(db) = connect_or_skip().await else {
         return Ok(());
     };
-    let identity = spawn_identity(&["report@example.com"]).await?;
+    let identity = spawn_identity(&[VISIBLE_PERSON]).await?;
     let app = app_with_identity(db, Uuid::now_v7(), identity);
 
     let req = json_req(
         "POST",
         "/v1/metric-results",
-        &metric_results_body(&["report@example.com"]),
+        &metric_results_body(&[VISIBLE_PERSON]),
     )?;
     let resp = app.oneshot(req).await?;
 
-    assert_ne!(
+    assert_eq!(
         resp.status(),
-        StatusCode::FORBIDDEN,
-        "a person identity reports as visible must pass the gate"
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "a visible person must pass the gate and fail only on the unreachable \
+         ClickHouse; a 400 would mean the request never got that far"
     );
     Ok(())
 }

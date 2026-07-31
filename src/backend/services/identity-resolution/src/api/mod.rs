@@ -290,10 +290,10 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
 
     OperationBuilder::post("/v1/visible-persons")
         .operation_id("identity_resolution.visible_persons.create")
-        .summary("Filter emails to the ones the caller may see")
+        .summary("Filter person ids to the ones the caller may see")
         .authenticated()
         .no_license_required()
-        .json_request::<visible_persons::VisiblePersonsRequest>(openapi, "Emails to check")
+        .json_request::<visible_persons::VisiblePersonsRequest>(openapi, "Person ids to check")
         .json_response_with_schema::<visible_persons::VisiblePersonsResponse>(
             openapi,
             StatusCode::OK,
