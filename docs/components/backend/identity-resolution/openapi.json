@@ -98,6 +98,12 @@
             "type": "string"
           },
           "value_type": {
+            "description": "Which key `value` carries: an email (tenant-wide), a source-native account id (needs both source fields), or the canonical person UUID.",
+            "enum": [
+              "email",
+              "id",
+              "person_id"
+            ],
             "nullable": true,
             "type": "string"
           }

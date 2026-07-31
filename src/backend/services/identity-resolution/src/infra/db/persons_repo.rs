@@ -166,6 +166,29 @@ pub async fn resolve_person_ids_by_source_id(
     person_ids_from_rows(rows)
 }
 
+/// Whether the tenant's persons log holds any observation for `person_id`.
+///
+/// The existence question the `value_type='person_id'` profile lookup needs:
+/// the log is the person registry, so "has at least one row" IS "the person
+/// exists in this tenant". Kept as a bounded EXISTS-shaped probe rather than
+/// reusing `fetch_person_observations`, which pulls every row of the person.
+///
+/// # Errors
+///
+/// Returns an error if the query fails.
+pub async fn person_exists(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    person_id: Uuid,
+) -> anyhow::Result<bool> {
+    let found = persons::Entity::find()
+        .filter(persons::Column::InsightTenantId.eq(tenant_id.as_bytes().to_vec()))
+        .filter(persons::Column::PersonId.eq(person_id.as_bytes().to_vec()))
+        .one(db)
+        .await?;
+    Ok(found.is_some())
+}
+
 /// Fetch every observation row for a person within the tenant (all value types,
 /// all sources). The caller collapses them to the current value per attribute.
 ///

@@ -7,6 +7,7 @@ so tests can assert exact ids; all rows carry reason='e2e-seed'.
 The org tree (tenant = TEST_TENANT_ID, source = bamboohr/SOURCE_ID):
 
     alice (admin, root)
+    ├── no_email (person id only — no email observation)
     ├── bob ── carol
     ├── dup1 ┐  same email dup@e2e.test → ambiguous-profile case
     └── dup2 ┘
@@ -49,6 +50,9 @@ CAROL = uuid.UUID("aaaaaaaa-0000-4000-8000-000000000003")
 DUP1 = uuid.UUID("aaaaaaaa-0000-4000-8000-000000000004")
 DUP2 = uuid.UUID("aaaaaaaa-0000-4000-8000-000000000005")
 HIDDEN = uuid.UUID("aaaaaaaa-0000-4000-8000-000000000006")
+# A person the log knows WITHOUT a current email — reachable only by person id
+# (the key the SPA routes on). Inside alice's subtree so visibility passes.
+NO_EMAIL_PERSON = uuid.UUID("aaaaaaaa-0000-4000-8000-000000000007")
 EVE = uuid.UUID("bbbbbbbb-0000-4000-8000-000000000001")
 
 VISIBILITY_GRANT_BOB_HIDDEN = uuid.UUID("cccccccc-0000-4000-8000-000000000001")
@@ -83,6 +87,7 @@ PEOPLE: dict[uuid.UUID, tuple[str, str, str, str, str]] = {
 # child -> parent (None = top of tree). All within TEST_TENANT_ID.
 ORG_EDGES: dict[uuid.UUID, uuid.UUID | None] = {
     ALICE: None,
+    NO_EMAIL_PERSON: ALICE,
     BOB: ALICE,
     CAROL: BOB,
     DUP1: ALICE,
@@ -121,6 +126,22 @@ def _observation_rows(
     ]
 
 
+def _emailless_observation_rows(tenant: uuid.UUID, person: uuid.UUID) -> list[tuple]:
+    """Observations for a person with NO email: the person-id key must resolve
+    them anyway (the email key structurally cannot)."""
+    rows: list[tuple[str, str | None, str | None]] = [
+        ("id", "acc-no-email", None),
+        ("display_name", None, "No Email Person"),
+        ("department", None, "Engineering"),
+        ("job_title", None, "Engineer"),
+        ("status", None, "Active"),
+    ]
+    return [
+        (value_type, SOURCE_TYPE, SOURCE_ID.bytes, tenant.bytes, value_id, value_full_text, person.bytes, ALICE.bytes)
+        for (value_type, value_id, value_full_text) in rows
+    ]
+
+
 def seed(cfg: SessionConfig) -> None:
     """Insert the fixture dataset (idempotent: wipes e2e-seed rows first)."""
     conn = _connection(cfg)
@@ -140,6 +161,10 @@ def seed(cfg: SessionConfig) -> None:
                     observation_sql,
                     _observation_rows(TEST_TENANT_ID, person, email, account, name, dept, title),
                 )
+            cur.executemany(
+                observation_sql,
+                _emailless_observation_rows(TEST_TENANT_ID, NO_EMAIL_PERSON),
+            )
             # eve: same shape, other tenant.
             cur.executemany(
                 observation_sql,
