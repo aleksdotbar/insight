@@ -25,6 +25,61 @@ pytestmark = [pytest.mark.identity, pytest.mark.mutating]
 _SCHEMAS_PATH = Path(__file__).parents[1] / "metrics" / "schemas" / "bronze_bamboohr.employees.yaml"
 _BAMBOOHR_SCHEMAS = yaml.safe_load(_SCHEMAS_PATH.read_text(encoding="utf-8"))["schemas"]
 
+# No `schemas/bronze_ms_entra.users.yaml` fixture exists yet (the metrics rig
+# has never needed to seed this table) — declared here from
+# `scripts/connectors-ddl/ms-entra.sql`, which is itself the deliberate proof
+# point of the test below: that DDL carries no manager/managerDn column at all.
+_MS_ENTRA_SCHEMAS = {
+    "bronze_ms_entra.users": {
+        "properties": {
+            "_airbyte_raw_id": {"type": "string"},
+            "_airbyte_extracted_at": {"type": "string", "format": "date-time"},
+            "_airbyte_meta": {"type": "string"},
+            "_airbyte_generation_id": {"type": "integer"},
+            "id": {"type": ["string", "null"]},
+            "userPrincipalName": {"type": ["string", "null"]},
+            "mail": {"type": ["string", "null"]},
+            "displayName": {"type": ["string", "null"]},
+            "employeeId": {"type": ["string", "null"]},
+            "department": {"type": ["string", "null"]},
+            "jobTitle": {"type": ["string", "null"]},
+            "accountEnabled": {"type": ["boolean", "null"]},
+            "onPremisesSamAccountName": {"type": ["string", "null"]},
+            "userType": {"type": ["string", "null"]},
+            "tenant_id": {"type": ["string", "null"]},
+            "source_id": {"type": ["string", "null"]},
+            "unique_key": {"type": ["string", "null"]},
+        }
+    }
+}
+
+
+def _ms_entra_user(*, run_tag: str, entity_id: str, email: str) -> dict:
+    """A minimal `bronze_ms_entra.users` row — deliberately has no manager
+    field of any kind, since the real DDL has none to give one.
+
+    Only `mail` is populated — of ALL eleven columns `ms_entra__users_snapshot`
+    tracks (not just the five `ms_entra__identity_inputs.sql` reads), since
+    the shared `identity_inputs_from_history` macro's ADR-0002 `id_upserts`
+    CTE emits one canonical `id` row per TRACKED-FIELD history row for the
+    entity (unfiltered by which fields identity_inputs actually reads), not
+    one per entity. Seeding a second non-null field in the same snapshot
+    batch collides on `unique_key` (every field's version-1 row shares the
+    same `updated_at`) — a separate latent issue in the shared macro, not
+    what this test is about.
+    """
+    return {
+        "_airbyte_raw_id": str(uuid.uuid4()),
+        "_airbyte_extracted_at": "2026-01-05T00:00:00",
+        "_airbyte_meta": "{}",
+        "_airbyte_generation_id": 0,
+        "id": entity_id,
+        "unique_key": f"pipeline-{run_tag}-ms-entra-{entity_id}",
+        "tenant_id": f"pipeline-tenant-{run_tag}",
+        "source_id": f"pipeline-source-{run_tag}",
+        "mail": email,
+    }
+
 
 def _bamboohr_employee(
     *, run_tag: str, entity_id: str, email: str, display_name: str, supervisor_email: str | None
@@ -264,3 +319,53 @@ def test_seed_and_subchart_survive_a_circular_manager_chain(identity_svc, compos
     # Bounded by the harness's configured max_depth=16 (lib/identity.py) — a
     # true infinite loop would never reach this assertion at all.
     assert max(depths) <= 16, f"subchart descent on a cycle exceeded the server's max_depth cap: {depths}"
+
+
+def test_ms_entra_connector_emits_no_org_chart_signal_yet(
+    ch_seeder: CHSeeder,
+    dbt_runner: DbtRunner,
+    worker_ctx: WorkerContext,
+    compose_stack: SessionConfig,
+) -> None:
+    """Documents a real product gap, not just a test gap: `#1602`'s QA review
+    flagged "MS Entra has no org-chart test at all", but the reason is that
+    `ms_entra__identity_inputs.sql` tracks no manager field whatsoever —
+    `scripts/connectors-ddl/ms-entra.sql` has no `managerDn`/`manager` column
+    to read one from. Active Directory has a dedicated
+    `active_directory__manager_identity_inputs.sql` that resolves `managerDn`
+    to a manager's email; MS Entra has no equivalent, so there is no
+    org_chart-relevant signal to seed a real org-chart test against.
+
+    This seeds one user through the REAL ms-entra connector/dbt path and pins
+    the current (missing) behavior: no `parent_email`/`parent_id` observation
+    is ever produced. When manager sync is added for MS Entra, this assertion
+    fails — replace it with a real org-chart projection test mirroring
+    `test_seed_org_chart_from_real_bamboohr_connector_pipeline` above.
+    """
+    run_tag = uuid.uuid4().hex[:10]
+    entity_id = f"entra-{run_tag}"
+    email = f"entra.user.{run_tag}@e2e.test"
+
+    ch_seeder.truncate_touched()
+    ch_seeder.seed_bronze(
+        {"bronze_ms_entra.users": [_ms_entra_user(run_tag=run_tag, entity_id=entity_id, email=email)]},
+        _MS_ENTRA_SCHEMAS,
+    )
+
+    staging, silver = dbt_runner.derive_selectors({("bronze_ms_entra", "users")})
+    dbt_runner.build(" ".join(f"+{m}" for m in staging), worker_ctx=worker_ctx)
+    assert "identity_inputs" in silver, f"ms_entra__identity_inputs no longer tags silver:identity_inputs (silver={silver})"
+    dbt_runner.run("identity_inputs", worker_ctx=worker_ctx)
+
+    emitted = clickhouse.query(
+        compose_stack,
+        "SELECT DISTINCT value_type FROM identity.identity_inputs"
+        f" WHERE insight_source_type = 'ms-entra' AND source_account_id = '{entity_id}'",
+    )
+    value_types = {row[0] for row in emitted}
+    assert value_types, "expected at least id/email/display_name identity signals from the seeded user"
+    assert "parent_email" not in value_types and "parent_id" not in value_types, (
+        f"ms-entra now emits a manager signal ({value_types}) — the #1602 gap is closed. "
+        "Rewrite this test into a real org-chart projection proof (mirroring "
+        "active_directory__manager_identity_inputs.sql) instead of asserting absence."
+    )
