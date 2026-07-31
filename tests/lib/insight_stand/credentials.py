@@ -1,21 +1,15 @@
-"""What a request carries to prove who it is.
+"""Winning and holding a real session.
 
-The interface exposes only what an HTTP call needs *attached*, never how the
-material was obtained. That is what lets two very different implementations
-coexist without the interface moving:
+One kind of credential, on purpose: a session cookie obtained by actually
+logging in at the stand's IdP. That is the only kind that proves anything about
+the deployed product. Minting a bearer token is the in-process rig's path
+(`src/ingestion/tests/e2e/lib/gateway_jwt.py`); doing it here would exercise
+JWT verification — which that rig already covers — and skip the login entirely.
 
-* `RealLogin` — a session cookie won by actually logging in at the stand's IdP.
-* a future minted-bearer credential — the `GatewayAuth.mint` / `auth_header`
-  shape already used by `src/ingestion/tests/e2e/lib/gateway_jwt.py`, which
-  returns exactly `{"Authorization": "Bearer <jwt>"}` and therefore drops
-  straight into `headers()` with no signature change. (That rig is read-only
-  reference material here; nothing in this tree imports from it.)
-
-`AnonymousCredentials` makes "no auth" an explicit, named case rather than an
-omitted argument, so a test that means to be unauthenticated says so.
-
-Nothing here mints a token. Minting is the in-process rig's path and would
-defeat this suite's whole purpose, which is to exercise the deployed login.
+There is deliberately no `Credentials` interface and no `AnonymousCredentials`.
+An interface with one implementation, whose only stated purpose was to
+accommodate a second implementation this suite forbids, is abstraction with
+nothing behind it. An unauthenticated client is an `ApiClient` with no session.
 """
 
 from __future__ import annotations
@@ -24,7 +18,7 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from .errors import LoginNotCompletedError
@@ -61,34 +55,6 @@ _LOGIN_FORM_RE = re.compile(
 _FORM_ERROR_RE = re.compile(
     r'<span[^>]*class="[^"]*kc-feedback-text[^"]*"[^>]*>(.*?)</span>', re.IGNORECASE | re.DOTALL
 )
-
-
-@runtime_checkable
-class Credentials(Protocol):
-    """Auth material to attach to a request."""
-
-    def headers(self) -> dict[str, str]:
-        """Headers to merge into the outgoing request.
-
-        Either an `Authorization: Bearer …` header (JWT-style) or a `Cookie:`
-        header (session-style) — the caller neither knows nor cares which.
-        """
-        ...
-
-    def is_authenticated(self) -> bool:
-        """False for an explicitly-anonymous credential."""
-        ...
-
-
-@dataclass(frozen=True)
-class AnonymousCredentials:
-    """No credential at all — the named case the 401 assertion uses."""
-
-    def headers(self) -> dict[str, str]:
-        return {}
-
-    def is_authenticated(self) -> bool:
-        return False
 
 
 @dataclass
@@ -263,7 +229,5 @@ __all__: Sequence[str] = (
     "DEFAULT_MAX_SESSION_AGE_S",
     "LOGIN_PATH",
     "SESSION_COOKIE_NAME",
-    "AnonymousCredentials",
-    "Credentials",
     "RealLogin",
 )

@@ -7,8 +7,7 @@ Four things live here, and nothing else:
   and seeded facts.
 * `stand` — where the stand is: base-URL resolution for a host-side or
   in-network runner.
-* `credentials` — what a request carries: the `Credentials` interface plus
-  `AnonymousCredentials` and `RealLogin`.
+* `credentials` — `RealLogin`, the one way a request proves who it is.
 * `api` — the gateway-fronted HTTP client.
 * `wait` — bounded polling for eventually-consistent state.
 
@@ -36,8 +35,6 @@ from .credentials import (
     CALLBACK_PATH,
     LOGIN_PATH,
     SESSION_COOKIE_NAME,
-    AnonymousCredentials,
-    Credentials,
     RealLogin,
 )
 from .errors import (
@@ -92,11 +89,9 @@ __all__: Sequence[str] = (
     "ROLE_TO_REALM_ROLES",
     "SESSION_COOKIE_NAME",
     "SUPPORTED_MANIFEST_VERSION",
-    "AnonymousCredentials",
     "ApiClient",
     "ApiResponse",
     "Capabilities",
-    "Credentials",
     "GoldenMetric",
     "LoginNotCompletedError",
     "Manifest",

@@ -22,13 +22,14 @@ Two rules follow from that split:
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-# `tests/lib` on sys.path so a checkout runs without an install step.
-# `pip install -e tests/lib` also works and takes precedence naturally.
+# `tests/lib` on sys.path so a bare `pytest tests/stand` works in a checkout
+# that has not been synced. `uv sync --project tests` installs the same package
+# and takes precedence naturally.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _LIB_PATH = _REPO_ROOT / "tests" / "lib"
 if str(_LIB_PATH) not in sys.path:
@@ -38,7 +39,6 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
     ADMIN_ROLE,
     LEAD_ROLE,
     MEMBER_ROLE,
-    AnonymousCredentials,
     ApiClient,
     Manifest,
     ManifestError,
@@ -78,24 +78,11 @@ def _manifest() -> Manifest:
 # ---------------------------------------------------------------------------
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line(
-        "markers",
-        "requires_seed(*names): stand fixtures this test needs, validated "
-        "against the manifest's fixture catalog at COLLECTION time",
-    )
-    config.addinivalue_line(
-        "markers",
-        "requires_ingestion: needs a stand whose manifest declares the "
-        "'ingestion' capability; skipped with a reason when it does not",
-    )
-    # Make skips visible. Under the wrapper's `pytest -q` the default report
-    # chars ("fE") show a bare `s` and no reason, which turns a skipped test
-    # into an invisible one. Appending "s" prints every skip with its reason in
-    # the short summary; an explicit `-r` from the caller is preserved.
-    reportchars = getattr(config.option, "reportchars", "") or ""
-    if "s" not in reportchars and "a" not in reportchars:
-        config.option.reportchars = reportchars + "s"
+# `requires_seed` / `requires_ingestion` are declared in tests/pyproject.toml's
+# `[tool.pytest.ini_options] markers`, together with `--strict-markers` and the
+# `-ra` that keeps every skip reported with its reason. They are deliberately
+# NOT re-registered here: two declarations of the same marker are two places to
+# drift, and the project config is the one a reader looks at first.
 
 
 def pytest_collection_modifyitems(
@@ -196,21 +183,13 @@ def stand_base_url(stand_endpoint: StandEndpoint) -> str:
 
 
 @pytest.fixture
-def anonymous_credentials() -> AnonymousCredentials:
-    """No auth material at all — the named case, not an omitted argument."""
-    return AnonymousCredentials()
-
-
-@pytest.fixture
-def api_client(
-    stand_base_url: str, anonymous_credentials: AnonymousCredentials
-) -> Iterator[ApiClient]:
-    """Gateway-fronted client with NO credentials.
+def api_client(stand_base_url: str) -> ApiClient:
+    """Gateway-fronted client with NO session — genuinely unauthenticated.
 
     For an authenticated client, take `.client` off a `PersonaSession` from
-    `login_as` below.
+    `session_for` below.
     """
-    yield ApiClient(base_url=stand_base_url, credentials=anonymous_credentials)
+    return ApiClient(base_url=stand_base_url)
 
 
 # ---------------------------------------------------------------------------
@@ -219,13 +198,17 @@ def api_client(
 
 
 @pytest.fixture(scope="session")
-def login_as(
+def session_for(
     stand_manifest: Manifest, stand_base_url: str
 ) -> Callable[[str], PersonaSession]:
-    """`login_as("dev_lead")` → a real, verified, logged-in session.
+    """`session_for("dev_lead")` → that persona's real, verified session.
 
-    The argument is a key in the manifest's `fixtures{}` catalog — never an
-    email and never a UUID — so a roster reshuffle moves the person without
+    A factory, not an action: it hands back a `PersonaSession` — the person,
+    their login and a client already carrying it — and caches one per persona
+    for the run.
+
+    The argument is a key in the manifest's `fixtures{}` catalog, never an
+    email and never a UUID, so a roster reshuffle moves the person without
     touching a single test. Unknown names fail naming what is available.
 
     Every session is won by driving the deployed OIDC chain against Keycloak:
@@ -233,43 +216,43 @@ def login_as(
     Nothing here mints a token; that is the in-process rig's path, and using it
     would mean this suite never exercises the login it exists to test.
 
-    Sessions are cached for the run and re-acquired automatically before the
-    stand's 10-minute session TTL can expire mid-suite.
+    Cached sessions re-acquire themselves before the stand's 10-minute TTL can
+    expire mid-suite.
     """
     cache: dict[str, PersonaSession] = {}
 
-    def _login_as(name: str) -> PersonaSession:
+    def _session_for(name: str) -> PersonaSession:
         if name not in cache:
             cache[name] = open_session(name, stand_manifest, stand_base_url)
         return cache[name]
 
-    return _login_as
+    return _session_for
 
 
 @pytest.fixture(scope="session")
-def admin(
-    login_as: Callable[[str], PersonaSession], stand_manifest: Manifest
+def admin_session(
+    session_for: Callable[[str], PersonaSession], stand_manifest: Manifest
 ) -> PersonaSession:
-    """A persona the realm granted `insight-admin`."""
-    return login_as(resolve_by_realm_role(stand_manifest, ADMIN_ROLE))
+    """A session for a persona the realm granted `insight-admin`."""
+    return session_for(resolve_by_realm_role(stand_manifest, ADMIN_ROLE))
 
 
 @pytest.fixture(scope="session")
-def lead(
-    login_as: Callable[[str], PersonaSession], stand_manifest: Manifest
+def lead_session(
+    session_for: Callable[[str], PersonaSession], stand_manifest: Manifest
 ) -> PersonaSession:
-    """A persona granted `insight-lead` but NOT `insight-admin`.
+    """A session for a persona granted `insight-lead` but NOT `insight-admin`.
 
-    Excluding admins matters: the CEO holds both, so without it `lead` and
-    `admin` could resolve to the same person and every lead-vs-admin
-    comparison would pass vacuously.
+    Excluding admins matters: the CEO holds both, so without it `lead_session`
+    and `admin_session` could resolve to the same person and every
+    lead-vs-admin comparison would pass vacuously.
     """
-    return login_as(resolve_by_realm_role(stand_manifest, LEAD_ROLE, excluding=ADMIN_ROLE))
+    return session_for(resolve_by_realm_role(stand_manifest, LEAD_ROLE, excluding=ADMIN_ROLE))
 
 
 @pytest.fixture(scope="session")
-def member(
-    login_as: Callable[[str], PersonaSession], stand_manifest: Manifest
+def member_session(
+    session_for: Callable[[str], PersonaSession], stand_manifest: Manifest
 ) -> PersonaSession:
-    """A persona the realm granted only `insight-member`."""
-    return login_as(resolve_by_realm_role(stand_manifest, MEMBER_ROLE))
+    """A session for a persona the realm granted only `insight-member`."""
+    return session_for(resolve_by_realm_role(stand_manifest, MEMBER_ROLE))

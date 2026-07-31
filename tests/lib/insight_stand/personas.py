@@ -1,7 +1,7 @@
 """Turning a manifest fixture name into a logged-in identity.
 
 Three things live here, all in service of one guarantee: when a test says
-`login_as("dev_lead")`, the session it gets back really belongs to that person
+`session_for("dev_lead")`, the session it gets back really belongs to that person
 and really carries the authority the roster says they have.
 
 * **Credential sourcing.** Never a literal in this tree, and never from the
@@ -185,7 +185,7 @@ class PersonaSession:
 
     name: str
     person: Person
-    credentials: RealLogin
+    login: RealLogin
     client: ApiClient
 
     @property
@@ -215,18 +215,18 @@ def open_session(
     """
     person = manifest.fixture(name)
     verify_realm_roles(person, realm_path=realm_path)
-    credentials = RealLogin(
+    login = RealLogin(
         base_url=base_url,
         email=person.email,
         password=persona_password(person.email, realm_path=realm_path),
         timeout_s=timeout_s,
     )
-    credentials.login()
+    login.login()
     return PersonaSession(
         name=name,
         person=person,
-        credentials=credentials,
-        client=ApiClient(base_url=base_url, credentials=credentials, timeout_s=timeout_s),
+        login=login,
+        client=ApiClient(base_url=base_url, session=login, timeout_s=timeout_s),
     )
 
 

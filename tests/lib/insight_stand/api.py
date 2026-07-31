@@ -19,10 +19,10 @@ gateway's business.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from .credentials import AnonymousCredentials, Credentials
+from .credentials import RealLogin
 
 ANALYTICS_PREFIX = "/api/analytics"
 IDENTITY_PREFIX = "/api/identity"
@@ -76,15 +76,16 @@ class ApiResponse:
 
 @dataclass
 class ApiClient:
-    """Issues requests at one stand, with one credential.
+    """Issues requests at one stand, optionally carrying a session.
 
-    Credentials are attached per request via `Credentials.headers()`, so a
-    client built with `AnonymousCredentials` genuinely sends nothing — the 401
-    assertion is testing the stand, not a missing argument.
+    `session is None` means genuinely unauthenticated — no header is attached
+    at all — so a 401 assertion is testing the stand rather than a mistake in
+    the test. The session is re-read on every request, so a `RealLogin` that
+    re-acquires mid-run is picked up without rebuilding the client.
     """
 
     base_url: str
-    credentials: Credentials = field(default_factory=AnonymousCredentials)
+    session: RealLogin | None = None
     timeout_s: float = 30.0
 
     def __post_init__(self) -> None:
@@ -92,11 +93,9 @@ class ApiClient:
 
     # -- construction ------------------------------------------------------
 
-    def with_credentials(self, credentials: Credentials) -> ApiClient:
-        """A sibling client at the same stand with different auth material."""
-        return ApiClient(
-            base_url=self.base_url, credentials=credentials, timeout_s=self.timeout_s
-        )
+    def with_session(self, session: RealLogin) -> ApiClient:
+        """A sibling client at the same stand, authenticated as that session."""
+        return ApiClient(base_url=self.base_url, session=session, timeout_s=self.timeout_s)
 
     # -- requests ----------------------------------------------------------
 
@@ -112,7 +111,7 @@ class ApiClient:
         import httpx
 
         url = f"{self.base_url}{self._checked_path(path)}"
-        merged: dict[str, str] = dict(self.credentials.headers())
+        merged: dict[str, str] = dict(self.session.headers()) if self.session else {}
         if headers:
             merged.update(headers)
 

@@ -24,6 +24,11 @@ __pycache__/
 dist/
 build/
 uv.lock
+# ...except the stand test suite's, which MUST be committed: the ui-tests image
+# builds with `uv sync --frozen` and the wrapper runs `uv run --frozen`, so a
+# fresh clone without this file cannot install the suite at all — and the point
+# of the lock is that the host runner and the container resolve identically.
+!tests/uv.lock
 .DS_Store
 local
 access

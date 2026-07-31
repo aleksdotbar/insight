@@ -1231,9 +1231,32 @@ EOF
 # so `./dev-compose.sh up` keeps behaving exactly as it did.
 
 TEST_STAND_ENV_FILE=".env.compose.test-stand"
-# The compose SPA origin a browser test runner reaches the frontend at. Not
-# localhost: the runner is a container on the `insight` network.
-TEST_STAND_REDIRECT="http://insight-front/auth/callback"
+# The origin the app is driven at, by a browser runner and by a human alike.
+#
+# Two things are load-bearing here.
+#
+# It is the GATEWAY, not the `insight-front` alias. The front container's nginx
+# proxies only `/api/`; `/auth/login` there falls through to `try_files …
+# /index.html` and serves the SPA, so the OIDC chain never starts (verified
+# in-network: `insight-front/auth/login` -> 200 HTML, `gateway:8080/auth/login`
+# -> 302 to Keycloak). The gateway fronts the SPA, `/auth/*` and `/api/*`
+# together, which is the topology the published SPA is built for.
+#
+# And the host is `localhost`, not the `gateway` service name, because the
+# session cookie is `__Host-`-prefixed: browsers only accept it from a
+# trustworthy origin, and `localhost` is trustworthy over plain http while
+# `gateway:8080` is not. Chromium's --unsafely-treat-insecure-origin-as-secure
+# does NOT lift that (measured on Chromium 149: window.isSecureContext stays
+# false with the flag, in every launch mode), so an in-network browser runner
+# keeps the `localhost` NAME and points it at the gateway container with
+# --host-resolver-rules instead. No host port is involved for that runner.
+# Read from the generated env file rather than baked in at file scope, so a
+# stand on a non-default GATEWAY_PORT stays consistent.
+test_stand_origin() {
+  local port
+  port="$(grep -E '^[[:space:]]*GATEWAY_PORT=' "$TEST_STAND_ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2)"
+  printf 'http://localhost:%s' "${port:-8080}"
+}
 TEST_STAND_READY_TIMEOUT=240
 TEST_STAND_READY_INTERVAL=5
 
@@ -1280,7 +1303,19 @@ test_stand_write_env() {
   update_env_var "$TEST_STAND_ENV_FILE" AUTH_MODE       "$auth_mode"
   update_env_var "$TEST_STAND_ENV_FILE" SEEDED_LOCAL_MARIA ""
   update_env_var "$TEST_STAND_ENV_FILE" SEEDED_LOCAL_CH    ""
+  if [[ "$auth_mode" == keycloak ]]; then
+    # Point the authenticator at the same origin the realm registers and the
+    # browser runner drives, so the callback lands where the session cookie
+    # can be set. Left at its .env.compose.example default
+    # (http://localhost:3000/auth/callback) the IdP would send an in-network
+    # browser to its OWN loopback, and a host client to an origin that serves
+    # the SPA rather than the authenticator.
+    update_env_var "$TEST_STAND_ENV_FILE" AUTHENTICATOR_REDIRECT_URI "$(test_stand_origin)/auth/callback"
+  fi
   echo "=== test-stand env → $TEST_STAND_ENV_FILE (frontend: $image, auth: $auth_mode) ==="
+  if [[ "$auth_mode" == keycloak ]]; then
+    echo "    app origin: $(test_stand_origin)  callback: $(test_stand_origin)/auth/callback"
+  fi
 }
 
 # Pick the metric the readiness gate polls.
@@ -1376,7 +1411,7 @@ cmd_test_stand() {
       test_stand_write_env "$image" "$auth_mode" || return 1
 
       local up_args=(--env-file "$TEST_STAND_ENV_FILE")
-      [[ "$auth_mode" == keycloak ]] && up_args+=(--authenticator-redirect "$TEST_STAND_REDIRECT")
+      [[ "$auth_mode" == keycloak ]] && up_args+=(--authenticator-redirect "$(test_stand_origin)/auth/callback")
       cmd_up "${up_args[@]}" || return 1
 
       # cmd_up resolved and exported the issuer for this run; persist what it
@@ -1415,14 +1450,27 @@ cmd_test_stand() {
       [[ -d tests/stand ]] || {
         echo "ERROR: tests/stand does not exist yet (it is created in a later phase)." >&2
         return 1; }
-      command -v pytest >/dev/null 2>&1 || {
-        echo "ERROR: pytest not found on PATH." >&2; return 1; }
-      local gw_port="${GATEWAY_PORT:-8080}"
+      [[ -f tests/pyproject.toml ]] || {
+        echo "ERROR: tests/pyproject.toml not found — the suite has no dependency set." >&2
+        return 1; }
+      command -v uv >/dev/null 2>&1 || {
+        echo "ERROR: uv not found on PATH. The suite's dependencies (pytest, httpx," >&2
+        echo "       playwright) are locked in tests/uv.lock and installed with uv:" >&2
+        echo "         brew install uv   # or: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+        return 1; }
+      # Read the port from the stand's own env file rather than the ambient
+      # shell, so a stand on a non-default GATEWAY_PORT is probed where it
+      # actually listens.
+      local gw_port
+      gw_port="$(grep -E '^[[:space:]]*GATEWAY_PORT=' "$TEST_STAND_ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2)"
+      gw_port="${gw_port:-${GATEWAY_PORT:-8080}}"
       curl -sf -o /dev/null --max-time 5 "http://localhost:${gw_port}/" 2>/dev/null || {
         echo "ERROR: gateway is not answering on http://localhost:${gw_port}/." >&2
         echo "       Bring the stand up first: ./dev-compose.sh test-stand up" >&2
         return 1; }
-      pytest -q tests/stand "$@"
+      # --frozen: run exactly the locked dependency set, never re-resolve
+      # silently, so the host runner and the ui-tests image stay identical.
+      uv run --project tests --frozen pytest tests/stand "$@"
       ;;
 
     down)
@@ -1449,6 +1497,15 @@ Subcommands:
   urls    Print how to reach each service (exposed host ports).
   prune   Destructive wipe of containers, volumes, build/, override,
           and .env.compose. Asks for confirmation.
+
+  test-stand <up|seed|test|down>
+          The stack in TEST configuration, driven from its own
+          .env.compose.test-stand so your .env.compose is untouched:
+          pinned ghcr frontend, real Keycloak login, and a readiness
+          gate that waits for dbt-built gold data rather than for
+          containers to report healthy. `test-stand test` runs
+          tests/stand against the running stand.
+
   help    Print this message.
 
 Each subcommand has its own --help.
