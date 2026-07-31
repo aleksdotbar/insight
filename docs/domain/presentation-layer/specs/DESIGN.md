@@ -53,7 +53,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-saved-query-crud` | The saved query (`presentation.queries` logically; the `saved_queries` table physically) is a SeaORM entity in the analytics **service database (MariaDB)**, like metric definitions; CRUD mutates that metadata, not ClickHouse. Only `/run` reaches ClickHouse — it reuses the existing read path and executes the stored SQL as `presentation_ro`, so no write grant on the contract is ever needed. Shipped (#1965) |
 | `cpt-presentation-fr-query-params` | Named parameters, `tenant` always injected from context (not client SQL), `period` supported |
 | `cpt-presentation-fr-tenant-filter` | Literal leading `tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` (and the peer-cohort CTE reads) — replacing the no-op. `tenant_id` is the column the gold observation and cohort contract exposes (silver's `insight_tenant_id`, aliased to `tenant_id` in gold); filtering on it sidesteps the #1596 name drift, which affects other tables, not this read surface. Shipped for the structured `metric_results` read path (#1967). The legacy per-metric `query_ref` path (`execute_metric_query`) remains unscoped and is explicitly outside this guarantee until protected — see the component boundaries below. |
-| `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary (silver and identity objects) |
+| `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary in [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md): the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and `person.*`/`identity.*` objects, with the additive-only rules and the granted `insight` legacy gold. Shipped (#1968) |
 | `cpt-presentation-fr-contract-version-stamp` | Contract version stamp so presentation detects the surface it was built against |
 | `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart |
 | `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only synthetic backend, FE-only variation |
@@ -118,7 +118,7 @@ The source is safe because two independent barriers make presentation-side write
 
 - [ ] `p2` - **ID**: `cpt-presentation-principle-additive-contract`
 
-Contract changes are additive — new tables and columns — never rewrites. Existing views keep working across contract evolution. A contract version stamp lets presentation detect the surface it was built against.
+Contract changes are additive — new tables and columns — never rewrites. Existing views keep working across contract evolution. The read surface and the additive-only rules are enumerated in [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) (#1968). A contract version stamp lets presentation detect the surface it was built against.
 
 #### Server-Side Tenant Scoping
 
@@ -380,7 +380,7 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 
 | Aspect | Value |
 |--------|-------|
-| Contract | Read-only: silver (`class_*`, `fct_*`, `mtr_*`), identity (`person.*`, `identity.*`), legacy gold in `insight` |
+| Contract | Read-only: silver (`class_*`, `fct_*`, `mtr_*`, `dim_*`), identity (`person.*`, `identity.*`), legacy gold in `insight`. Full surface + additive-only rules: [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) |
 | Presentation namespace | New `presentation` DB: `SELECT` + `CREATE`/`INSERT` for new gold, results, scratch |
 | Access | Executed as the grant-less `presentation` user, whose only privileges come via the `presentation_ro` role (SELECT on contract; CREATE/INSERT only in `presentation`) |
 | Read semantics | `FINAL` on silver `ReplacingMergeTree` reads |
