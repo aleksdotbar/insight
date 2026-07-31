@@ -107,6 +107,29 @@ pub async fn run_seed(
     Ok(())
 }
 
+/// `sync` subcommand: copy the `persons` log into ClickHouse
+/// `identity.identity_persons` once and exit (the metrics resolve source).
+/// Same shape as [`run_seed`].
+///
+/// # Errors
+///
+/// [`crate::sync_runner::SyncRunError`] — the caller maps each variant to a
+/// distinct process exit code.
+pub async fn run_sync(
+    app: &toolkit::bootstrap::AppConfig,
+    force: bool,
+) -> Result<(), crate::sync_runner::SyncRunError> {
+    let cfg = extract_gear_config(app).map_err(crate::sync_runner::SyncRunError::Failed)?;
+    if cfg.database_url.is_empty() {
+        return Err(crate::sync_runner::SyncRunError::Failed(anyhow::anyhow!(
+            "`gears.identity-resolution.config.database_url` is required for sync"
+        )));
+    }
+    let summary = crate::sync_runner::run(&cfg, force).await?;
+    tracing::info!(?summary, "persons-sync run finished");
+    Ok(())
+}
+
 impl RestApiCapability for IdentityResolutionGear {
     fn register_rest(
         &self,

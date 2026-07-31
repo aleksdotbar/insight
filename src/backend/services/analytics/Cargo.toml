@@ -73,3 +73,6 @@ clap = { workspace = true }
 # `tower::ServiceExt::oneshot` for driving the Axum router in the HTTP
 # integration tests. Same dev-dep pattern as api-gateway's proxy tests.
 tower = { version = "0.5", features = ["util"] }
+# `clickhouse::test::Mock` for exercising ClickHouse read paths (the
+# contract-version sweep) against an in-process server in unit tests.
+clickhouse = { workspace = true, features = ["test-util"] }

@@ -1,8 +1,10 @@
 pub mod admin_threshold;
 pub mod auth;
 pub mod catalog;
+pub mod contract_version;
 pub mod metric;
 pub mod metric_definitions;
+pub mod metric_drilldown;
 pub mod metric_results;
 pub mod query;
 pub mod query_gate;

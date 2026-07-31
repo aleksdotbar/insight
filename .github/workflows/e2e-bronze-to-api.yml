@@ -109,7 +109,7 @@ jobs:
       - name: Build runner image
         run: ./e2e.sh build
         env:
-          E2E_COMPOSE_OVERLAYS: compose/docker-compose.cache.yml
+          E2E_COMPOSE_OVERLAYS: ${{ github.event_name == 'merge_group' && 'compose/docker-compose.cache-ro.yml' || 'compose/docker-compose.cache.yml' }}
 
       # ─── Hand the built image to both lanes ─────────────────────────────
       # Only insight-e2e-runner:latest travels: analytics and jira-enrich
