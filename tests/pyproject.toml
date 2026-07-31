@@ -35,6 +35,9 @@ dependencies = [
     # looks for a browser build the image does not contain.
     "playwright==1.61.0",
     "pytest-playwright==0.8.0",
+    # Response-schema validation. Already a proven version in this repo — the
+    # integration rig resolves the same 2.13 line transitively.
+    "pydantic>=2.13",
 ]
 
 [dependency-groups]

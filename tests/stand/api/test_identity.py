@@ -28,65 +28,34 @@ would say nothing about whether a person can log in to the deployed product.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 
 import pytest
-from insight_stand import (
-    ADMIN_ROLE,
-    LEAD_ROLE,
-    MEMBER_ROLE,
-    ApiResponse,
-    JsonValue,
-    PersonaSession,
-    identity_path,
-)
+from insight_stand import ADMIN_ROLE, LEAD_ROLE, MEMBER_ROLE, PersonaSession, identity_path
+
+from .schemas import SubchartForest
 
 #: Caller-derived org subchart — takes no person argument, so what comes back
-#: identifies whoever the session belongs to. 401 anonymous, 200 with a
-#: session (swept in `test_gateway.py`), and populated from the seeded org
+#: identifies whoever the session belongs to. 401 anonymous (swept in
+#: `test_gateway.py`), 200 with a session, and populated from the seeded org
 #: chart.
 SUBCHART = identity_path("/v1/subchart")
 
-type Node = Mapping[str, JsonValue]
 
+def _forest(session: PersonaSession) -> SubchartForest:
+    """That persona's visible forest, validated.
 
-def _roots(response: ApiResponse) -> list[Node]:
-    """The subchart's root nodes, or a readable failure.
-
-    Narrowing the decoded body once, here, is what lets the tests below index
-    into it without casting. A response that is not the documented shape fails
-    as a statement about the payload rather than as a `TypeError` from the
-    first subscript.
+    One call replaces the `_roots` / `_nodes` / `_people` trio this module used
+    to carry, and the `type Node` alias with it. `SubchartForest` states the
+    shape once and walks itself, so a malformed payload fails as a statement
+    about the response rather than as a `TypeError` from the first subscript.
     """
-    body = response.json()
-    assert isinstance(body, dict), (
-        f"expected a JSON object from {response.url}, got: {response.text[:300]}"
+    response = session.client.get(SUBCHART)
+    assert response.status_code == 200, (
+        f"{session.name} could not read {SUBCHART}: "
+        f"{response.status_code} {response.text[:300]}"
     )
-    roots = body.get("roots")
-    assert isinstance(roots, list), (
-        f"subchart from {response.url} has no 'roots' list: {response.text[:300]}"
-    )
-    nodes: list[Node] = [node for node in roots if isinstance(node, Mapping)]
-    assert len(nodes) == len(roots), (
-        f"subchart from {response.url} has a non-object root: {response.text[:300]}"
-    )
-    return nodes
-
-
-def _nodes(roots: Sequence[Node]) -> list[Node]:
-    """Flatten an org subchart to every node, at any depth."""
-    out: list[Node] = []
-    for node in roots:
-        out.append(node)
-        subordinates = node.get("subordinates")
-        if isinstance(subordinates, list):
-            out += _nodes([s for s in subordinates if isinstance(s, Mapping)])
-    return out
-
-
-def _people(roots: Sequence[Node]) -> set[str]:
-    """Every email in an org subchart, at any depth."""
-    return {str(node["email"]) for node in _nodes(roots) if node.get("email")}
+    return response.parse(SubchartForest)
 
 
 def test_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
@@ -96,12 +65,7 @@ def test_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
     Populated from the seeded org chart, so it also rules out the boring
     explanation for that 401 — that the route had nothing behind it.
     """
-    response = lead_session.client.get(SUBCHART)
-    assert response.status_code == 200, (
-        f"expected 200 for {lead_session.email} at {response.url}, "
-        f"got {response.status_code}: {response.text[:400]}"
-    )
-    assert _roots(response), f"authenticated subchart carried no roots: {response.text[:400]}"
+    assert _forest(lead_session).roots, "the authenticated subchart carried no roots"
 
 
 def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaSession) -> None:
@@ -114,27 +78,23 @@ def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaS
     human: Keycloak authenticated them, the authenticator mapped the token to a
     person, and identity found that person in the seeded roster.
     """
-    response = lead_session.client.get(SUBCHART)
-    assert response.status_code == 200, (
-        f"{lead_session.name} could not read {SUBCHART}: "
-        f"{response.status_code} {response.text[:300]}"
-    )
-    nodes = _nodes(_roots(response))
-    mine = [n for n in nodes if n.get("email") == lead_session.email]
+    nodes = [node for root in _forest(lead_session).roots for node in root.walk()]
+    mine = [node for node in nodes if node.email == lead_session.email]
     assert len(mine) == 1, (
         f"the caller-derived org chart for {lead_session.name} contains "
-        f"{sorted(str(n.get('email')) for n in nodes)}, which does not name "
+        f"{sorted(str(node.email) for node in nodes)}, which does not name "
         f"{lead_session.email} exactly once — the session resolved to someone else"
     )
-    assert mine[0].get("person_id") == lead_session.person.uuid, (
-        f"identity resolved {lead_session.email} to person_id "
-        f"{mine[0].get('person_id')!r}, but the manifest says "
-        f"{lead_session.person.uuid!r}"
+    assert str(mine[0].person_id) == lead_session.person.uuid, (
+        f"identity resolved {lead_session.email} to person_id {mine[0].person_id}, "
+        f"but the manifest says {lead_session.person.uuid}"
     )
 
 
 def test_org_visibility_scope_differs_by_persona(
-    realm_admin_session: PersonaSession, lead_session: PersonaSession, member_session: PersonaSession
+    realm_admin_session: PersonaSession,
+    lead_session: PersonaSession,
+    member_session: PersonaSession,
 ) -> None:
     """One endpoint, three personas, three materially different answers.
 
@@ -143,10 +103,10 @@ def test_org_visibility_scope_differs_by_persona(
     Note what is NOT being claimed. The scope comes from the seeded org chart,
     not from the caller's realm role — identity never reads the
     `insight-admin` / `insight-lead` / `insight-member` grants for this endpoint
-    (its admin gate consults the `person_roles` table instead, which the seed
-    leaves empty; see out/persona-matrix.md). The realm-role assertions below
-    are a precondition pinning down WHICH three personas are compared, not the
-    mechanism under test.
+    (its admin gate consults the `person_roles` table instead, and only the
+    admin operator holds a row there; see `test_identity_admin.py`). The
+    realm-role assertions below are a precondition pinning down WHICH three
+    personas are compared, not the mechanism under test.
 
     Relationships are asserted rather than exact counts, so a roster change
     moves the numbers without inventing a failure.
@@ -154,27 +114,21 @@ def test_org_visibility_scope_differs_by_persona(
     assert realm_admin_session.has_realm_role(ADMIN_ROLE)
     assert lead_session.has_realm_role(LEAD_ROLE) and not lead_session.has_realm_role(ADMIN_ROLE)
     assert member_session.has_realm_role(MEMBER_ROLE)
-    assert realm_admin_session.email != lead_session.email, "admin and lead resolved to the same persona"
+    assert realm_admin_session.email != lead_session.email, (
+        "the realm admin and the lead resolved to the same persona"
+    )
 
-    seen = {}
-    for session in (realm_admin_session, lead_session, member_session):
-        response = session.client.get(SUBCHART)
-        assert response.status_code == 200, (
-            f"{session.name} could not read {SUBCHART}: "
-            f"{response.status_code} {response.text[:300]}"
-        )
-        seen[session.name] = _people(_roots(response))
+    admin_view = _forest(realm_admin_session).emails()
+    lead_view = _forest(lead_session).emails()
+    member_view = _forest(member_session).emails()
 
-    admin_view = seen[realm_admin_session.name]
-    lead_view = seen[lead_session.name]
-    member_view = seen[member_session.name]
     assert member_view == set(), (
         f"a plain member sees {sorted(member_view)} in the org chart; expected nothing"
     )
     assert lead_view, f"{lead_session.name} is a lead but sees nobody in the org chart"
     assert len(admin_view) > len(lead_view), (
-        f"{realm_admin_session.name} (admin) sees {len(admin_view)} people and {lead_session.name} (lead) sees "
-        f"{len(lead_view)} — an admin must see strictly more"
+        f"{realm_admin_session.name} sees {len(admin_view)} people and {lead_session.name} "
+        f"(lead) sees {len(lead_view)} — the senior view must be strictly wider"
     )
     assert lead_view <= admin_view, (
         f"{lead_session.name} sees {sorted(lead_view - admin_view)}, which the admin does not"
@@ -194,15 +148,7 @@ def test_two_leads_of_different_teams_see_different_people(
     dev, sales = session_for("dev_lead"), session_for("sales_lead")
     assert dev.person.team != sales.person.team
 
-    views = {}
-    for session in (dev, sales):
-        response = session.client.get(SUBCHART)
-        assert response.status_code == 200, (
-            f"{session.name} could not read {SUBCHART}: "
-            f"{response.status_code} {response.text[:300]}"
-        )
-        views[session.name] = _people(_roots(response))
-    dev_view, sales_view = views[dev.name], views[sales.name]
+    dev_view, sales_view = _forest(dev).emails(), _forest(sales).emails()
 
     assert dev_view and sales_view, "expected both leads to see somebody"
     assert dev_view != sales_view, (

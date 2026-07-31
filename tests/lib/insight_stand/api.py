@@ -14,14 +14,24 @@ Prefixes come from `deploy/compose/gateway/routes.yaml`:
 `strip_prefix` means the service sees its own `/v1/...`, so a caller writes the
 full gateway path (`/api/analytics/v1/metrics`) and the rewrite is the
 gateway's business.
+
+Response bodies are read two ways. `ApiResponse.parse(Model)` validates against
+a pydantic model and is how a test that cares about a payload should read it;
+`ApiResponse.json()` returns the raw `JsonValue` and stays for the bodies no
+model describes — error envelopes the service emits below its canonical layer,
+and the media-type cases whose whole point is that the body was refused.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .session import LoginSession
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from pydantic import BaseModel
 
 #: Anything `json.loads` can return. Recursive, so a caller indexing into a
 #: decoded body keeps a real type instead of falling off into `Any`.
@@ -76,6 +86,36 @@ class ApiResponse:
         except ValueError:
             return None
         return decoded
+
+    def parse[T: BaseModel](self, model: type[T]) -> T:
+        """The body validated against `model`, or a readable test failure.
+
+        Replaces the `isinstance(body, dict)` / `body.get("items")` /
+        `str(item["name"])` ladder that every test otherwise grows its own
+        version of. The model states the shape once and the caller gets typed
+        attributes.
+
+        Failure is an `AssertionError` rather than pydantic's `ValidationError`
+        on purpose. A raw ValidationError in a test report says which field was
+        wrong but not which request produced it, which is strictly less than the
+        hand-written guards it replaces; this carries the url, every field-level
+        error, and the body that caused them.
+        """
+        from pydantic import ValidationError
+
+        try:
+            return model.model_validate_json(self.text)
+        except ValidationError as exc:
+            problems = "\n".join(
+                f"  {'.'.join(str(part) for part in error['loc']) or '<root>'}: {error['msg']}"
+                for error in exc.errors()
+            )
+            raise AssertionError(
+                f"{self.url} did not answer with a valid {model.__name__} "
+                f"(HTTP {self.status_code}, content-type {self.content_type or '<none>'}):\n"
+                f"{problems}\n"
+                f"  body: {self.text[:300]}"
+            ) from None
 
     @property
     def content_type(self) -> str:

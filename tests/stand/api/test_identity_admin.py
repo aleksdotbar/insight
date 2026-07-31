@@ -24,36 +24,38 @@ grantee — are the next step; see
 from __future__ import annotations
 
 import pytest
-from insight_stand import (
-    ADMIN_ROLE,
-    ApiClient,
-    ApiResponse,
-    JsonValue,
-    Manifest,
-    PersonaSession,
-    identity_path,
-)
+from insight_stand import ADMIN_ROLE, ApiClient, Manifest, PersonaSession, identity_path
+from pydantic import BaseModel
 
 from . import scratch
-
-#: Read-only admin operations, and what each is a listing of.
-ADMIN_LISTINGS = (
-    "/v1/roles",
-    "/v1/person-roles",
-    "/v1/visibility",
-    "/v1/persons-seed",
-    "/v1/persons-sync",
+from .schemas import (
+    OperationList,
+    PersonRole,
+    PersonRoleList,
+    ProblemDocument,
+    Role,
+    RoleList,
+    SubchartForest,
+    Visibility,
+    VisibilityList,
 )
 
+#: Each admin listing with the model that describes it. Parametrising over the
+#: pair rather than over the path alone is what makes the 200 cases assert a
+#: SHAPE and not merely a status — every declared field of every item is checked
+#: on the way through.
+ADMIN_LISTINGS_WITH_MODELS = (
+    ("/v1/roles", RoleList),
+    ("/v1/person-roles", PersonRoleList),
+    ("/v1/visibility", VisibilityList),
+    ("/v1/persons-seed", OperationList),
+    ("/v1/persons-sync", OperationList),
+)
 
-def _items(response: ApiResponse) -> list[JsonValue]:
-    body = response.json()
-    assert isinstance(body, dict), (
-        f"expected a JSON object from {response.url}: {response.text[:300]}"
-    )
-    items = body.get("items")
-    assert isinstance(items, list), f"listing has no 'items' array: {response.text[:300]}"
-    return items
+def _roles(client: ApiClient) -> RoleList:
+    response = client.get(identity_path("/v1/roles"))
+    assert response.status_code == 200, f"roles: {response.status_code} {response.text[:300]}"
+    return response.parse(RoleList)
 
 
 def _admin_role_id(client: ApiClient) -> str:
@@ -62,50 +64,41 @@ def _admin_role_id(client: ApiClient) -> str:
     The row is created by the identity migrations, so its id is not this
     repository's to know.
     """
-    response = client.get(identity_path("/v1/roles"))
-    assert response.status_code == 200, f"roles: {response.status_code} {response.text[:300]}"
-    for item in _items(response):
-        if isinstance(item, dict) and item.get("name") == "admin":
-            return str(item["role_id"])
-    raise AssertionError(f"no 'admin' role in the catalogue: {response.text[:400]}")
+    catalogue = _roles(client)
+    for role in catalogue.items:
+        if role.name == "admin":
+            return str(role.role_id)
+    raise AssertionError(
+        f"no 'admin' role in the catalogue: {[role.name for role in catalogue.items]}"
+    )
 
 
-def _emails(response: ApiResponse) -> set[str]:
-    """Every email in a subchart forest, at any depth."""
-    body = response.json()
-    assert isinstance(body, dict), f"expected a JSON object: {response.text[:300]}"
-    found: set[str] = set()
-
-    def walk(nodes: JsonValue) -> None:
-        if not isinstance(nodes, list):
-            return
-        for node in nodes:
-            if not isinstance(node, dict):
-                continue
-            email = node.get("email")
-            if isinstance(email, str):
-                found.add(email)
-            walk(node.get("subordinates"))
-
-    walk(body.get("roots"))
-    return found
+def _forest(session: PersonaSession) -> SubchartForest:
+    response = session.client.get(identity_path("/v1/subchart"))
+    assert response.status_code == 200, f"subchart: {response.status_code} {response.text[:300]}"
+    return response.parse(SubchartForest)
 
 
 @pytest.mark.requires_seed("admin_operator")
-@pytest.mark.parametrize("path", ADMIN_LISTINGS)
+@pytest.mark.parametrize(("path", "model"), ADMIN_LISTINGS_WITH_MODELS, ids=lambda v: getattr(v, "__name__", v))
 def test_admin_listing_is_200_for_the_operator(
-    admin_operator_session: PersonaSession, path: str
+    admin_operator_session: PersonaSession, path: str, model: type[BaseModel]
 ) -> None:
-    """The grant works, on every admin route, through the gateway."""
+    """The grant works, on every admin route, and the payload is the shape claimed.
+
+    Validating rather than shrugging at the body is most of this test's value on
+    the empty journals: `GET /v1/persons-seed` returning `{"items": []}` and
+    returning `{}` are different answers, and only the model can tell them apart.
+    """
     response = admin_operator_session.client.get(identity_path(path))
     assert response.status_code == 200, (
         f"{path} answered {response.status_code} to the admin operator: {response.text[:300]}"
     )
-    _items(response)
+    response.parse(model)
 
 
 @pytest.mark.requires_seed("admin_operator", "ceo")
-@pytest.mark.parametrize("path", ADMIN_LISTINGS)
+@pytest.mark.parametrize("path", [path for path, _ in ADMIN_LISTINGS_WITH_MODELS])
 def test_admin_listing_is_403_for_a_realm_admin_without_the_grant(
     realm_admin_session: PersonaSession, path: str
 ) -> None:
@@ -123,6 +116,9 @@ def test_admin_listing_is_403_for_a_realm_admin_without_the_grant(
         f"{path} answered {response.status_code} to {realm_admin_session.name}, who holds "
         f"{ADMIN_ROLE} in the realm but no person_roles grant: {response.text[:300]}"
     )
+    problem = response.parse(ProblemDocument)
+    assert problem.status == 403
+    assert problem.detail, f"{path}: the refusal carries no detail a caller can act on"
 
 
 @pytest.mark.requires_seed("admin_operator")
@@ -134,9 +130,7 @@ def test_the_roles_catalogue_contains_the_admin_role(
     Closes the loop between the seed and the API: the grant was written against
     a `roles` row looked up by name, and this is that row coming back out.
     """
-    response = admin_operator_session.client.get(identity_path("/v1/roles"))
-    assert response.status_code == 200
-    names = {str(item["name"]) for item in _items(response) if isinstance(item, dict)}
+    names = {role.name for role in _roles(admin_operator_session.client).items}
     assert "admin" in names, f"the roles catalogue does not contain 'admin': {sorted(names)}"
 
 
@@ -183,24 +177,21 @@ def test_role_create_list_delete_round_trip(admin_operator_session: PersonaSessi
     assert created.status_code == 201, (
         f"create role: {created.status_code} {created.text[:300]}"
     )
-    body = created.json()
-    assert isinstance(body, dict) and body["name"] == name
-    role_id = body["role_id"]
+    role = created.parse(Role)
+    assert role.name == name
 
-    listed = client.get(identity_path("/v1/roles"))
-    assert name in {
-        str(item["name"]) for item in _items(listed) if isinstance(item, dict)
-    }, f"the created role is not in the catalogue: {listed.text[:400]}"
+    assert name in {r.name for r in _roles(client).items}, (
+        "the created role is not in the catalogue"
+    )
 
-    deleted = client.delete(identity_path(f"/v1/roles/{role_id}"))
+    deleted = client.delete(identity_path(f"/v1/roles/{role.role_id}"))
     assert deleted.status_code == 204, f"delete role: {deleted.status_code} {deleted.text[:300]}"
 
-    after = client.get(identity_path("/v1/roles"))
-    assert name not in {
-        str(item["name"]) for item in _items(after) if isinstance(item, dict)
-    }, f"the role is still listed after a 204 delete: {after.text[:400]}"
+    assert name not in {r.name for r in _roles(client).items}, (
+        "the role is still listed after a 204 delete"
+    )
 
-    gone = client.delete(identity_path(f"/v1/roles/{role_id}"))
+    gone = client.delete(identity_path(f"/v1/roles/{role.role_id}"))
     assert gone.status_code == 404, (
         f"deleting an already-deleted role answered {gone.status_code}, expected 404: "
         f"{gone.text[:300]}"
@@ -231,17 +222,17 @@ def test_person_role_grant_and_revoke_round_trip(
     assert created.status_code == 201, (
         f"grant role: {created.status_code} {created.text[:300]}"
     )
-    body = created.json()
-    assert isinstance(body, dict)
-    assert body["person_id"] == subject.uuid
+    assignment = created.parse(PersonRole)
+    assert str(assignment.person_id) == subject.uuid
+    assert assignment.in_force, f"a fresh assignment is already revoked: {assignment}"
     assignment_id = scratch.track(
-        identity_path("/v1/person-roles"), "person_role_id", body["person_role_id"]
+        identity_path("/v1/person-roles"), "person_role_id", str(assignment.person_role_id)
     )
 
-    listed = client.get(identity_path("/v1/person-roles"))
-    assert assignment_id in {
-        str(item["person_role_id"]) for item in _items(listed) if isinstance(item, dict)
-    }, f"the grant is not listed: {listed.text[:400]}"
+    listed = client.get(identity_path("/v1/person-roles")).parse(PersonRoleList)
+    assert assignment_id in {str(item.person_role_id) for item in listed.items}, (
+        "the grant is not listed"
+    )
 
     revoked = client.delete(identity_path(f"/v1/person-roles/{assignment_id}"))
     assert revoked.status_code == 204, f"revoke: {revoked.status_code} {revoked.text[:300]}"
@@ -249,13 +240,10 @@ def test_person_role_grant_and_revoke_round_trip(
     # A revoke, NOT a removal: the row keeps its place in the journal and gains
     # a `valid_to`. Asserting that rather than absence is the difference between
     # describing the API and describing what a reader assumed it does.
-    after = [
-        item
-        for item in _items(client.get(identity_path("/v1/person-roles")))
-        if isinstance(item, dict) and item.get("person_role_id") == assignment_id
-    ]
+    journal = client.get(identity_path("/v1/person-roles")).parse(PersonRoleList)
+    after = [item for item in journal.items if str(item.person_role_id) == assignment_id]
     assert len(after) == 1, f"the revoked assignment vanished from the journal: {after}"
-    assert after[0]["valid_to"] is not None, (
+    assert not after[0].in_force, (
         f"the assignment is still in force after a 204 revoke: {after[0]}"
     )
 
@@ -283,11 +271,10 @@ def test_a_visibility_grant_changes_what_the_grantee_can_see(
     client = admin_operator_session.client
     viewed = stand_manifest.fixture("dev_lead")
 
-    before = client.get(identity_path("/v1/subchart"))
-    assert before.status_code == 200
-    assert _emails(before) == set(), (
-        f"the operator already sees {sorted(_emails(before))} — this test needs it to "
-        "start with an empty forest, so an earlier grant leaked"
+    before = _forest(admin_operator_session).emails()
+    assert before == set(), (
+        f"the operator already sees {sorted(before)} — this test needs it to start with "
+        "an empty forest, so an earlier grant leaked"
     )
 
     created = client.post(
@@ -301,16 +288,15 @@ def test_a_visibility_grant_changes_what_the_grantee_can_see(
     assert created.status_code == 201, (
         f"create grant: {created.status_code} {created.text[:300]}"
     )
-    body = created.json()
-    assert isinstance(body, dict)
+    grant = created.parse(Visibility)
+    assert str(grant.viewer_person_id) == admin_operator_session.person.uuid
+    assert grant.in_force, f"a fresh grant is already revoked: {grant}"
     grant_id = scratch.track(
-        identity_path("/v1/visibility"), "visibility_id", body["visibility_id"]
+        identity_path("/v1/visibility"), "visibility_id", str(grant.visibility_id)
     )
 
     try:
-        granted = client.get(identity_path("/v1/subchart"))
-        assert granted.status_code == 200
-        visible = _emails(granted)
+        visible = _forest(admin_operator_session).emails()
         assert viewed.email in visible, (
             f"after being granted sight of {viewed.email} the operator sees "
             f"{sorted(visible)} — the grant was stored but is not applied"
@@ -319,8 +305,8 @@ def test_a_visibility_grant_changes_what_the_grantee_can_see(
         revoked = client.delete(identity_path(f"/v1/visibility/{grant_id}"))
         assert revoked.status_code == 204, f"revoke: {revoked.status_code} {revoked.text[:300]}"
 
-    after = client.get(identity_path("/v1/subchart"))
-    assert _emails(after) == set(), (
-        f"the operator still sees {sorted(_emails(after))} after the grant was revoked — "
+    after = _forest(admin_operator_session).emails()
+    assert after == set(), (
+        f"the operator still sees {sorted(after)} after the grant was revoked — "
         "revocation is not applied"
     )
