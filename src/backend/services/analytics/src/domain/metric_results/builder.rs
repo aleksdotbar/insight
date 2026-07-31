@@ -446,6 +446,7 @@ mod tests {
 
     fn request(entity_ids: Vec<&str>, from: &str, to: &str) -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
+            tenant_id: uuid::Uuid::from_u128(0x1967),
             entity_type: "person".to_owned(),
             entity_ids: entity_ids.into_iter().map(str::to_owned).collect(),
             from: match NaiveDate::parse_from_str(from, "%Y-%m-%d") {
