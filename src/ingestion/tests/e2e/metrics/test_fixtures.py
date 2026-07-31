@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import pytest
@@ -20,14 +21,12 @@ pytestmark = pytest.mark.fixture
 LOG = logging.getLogger("e2e.runner")
 
 
-def _case_persona_emails(test_yaml: TestYaml) -> list[str]:
-    """Emails the yaml's metric-results cases address (`entity.ids`).
+_EMAIL_TOKEN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
-    The yaml stays authored in emails — the human-readable persona key — and
-    the rig owns the identity-cutover translation: these emails are seeded as
-    identity_persons bindings (so the dbt resolve macro attributes the gold
-    rows) and swapped for their derived person UUIDs on the wire.
-    """
+
+def _requested_persona_emails(test_yaml: TestYaml) -> list[str]:
+    """Emails the yaml's metric-results cases address (`entity.ids`) — the
+    set translated to person UUIDs on the wire."""
     emails: list[str] = []
     for case in test_yaml.cases:
         request = case.get("request") or {}
@@ -36,6 +35,31 @@ def _case_persona_emails(test_yaml: TestYaml) -> list[str]:
         ids = ((request.get("body") or {}).get("entity") or {}).get("ids") or []
         emails.extend(i for i in ids if isinstance(i, str) and "@" in i)
     return sorted(set(emails))
+
+
+def _all_persona_emails(test_yaml: TestYaml) -> list[str]:
+    """Every email the yaml mentions anywhere in its bronze seeds, plus the
+    requested ones.
+
+    ALL of them get identity_persons bindings — not just the requested ids:
+    peer pools are built from cohort members (HR emails seeded as data, never
+    requested), and an unbound member would resolve to NULL and silently
+    shrink the pool the expects count.
+    """
+    emails = set(_requested_persona_emails(test_yaml))
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            emails.update(_EMAIL_TOKEN.findall(value))
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+
+    walk(test_yaml.bronze)
+    return sorted(emails)
 
 
 def _seed_identity_persons(cfg: SessionConfig, emails: list[str]) -> None:
@@ -174,8 +198,8 @@ def test_metric_smoke(
     # 4. Identity bindings for the personas the cases address, BEFORE the
     #    gold build — the resolve macro joins them into person_id during the
     #    build (the rig plays the persons-sync role here).
-    persona_emails = _case_persona_emails(test_yaml)
-    to_person_id = {email: person_id_for(email) for email in persona_emails}
+    persona_emails = _all_persona_emails(test_yaml)
+    to_person_id = {email: person_id_for(email) for email in _requested_persona_emails(test_yaml)}
     _seed_identity_persons(ch_seeder.cfg, persona_emails)
 
     if staging or silver_set or ran_enrich_steps:
