@@ -7,7 +7,7 @@ Four things live here, and nothing else:
   and seeded facts.
 * `stand` — where the stand is: base-URL resolution for a host-side or
   in-network runner.
-* `credentials` — `RealLogin`, the one way a request proves who it is.
+* `session` — `StandSession`, the one way a request proves who it is.
 * `api` — the gateway-fronted HTTP client.
 * `wait` — bounded polling for eventually-consistent state.
 
@@ -28,14 +28,11 @@ from .api import (
     IDENTITY_PREFIX,
     ApiClient,
     ApiResponse,
+    JsonValue,
+    QueryParams,
+    QueryValue,
     analytics_path,
     identity_path,
-)
-from .credentials import (
-    CALLBACK_PATH,
-    LOGIN_PATH,
-    SESSION_COOKIE_NAME,
-    RealLogin,
 )
 from .errors import (
     LoginNotCompletedError,
@@ -69,6 +66,12 @@ from .personas import (
     resolve_by_realm_role,
     verify_realm_roles,
 )
+from .session import (
+    CALLBACK_PATH,
+    LOGIN_PATH,
+    SESSION_COOKIE_NAME,
+    StandSession,
+)
 from .stand import BASE_URL_ENV, StandEndpoint, resolve_base_url, resolve_endpoint
 from .wait import wait_for, wait_until
 
@@ -93,17 +96,20 @@ __all__: Sequence[str] = (
     "ApiResponse",
     "Capabilities",
     "GoldenMetric",
+    "JsonValue",
     "LoginNotCompletedError",
     "Manifest",
     "ManifestError",
     "Person",
     "PersonaError",
     "PersonaSession",
-    "RealLogin",
+    "QueryParams",
+    "QueryValue",
     "Realm",
     "StandConnectionError",
     "StandEndpoint",
     "StandError",
+    "StandSession",
     "analytics_path",
     "expected_realm_roles",
     "identity_path",

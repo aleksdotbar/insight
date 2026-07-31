@@ -13,27 +13,53 @@ from `routes` so the two cannot drift apart.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
 
 import pytest
-from insight_stand import ADMIN_ROLE, LEAD_ROLE, MEMBER_ROLE, PersonaSession
+from insight_stand import ADMIN_ROLE, LEAD_ROLE, MEMBER_ROLE, ApiResponse, JsonValue, PersonaSession
 
 from .routes import METRICS, SUBCHART
 
+type Node = Mapping[str, JsonValue]
 
-def _nodes(roots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+
+def _roots(response: ApiResponse) -> list[Node]:
+    """The subchart's root nodes, or a readable failure.
+
+    Narrowing the decoded body once, here, is what lets the tests below index
+    into it without casting. A response that is not the documented shape fails
+    as a statement about the payload rather than as a `TypeError` from the
+    first subscript.
+    """
+    body = response.json()
+    assert isinstance(body, dict), (
+        f"expected a JSON object from {response.url}, got: {response.text[:300]}"
+    )
+    roots = body.get("roots")
+    assert isinstance(roots, list), (
+        f"subchart from {response.url} has no 'roots' list: {response.text[:300]}"
+    )
+    nodes: list[Node] = [node for node in roots if isinstance(node, Mapping)]
+    assert len(nodes) == len(roots), (
+        f"subchart from {response.url} has a non-object root: {response.text[:300]}"
+    )
+    return nodes
+
+
+def _nodes(roots: Sequence[Node]) -> list[Node]:
     """Flatten an org subchart to every node, at any depth."""
-    out: list[dict[str, Any]] = []
+    out: list[Node] = []
     for node in roots:
         out.append(node)
-        out += _nodes(node.get("subordinates") or [])
+        subordinates = node.get("subordinates")
+        if isinstance(subordinates, list):
+            out += _nodes([s for s in subordinates if isinstance(s, Mapping)])
     return out
 
 
-def _people(roots: list[dict[str, Any]]) -> set[str]:
+def _people(roots: Sequence[Node]) -> set[str]:
     """Every email in an org subchart, at any depth."""
-    return {str(n["email"]) for n in _nodes(roots) if n.get("email")}
+    return {str(node["email"]) for node in _nodes(roots) if node.get("email")}
 
 
 def test_analytics_metrics_is_200_with_a_session(lead_session: PersonaSession) -> None:
@@ -65,10 +91,7 @@ def test_identity_subchart_is_200_with_a_session(lead_session: PersonaSession) -
         f"expected 200 for {lead_session.email} at {response.url}, "
         f"got {response.status_code}: {response.text[:400]}"
     )
-    body = response.json()
-    assert isinstance(body, dict) and body.get("roots"), (
-        f"authenticated subchart carried no roots: {response.text[:400]}"
-    )
+    assert _roots(response), f"authenticated subchart carried no roots: {response.text[:400]}"
 
 
 def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaSession) -> None:
@@ -86,7 +109,7 @@ def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaS
         f"{lead_session.name} could not read {SUBCHART}: "
         f"{response.status_code} {response.text[:300]}"
     )
-    nodes = _nodes(response.json()["roots"])
+    nodes = _nodes(_roots(response))
     mine = [n for n in nodes if n.get("email") == lead_session.email]
     assert len(mine) == 1, (
         f"the caller-derived org chart for {lead_session.name} contains "
@@ -130,11 +153,7 @@ def test_org_visibility_scope_differs_by_persona(
             f"{session.name} could not read {SUBCHART}: "
             f"{response.status_code} {response.text[:300]}"
         )
-        body = response.json()
-        assert isinstance(body, dict) and "roots" in body, (
-            f"unexpected subchart body for {session.name}: {response.text[:300]}"
-        )
-        seen[session.name] = _people(body["roots"])
+        seen[session.name] = _people(_roots(response))
 
     admin_view = seen[admin_session.name]
     lead_view = seen[lead_session.name]
@@ -172,7 +191,7 @@ def test_two_leads_of_different_teams_see_different_people(
             f"{session.name} could not read {SUBCHART}: "
             f"{response.status_code} {response.text[:300]}"
         )
-        views[session.name] = _people(response.json()["roots"])
+        views[session.name] = _people(_roots(response))
     dev_view, sales_view = views[dev.name], views[sales.name]
 
     assert dev_view and sales_view, "expected both leads to see somebody"

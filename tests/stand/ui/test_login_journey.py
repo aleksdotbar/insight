@@ -54,8 +54,8 @@ def test_login_lands_on_authenticated_view(
     # API-side session is not what is under test here — the browser wins its
     # own — but reusing the credential it already resolved guarantees both
     # halves authenticate as the same human with the same secret.
-    session = session_for("dev_lead")
-    persona = session.person
+    persona = session_for("dev_lead")
+    person = persona.person
 
     login_page = LoginPage(page)
     keycloak_login_page = KeycloakLoginPage(page)
@@ -64,7 +64,7 @@ def test_login_lands_on_authenticated_view(
     login_page.go()
     # No sign-in click: an unauthenticated visit starts the OIDC chain itself,
     # so the browser is already sitting on Keycloak's form by now.
-    keycloak_login_page.fill_and_submit(persona.email, session.login.password)
+    keycloak_login_page.fill_and_submit(persona.email, persona.password)
     page.wait_for_url(f"{stand_base_url}/**")
 
     cookies = page.context.cookies(stand_base_url)
@@ -82,5 +82,5 @@ def test_login_lands_on_authenticated_view(
     expect(landing_page.main_landmark()).to_be_visible()
     # The view is the PERSONA's, not just any authenticated view: their name
     # heads it, and the account control carries their identity.
-    expect(landing_page.person_heading(persona.display_name)).to_be_visible()
-    expect(landing_page.user_menu(persona.display_name)).to_be_visible()
+    expect(landing_page.person_heading(person.display_name)).to_be_visible()
+    expect(landing_page.user_menu(person.display_name)).to_be_visible()

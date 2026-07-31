@@ -9,7 +9,7 @@ build such a request: every path must sit under a prefix the gateway routes.
 Prefixes come from `deploy/compose/gateway/routes.yaml`:
 
     /api/analytics  ->  http://analytics:8081   (strip_prefix: true)
-    /api/identity   ->  http://identity:8082    (strip_prefix: true)
+    /api/identity   ->  http://identity-resolution:8082  (strip_prefix: true)
 
 `strip_prefix` means the service sees its own `/v1/...`, so a caller writes the
 full gateway path (`/api/analytics/v1/metrics`) and the rewrite is the
@@ -20,9 +20,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
-from .credentials import RealLogin
+from .session import StandSession
+
+#: Anything `json.loads` can return. Recursive, so a caller indexing into a
+#: decoded body keeps a real type instead of falling off into `Any`.
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+
+#: What httpx accepts in a query string: scalars, or a repeated key.
+type QueryValue = str | int | float | bool | None
+type QueryParams = Mapping[str, QueryValue | Sequence[QueryValue]]
 
 ANALYTICS_PREFIX = "/api/analytics"
 IDENTITY_PREFIX = "/api/identity"
@@ -56,7 +63,7 @@ class ApiResponse:
     text: str
     url: str
 
-    def json(self) -> Any:
+    def json(self) -> JsonValue:
         """Decoded JSON body, or `None` when the body is not JSON.
 
         Returning `None` rather than raising keeps a status-code assertion
@@ -65,9 +72,10 @@ class ApiResponse:
         import json
 
         try:
-            return json.loads(self.text)
+            decoded: JsonValue = json.loads(self.text)
         except ValueError:
             return None
+        return decoded
 
     @property
     def content_type(self) -> str:
@@ -80,12 +88,12 @@ class ApiClient:
 
     `session is None` means genuinely unauthenticated — no header is attached
     at all — so a 401 assertion is testing the stand rather than a mistake in
-    the test. The session is re-read on every request, so a `RealLogin` that
+    the test. The session is re-read on every request, so a `StandSession` that
     re-acquires mid-run is picked up without rebuilding the client.
     """
 
     base_url: str
-    session: RealLogin | None = None
+    session: StandSession | None = None
     timeout_s: float = 30.0
 
     def __post_init__(self) -> None:
@@ -93,7 +101,7 @@ class ApiClient:
 
     # -- construction ------------------------------------------------------
 
-    def with_session(self, session: RealLogin) -> ApiClient:
+    def with_session(self, session: StandSession) -> ApiClient:
         """A sibling client at the same stand, authenticated as that session."""
         return ApiClient(base_url=self.base_url, session=session, timeout_s=self.timeout_s)
 
@@ -104,8 +112,8 @@ class ApiClient:
         method: str,
         path: str,
         *,
-        params: Mapping[str, Any] | None = None,
-        json_body: Any | None = None,
+        params: QueryParams | None = None,
+        json_body: JsonValue = None,
         headers: Mapping[str, str] | None = None,
     ) -> ApiResponse:
         import httpx
@@ -126,17 +134,49 @@ class ApiClient:
             url=str(response.url),
         )
 
-    def get(self, path: str, **kwargs: Any) -> ApiResponse:
-        return self.request("GET", path, **kwargs)
+    # The verbs spell their arguments out rather than forwarding `**kwargs`:
+    # `**kwargs: Any` would type-check `client.get(path, jsonbody=…)` and any
+    # other typo, and gives an editor nothing to complete. GET and DELETE take
+    # no body on purpose — a request that should not have one should not be
+    # able to express one.
 
-    def post(self, path: str, **kwargs: Any) -> ApiResponse:
-        return self.request("POST", path, **kwargs)
+    def get(
+        self,
+        path: str,
+        *,
+        params: QueryParams | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> ApiResponse:
+        return self.request("GET", path, params=params, headers=headers)
 
-    def put(self, path: str, **kwargs: Any) -> ApiResponse:
-        return self.request("PUT", path, **kwargs)
+    def delete(
+        self,
+        path: str,
+        *,
+        params: QueryParams | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> ApiResponse:
+        return self.request("DELETE", path, params=params, headers=headers)
 
-    def delete(self, path: str, **kwargs: Any) -> ApiResponse:
-        return self.request("DELETE", path, **kwargs)
+    def post(
+        self,
+        path: str,
+        *,
+        json_body: JsonValue = None,
+        params: QueryParams | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> ApiResponse:
+        return self.request("POST", path, json_body=json_body, params=params, headers=headers)
+
+    def put(
+        self,
+        path: str,
+        *,
+        json_body: JsonValue = None,
+        params: QueryParams | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> ApiResponse:
+        return self.request("PUT", path, json_body=json_body, params=params, headers=headers)
 
     # -- guards ------------------------------------------------------------
 

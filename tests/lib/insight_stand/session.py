@@ -1,15 +1,17 @@
-"""Winning and holding a real session.
+"""A session on the stand: winning one, holding it, attaching it.
 
-One kind of credential, on purpose: a session cookie obtained by actually
-logging in at the stand's IdP. That is the only kind that proves anything about
-the deployed product. Minting a bearer token is the in-process rig's path
+`StandSession` is the one thing a request can carry to prove who it is, and it
+is a session cookie obtained by actually logging in at the stand's IdP. That is
+the only kind that proves anything about the deployed product. Minting a bearer
+token is the in-process rig's path
 (`src/ingestion/tests/e2e/lib/gateway_jwt.py`); doing it here would exercise
 JWT verification — which that rig already covers — and skip the login entirely.
 
-There is deliberately no `Credentials` interface and no `AnonymousCredentials`.
-An interface with one implementation, whose only stated purpose was to
-accommodate a second implementation this suite forbids, is abstraction with
-nothing behind it. An unauthenticated client is an `ApiClient` with no session.
+There is deliberately no `Credentials` interface and no anonymous
+implementation. An interface with one implementation, whose only stated purpose
+was to accommodate a second implementation this suite forbids, is abstraction
+with nothing behind it. An unauthenticated client is an `ApiClient` with no
+session at all.
 """
 
 from __future__ import annotations
@@ -58,8 +60,8 @@ _FORM_ERROR_RE = re.compile(
 
 
 @dataclass
-class RealLogin:
-    """A session won by logging in for real at the stand's own IdP.
+class StandSession:
+    """A session on the stand, won by logging in for real at its own IdP.
 
     Drives the deployed five-step chain end to end, with no shortcut at any
     step: `GET /auth/login` → the authenticator starts authorization-code+PKCE
@@ -229,5 +231,5 @@ __all__: Sequence[str] = (
     "DEFAULT_MAX_SESSION_AGE_S",
     "LOGIN_PATH",
     "SESSION_COOKIE_NAME",
-    "RealLogin",
+    "StandSession",
 )

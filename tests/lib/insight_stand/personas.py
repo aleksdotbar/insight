@@ -10,7 +10,7 @@ and really carries the authority the roster says they have.
 * **Role verification.** The roster says what each role should be granted; the
   stand says what it actually granted. A mismatch fails the fixture loudly
   rather than producing a session with quietly wrong authority.
-* **`PersonaSession`.** The person, their credential and a ready client.
+* **`PersonaSession`.** The person, their session and a ready client.
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ from pathlib import Path
 from typing import Any, Final
 
 from .api import ApiClient
-from .credentials import RealLogin
 from .errors import PersonaError
 from .manifest import Manifest, Person
+from .session import StandSession
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
 
@@ -185,12 +185,22 @@ class PersonaSession:
 
     name: str
     person: Person
-    login: RealLogin
+    session: StandSession
     client: ApiClient
 
     @property
     def email(self) -> str:
         return self.person.email
+
+    @property
+    def password(self) -> str:
+        """The credential this persona logged in with.
+
+        Exposed for the browser journeys, which have to type it into the IdP's
+        form themselves — reusing it guarantees the API session and the browser
+        session authenticate as the same human with the same secret.
+        """
+        return self.session.password
 
     @property
     def realm_roles(self) -> tuple[str, ...]:
@@ -215,18 +225,18 @@ def open_session(
     """
     person = manifest.fixture(name)
     verify_realm_roles(person, realm_path=realm_path)
-    login = RealLogin(
+    session = StandSession(
         base_url=base_url,
         email=person.email,
         password=persona_password(person.email, realm_path=realm_path),
         timeout_s=timeout_s,
     )
-    login.login()
+    session.login()
     return PersonaSession(
         name=name,
         person=person,
-        login=login,
-        client=ApiClient(base_url=base_url, session=login, timeout_s=timeout_s),
+        session=session,
+        client=ApiClient(base_url=base_url, session=session, timeout_s=timeout_s),
     )
 
 

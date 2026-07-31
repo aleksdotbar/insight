@@ -48,7 +48,7 @@ class LoginNotCompletedError(StandError):
 
     Carries the URL the flow stopped at, so the caller can see exactly which
     step is unfinished. Phase 6 owns completing the Keycloak challenge; until
-    then this is the honest outcome of `RealLogin.login()` against a stand
+    then this is the honest outcome of `StandSession.login()` against a stand
     whose IdP presents a login form.
     """
 
