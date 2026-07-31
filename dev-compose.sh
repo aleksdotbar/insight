@@ -231,7 +231,18 @@ EOF
     echo "WARN: openssl unavailable — analytics cannot verify the gateway JWT without the authn-tls cert" >&2
     return 1
   fi
-  openssl req -x509 -key "$dir/server.key" -out "$cert" -days 3650 -config "$cnf" 2>/dev/null
+  # `-new` is REQUIRED, not decoration. OpenSSL 1.1+/3.x implies it when -x509
+  # and -key are both given; LibreSSL (the macOS system openssl) does not, and
+  # instead tries to READ a certificate request from stdin — failing with
+  # "unable to load X509 request ... Expecting: CERTIFICATE REQUEST" and
+  # producing no cert. Passing it explicitly is correct on both.
+  # Errors are NOT swallowed here: without this cert the authn-tls discovery
+  # front cannot start and analytics can never verify a gateway JWT, so a
+  # silent failure surfaces much later as an unexplained auth failure.
+  if ! openssl req -new -x509 -key "$dir/server.key" -out "$cert" -days 3650 -config "$cnf"; then
+    echo "ERROR: could not generate the authn-tls certificate ($cert)." >&2
+    return 1
+  fi
   # The self-signed leaf is its own trust root (analytics adds it as a CA).
   cp "$cert" "$dir/ca.pem"
   chmod 644 "$dir/server.key" "$cert" "$dir/ca.pem"
@@ -861,7 +872,15 @@ cmd_down() {
   local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml)
   [[ -f "$override" ]] && compose_cmd+=(-f "$override")
 
+  # EVERY profile, including the datastores. Compose only acts on services in
+  # the active profile set, so omitting local-mariadb/local-clickhouse left
+  # both containers running and — with --volumes — left `mariadb-data` and
+  # `clickhouse-data` behind, silently carrying one run's data into the next.
+  # That is the opposite of the documented contract below and of the "reset by
+  # volume teardown, never TRUNCATE" rule the test stand depends on. Listing
+  # them is safe for external-DB setups: an inactive service is a no-op here.
   "${compose_cmd[@]}" \
+    --profile local-mariadb --profile local-clickhouse \
     --profile front-dev --profile front-built --profile front-ghcr \
     --profile auth-fakeidp --profile auth-keycloak \
     --profile build --profile seed \
