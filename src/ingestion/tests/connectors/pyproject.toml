@@ -28,6 +28,9 @@ dev = [
 ]
 
 [tool.uv]
+# Do not resolve a version published in the last week: a freshly pushed release is
+# where a compromised maintainer account shows up first.
+exclude-newer = "7 days"
 # airbyte-cdk 6.60.x pins nltk and langchain-core to exact versions carrying fixed
 # CRITICALs (CVE-2025-14009, CVE-2025-68664). Neither is reachable from the mock
 # harness: nltk serves the file-based unstructured parser and langchain-core the
