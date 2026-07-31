@@ -207,9 +207,9 @@ The system **MUST** support named query parameters, always injecting `tenant` fr
 
 #### Server-Injected Tenant Filter
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-tenant-filter`
+- [x] `p1` - **ID**: `cpt-presentation-fr-tenant-filter`
 
-The system **MUST** inject a literal tenant predicate (`insight_tenant_id = <ctx.tenant>`) server-side on every contract read, sourced from request context and not from client SQL. This **MUST** replace the current no-op filter. (#1967, coordinated with engineering #1829.)
+The system **MUST** inject a literal tenant predicate (`tenant_id = <ctx.tenant>`, the column the gold observation and cohort contract exposes) server-side on every contract read, sourced from request context and not from client SQL. This **MUST** replace the current no-op filter. (#1967, coordinated with engineering #1829.)
 
 **Rationale**: Every read is tenant-scoped; client SQL cannot widen it.
 
@@ -285,7 +285,7 @@ The system **MUST** guarantee that no presentation-side operation can write, alt
 
 #### Tenant Read Isolation
 
-- [ ] `p1` - **ID**: `cpt-presentation-nfr-tenant-isolation`
+- [x] `p1` - **ID**: `cpt-presentation-nfr-tenant-isolation`
 
 Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless of client SQL.
 

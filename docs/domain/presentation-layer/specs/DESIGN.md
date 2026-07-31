@@ -52,7 +52,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-namespace` | New empty `presentation` database for new gold, saved-query results, and scratch; legacy gold left read-only in `insight` |
 | `cpt-presentation-fr-saved-query-crud` | The saved query (`presentation.queries` logically; the `saved_queries` table physically) is a SeaORM entity in the analytics **service database (MariaDB)**, like metric definitions; CRUD mutates that metadata, not ClickHouse. Only `/run` reaches ClickHouse — it reuses the existing read path and executes the stored SQL as `presentation_ro`, so no write grant on the contract is ever needed. Shipped (#1965) |
 | `cpt-presentation-fr-query-params` | Named parameters, `tenant` always injected from context (not client SQL), `period` supported |
-| `cpt-presentation-fr-tenant-filter` | Literal `insight_tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` — replacing the no-op |
+| `cpt-presentation-fr-tenant-filter` | Literal leading `tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` (and the peer-cohort CTE reads) — replacing the no-op. `tenant_id` is the column the gold observation and cohort contract exposes (silver's `insight_tenant_id`, aliased to `tenant_id` in gold); filtering on it sidesteps the #1596 name drift, which affects other tables, not this read surface. Shipped (#1967) |
 | `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary (silver and identity objects) |
 | `cpt-presentation-fr-contract-version-stamp` | Contract version stamp so presentation detects the surface it was built against |
 | `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart |
@@ -64,7 +64,7 @@ Requirements that significantly influence architecture decisions.
 | NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
 |--------|-------------|--------------|-----------------|----------------------|
 | `cpt-presentation-nfr-source-immutability` | No presentation write reaches engineering-owned data | Single-SELECT gate + `presentation_ro` role | Two independent barriers: syntactic gate rejects non-`SELECT`; role grants forbid write/DDL on the contract | Adversarial SQL suite; verify no write/alter/drop on contract objects |
-| `cpt-presentation-nfr-tenant-isolation` | No cross-tenant rows returned | Compiler shared `WHERE` | Server-injected literal tenant predicate the client SQL cannot widen | Cross-tenant isolation test returns zero rows |
+| `cpt-presentation-nfr-tenant-isolation` | No cross-tenant rows returned | Compiler shared `WHERE` | Server-injected literal tenant predicate the client SQL cannot widen; sourced from `SecurityContext`, not the request body | Compiler unit tests assert the predicate and its bound value lead every observation and cohort read (#1967); cross-tenant e2e (#1359) returns zero rows |
 
 ### 1.3 Architecture Layers
 
@@ -289,7 +289,7 @@ Plain CRUD over stored queries so a new analytics slice needs no engineering cha
 
 #### Metric Compiler (Tenant Filter)
 
-- [ ] `p2` - **ID**: `cpt-presentation-component-metric-compiler`
+- [x] `p2` - **ID**: `cpt-presentation-component-metric-compiler`
 
 ##### Why this component exists
 
@@ -297,7 +297,7 @@ Builds contract SQL and owns the single shared `WHERE` where the tenant predicat
 
 ##### Responsibility scope
 
-- Inject a literal `insight_tenant_id = <ctx.tenant>` on every contract read, sourced from request context.
+- Inject a leading literal `tenant_id = <ctx.tenant>` on every contract read, sourced from the request's `SecurityContext` (carried on `ValidatedMetricResultsRequest`). `tenant_id` is the column the gold observation and cohort contract exposes; the value is the raw tenant UUID, the same representation the metric lineage stamps (no sipHash — that is identity-only). The predicate covers every observation read (`metric_where` / `shared_observation_where`) and both peer-cohort CTE reads.
 - Keep `FINAL` on silver `ReplacingMergeTree` reads.
 - Put `insight_tenant_id` first in `ORDER BY` for any new presentation gold that carries it.
 

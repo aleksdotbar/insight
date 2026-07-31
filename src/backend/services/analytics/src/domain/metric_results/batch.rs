@@ -430,6 +430,7 @@ mod tests {
 
     fn request(metrics: Vec<ValidatedMetricRequest>) -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
+            tenant_id: uuid::Uuid::from_u128(0x1967),
             entity_type: "person".to_owned(),
             entity_ids: vec!["a@x.io".to_owned()],
             from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default(),
