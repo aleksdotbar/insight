@@ -64,7 +64,7 @@ The API Gateway mounts this service at `/api/analytics`. All endpoints are versi
 | `cpt-insightspec-nfr-be-tenant-isolation` | Tenant data isolation | Query builder | `insight_tenant_id = ?` injected on every query from SecurityContext | Cross-tenant query test |
 | `cpt-insightspec-nfr-be-api-conventions` | RFC 9457, cursor pagination | All endpoints | `{ items, page_info }` envelopes, Problem Details errors, OData query conventions | Response format tests |
 | `cpt-insightspec-nfr-be-rate-limiting` | Per-route rate limiting | API Gateway (upstream) | Governor-based rate limiter | Load test |
-| `cpt-insightspec-nfr-be-idor-prevention` | IDOR on person entity ids | `POST /v1/metric-results` | Requested person ids filtered through identity's `POST /v1/visible-persons`; the whole request is refused when any one is not visible | Gate tests + e2e 403 cases |
+| `cpt-insightspec-nfr-be-idor-prevention` | IDOR on person entity ids | `POST /v1/metric-results`, `POST /v1/metrics/{id}/query`, `POST /v1/metrics/queries` | Requested person ids — `entity.ids`, or `person_id` in `$filter` — filtered through identity's `POST /v1/visible-persons`; the whole request is refused when any one is not visible | Gate tests + filter-extraction tests + e2e 403 cases |
 | `cpt-insightspec-nfr-be-idor-prevention-org-unit` | IDOR on org_unit_id | Query engine | Planned: `org_unit_id` from `$filter` validated against the caller's AccessScope before execution. Not implemented — the OData `$filter` path carries no visibility check | Cross-org-unit query test |
 
 ### 1.3 Architecture Layers
@@ -137,7 +137,9 @@ Every ClickHouse query includes `insight_tenant_id`. User-supplied OData `$filte
 
 **IDOR prevention on person entities**: `POST /v1/metric-results` resolves the caller from the gateway JWT and asks identity, in one batch call, which of the requested person ids that caller may see (`POST /v1/visible-persons`). Any requested id outside the answer refuses the whole request with 403 — never a partial response, which would be indistinguishable from absent data. Reaching identity is required: an unconfigured or unreachable identity service is a server error, so an authorization backend that is down cannot read as "permitted".
 
-**Planned — IDOR prevention on org units**: validating `org_unit_id` from `$filter` against the caller's AccessScope is *not* implemented. The `POST /v1/metrics/{id}/query` and `POST /v1/metrics/queries` paths interpolate client-supplied `person_id` / `org_unit_id` filter values with no visibility check, so they remain reachable for any id in the tenant.
+**IDOR prevention on the legacy query paths**: `POST /v1/metrics/{id}/query` and `POST /v1/metrics/queries` accept `person_id eq …` / `person_id in (…)` in `$filter`. Those ids go through the same gate as `/v1/metric-results` before any ClickHouse work, with the same failure matrix, so one id outside the caller's visible set refuses the whole request with 403. A `person_id` value that is not a person UUID is a 400 — since the cutover the column is a UUID, so a pre-cutover email would otherwise surface as a cast failure the caller cannot act on.
+
+**Planned — IDOR prevention on org units**: validating `org_unit_id` from `$filter` against the caller's scope is *not* implemented — no visibility rule for org units exists yet, and failing them closed would take out every department distribution metric. Those filter values remain reachable for any org unit in the tenant.
 
 **Why**: Tenant isolation and org-scoped visibility are enforced at the query level, not at the application level.
 

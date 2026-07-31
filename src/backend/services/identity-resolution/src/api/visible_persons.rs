@@ -16,7 +16,10 @@ use super::error::VisibilityError;
 use super::gate::require_caller;
 use crate::infra::db::subchart_repo;
 
-// One bound parameter per person id, so the request bounds the query.
+// One bound parameter per person id, so the request bounds the query. Equal to
+// the analytics metric-results cap on purpose: that endpoint forwards a whole
+// cleared request here, so a smaller cap would reject a request analytics
+// already accepted.
 const MAX_PERSON_IDS: usize = 1000;
 
 /// Canonical person UUIDs to check (the metric runtime's key since the

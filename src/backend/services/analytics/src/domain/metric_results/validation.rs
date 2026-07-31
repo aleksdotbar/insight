@@ -16,6 +16,10 @@ use super::view::Bucket;
 
 const ROW_LIMIT: usize = 5000;
 const MAX_METRICS: usize = 50;
+// Identity's `POST /v1/visible-persons` caps its batch at the same number
+// (`api::visible_persons::MAX_PERSON_IDS`). Keep them equal: a request that
+// clears this cap is forwarded to that endpoint whole, so a smaller cap there
+// would turn a legal request into a 400 from a service the caller never named.
 const MAX_PERSON_IDS: usize = 1000;
 const MAX_PERIOD_DAYS: i64 = 400;
 const MAX_FILTERS: usize = 10;

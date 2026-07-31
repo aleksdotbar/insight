@@ -16,6 +16,7 @@ use super::error::{MetricError, PersonError, ThresholdError};
 use crate::domain::metric::{
     CreateMetricRequest, Metric, MetricSummary, TableColumn, UpdateMetricRequest,
 };
+use crate::domain::person_visibility::authorize_entity_ids;
 use crate::domain::query::{
     BatchQueryRequest, BatchQueryResponse, BatchQueryResult, PageInfo, QueryRequest, QueryResponse,
 };
@@ -222,24 +223,45 @@ pub async fn query_metric(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
     Path(id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<QueryRequest>,
 ) -> Result<impl IntoResponse, CanonicalError> {
-    let response = execute_metric_query(&state, &ctx, id, req).await?;
+    let response = execute_metric_query(
+        &state,
+        &ctx,
+        super::forwarded_authorization(&headers),
+        id,
+        req,
+    )
+    .await?;
     Ok(Json(response))
 }
 
 pub async fn query_metrics_batch(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<BatchQueryRequest>,
 ) -> Result<impl IntoResponse, CanonicalError> {
+    // Owned once: every query in the batch forwards the same caller credential.
+    let authorization = super::forwarded_authorization(&headers).map(str::to_owned);
+
     let tasks = req.queries.into_iter().map(|item| {
         let state = state.clone();
         let ctx = ctx.clone();
+        let authorization = authorization.clone();
         async move {
             let id = item.id;
             let metric_id = item.metric_id;
-            match execute_metric_query(&state, &ctx, metric_id, item.query).await {
+            match execute_metric_query(
+                &state,
+                &ctx,
+                authorization.as_deref(),
+                metric_id,
+                item.query,
+            )
+            .await
+            {
                 Ok(response) => BatchQueryResult::Ok {
                     id,
                     metric_id,
@@ -262,6 +284,7 @@ pub async fn query_metrics_batch(
 async fn execute_metric_query(
     state: &Arc<AppState>,
     ctx: &SecurityContext,
+    authorization: Option<&str>,
     id: Uuid,
     req: QueryRequest,
 ) -> Result<QueryResponse, CanonicalError> {
@@ -286,10 +309,30 @@ async fn execute_metric_query(
     // have resolved person_id columns).
     //
     // TODO: Full implementation should also:
-    // - Validate person_id / person_id IN values from $filter against AccessScope (IDOR prevention)
     // - Resolve person_ids when identity_url is set
     // - Parse $select to restrict returned columns
     // - Implement cursor-based pagination (decode $skip → keyset)
+
+    // Visibility gate BEFORE any ClickHouse work, same predicate and same
+    // failure matrix as `POST /v1/metric-results`: a caller may only name
+    // person ids inside their visible set. Without it a caller could read
+    // another person's values here by naming their id — the class the sibling
+    // endpoint answers 403 for.
+    //
+    // `org_unit_id` filters stay ungated: no visibility rule for org units
+    // exists yet (see the analytics DESIGN), and failing them closed would
+    // take out every department distribution metric.
+    let filtered_person_ids = person_ids_from_filter(req.filter.as_deref())?;
+    if !filtered_person_ids.is_empty() {
+        authorize_entity_ids(
+            &state.identity,
+            ctx,
+            authorization,
+            "person",
+            &filtered_person_ids,
+        )
+        .await?;
+    }
 
     let (select_expr, from_clause, group_by) = parse_query_ref(&metric.query_ref).map_err(|e| {
         tracing::error!(error = %e, query_ref = %metric.query_ref, "invalid query_ref");
@@ -536,6 +579,43 @@ fn round_floats(value: serde_json::Value) -> serde_json::Value {
 
 /// Simplified `OData` value extractor.
 /// Extracts value from patterns like `field_name ge 'value'`.
+/// Person ids named by a `$filter` — `person_id eq '<id>'` and
+/// `person_id in ('<id>',…)` — parsed as canonical person UUIDs.
+///
+/// A value that is not a person UUID is a client error rather than something to
+/// gate: since the identity cutover `person_id` is a UUID column, so a
+/// pre-cutover email would reach ClickHouse as a cast failure (a 500 the caller
+/// cannot act on) and would name nobody the gate could check.
+fn person_ids_from_filter(filter: Option<&str>) -> Result<Vec<Uuid>, CanonicalError> {
+    let Some(filter) = filter else {
+        return Ok(Vec::new());
+    };
+
+    let named = extract_odata_value(filter, "person_id", "eq")
+        .into_iter()
+        .chain(extract_odata_in_values(filter, "person_id").unwrap_or_default());
+
+    let mut out = Vec::new();
+    for value in named {
+        let person_id = Uuid::parse_str(value.trim())
+            .ok()
+            .filter(|id| !id.is_nil())
+            .ok_or_else(|| {
+                MetricError::invalid_argument()
+                    .with_field_violation(
+                        "$filter",
+                        "person_id must be a person UUID",
+                        "invalid_person_id",
+                    )
+                    .create()
+            })?;
+        if !out.contains(&person_id) {
+            out.push(person_id);
+        }
+    }
+    Ok(out)
+}
+
 fn extract_odata_value(filter: &str, field: &str, op: &str) -> Option<String> {
     let pattern = format!("{field} {op} '");
     if let Some(start) = filter.find(&pattern) {
@@ -1351,6 +1431,42 @@ fn model_to_column(m: entities::table_columns::Model) -> TableColumn {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── person_ids_from_filter ──────────────────────────────
+
+    const A: Uuid = Uuid::from_u128(0x019e_2820_0000_7000_8000_0000_0000_000a);
+    const B: Uuid = Uuid::from_u128(0x019e_2820_0000_7000_8000_0000_0000_000b);
+
+    #[test]
+    fn filter_person_ids_collect_from_both_eq_and_in_without_duplicates() {
+        let f = format!("person_id eq '{A}' and person_id in ('{A}', '{B}')");
+        assert_eq!(person_ids_from_filter(Some(&f)).ok(), Some(vec![A, B]));
+    }
+
+    #[test]
+    fn a_filter_naming_nobody_needs_no_authorization_call() {
+        assert_eq!(person_ids_from_filter(None).ok(), Some(Vec::new()));
+        assert_eq!(
+            person_ids_from_filter(Some("metric_date ge '2026-03-04'")).ok(),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn a_pre_cutover_email_in_the_filter_is_a_client_error() {
+        // Not a 500 from a ClickHouse cast failure, and not silently ungated:
+        // it names nobody the visibility gate could check.
+        assert!(person_ids_from_filter(Some("person_id eq 'a@x.com'")).is_err());
+        assert!(person_ids_from_filter(Some("person_id in ('a@x.com')")).is_err());
+    }
+
+    #[test]
+    fn the_nil_uuid_in_the_filter_is_a_client_error() {
+        assert!(
+            person_ids_from_filter(Some("person_id eq '00000000-0000-0000-0000-000000000000'"))
+                .is_err()
+        );
+    }
 
     // ── extract_odata_in_values ─────────────────────────────
 
