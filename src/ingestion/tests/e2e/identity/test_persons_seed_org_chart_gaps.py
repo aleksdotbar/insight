@@ -86,6 +86,55 @@ def _hex(person: str) -> str:
     return uuid.UUID(person).hex
 
 
+def _ensure_identity_inputs_table(cfg: SessionConfig) -> None:
+    """`identity.identity_inputs` schema mirrors the dbt model's reader-relevant
+    columns (see `test_persons_seed.py::identity_inputs`). CREATE TABLE IF NOT
+    EXISTS so this is order-independent with that fixture and with the real
+    dbt-built table from the connector-pipeline test above."""
+    clickhouse.ensure_database(cfg, "identity")
+    clickhouse.execute(
+        cfg,
+        """
+        CREATE TABLE IF NOT EXISTS identity.identity_inputs (
+            unique_key          String,
+            insight_tenant_id   Nullable(String),
+            insight_source_type String,
+            insight_source_id   Nullable(String),
+            source_account_id   Nullable(String),
+            value_type          Nullable(String),
+            value               Nullable(String),
+            operation_type      String,
+            _synced_at          DateTime64(3, 'UTC'),
+            _version            UInt64
+        ) ENGINE = ReplacingMergeTree(_version) ORDER BY unique_key
+        """,
+    )
+
+
+def _insert_raw_inputs(cfg: SessionConfig, rows: list[tuple[str, str, str]], *, run_tag: str, version_start: int) -> None:
+    """Hand-insert observation rows into identity_inputs — same shape as
+    `test_persons_seed.py::_insert_inputs`, kept local so this module does not
+    depend on test collection order in another file."""
+    values = []
+    for i, (account, value_type, value) in enumerate(rows):
+        values.append(
+            "("
+            f"'{run_tag}:{account}:{value_type}:{version_start + i}', "
+            f"'{seed.SEED_TENANT}', 'e2e-cycle-source', '77777777-7777-7777-7777-777777777777', "
+            f"'{account}', '{value_type}', '{value}', "
+            f"'UPSERT', now64(3) - INTERVAL {len(rows) - i} SECOND, "
+            f"{version_start + i}"
+            ")"
+        )
+    clickhouse.execute(
+        cfg,
+        "INSERT INTO identity.identity_inputs "  # noqa: S608 — every value is a fixed test literal above, no untrusted input
+        "(unique_key, insight_tenant_id, insight_source_type, insight_source_id,"
+        " source_account_id, value_type, value, operation_type, _synced_at, _version) VALUES "
+        + ", ".join(values),
+    )
+
+
 def test_seed_org_chart_from_real_bamboohr_connector_pipeline(
     identity_svc,
     ch_seeder: CHSeeder,
@@ -155,3 +204,63 @@ def test_seed_org_chart_from_real_bamboohr_connector_pipeline(
     manager = _person_id_by_email(identity_svc, manager_email)
     report = _person_id_by_email(identity_svc, report_email)
     assert _open_parent(compose_stack, report) == _hex(manager)
+
+
+def test_seed_and_subchart_survive_a_circular_manager_chain(identity_svc, compose_stack: SessionConfig) -> None:
+    """A→B and B→A both resolvable: an explicit #1602 target with no test
+    anywhere in the suite. The seed's WRITE side stores org_chart edges
+    verbatim from parent_email observations (it does not detect cycles — see
+    `domain/subchart.rs`'s comment: cycle-safety is a READ-side concern), so
+    both directions must land as open edges. The READ side must not hang or
+    error: `subchart.rs` caps every subtree query at the server's configured
+    `max_depth` specifically so a cyclic org_chart terminates instead of
+    recursing forever (`WITH RECURSIVE ... UNION ALL`, unlike the `UNION`/
+    distinct visibility CTE, does not self-terminate on a cycle)."""
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+
+    run_tag = uuid.uuid4().hex[:10]
+    a_email = f"cycle.a.{run_tag}@e2e.test"
+    b_email = f"cycle.b.{run_tag}@e2e.test"
+
+    _ensure_identity_inputs_table(compose_stack)
+    _insert_raw_inputs(
+        compose_stack,
+        [
+            (f"cycle-a-{run_tag}", "email", a_email),
+            (f"cycle-a-{run_tag}", "id", f"cycle-a-{run_tag}"),
+            (f"cycle-a-{run_tag}", "parent_email", b_email),
+            (f"cycle-b-{run_tag}", "email", b_email),
+            (f"cycle-b-{run_tag}", "id", f"cycle-b-{run_tag}"),
+            (f"cycle-b-{run_tag}", "parent_email", a_email),
+        ],
+        run_tag=run_tag,
+        version_start=1,
+    )
+
+    res = identity_svc.run_seed_cli(tenant=str(seed.SEED_TENANT), force=True)
+    assert res.returncode == 0, f"the seed must terminate on cyclic input, not hang or crash\nrc={res.returncode}\n{res.stdout}\n{res.stderr}"
+
+    person_a = _person_id_by_email(identity_svc, a_email)
+    person_b = _person_id_by_email(identity_svc, b_email)
+
+    # Both directions of the cycle are stored — the write side is a verbatim
+    # projection of the observations, not a cycle-breaking algorithm.
+    assert _open_parent(compose_stack, person_a) == _hex(person_b)
+    assert _open_parent(compose_stack, person_b) == _hex(person_a)
+
+    with identity_svc.client(sub=person_a, tenant=str(seed.SEED_TENANT)) as api:
+        r = api.get(f"/v1/subchart/{person_a}")
+    assert r.status_code == 200, f"cyclic org_chart must not 500/hang the subchart read: status={r.status_code} body={r.text}"
+
+    depths: list[int] = []
+
+    def _walk(node: dict, depth: int) -> None:
+        depths.append(depth)
+        for child in node.get("subordinates", []):
+            _walk(child, depth + 1)
+
+    _walk(r.json()["root"], 0)
+    # Bounded by the harness's configured max_depth=16 (lib/identity.py) — a
+    # true infinite loop would never reach this assertion at all.
+    assert max(depths) <= 16, f"subchart descent on a cycle exceeded the server's max_depth cap: {depths}"
