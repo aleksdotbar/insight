@@ -75,6 +75,9 @@ from .analytics import (
 from .analytics import (
     ListResponse as AdminMetricThresholdList,
 )
+from .analytics import (
+    MetricResultViewDto1 as PeriodView,
+)
 from .common import (
     EXTRACTOR_REJECTION_CONTENT_TYPE,
     PROBLEM_CONTENT_TYPE,
@@ -111,6 +114,7 @@ __all__: Sequence[str] = (
     "MetricSummary",
     "Operation",
     "OperationList",
+    "PeriodView",
     "Person",
     "PersonRole",
     "PersonRoleList",

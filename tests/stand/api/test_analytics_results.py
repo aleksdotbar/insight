@@ -17,9 +17,9 @@ The 401 half is in `test_gateway.py`, swept over every operation at once.
 
 from __future__ import annotations
 
-from insight_stand import ApiClient, Manifest, analytics_path
+from insight_stand import ApiClient, ApiResponse, Manifest, analytics_path
 
-from .schemas import MetricDefinitionListResponse, MetricResultsResponse
+from .schemas import MetricDefinitionListResponse, MetricResultsResponse, PeriodView
 
 METRIC_RESULTS = analytics_path("/v1/metric-results")
 
@@ -32,35 +32,107 @@ def _a_metric_key(api: ApiClient) -> str:
     return metrics[0].metric_key
 
 
-def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
-    """One person, the seeded data window, one metric, the period view.
-
-    The period comes from the manifest's own `data_window`, so the request asks
-    for the range the stand was actually seeded over rather than a guess that
-    would return an empty result and still pass.
-    """
-    person = stand_manifest.fixture("dev_lead")
-    start, _, end = stand_manifest.data_window.partition("..")
-    metric_key = _a_metric_key(api)
-
-    response = api.post(
+def _ask(api: ApiClient, manifest: Manifest, entity_id: str, metric_key: str) -> ApiResponse:
+    start, _, end = manifest.data_window.partition("..")
+    return api.post(
         METRIC_RESULTS,
         json_body={
-            "entity": {"type": "person", "ids": [person.uuid]},
+            "entity": {"type": "person", "ids": [entity_id]},
             "period": {"from": start, "to": end},
             "metrics": [{"metric_key": metric_key, "views": [{"view": "period"}]}],
         },
     )
-    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
 
-    # `MetricResultDto` is a RootModel over four view-shaped variants, so the
-    # payload has to be unwrapped once. That the union resolved at all is half
-    # the assertion: the response matched one of the shapes the contract
-    # declares, rather than something the models had to be loosened to accept.
+
+def _values(response: ApiResponse, metric_key: str) -> list[tuple[str, float | None]]:
+    """Every (entity_id, value) pair the response carries for one metric.
+
+    `MetricResultDto` is a RootModel over four view-shaped variants, so the
+    payload unwraps once. That the union resolved at all is part of the
+    assertion: the response matched a shape the contract declares, rather than
+    something the models had to be loosened to accept.
+    """
     results = response.parse(MetricResultsResponse)
     answered = [metric.root.metric_key for metric in results.metrics]
     assert answered == [metric_key], (
         f"asked for {metric_key!r} and the response answered for {answered}"
+    )
+
+    pairs: list[tuple[str, float | None]] = []
+    for metric in results.metrics:
+        for view in metric.root.views:
+            # The view is a union of five shapes and only the period one carries
+            # `values`. Narrowing it IS an assertion rather than a workaround:
+            # the request asked for `{"view": "period"}`, so a different variant
+            # coming back means the service answered a question nobody asked.
+            assert isinstance(view.root, PeriodView), (
+                f"asked for the period view and got {type(view.root).__name__}"
+            )
+            pairs += [(value.entity_id, value.value) for value in view.root.values]
+    return pairs
+
+
+def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
+    """One person, the seeded window, one metric — and a REAL number back.
+
+    The entity id is the person's EMAIL, which is what this endpoint keys on.
+    That is not obvious and getting it wrong is silent: see
+    `test_metric_results_by_uuid_answers_null` below.
+
+    The period comes from the manifest's own `data_window`, so the request asks
+    for the range the stand was actually seeded over rather than a guess.
+
+    Asserting a non-null value is the whole point. A 200 whose values are all
+    null is what this test used to accept, and it proved only that the route
+    was reachable — the chain from gold through the tenant in the JWT to a
+    number on the wire was never exercised.
+    """
+    person = stand_manifest.fixture("dev_lead")
+    metric_key = _a_metric_key(api)
+
+    response = _ask(api, stand_manifest, person.email, metric_key)
+    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
+
+    values = _values(response, metric_key)
+    assert values, f"the response carried no values at all: {response.text[:300]}"
+    assert [entity for entity, _ in values] == [person.email]
+    assert all(value is not None for _, value in values), (
+        f"{metric_key} came back null for {person.email} over the seeded window "
+        f"{stand_manifest.data_window} — the request reached the service but no "
+        f"gold data answered it: {values}"
+    )
+
+
+def test_metric_results_by_uuid_answers_null(
+    api: ApiClient, stand_manifest: Manifest
+) -> None:
+    """Asking by canonical person UUID returns 200 and no data. Pinned, not endorsed.
+
+    The manifest, the org chart, `/v1/subchart` and `/v1/profiles` all identify
+    a person by UUID; this endpoint alone keys on email. Supplying the UUID does
+    not fail — it answers a well-formed 200 with `value: null`, indistinguishable
+    from "this person genuinely has no activity".
+
+    That is a silent-empty-dashboard hazard and worth reporting upstream: a
+    caller holding the canonical identifier gets a plausible empty answer rather
+    than a 400. Asserted here so the behaviour is recorded rather than
+    rediscovered, and so a fix that starts resolving UUIDs — or starts
+    rejecting them — fails this test and gets noticed.
+    """
+    person = stand_manifest.fixture("dev_lead")
+    metric_key = _a_metric_key(api)
+
+    by_email = _values(_ask(api, stand_manifest, person.email, metric_key), metric_key)
+    by_uuid = _values(_ask(api, stand_manifest, person.uuid, metric_key), metric_key)
+
+    assert all(value is not None for _, value in by_email), (
+        "precondition: this person must have data when asked for by email, or the "
+        "comparison below says nothing"
+    )
+    assert by_uuid == [(person.uuid, None)], (
+        f"asking for {person.email} by UUID returned {by_uuid}; the recorded behaviour "
+        "is a single null. If this now resolves, delete this test and drop the note "
+        "from test_metric_results_200"
     )
 
 
