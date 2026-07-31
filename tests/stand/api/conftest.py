@@ -15,15 +15,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 
 import pytest
-from insight_stand import (
-    ADMIN_OPERATOR_FIXTURE,
-    ApiClient,
-    JsonValue,
-    PersonaSession,
-    analytics_path,
-)
+from insight_stand import ADMIN_OPERATOR_FIXTURE, ApiClient, PersonaSession, analytics_path
 
 from . import scratch
+from .schemas import Metric, SavedQuery
 
 
 @pytest.fixture
@@ -38,19 +33,19 @@ def api(lead_session: PersonaSession) -> ApiClient:
 
 
 @pytest.fixture
-def scratch_metric(api: ApiClient) -> Iterator[dict[str, JsonValue]]:
+def scratch_metric(api: ApiClient) -> Iterator[Metric]:
     """A scratch metric, soft-deleted afterwards so it never leaks into listings."""
     metric = scratch.create_metric(api, "metric")
     yield metric
-    api.delete(analytics_path(f"/v1/metrics/{metric['id']}"))
+    api.delete(analytics_path(f"/v1/metrics/{metric.id}"))
 
 
 @pytest.fixture
-def scratch_saved_query(api: ApiClient) -> Iterator[dict[str, JsonValue]]:
+def scratch_saved_query(api: ApiClient) -> Iterator[SavedQuery]:
     """A scratch saved query, hard-deleted afterwards."""
     query = scratch.create_saved_query(api, "query")
     yield query
-    api.delete(analytics_path(f"/v1/queries/{query['id']}"))
+    api.delete(analytics_path(f"/v1/queries/{query.id}"))
 
 
 @pytest.fixture(scope="session", autouse=True)

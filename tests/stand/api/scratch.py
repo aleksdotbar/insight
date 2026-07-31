@@ -26,14 +26,15 @@ import uuid
 from collections.abc import Sequence
 from typing import Final
 
-from insight_stand import (
-    ANALYTICS_PREFIX,
-    ApiClient,
-    ApiResponse,
-    JsonValue,
-    analytics_path,
-    identity_path,
-)
+from insight_stand import ANALYTICS_PREFIX, ApiClient, analytics_path, identity_path
+
+from .schemas import ListResponse, Metric, SavedQuery
+
+#: A listing reduced to the two fields the sweep needs. Deliberately not the
+#: real per-resource models: this walks four listings across two services
+#: looking for one name or id, and importing five models to read two fields
+#: would couple the sweep to every schema change that does not concern it.
+_Named = ListResponse[dict[str, object]]
 
 #: Marks every row this suite creates, so a leak is identifiable on sight.
 SCRATCH_PREFIX: Final[str] = "stand-scratch"
@@ -78,7 +79,7 @@ def tracked_ids() -> tuple[str, ...]:
     return tuple(entry[2] for entry in _CREATED_IDS)
 
 
-def track(listing_path: str, id_field: str, value: JsonValue) -> str:
+def track(listing_path: str, id_field: str, value: object) -> str:
     """Register a nameless created row, and return its id.
 
     `create_*` helpers below name what they make; these are the resources that
@@ -89,24 +90,13 @@ def track(listing_path: str, id_field: str, value: JsonValue) -> str:
     `surviving_scratch_rows`), so leaving the id registered turns the sweep into
     a second, independent check that the revoke actually landed.
     """
-    assert isinstance(value, str), f"expected a string id for {id_field}, got {value!r}"
-    _CREATED_IDS.append((listing_path, id_field, value))
-    return value
+    identifier = str(value)
+    _CREATED_IDS.append((listing_path, id_field, identifier))
+    return identifier
 
 
-def _created(response: ApiResponse, what: str) -> dict[str, JsonValue]:
-    assert response.status_code == 201, (
-        f"create {what}: status={response.status_code} body={response.text[:300]}"
-    )
-    body = response.json()
-    assert isinstance(body, dict), (
-        f"create {what}: expected a JSON object, got {response.text[:300]}"
-    )
-    return body
-
-
-def create_metric(client: ApiClient, tag: str) -> dict[str, JsonValue]:
-    """`POST /v1/metrics` → 201. The caller soft-deletes it."""
+def create_metric(client: ApiClient, tag: str) -> Metric:
+    """`POST /v1/metrics` → 201, validated. The caller soft-deletes it."""
     name = scratch_name(tag)
     response = client.post(
         analytics_path("/v1/metrics"),
@@ -116,13 +106,18 @@ def create_metric(client: ApiClient, tag: str) -> dict[str, JsonValue]:
             "query_ref": SCRATCH_QUERY_REF,
         },
     )
-    body = _created(response, "metric")
-    assert body["query_ref"] == SCRATCH_QUERY_REF
-    return body
+    assert response.status_code == 201, (
+        f"create metric: status={response.status_code} body={response.text[:300]}"
+    )
+    metric = response.parse(Metric)
+    assert metric.name == name
+    assert metric.query_ref == SCRATCH_QUERY_REF
+    assert metric.is_enabled
+    return metric
 
 
-def create_saved_query(client: ApiClient, tag: str) -> dict[str, JsonValue]:
-    """`POST /v1/queries` → 201. The caller hard-deletes it."""
+def create_saved_query(client: ApiClient, tag: str) -> SavedQuery:
+    """`POST /v1/queries` → 201, validated. The caller hard-deletes it."""
     name = scratch_name(tag)
     response = client.post(
         analytics_path("/v1/queries"),
@@ -132,9 +127,13 @@ def create_saved_query(client: ApiClient, tag: str) -> dict[str, JsonValue]:
             "sql": SCRATCH_QUERY_REF,
         },
     )
-    body = _created(response, "saved query")
-    assert body["sql"] == SCRATCH_QUERY_REF
-    return body
+    assert response.status_code == 201, (
+        f"create saved query: status={response.status_code} body={response.text[:300]}"
+    )
+    query = response.parse(SavedQuery)
+    assert query.name == name
+    assert query.sql == SCRATCH_QUERY_REF
+    return query
 
 
 #: Named resources, and the listing that would still show a leaked one.
@@ -145,13 +144,17 @@ _NAMED_LISTINGS: Final[tuple[str, ...]] = (
 )
 
 
-def _listing_items(client: ApiClient, path: str) -> list[JsonValue]:
+def _listing_items(client: ApiClient, path: str) -> list[dict[str, object]]:
+    """Rows of one listing, or nothing when it cannot be read.
+
+    A non-200 is swallowed on purpose. The sweep runs at the very end of a
+    session, after failures, and a stand that has stopped answering should not
+    turn into a confusing second failure about leaked rows.
+    """
     response = client.get(path)
     if response.status_code != 200:
         return []
-    body = response.json()
-    items = body.get("items") if isinstance(body, dict) else None
-    return items if isinstance(items, list) else []
+    return response.parse(_Named).items
 
 
 def surviving_scratch_rows(*, analytics: ApiClient, identity: ApiClient) -> list[str]:
@@ -184,17 +187,15 @@ def surviving_scratch_rows(*, analytics: ApiClient, identity: ApiClient) -> list
 
     for listing in _NAMED_LISTINGS:
         for item in _listing_items(client_for(listing), listing):
-            if not isinstance(item, dict):
-                continue
             name = item.get("name")
             if isinstance(name, str) and name in _ISSUED:
                 leaked.append(f"{listing} -> {name}")
 
     for listing, id_field, value in _CREATED_IDS:
         for item in _listing_items(client_for(listing), listing):
-            if not isinstance(item, dict) or item.get(id_field) != value:
+            if str(item.get(id_field)) != value:
                 continue
-            if "valid_to" in item and item["valid_to"] is not None:
+            if item.get("valid_to") is not None:
                 continue  # revoked, which is what a delete does to these
             leaked.append(f"{listing} -> {id_field}={value} still in force")
 

@@ -23,8 +23,9 @@ validated, wrapped and executed on ClickHouse, returning one deterministic row.
 
 from __future__ import annotations
 
-from insight_stand import ApiClient, ApiResponse, JsonValue, analytics_path
+from insight_stand import ApiClient, analytics_path
 
+from .schemas import Metric, MetricListResponse, QueryResponse
 from .scratch import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_metric
 
 METRICS = analytics_path("/v1/metrics")
@@ -34,13 +35,11 @@ def _metric_path(metric_id: object, suffix: str = "") -> str:
     return analytics_path(f"/v1/metrics/{metric_id}{suffix}")
 
 
-def _names(response: ApiResponse) -> list[str]:
-    """Names in a listing, or a readable failure about its shape."""
-    body = response.json()
-    assert isinstance(body, dict), f"expected a JSON object from {response.url}: {response.text[:300]}"
-    items = body.get("items")
-    assert isinstance(items, list), f"listing has no 'items' array: {response.text[:300]}"
-    return [str(item["name"]) for item in items if isinstance(item, dict) and "name" in item]
+def _catalogue(api: ApiClient) -> set[str]:
+    """Every metric name the listing reports, validated on the way through."""
+    response = api.get(METRICS)
+    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
+    return {item.name for item in response.parse(MetricListResponse).items}
 
 
 def test_list_metrics_200_returns_the_seeded_catalog(api: ApiClient) -> None:
@@ -50,29 +49,23 @@ def test_list_metrics_200_returns_the_seeded_catalog(api: ApiClient) -> None:
     body would be a different defect from a 200 that omits a row just created,
     and only this one would catch a stand whose seed never ran.
     """
-    response = api.get(METRICS)
-    assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"
-    assert _names(response), f"the metric catalog is empty: {response.text[:400]}"
+    assert _catalogue(api), "the metric catalog is empty"
 
 
-def test_list_metrics_200(api: ApiClient, scratch_metric: dict[str, JsonValue]) -> None:
-    response = api.get(METRICS)
-    assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"
-    assert scratch_metric["name"] in _names(response)
+def test_list_metrics_200(api: ApiClient, scratch_metric: Metric) -> None:
+    assert scratch_metric.name in _catalogue(api)
 
 
-def test_list_metrics_200_excludes_soft_deleted(
-    api: ApiClient, scratch_metric: dict[str, JsonValue]
-) -> None:
+def test_list_metrics_200_excludes_soft_deleted(api: ApiClient, scratch_metric: Metric) -> None:
     """A soft delete has to disappear from the listing, not merely be flagged."""
-    assert api.delete(_metric_path(scratch_metric["id"])).status_code == 204
-    assert scratch_metric["name"] not in _names(api.get(METRICS))
+    assert api.delete(_metric_path(scratch_metric.id)).status_code == 204
+    assert scratch_metric.name not in _catalogue(api)
 
 
 def test_create_metric_201(api: ApiClient) -> None:
     """The helper asserts the 201 and the echoed definition; this owns cleanup."""
     created = create_metric(api, "create")
-    assert api.delete(_metric_path(created["id"])).status_code == 204
+    assert api.delete(_metric_path(created.id)).status_code == 204
 
 
 def test_create_metric_415_wrong_content_type(api: ApiClient) -> None:
@@ -98,11 +91,10 @@ def test_create_metric_422_off_schema_body(api: ApiClient) -> None:
     assert response.status_code == 422, f"status={response.status_code} body={response.text[:300]}"
 
 
-def test_get_metric_200(api: ApiClient, scratch_metric: dict[str, JsonValue]) -> None:
-    response = api.get(_metric_path(scratch_metric["id"]))
+def test_get_metric_200(api: ApiClient, scratch_metric: Metric) -> None:
+    response = api.get(_metric_path(scratch_metric.id))
     assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"
-    body = response.json()
-    assert isinstance(body, dict) and body["id"] == scratch_metric["id"]
+    assert response.parse(Metric).id == scratch_metric.id
 
 
 def test_get_metric_400_non_uuid(api: ApiClient) -> None:
@@ -116,26 +108,23 @@ def test_get_metric_404_unknown(api: ApiClient) -> None:
     assert response.status_code == 404, f"status={response.status_code} body={response.text[:300]}"
 
 
-def test_get_metric_404_after_soft_delete(
-    api: ApiClient, scratch_metric: dict[str, JsonValue]
-) -> None:
-    assert api.delete(_metric_path(scratch_metric["id"])).status_code == 204
-    response = api.get(_metric_path(scratch_metric["id"]))
+def test_get_metric_404_after_soft_delete(api: ApiClient, scratch_metric: Metric) -> None:
+    assert api.delete(_metric_path(scratch_metric.id)).status_code == 204
+    response = api.get(_metric_path(scratch_metric.id))
     assert response.status_code == 404, f"status={response.status_code} body={response.text[:300]}"
 
 
-def test_update_metric_200(api: ApiClient, scratch_metric: dict[str, JsonValue]) -> None:
+def test_update_metric_200(api: ApiClient, scratch_metric: Metric) -> None:
     response = api.put(
-        _metric_path(scratch_metric["id"]),
+        _metric_path(scratch_metric.id),
         json_body={
-            "name": scratch_metric["name"],
+            "name": scratch_metric.name,
             "description": "updated by the stand suite",
             "query_ref": SCRATCH_QUERY_REF,
         },
     )
     assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"
-    body = response.json()
-    assert isinstance(body, dict) and body["description"] == "updated by the stand suite"
+    assert response.parse(Metric).description == "updated by the stand suite"
 
 
 def test_update_metric_404_unknown(api: ApiClient) -> None:
@@ -146,8 +135,8 @@ def test_update_metric_404_unknown(api: ApiClient) -> None:
     assert response.status_code == 404, f"status={response.status_code} body={response.text[:300]}"
 
 
-def test_delete_metric_204(api: ApiClient, scratch_metric: dict[str, JsonValue]) -> None:
-    response = api.delete(_metric_path(scratch_metric["id"]))
+def test_delete_metric_204(api: ApiClient, scratch_metric: Metric) -> None:
+    response = api.delete(_metric_path(scratch_metric.id))
     assert response.status_code == 204, f"status={response.status_code} body={response.text[:300]}"
 
 
@@ -156,10 +145,13 @@ def test_delete_metric_404_unknown(api: ApiClient) -> None:
     assert response.status_code == 404, f"status={response.status_code} body={response.text[:300]}"
 
 
-def test_query_metric_200(api: ApiClient, scratch_metric: dict[str, JsonValue]) -> None:
+def test_query_metric_200(api: ApiClient, scratch_metric: Metric) -> None:
     """The deterministic row comes back — the query really reached ClickHouse."""
-    response = api.post(_metric_path(scratch_metric["id"], "/query"), json_body={})
+    response = api.post(_metric_path(scratch_metric.id, "/query"), json_body={})
     assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"
+    assert response.parse(QueryResponse).items == [{"one": 1}], (
+        f"the scratch metric's query should return one deterministic row: {response.text[:300]}"
+    )
 
 
 def test_query_metric_404_unknown(api: ApiClient) -> None:
@@ -167,9 +159,9 @@ def test_query_metric_404_unknown(api: ApiClient) -> None:
     assert response.status_code == 404, f"status={response.status_code} body={response.text[:300]}"
 
 
-def test_batch_queries_200(api: ApiClient, scratch_metric: dict[str, JsonValue]) -> None:
+def test_batch_queries_200(api: ApiClient, scratch_metric: Metric) -> None:
     response = api.post(
         analytics_path("/v1/metrics/queries"),
-        json_body={"queries": [{"metric_id": scratch_metric["id"]}]},
+        json_body={"queries": [{"metric_id": str(scratch_metric.id)}]},
     )
     assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"

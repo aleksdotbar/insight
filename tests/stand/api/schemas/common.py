@@ -7,9 +7,26 @@ services build them with — not from a committed OpenAPI document.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 
 from insight_stand import JsonValue
 from pydantic import BaseModel, ConfigDict, Field
+
+#: A timestamp the analytics contract declares as `format: date-time` — RFC 3339,
+#: which REQUIRES an offset — but which the service serialises without one:
+#: `"2026-07-31T09:12:55"`. Generating faithfully from the spec produces
+#: `AwareDatetime` and every response with a timestamp fails to validate.
+#:
+#: `tests/generate_schemas.py` substitutes this alias for `AwareDatetime` in the
+#: generated module. That substitution is the ONE hand-written thing in a
+#: generated file, and it is deliberate: the alternative is a suite that cannot
+#: read a metric. It is a pinned DEVIATION, not an opinion about the right
+#: shape — a client that generated its parser from the published contract, which
+#: is what publishing it is for, breaks on every one of these.
+#:
+#: Delete the substitution and this alias together once the service emits
+#: offsets (or the spec stops claiming date-time).
+UnzonedDatetime = datetime
 
 #: What the canonical error layer answers with. Asserted alongside the status
 #: code, because a proxy that turned a Problem into an HTML page would keep the
@@ -72,4 +89,5 @@ __all__: Sequence[str] = (
     "PROBLEM_CONTENT_TYPE",
     "ListResponse",
     "ProblemDocument",
+    "UnzonedDatetime",
 )

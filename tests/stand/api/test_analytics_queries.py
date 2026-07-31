@@ -19,8 +19,9 @@ The 401 half is in `test_gateway.py`, swept over every operation at once.
 
 from __future__ import annotations
 
-from insight_stand import ApiClient, ApiResponse, JsonValue, analytics_path
+from insight_stand import ApiClient, analytics_path
 
+from .schemas import RunResponse, SavedQuery, SavedQueryListResponse
 from .scratch import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_saved_query
 
 QUERIES = analytics_path("/v1/queries")
@@ -30,20 +31,15 @@ def _query_path(query_id: object, suffix: str = "") -> str:
     return analytics_path(f"/v1/queries/{query_id}{suffix}")
 
 
-def _names(response: ApiResponse) -> set[str]:
-    body = response.json()
-    assert isinstance(body, dict), (
-        f"expected a JSON object from {response.url}: {response.text[:300]}"
-    )
-    items = body.get("items")
-    assert isinstance(items, list), f"listing has no 'items' array: {response.text[:300]}"
-    return {str(item["name"]) for item in items if isinstance(item, dict) and "name" in item}
-
-
-def test_list_queries_200(api: ApiClient, scratch_saved_query: dict[str, JsonValue]) -> None:
+def _saved(api: ApiClient) -> set[str]:
+    """Every saved-query name the listing reports, validated on the way through."""
     response = api.get(QUERIES)
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
-    assert scratch_saved_query["name"] in _names(response)
+    return {item.name for item in response.parse(SavedQueryListResponse).items}
+
+
+def test_list_queries_200(api: ApiClient, scratch_saved_query: SavedQuery) -> None:
+    assert scratch_saved_query.name in _saved(api)
 
 
 def test_saved_query_create_run_update_delete_round_trip(api: ApiClient) -> None:
@@ -55,23 +51,22 @@ def test_saved_query_create_run_update_delete_round_trip(api: ApiClient) -> None
     a single cycle can do neither.
     """
     created = create_saved_query(api, "roundtrip")
-    query_id = created["id"]
+    query_id = created.id
 
     fetched = api.get(_query_path(query_id))
     assert fetched.status_code == 200, f"read back: {fetched.status_code} {fetched.text[:300]}"
+    assert fetched.parse(SavedQuery).sql == SCRATCH_QUERY_REF
 
     ran = api.post(_query_path(query_id, "/run"), json_body={})
     assert ran.status_code == 200, f"run: {ran.status_code} {ran.text[:300]}"
-    body = ran.json()
-    assert isinstance(body, dict), f"run returned no JSON object: {ran.text[:300]}"
-    assert body.get("rows") == [{"one": 1}], (
+    assert ran.parse(RunResponse).rows == [{"one": 1}], (
         f"the saved SQL should return exactly one deterministic row: {ran.text[:300]}"
     )
 
     updated = api.put(
         _query_path(query_id),
         json_body={
-            "name": created["name"],
+            "name": created.name,
             "description": "updated by the stand suite",
             "sql": SCRATCH_QUERY_REF,
         },
@@ -82,9 +77,7 @@ def test_saved_query_create_run_update_delete_round_trip(api: ApiClient) -> None
     assert deleted.status_code == 204, f"delete: {deleted.status_code} {deleted.text[:300]}"
 
     assert api.get(_query_path(query_id)).status_code == 404
-    assert created["name"] not in _names(api.get(QUERIES)), (
-        "a hard-deleted saved query is still listed"
-    )
+    assert created.name not in _saved(api), "a hard-deleted saved query is still listed"
 
 
 def test_create_query_415_wrong_content_type(api: ApiClient) -> None:

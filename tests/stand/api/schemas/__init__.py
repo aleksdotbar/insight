@@ -44,6 +44,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from .analytics import (
+    Metric,
+    MetricListResponse,
+    MetricSummary,
+    QueryResponse,
+    RunResponse,
+    SavedQuery,
+    SavedQueryListResponse,
+)
 from .common import (
     EXTRACTOR_REJECTION_CONTENT_TYPE,
     PROBLEM_CONTENT_TYPE,
@@ -69,14 +78,21 @@ __all__: Sequence[str] = (
     "EXTRACTOR_REJECTION_CONTENT_TYPE",
     "PROBLEM_CONTENT_TYPE",
     "ListResponse",
+    "Metric",
+    "MetricListResponse",
+    "MetricSummary",
     "Operation",
     "OperationList",
     "PersonRole",
     "PersonRoleList",
     "ProblemDocument",
     "Profile",
+    "QueryResponse",
     "Role",
     "RoleList",
+    "RunResponse",
+    "SavedQuery",
+    "SavedQueryListResponse",
     "Subchart",
     "SubchartForest",
     "SubchartNode",
