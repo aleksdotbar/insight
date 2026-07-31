@@ -37,7 +37,8 @@ pub async fn query_metric_results(
     Json(req): Json<MetricResultsRequest>,
 ) -> Result<Json<MetricResultsResponse>, CanonicalError> {
     let tenant_id = ctx.subject_tenant_id();
-    let req = validate_request(&state.db, tenant_id, req).await?;
+    let mut req = validate_request(&state.db, tenant_id, req).await?;
+    req.enforce_tenant_scope = state.config.metric_catalog.enforce_tenant_scope;
     authorize_entity_ids(
         &state.identity,
         &ctx,
