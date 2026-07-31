@@ -87,6 +87,37 @@ service serialises timestamps with no offset. See `common.UnzonedDatetime`.
 '''
 
 
+AUTHENTICATOR_HEADER = '''"""Authenticator response shapes — GENERATED, do not edit.
+
+Regenerate with:
+
+    uv run --project tests --frozen python tests/generate_schemas.py
+
+Source: `docs/components/backend/authenticator/openapi.json`, generated offline
+by `cargo run -p authenticator -- openapi` and drift-gated in CI beside the
+analytics document — same provenance, same guarantee that these models describe
+the structs that serialize the wire.
+
+SMALL ON PURPOSE, and it is the document that is small: every success body on
+`/auth/*` is declared as a bare `type: object` with no properties, because those
+handlers answer untyped JSON. So what the contract describes today is the error
+envelope, and that is what this module holds. A handler that gains a typed
+response appears here on the next regeneration — which is the reason this file
+exists rather than the service being listed as having nothing to generate.
+
+Two consequences worth knowing while it stays this small:
+
+* The envelope here is the CONTRACT's, generated and drift-gated; the one in
+  `common.ProblemDocument` is hand-written from observed bodies and is what the
+  suite asserts with today. They agree field for field, with one difference: the
+  contract REQUIRES `context`, where the hand-written model defaults it to `{}`.
+* No status code comes from this document either — the same `.standard_errors`
+  stamping applies (#1669).
+"""
+
+'''
+
+
 @dataclass(frozen=True)
 class Generated:
     """A service whose document describes bodies: models are generated and committed."""
@@ -123,25 +154,25 @@ TARGETS: tuple[Generated | Bodyless, ...] = (
         header=ANALYTICS_HEADER,
         unzoned_datetime=True,
     ),
-    # 3.1.0, generated offline by `authenticator openapi` and drift-gated in CI
-    # alongside analytics — so the provenance is sound and this is not a trust
-    # problem. It declares every success body as a bare `{"type": "object"}`
-    # with no properties, because those handlers answer untyped JSON: there is
-    # nothing to generate but the shared `Problem`.
-    Bodyless(
+    Generated(
         name="authenticator",
         spec=_SPECS / "authenticator" / "openapi.json",
-        reason="every success body is declared `type: object` with no properties",
+        output=_SCHEMAS / "authenticator.py",
+        header=AUTHENTICATOR_HEADER,
     ),
     # NGINX + Lua (`access_by_lua`), no binary that could emit a document and no
-    # `openapi.json` under docs/components/backend/gateway/. What the edge emits
-    # of its own — the 401 problem envelope — is `common.ProblemDocument`;
-    # everything else it answers with is an upstream body, covered by that
-    # service's models once the request is proxied.
+    # `openapi.json` under docs/components/backend/gateway/. It exposes exactly
+    # one endpoint of its own — `GET /healthz`, `text/plain` "ok" — and is
+    # otherwise a proxy: `/auth/*` to the authenticator, the generated `/api/*`
+    # locations to analytics and identity, `/internal/*` and unmatched `/api/*`
+    # to 404, `/` to the SPA. Its route table (`deploy/compose/gateway/routes.yaml`
+    # and the chart's `gateway.routes`, compiled to nginx by `tools/routegen`) is
+    # the machine-readable edge contract; the 401 envelope it produces of its own
+    # is `common.ProblemDocument`.
     Bodyless(
         name="gateway",
         spec=_SPECS / "gateway" / "openapi.json",
-        reason="publishes no OpenAPI document (NGINX + Lua)",
+        reason="publishes no OpenAPI document (NGINX + Lua; `GET /healthz` is its only own route)",
     ),
     # The committed document is still the retired .NET one: it declares
     # `/v1/persons/{email}` (identity answers 404 — the path moved to

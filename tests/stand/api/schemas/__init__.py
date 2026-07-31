@@ -20,6 +20,14 @@ Two halves, and a reader should be able to tell which one they are in:
   that serialize the wire — generating models from it introduces no second
   source of truth, and its 70 schemas are not a hand-copying job.
 
+* `authenticator.py` — GENERATED the same way, from
+  `docs/components/backend/authenticator/openapi.json` (same provenance: emitted
+  offline by the service, drift-gated in the same workflow). Currently just the
+  error envelope, because that document declares every `/auth/*` success body as
+  a bare `type: object` — those handlers answer untyped JSON. It exists so a
+  handler that gains a typed response lands here on the next regeneration rather
+  than being noticed by someone.
+
   **Bodies from the spec; status codes never.** The same document's per-operation
   status-code lists are stamped uniformly by `.standard_errors` and do not
   describe what any route actually returns (#1669) — the identity contract shows
