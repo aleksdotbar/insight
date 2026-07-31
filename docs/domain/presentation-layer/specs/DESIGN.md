@@ -55,7 +55,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-tenant-filter` | Literal leading `tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` (and the peer-cohort CTE reads) — replacing the no-op. `tenant_id` is the column the gold observation and cohort contract exposes (silver's `insight_tenant_id`, aliased to `tenant_id` in gold); filtering on it sidesteps the #1596 name drift, which affects other tables, not this read surface. Shipped for the structured `metric_results` read path (#1967). The legacy per-metric `query_ref` path (`execute_metric_query`) remains unscoped and is explicitly outside this guarantee until protected — see the component boundaries below. |
 | `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary in [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md): the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and `person.*`/`identity.*` objects, with the additive-only rules and the granted `insight` legacy gold. Shipped (#1968) |
 | `cpt-presentation-fr-contract-version-stamp` | Engineering stamps `silver.contract_version` (single-row constant view, ledgerless CH migration); analytics pins `PINNED_CONTRACT_VERSION` and verifies the stamp in a periodic post-boot sweep, logging a mismatch or missing stamp without gating boot. Shipped (#1969) |
-| `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart |
+| `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart. Shipped (#1970) |
 | `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only synthetic backend, FE-only variation |
 | `cpt-presentation-fr-preview-auth` | Single fixed callback with a Redis-backed opaque `state` return path, validated at store time |
 
@@ -336,6 +336,35 @@ Additive-only evolution is only checkable against a named surface *version*. The
 
 - `cpt-presentation-component-read-only-role` — grants the read the probe uses
 - `cpt-presentation-component-metric-compiler` — the main consumer of the surface the version names
+
+---
+
+#### Query Console
+
+- [x] `p2` - **ID**: `cpt-presentation-component-query-console`
+
+##### Why this component exists
+
+Makes the saved-query API tangible: a single stable FE app (not a per-branch stand) where an analyst authors a query, picks one from their saved list, runs it, and reads the result. This is tiers 1-2 of the promotion ladder — author and eyeball, no deploy — and query-management v0. Shipped (#1970).
+
+##### Responsibility scope
+
+- One authenticated route in the existing FE app (the stable console; preview environments below are a separate tier-3 surface). Reached only through the existing auth shell, so it inherits the session `SecurityContext` and its tenant; the console never sends a tenant.
+- Reachable by direct URL only — no sidebar/nav entry — in Phase A. There is no role to gate it on yet (RBAC is deferred to the permissions service, `DD-AUTH-07`, so every human session carries only the default `user` role); surfacing it in the nav and restricting it to the right roles waits for that service.
+- Consumes **only** the saved-query API (`/v1/queries` CRUD + `/v1/queries/{id}/run`): list saved queries, author (name + SQL, optional description), save to get an id, select a saved query, and run it. Editing and deleting an existing query round out CRUD parity with the API.
+- Render the run result two ways from the untyped `{ rows }` payload: always a table (columns inferred from the row keys), plus an auto-chart when the row shape is chartable (one categorical/label column + at least one numeric column), otherwise table-only. Chart-type selection is heuristic, not authored.
+- Surface the API's typed errors as-is — a gate rejection (invalid SQL) and a missing-named-parameter `400` are shown to the author, not swallowed.
+
+##### Responsibility boundaries
+
+- Does NOT talk to ClickHouse or any contract object directly — every read is a `/run` through the service, so the gate, the `presentation_ro` role, and the tenant scoping all still apply.
+- Does NOT set or widen the tenant — `{tenant}` is server-injected; the console cannot pass one.
+- Does NOT pin a query as a dashboard card (tier-2 "promote") or build bespoke widgets (tier-3) — those are later ladder rungs; this component is author-and-run only.
+
+##### Related components (by ID)
+
+- `cpt-presentation-component-saved-query-api` — the only backend surface the console calls
+- `cpt-presentation-component-preview-router` — the tier-3 counterpart to this tier-1/2 console
 
 ---
 

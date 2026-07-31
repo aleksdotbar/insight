@@ -243,7 +243,7 @@ The system **MUST** stamp a contract version so presentation can detect the cont
 
 #### Stable Query Console
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-query-console`
+- [x] `p2` - **ID**: `cpt-presentation-fr-query-console`
 
 The system **MUST** provide a single stable FE app (not per-branch stands) where an analyst authors a query (name plus SQL), gets an id, picks from their saved queries, runs it, and sees the result as a table or auto-chart. The console **MUST** consume only the saved-query API. (#1970.)
 
