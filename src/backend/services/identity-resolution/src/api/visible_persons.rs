@@ -44,6 +44,11 @@ pub async fn filter_visible_persons(
 
     let requested = dedup_person_ids(&req.person_ids)?;
 
+    // INVARIANT: the wildcard short-circuit echoes the request, so the answer
+    // is a SUBSET OF THE INPUT — never a statement that each id exists in the
+    // tenant. The SQL branch cannot say more either (an id absent from the
+    // visible set and an id absent from the tenant are one answer), so callers
+    // must not read presence here as existence.
     let visible = if subchart_repo::has_wildcard_grant(&state.db, tenant, caller)
         .await
         .map_err(read_err)?

@@ -54,7 +54,10 @@ UNKNOWN_EMAIL = "nobody@example.com"
 
 # The metric fixtures' personas — the set the stub reports as visible, so
 # `POST /v1/metric-results` authorizes requests for them; an email outside this
-# set is refused by the gate.
+# set is refused by the gate. The metric rig does NOT rely on this tuple: it
+# calls `IdentityStub.allow_visible()` with the personas its yaml addresses, so
+# a new fixture persona cannot fail as a phantom 403. The tuple remains the
+# default for suites that spawn the stub without a yaml (api/…).
 VISIBLE_EMAILS: tuple[str, ...] = (
     SEEDED_EMAIL,
     "alice@example.com",
@@ -160,6 +163,14 @@ class IdentityStub:
         self._thread = threading.Thread(target=server.serve_forever, name="identity-stub", daemon=True)
         self._thread.start()
         LOG.info("identity stub listening on %s", self.url)
+
+    def allow_visible(self, emails: tuple[str, ...] | list[str]) -> None:
+        """Replace the visible set at runtime (the metric rig passes the
+        personas its yaml addresses, so a new fixture persona is never a
+        phantom 403 from a stale hand-maintained list)."""
+        self._visible = tuple(emails)
+        if self._server is not None:
+            self._server.visible = self._visible  # type: ignore[attr-defined]
 
     @property
     def url(self) -> str:

@@ -14,7 +14,7 @@ from lib.dbt_runner import DbtRunner
 from lib.enrich import EnrichRunner
 from lib.expect_engine import evaluate_case
 from lib.fixture_loader import TestYaml
-from lib.identity_stub import person_id_for
+from lib.identity_stub import IdentityStub, person_id_for
 from lib.worker import WorkerContext
 
 pytestmark = pytest.mark.fixture
@@ -121,6 +121,7 @@ def test_metric_smoke(
     dbt_runner: DbtRunner,
     enrich_runner: EnrichRunner,
     analytics: AnalyticsProcess,
+    identity_stub: IdentityStub,
     worker_ctx: WorkerContext,
 ) -> None:
     ch_seeder.truncate_touched()
@@ -200,6 +201,10 @@ def test_metric_smoke(
     #    build (the rig plays the persons-sync role here).
     persona_emails = _all_persona_emails(test_yaml)
     to_person_id = {email: person_id_for(email) for email in _requested_persona_emails(test_yaml)}
+    # The visibility gate asks the stub about the ids this case requests, so
+    # the stub's visible set is derived from the yaml — never a hand-kept list
+    # a new persona could fall outside of (that reads as an authz bug).
+    identity_stub.allow_visible(persona_emails)
     _seed_identity_persons(ch_seeder.cfg, persona_emails)
 
     if staging or silver_set or ran_enrich_steps:
@@ -209,7 +214,16 @@ def test_metric_smoke(
     #    speaks emails (the persona key); the wire speaks person UUIDs since
     #    the identity cutover — translate on the way out and back so the 36
     #    case files stay human-readable.
-    to_email = {person_id: email for email, person_id in to_person_id.items()}
+    to_email: dict[str, str] = {}
+    for email, person_id in to_person_id.items():
+        # uuid5 is injective over distinct inputs, so a collision means two
+        # spellings of one email (case) — the reverse map would drop one
+        # silently and the expects would fail somewhere unrelated.
+        if person_id in to_email:
+            raise AssertionError(
+                f"two requested spellings share a person id: {to_email[person_id]!r} and {email!r}"
+            )
+        to_email[person_id] = email
     for case in test_yaml.cases:
         status, payload = analytics.call_request(_translate(case["request"], to_person_id))
         if status != 200:

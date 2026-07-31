@@ -125,15 +125,16 @@
       },
       "VisiblePersonsCommandModel": {
         "properties": {
-          "emails": {
+          "person_ids": {
             "items": {
+              "format": "uuid",
               "type": "string"
             },
             "type": "array"
           }
         },
         "required": [
-          "emails"
+          "person_ids"
         ],
         "type": "object"
       },
@@ -141,6 +142,7 @@
         "properties": {
           "visible": {
             "items": {
+              "format": "uuid",
               "type": "string"
             },
             "type": "array"

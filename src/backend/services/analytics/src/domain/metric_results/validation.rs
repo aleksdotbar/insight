@@ -508,6 +508,14 @@ pub(crate) fn normalize_entity_type(entity_type: &str) -> Result<String, Canonic
 // Person ids are UUIDs since the identity cutover (the pre-cutover key was
 // the lowercased email); `Uuid::parse_str` accepts any casing and hyphenless
 // forms, and re-rendering canonicalizes — no bespoke normalization left.
+//
+// DELIBERATE CONTRACT: entity ids are parsed as person UUIDs for EVERY entity
+// type, and the visibility gate has an authorization rule for `person` only
+// (any other type is a fail-closed 500). Every registry entity type is
+// `person` today. A first non-person type must land BOTH halves — its own id
+// shape here and its own gate rule — rather than inherit person semantics
+// silently; until then this error message is accurate for every request the
+// registry can produce.
 fn parse_person_ids(ids: &[String]) -> Result<Vec<Uuid>, CanonicalError> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::with_capacity(ids.len());
@@ -519,6 +527,12 @@ fn parse_person_ids(ids: &[String]) -> Result<Vec<Uuid>, CanonicalError> {
         let Ok(person_id) = Uuid::parse_str(trimmed) else {
             return invalid("entity.ids", "entity.ids must be person UUIDs");
         };
+        // The nil UUID is never a person: identity rejects it with a 400, and
+        // the gate maps every identity non-success to a 500 — so letting it
+        // through here turns a client mistake into a server alert.
+        if person_id.is_nil() {
+            return invalid("entity.ids", "entity.ids must be person UUIDs");
+        }
         if seen.insert(person_id) {
             out.push(person_id);
         }
@@ -820,6 +834,13 @@ mod tests {
             ids,
             vec![Uuid::from_u128(0x019e_27bc_dec0_7626_81a9_c552_4662_a6a9)]
         );
+    }
+
+    #[test]
+    fn person_ids_reject_the_nil_uuid() {
+        // Not a person; identity 400s on it and the gate would surface that
+        // as a 500, so it has to fail here as a client error.
+        assert!(parse_person_ids(&[Uuid::nil().to_string()]).is_err());
     }
 
     #[test]
