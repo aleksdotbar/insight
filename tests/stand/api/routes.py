@@ -7,18 +7,19 @@ combined form did not have: the two halves quietly drifting onto different
 routes and no longer proving anything about each other. Naming each path here,
 and importing it on both sides, is what removes that risk.
 
+Every path below must be one the stand genuinely serves. A 401 on a route that
+does not exist proves nothing — the gateway rejects at the edge, before it
+would have discovered there is nothing behind it — so each entry is paired with
+an authenticated test that gets real data back.
+
 Which service answers, per `deploy/compose/gateway/routes.yaml`:
 
-    /api/analytics  ->  analytics:8081   (Rust)
-    /api/identity   ->  identity:8082    (.NET `insight-identity`)
+    /api/analytics  ->  analytics:8081             (Rust)
+    /api/identity   ->  identity-resolution:8082   (Rust)
 
-`/v1/subchart` in particular is served by the **.NET** identity service today.
-A Rust port of the same surface exists as `identity-resolution` (epic #1602)
-and runs side by side, but nothing routes to it — the gateway table has no
-entry for it, so it is reachable only on its own host port. These tests assert
-through the gateway and never name a service, so they stay correct across that
-cutover: the day `/api/identity` is repointed, the same assertions describe the
-new implementation.
+Both are Rust services. The .NET `insight-identity` that used to serve
+`/api/identity` was removed upstream in favour of the `identity-resolution`
+port (epic #1602), and the gateway was repointed at it.
 """
 
 from __future__ import annotations
@@ -28,18 +29,14 @@ from insight_stand import analytics_path, identity_path
 #: Analytics metric catalog. 401 anonymous, 200 with a session.
 METRICS = analytics_path("/v1/metrics")
 
-#: Identity person collection. 401 anonymous; identity exposes no authenticated
-#: collection route, so there is no 200 counterpart.
-PERSONS = identity_path("/v1/persons")
-
 #: Caller-derived org subchart — takes no person argument, so what comes back
-#: identifies whoever the session belongs to.
+#: identifies whoever the session belongs to. 401 anonymous, 200 with a
+#: session, and populated from the seeded org chart.
 SUBCHART = identity_path("/v1/subchart")
 
-
-def person(email: str) -> str:
-    """One person's record. 401 anonymous, 200 with a session.
-
-    Keyed by EMAIL: `/v1/persons/{uuid}` answers 404 even with a valid session.
-    """
-    return identity_path(f"/v1/persons/{email}")
+# NOT here, deliberately: `/v1/persons/{email}`. The committed contract at
+# docs/components/backend/identity-resolution/openapi.json still declares it,
+# but the Rust service does not serve it — it answers 404 even with a valid
+# session, and only `/internal/persons/by-email/{email}` (service principals
+# only) survives the port. Asserting a 401 on it would be asserting the
+# gateway's edge behaviour against a route that is not there.

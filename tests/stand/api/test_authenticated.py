@@ -19,18 +19,21 @@ from typing import Any
 import pytest
 from insight_stand import ADMIN_ROLE, LEAD_ROLE, MEMBER_ROLE, PersonaSession
 
-from .routes import METRICS, SUBCHART, person
+from .routes import METRICS, SUBCHART
 
 
-def _people(nodes: list[dict[str, Any]]) -> set[str]:
+def _nodes(roots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Flatten an org subchart to every node, at any depth."""
+    out: list[dict[str, Any]] = []
+    for node in roots:
+        out.append(node)
+        out += _nodes(node.get("subordinates") or [])
+    return out
+
+
+def _people(roots: list[dict[str, Any]]) -> set[str]:
     """Every email in an org subchart, at any depth."""
-    found: set[str] = set()
-    for node in nodes:
-        email = node.get("email")
-        if email:
-            found.add(str(email))
-        found |= _people(node.get("subordinates") or [])
-    return found
+    return {str(n["email"]) for n in _nodes(roots) if n.get("email")}
 
 
 def test_analytics_metrics_is_200_with_a_session(lead_session: PersonaSession) -> None:
@@ -50,43 +53,50 @@ def test_analytics_metrics_is_200_with_a_session(lead_session: PersonaSession) -
     )
 
 
-def test_seeded_person_is_200_with_a_session(lead_session: PersonaSession) -> None:
-    """The counterpart to `test_seeded_person_is_401_without_a_session`.
+def test_identity_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
+    """The counterpart to `test_identity_subchart_is_401_without_a_session`.
 
-    Also pins the identity mapping: the record identity returns for this email
-    must be the person the manifest says it is.
+    Same URL, same stand; the session is the only difference. Populated from
+    the seeded org chart, so it also rules out the boring explanation for the
+    401 — that the route had nothing behind it.
     """
-    response = lead_session.client.get(person(lead_session.email))
+    response = lead_session.client.get(SUBCHART)
     assert response.status_code == 200, (
-        f"expected 200 reading own person record at {response.url}, "
+        f"expected 200 for {lead_session.email} at {response.url}, "
         f"got {response.status_code}: {response.text[:400]}"
     )
     body = response.json()
-    assert isinstance(body, dict), f"unexpected body: {response.text[:300]}"
-    assert body.get("person_id") == lead_session.person.uuid, (
-        f"identity resolved {lead_session.email} to person_id {body.get('person_id')!r}, "
-        f"but the manifest says {lead_session.person.uuid!r}"
+    assert isinstance(body, dict) and body.get("roots"), (
+        f"authenticated subchart carried no roots: {response.text[:400]}"
     )
 
 
 def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaSession) -> None:
     """A session that authenticates as somebody else is worse than none.
 
-    Asserted through a CALLER-DERIVED endpoint on purpose. `/v1/persons/{email}`
-    only echoes the address back — it shows the session can *read* that person,
-    not that it *is* them. `/v1/subchart` takes no person argument at all: the
-    stack resolves the caller from the session, so finding this persona's own
-    email in the result is the whole chain confirming it landed on the intended
-    human.
+    Asserted through a CALLER-DERIVED endpoint on purpose: `/v1/subchart` takes
+    no person argument, so the stack resolves the caller from the session
+    alone. Finding this persona in the result — and finding the manifest's UUID
+    on that node — is the whole chain confirming it landed on the intended
+    human: Keycloak authenticated them, the authenticator mapped the token to a
+    person, and identity found that person in the seeded roster.
     """
     response = lead_session.client.get(SUBCHART)
     assert response.status_code == 200, (
-        f"{lead_session.name} could not read {SUBCHART}: {response.status_code} {response.text[:300]}"
+        f"{lead_session.name} could not read {SUBCHART}: "
+        f"{response.status_code} {response.text[:300]}"
     )
-    visible = _people(response.json()["roots"])
-    assert lead_session.email in visible, (
-        f"the caller-derived org chart for {lead_session.name} contains {sorted(visible)}, "
-        f"which does not include {lead_session.email} — the session resolved to someone else"
+    nodes = _nodes(response.json()["roots"])
+    mine = [n for n in nodes if n.get("email") == lead_session.email]
+    assert len(mine) == 1, (
+        f"the caller-derived org chart for {lead_session.name} contains "
+        f"{sorted(str(n.get('email')) for n in nodes)}, which does not name "
+        f"{lead_session.email} exactly once — the session resolved to someone else"
+    )
+    assert mine[0].get("person_id") == lead_session.person.uuid, (
+        f"identity resolved {lead_session.email} to person_id "
+        f"{mine[0].get('person_id')!r}, but the manifest says "
+        f"{lead_session.person.uuid!r}"
     )
 
 
