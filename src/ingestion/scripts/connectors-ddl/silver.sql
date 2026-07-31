@@ -1194,5 +1194,6 @@ CREATE OR REPLACE VIEW silver.contract_version
 (
     `version` UInt32
 )
-AS SELECT toUInt32(1) AS version;
+AS SELECT toUInt32(1) AS version
+;
 
