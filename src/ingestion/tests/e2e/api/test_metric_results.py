@@ -18,7 +18,7 @@ builtin metric; this module retains the endpoint contract error cases.
 from __future__ import annotations
 
 import pytest
-from lib.identity_stub import UNKNOWN_EMAIL, VISIBLE_EMAILS
+from lib.identity_stub import UNKNOWN_EMAIL, VISIBLE_EMAILS, person_id_for
 
 from api.endpoint_helpers import text_body_request
 
@@ -27,12 +27,14 @@ pytestmark = pytest.mark.api
 _BUILTIN_METRIC = [{"metric_key": "ai.active_days", "views": [{"view": "period"}]}]
 
 
-def _request(*, metrics, entity_ids=("00000000-0000-0000-0000-00000000e2e0",), period=("2026-01-01", "2026-01-31")):
+def _request(*, metrics, entity_ids=None, period=("2026-01-01", "2026-01-31")):
     """A well-formed metric-results body with overridable parts.
 
     entity ids are person UUIDs since the identity cutover; the default is a
-    valid-but-unassigned "nobody" UUID so validation passes and compute paths
-    answer with honest emptiness."""
+    visible persona's UUID with no seeded data, so validation and the
+    visibility gate pass and compute paths answer with honest emptiness."""
+    if entity_ids is None:
+        entity_ids = (person_id_for(VISIBLE_EMAILS[1]),)
     return {
         "entity": {"type": "person", "ids": list(entity_ids)},
         "period": {"from": period[0], "to": period[1]},
@@ -88,7 +90,7 @@ def test_metric_results_400_unknown_metric_key(api) -> None:
 def test_metric_results_403_person_outside_the_callers_visible_set(api) -> None:
     """A person the caller cannot see is refused before any ClickHouse access:
     the gate flattens the caller's subchart and the requested id is not in it."""
-    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(UNKNOWN_EMAIL,))
+    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(person_id_for(UNKNOWN_EMAIL),))
     r = api.post("/v1/metric-results", json=body)
     assert r.status_code == 403, f"status={r.status_code} body={r.text}"
 
@@ -96,7 +98,10 @@ def test_metric_results_403_person_outside_the_callers_visible_set(api) -> None:
 def test_metric_results_403_rejects_the_whole_request_on_one_hidden_person(api) -> None:
     """Mixing a visible person with a hidden one refuses the request as a whole,
     rather than silently dropping the unauthorized entity from the response."""
-    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(VISIBLE_EMAILS[1], UNKNOWN_EMAIL))
+    body = _request(
+        metrics=_BUILTIN_METRIC,
+        entity_ids=(person_id_for(VISIBLE_EMAILS[1]), person_id_for(UNKNOWN_EMAIL)),
+    )
     r = api.post("/v1/metric-results", json=body)
     assert r.status_code == 403, f"status={r.status_code} body={r.text}"
 

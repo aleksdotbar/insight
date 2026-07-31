@@ -6,7 +6,7 @@
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 use uuid::Uuid;
 
-use super::{connect_single, persons_repo, roles_repo, subchart_repo};
+use super::{connect_single, roles_repo, subchart_repo};
 
 const ENV_VAR: &str = "INTEGRATION_TESTS_MARIADB_URL";
 const FIXTURE_REASON: &str = "visible-set-live-test";
@@ -42,26 +42,6 @@ impl Fixture {
             [
                 SOURCE_TYPE.into(),
                 bytes(self.source_id),
-                bytes(self.tenant),
-                email.into(),
-                bytes(person_id),
-                bytes(person_id),
-                FIXTURE_REASON.into(),
-            ],
-        )
-        .await?;
-        Ok(person_id)
-    }
-
-    async fn duplicate_of(&self, email: &str) -> anyhow::Result<Uuid> {
-        let person_id = Uuid::now_v7();
-        self.exec(
-            "INSERT INTO persons (value_type, insight_source_type, insight_source_id,
-                 insight_tenant_id, value_id, person_id, author_person_id, reason)
-             VALUES ('email', ?, ?, ?, ?, ?, ?, ?)",
-            [
-                "ms-entra".into(),
-                bytes(Uuid::now_v7()),
                 bytes(self.tenant),
                 email.into(),
                 bytes(person_id),
@@ -241,89 +221,6 @@ async fn the_admin_role_confers_no_visibility() -> TestResult {
         f.visible(admin, &[stranger]).await?,
         Vec::<Uuid>::new(),
         "administering identity must not widen who you can see"
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn emails_resolve_by_input_position_regardless_of_stored_case() -> TestResult {
-    let Some(f) = fixture_or_skip().await? else {
-        return Ok(());
-    };
-    let stored_mixed_case = "Mixed.Case@visible-set.test";
-    let person = f.person(stored_mixed_case).await?;
-
-    let requested = vec![
-        "mixed.case@visible-set.test".to_owned(),
-        "absent@visible-set.test".to_owned(),
-    ];
-    let resolved = persons_repo::resolve_person_ids_by_emails(&f.db, f.tenant, &requested).await?;
-
-    assert_eq!(
-        resolved,
-        vec![(0, person, stored_mixed_case.to_owned())],
-        "index 0 resolves case-insensitively; the unknown email yields no row"
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn an_email_split_across_duplicate_records_resolves_to_both() -> TestResult {
-    let Some(f) = fixture_or_skip().await? else {
-        return Ok(());
-    };
-    let email = "duplicated@visible-set.test";
-    let primary = f.person(email).await?;
-    let shadow = f.duplicate_of(email).await?;
-    let manager = f.person("manager@visible-set.test").await?;
-    f.reports_to(primary, manager).await?;
-
-    let resolved =
-        persons_repo::resolve_person_ids_by_emails(&f.db, f.tenant, &[email.to_owned()]).await?;
-    let mut candidates = resolved.iter().map(|(_, id, _)| *id).collect::<Vec<_>>();
-    candidates.sort();
-    let mut expected = vec![primary, shadow];
-    expected.sort();
-    assert_eq!(candidates, expected, "both records are candidates");
-
-    assert_eq!(
-        f.visible(manager, &candidates).await?,
-        vec![primary],
-        "the manager sees the record inside their line, which is what admits the email"
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_collation_equal_email_of_a_different_person_does_not_resolve_it() -> TestResult {
-    let Some(f) = fixture_or_skip().await? else {
-        return Ok(());
-    };
-    let hidden = f.person("jose@visible-set.test").await?;
-    let report = f.person("jos\u{e9}@visible-set.test").await?;
-    let manager = f.person("manager@visible-set.test").await?;
-    f.reports_to(report, manager).await?;
-
-    let requested = vec!["jose@visible-set.test".to_owned()];
-    let resolved = persons_repo::resolve_person_ids_by_emails(&f.db, f.tenant, &requested).await?;
-
-    for (index, person_id, stored_email) in &resolved {
-        assert_eq!(*index, 0);
-        if *person_id == report {
-            assert_ne!(
-                stored_email.to_lowercase(),
-                requested[0],
-                "the report's stored spelling must not pass for the requested one"
-            );
-        } else {
-            assert_eq!(*person_id, hidden, "only these two persons can match");
-        }
-    }
-
-    assert_eq!(
-        f.visible(manager, &[hidden]).await?,
-        Vec::<Uuid>::new(),
-        "the hidden person stays invisible to the report's manager"
     );
     Ok(())
 }

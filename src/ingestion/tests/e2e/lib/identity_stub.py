@@ -5,11 +5,12 @@ A minimal loopback HTTP backend the analytics identity fan-outs resolve against:
 - `POST {identity_url}/v1/profiles` with `{value_type:"email", value:<email>}` —
   a canned profile for a seeded email (→ 200) and 404 for every other, so the
   persons endpoint exercises its real 200/404 contract.
-- `POST {identity_url}/v1/visible-persons` — the emails the caller may see,
-  which the metric-results authorization gate compares against the requested
-  entity ids. The reply is the intersection of the request with the fixture
-  personas, so the metric suite's requests resolve as authorized and anyone
-  else is refused.
+- `POST {identity_url}/v1/visible-persons` — the person UUIDs the caller may
+  see (the identity-cutover contract), which the metric-results authorization
+  gate compares against the requested ids. The reply is the intersection of
+  the request with the fixture personas' derived UUIDs (`person_id_for`), so
+  the metric suite's requests resolve as authorized and anyone else is
+  refused.
 
 Resolves purely by the request `value` and ignores headers on purpose. Analytics
 forwards the caller's gateway JWT (Authorization) on this hop (NGINX_BFF G1), but
@@ -22,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import uuid as _uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
@@ -63,6 +65,18 @@ VISIBLE_EMAILS: tuple[str, ...] = (
     "grace@example.com",
 )
 
+# Deterministic persona UUIDs: uuid5 over the lowercased email in a fixed
+# namespace. One derivation shared by the stub's visible set, the metric
+# rig's email→person_id request translation and its identity_persons
+# seeding — so the same yaml persona always resolves to the same person.
+_PERSONA_NAMESPACE = _uuid.UUID("6e2e0000-0000-4000-8000-000000000001")
+
+
+def person_id_for(email: str) -> str:
+    """Canonical person UUID of a fixture persona (uuid5 of the email)."""
+    return str(_uuid.uuid5(_PERSONA_NAMESPACE, email.strip().lower()))
+
+
 _PROFILES_PATH = "/v1/profiles"
 _VISIBLE_PERSONS_PATH = "/v1/visible-persons"
 
@@ -90,9 +104,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_profile(body)
 
     def _send_visible(self, body: dict[str, Any]) -> None:
-        requested = body.get("emails") or []
-        visible = {email.lower() for email in self.server.visible}  # type: ignore[attr-defined]
-        self._send(200, {"visible": [e for e in requested if isinstance(e, str) and e.lower() in visible]})
+        # Person UUIDs since the identity cutover (the gate forwards the
+        # validated request ids verbatim).
+        requested = body.get("person_ids") or []
+        visible = {person_id_for(email) for email in self.server.visible}  # type: ignore[attr-defined]
+        self._send(
+            200,
+            {"visible": [p for p in requested if isinstance(p, str) and p.lower() in visible]},
+        )
 
     def _send_profile(self, body: dict[str, Any]) -> None:
         email = body.get("value", "")

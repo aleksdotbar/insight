@@ -506,6 +506,12 @@ pub(crate) fn compile_histogram_query(
 // EXCLUDED — contested membership is never resolved by a tie-break
 // (honest-NULL, the epic's never-silently-assign stance); the operator-side
 // fix is the org assignment, not a lexicographic guess here.
+//
+// ORDER MATTERS in the pool CTE: the conflict guard must see the person's
+// COMPLETE membership set, so it runs over the unfiltered table and the
+// target-cohort filter applies OUTSIDE it — filtering first would hide the
+// conflicting row and wave the person through (a member of target cohort A
+// who is also in B must stay excluded).
 pub(crate) fn compile_peer_batch_query(
     defs: &[&MetricDefinition],
     req: &ValidatedMetricResultsRequest,
@@ -544,16 +550,20 @@ pub(crate) fn compile_peer_batch_query(
             HAVING uniqExact(cohort_id) = 1
         ),
         cohort AS (
-            SELECT
-                assumeNotNull(person_id) AS person_id,
-                any(cohort_id) AS cohort_id
-            FROM {cohort_table}
-            WHERE entity_type = ?
-              AND cohort_key = ?
-              AND cohort_id IN (SELECT cohort_id FROM targets)
-              AND person_id IS NOT NULL
-            GROUP BY person_id
-            HAVING uniqExact(cohort_id) = 1
+            SELECT person_id, cohort_id
+            FROM (
+                SELECT
+                    assumeNotNull(person_id) AS person_id,
+                    any(cohort_id) AS cohort_id
+                FROM {cohort_table}
+                WHERE entity_type = ?
+                  AND cohort_key = ?
+                  AND person_id IS NOT NULL
+                  AND cohort_id IS NOT NULL
+                GROUP BY person_id
+                HAVING uniqExact(cohort_id) = 1
+            )
+            WHERE cohort_id IN (SELECT cohort_id FROM targets)
         ),
         metric_values AS (
             SELECT
@@ -1398,6 +1408,27 @@ mod tests {
         assert_eq!(
             query.sql.matches("HAVING uniqExact(cohort_id) = 1").count(),
             2
+        );
+        // The pool's conflict guard must see the COMPLETE membership set:
+        // the target-cohort filter has to apply OUTSIDE the guarded
+        // aggregation, or a conflicted member of the target cohort slips
+        // through (their other-cohort row would be filtered away first).
+        let Some(pool_guard) = query
+            .sql
+            .match_indices("HAVING uniqExact(cohort_id) = 1")
+            .nth(1)
+        else {
+            panic!("pool CTE must carry the conflict guard");
+        };
+        let Some(pool_filter) = query
+            .sql
+            .find("WHERE cohort_id IN (SELECT cohort_id FROM targets)")
+        else {
+            panic!("pool CTE must filter by the targets' cohorts");
+        };
+        assert!(
+            pool_guard.0 < pool_filter,
+            "conflict guard must aggregate BEFORE the target-cohort filter"
         );
         // Honest-null must not depend on server config or column typing.
         assert!(query.sql.contains("SETTINGS join_use_nulls = 1"));

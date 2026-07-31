@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -39,10 +40,11 @@ pub struct Subordinate {
 // only `ToSchema` (above).
 impl toolkit::api::api_dto::ResponseApiDto for Person {}
 
-/// Request body of the identity service's `POST /v1/visible-persons`.
+/// Request body of the identity service's `POST /v1/visible-persons`
+/// (canonical person UUIDs since the identity cutover).
 #[derive(Debug, Serialize)]
 struct VisiblePersonsRequest<'a> {
-    emails: &'a [String],
+    person_ids: &'a [Uuid],
 }
 
 /// Response body of `POST /v1/visible-persons`.
@@ -50,7 +52,7 @@ struct VisiblePersonsRequest<'a> {
 struct VisiblePersonsResponse {
     // INVARIANT: no serde default — a 200 omitting this field is a contract
     // mismatch, and an empty set here would deny every caller.
-    visible: Vec<String>,
+    visible: Vec<Uuid>,
 }
 
 /// Request body of the identity service's `POST /v1/profiles`
@@ -213,14 +215,17 @@ impl IdentityClient {
         Ok(Some(profile.into()))
     }
 
-    pub(crate) async fn visible_emails(
+    pub(crate) async fn visible_person_ids(
         &self,
-        emails: &[String],
+        person_ids: &[Uuid],
         authorization: Option<&str>,
-    ) -> anyhow::Result<HashSet<String>> {
+    ) -> anyhow::Result<HashSet<Uuid>> {
         let url = format!("{}/v1/visible-persons", self.base_url);
 
-        let mut req = self.http.post(&url).json(&VisiblePersonsRequest { emails });
+        let mut req = self
+            .http
+            .post(&url)
+            .json(&VisiblePersonsRequest { person_ids });
         if let Some(auth) = authorization {
             req = req.header(reqwest::header::AUTHORIZATION, auth);
         }
@@ -385,23 +390,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn visible_emails_forwards_the_callers_bearer_and_sends_every_id() {
+    async fn visible_person_ids_forwards_the_callers_bearer_and_sends_every_id() {
         let (url, seen) = spawn_visible_persons(
             StatusCode::OK,
-            serde_json::json!({"visible": ["a@example.com"]}),
+            serde_json::json!({"visible": ["00000000-0000-0000-0000-00000000000a"]}),
         )
         .await;
 
         let visible = IdentityClient::new(&url)
             .unwrap()
-            .visible_emails(
-                &["a@example.com".to_owned(), "b@example.com".to_owned()],
+            .visible_person_ids(
+                &[Uuid::from_u128(0xa), Uuid::from_u128(0xb)],
                 Some("Bearer caller-tok"),
             )
             .await
             .unwrap();
 
-        assert_eq!(visible, HashSet::from(["a@example.com".to_owned()]));
+        assert_eq!(visible, HashSet::from([Uuid::from_u128(0xa)]));
 
         let (auth, req) = seen.lock().unwrap().take().unwrap();
         assert_eq!(
@@ -411,7 +416,7 @@ mod tests {
         );
         assert_eq!(
             req,
-            serde_json::json!({"emails": ["a@example.com", "b@example.com"]})
+            serde_json::json!({"person_ids": ["00000000-0000-0000-0000-00000000000a", "00000000-0000-0000-0000-00000000000b"]})
         );
     }
 
@@ -422,7 +427,7 @@ mod tests {
 
         let err = IdentityClient::new(&url)
             .unwrap()
-            .visible_emails(&["a@example.com".to_owned()], Some("Bearer tok"))
+            .visible_person_ids(&[Uuid::from_u128(0xa)], Some("Bearer tok"))
             .await
             .unwrap_err();
 
