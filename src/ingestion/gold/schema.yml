@@ -125,6 +125,17 @@ models:
         description: "Normalized entity identifier (lowercased email for person)"
         tests:
           - not_null
+      - name: person_id
+        description: >
+          Canonical person from the identity log (resolve_person_id macro),
+          resolved at build time; NULL when identity does not know the email
+          — honest absence, never a guess. Additive: nothing at runtime
+          reads it yet (the API still keys on entity_id); it joins the
+          published contract at the person_id API cutover. Deliberately
+          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
+          gating metric availability on a column nothing consumes would
+          make a deploy wait on the next dbt rebuild for no reader's
+          benefit.
       - name: metric_date
         description: "Observation date"
         tests:
@@ -205,6 +216,17 @@ models:
           to no email are excluded upstream.
         tests:
           - not_null
+      - name: person_id
+        description: >
+          Canonical person from the identity log (resolve_person_id macro),
+          resolved at build time; NULL when identity does not know the email
+          — honest absence, never a guess. Additive: nothing at runtime
+          reads it yet (the API still keys on entity_id); it joins the
+          published contract at the person_id API cutover. Deliberately
+          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
+          gating metric availability on a column nothing consumes would
+          make a deploy wait on the next dbt rebuild for no reader's
+          benefit.
       - name: metric_date
         description: >
           Observation date: commit date for commit-derived measures,
@@ -289,6 +311,17 @@ models:
           email). Rows with an empty person_key are excluded upstream.
         tests:
           - not_null
+      - name: person_id
+        description: >
+          Canonical person from the identity log (resolve_person_id macro),
+          resolved at build time; NULL when identity does not know the email
+          — honest absence, never a guess. Additive: nothing at runtime
+          reads it yet (the API still keys on entity_id); it joins the
+          published contract at the person_id API cutover. Deliberately
+          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
+          gating metric availability on a column nothing consumes would
+          make a deploy wait on the next dbt rebuild for no reader's
+          benefit.
       - name: metric_date
         description: "Observation date (activity date per source)."
         tests:
@@ -383,6 +416,17 @@ models:
           not resolve to an email are excluded upstream.
         tests:
           - not_null
+      - name: person_id
+        description: >
+          Canonical person from the identity log (resolve_person_id macro),
+          resolved at build time; NULL when identity does not know the email
+          — honest absence, never a guess. Additive: nothing at runtime
+          reads it yet (the API still keys on entity_id); it joins the
+          published contract at the person_id API cutover. Deliberately
+          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
+          gating metric availability on a column nothing consumes would
+          make a deploy wait on the next dbt rebuild for no reader's
+          benefit.
       - name: metric_date
         description: >
           Observation date: close date for closed-issue measures, transition
@@ -505,6 +549,17 @@ models:
           to an email are excluded upstream.
         tests:
           - not_null
+      - name: person_id
+        description: >
+          Canonical person from the identity log (resolve_person_id macro),
+          resolved at build time; NULL when identity does not know the email
+          — honest absence, never a guess. Additive: nothing at runtime
+          reads it yet (the API still keys on entity_id); it joins the
+          published contract at the person_id API cutover. Deliberately
+          NOT in the analytics validator's OBSERVATION_COLUMNS until then —
+          gating metric availability on a column nothing consumes would
+          make a deploy wait on the next dbt rebuild for no reader's
+          benefit.
       - name: metric_date
         description: >
           Observation date: page creation date for pages_created, edit day
@@ -562,6 +617,13 @@ models:
         description: "Normalized entity identifier (lowercased email for person)"
         tests:
           - not_null
+      - name: person_id
+        description: >
+          Canonical person from the identity log (resolve_person_id macro),
+          resolved at build time; NULL when identity does not know the HR email
+          — usually a seeding gap on the identity side. Additive: the peer
+          compiler still joins on entity_id; person_id joins COHORT_COLUMNS
+          at the API cutover (see the observation models' person_id note).
       - name: cohort_key
         description: "Cohort basis identifier"
         tests:
@@ -573,3 +635,28 @@ models:
         description: >
           Cohort membership value: org unit id when present, department name
           fallback otherwise. NULL when the person has neither.
+
+  - name: identity_resolution_coverage
+    description: >
+      Identity-resolution match rate measured over ACTIVITY (observation
+      rows), one row per source (git/ai_usage/collab/task/wiki) plus
+      hr_cohorts for the peer-membership view. Row-weighted on purpose —
+      unresolved_rows counts what the dashboards actually lose;
+      unresolved_people counts the distinct unknown emails behind the gap
+      (roughly the operator decisions that would close it). The "match rate
+      is reported" surface of the identity epic for the metrics pipeline.
+      A view: always exactly as fresh as the last gold build + the identity
+      sync that preceded it.
+    columns:
+      - name: source_key
+        description: "Observation source_key, or 'hr_cohorts' for the cohort membership"
+        tests:
+          - not_null
+      - name: observation_rows
+        description: "Total observation rows for the source"
+      - name: unresolved_rows
+        description: "Rows whose person_id is NULL (identity does not know the email)"
+      - name: unresolved_people
+        description: "Distinct entity_id (emails) behind the unresolved rows"
+      - name: match_rate_pct
+        description: "Share of rows with a resolved person_id, percent (1 decimal)"
