@@ -52,8 +52,8 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-namespace` | New empty `presentation` database for new gold, saved-query results, and scratch; legacy gold left read-only in `insight` |
 | `cpt-presentation-fr-saved-query-crud` | The saved query (`presentation.queries` logically; the `saved_queries` table physically) is a SeaORM entity in the analytics **service database (MariaDB)**, like metric definitions; CRUD mutates that metadata, not ClickHouse. Only `/run` reaches ClickHouse — it reuses the existing read path and executes the stored SQL as `presentation_ro`, so no write grant on the contract is ever needed. Shipped (#1965) |
 | `cpt-presentation-fr-query-params` | Named parameters, `tenant` always injected from context (not client SQL), `period` supported |
-| `cpt-presentation-fr-tenant-filter` | Literal `insight_tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` — replacing the no-op |
-| `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary (silver and identity objects) |
+| `cpt-presentation-fr-tenant-filter` | Literal leading `tenant_id = <ctx.tenant>` injected in one place — the compiler's shared `WHERE` (and the peer-cohort CTE reads) — replacing the no-op. `tenant_id` is the column the gold observation and cohort contract exposes (silver's `insight_tenant_id`, aliased to `tenant_id` in gold); filtering on it sidesteps the #1596 name drift, which affects other tables, not this read surface. Shipped for the structured `metric_results` read path (#1967). The legacy per-metric `query_ref` path (`execute_metric_query`) remains unscoped and is explicitly outside this guarantee until protected — see the component boundaries below. |
+| `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary in [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md): the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and `person.*`/`identity.*` objects, with the additive-only rules and the granted `insight` legacy gold. Shipped (#1968) |
 | `cpt-presentation-fr-contract-version-stamp` | Contract version stamp so presentation detects the surface it was built against |
 | `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart |
 | `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only synthetic backend, FE-only variation |
@@ -64,7 +64,7 @@ Requirements that significantly influence architecture decisions.
 | NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
 |--------|-------------|--------------|-----------------|----------------------|
 | `cpt-presentation-nfr-source-immutability` | No presentation write reaches engineering-owned data | Single-SELECT gate + `presentation_ro` role | Two independent barriers: syntactic gate rejects non-`SELECT`; role grants forbid write/DDL on the contract | Adversarial SQL suite; verify no write/alter/drop on contract objects |
-| `cpt-presentation-nfr-tenant-isolation` | No cross-tenant rows returned | Compiler shared `WHERE` | Server-injected literal tenant predicate the client SQL cannot widen | Cross-tenant isolation test returns zero rows |
+| `cpt-presentation-nfr-tenant-isolation` | No cross-tenant rows returned from the structured `metric_results` reads | Compiler shared `WHERE` | Server-injected literal tenant predicate the client SQL cannot widen; sourced from `SecurityContext`, not the request body | Compiler unit tests assert the predicate and its bound value lead every observation and cohort read (#1967); cross-tenant e2e (#1359) returns zero rows. Not yet met for the legacy `execute_metric_query` path, which stays outside the guarantee until protected. |
 
 ### 1.3 Architecture Layers
 
@@ -118,7 +118,7 @@ The source is safe because two independent barriers make presentation-side write
 
 - [ ] `p2` - **ID**: `cpt-presentation-principle-additive-contract`
 
-Contract changes are additive — new tables and columns — never rewrites. Existing views keep working across contract evolution. A contract version stamp lets presentation detect the surface it was built against.
+Contract changes are additive — new tables and columns — never rewrites. Existing views keep working across contract evolution. The read surface and the additive-only rules are enumerated in [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) (#1968). A contract version stamp lets presentation detect the surface it was built against.
 
 #### Server-Side Tenant Scoping
 
@@ -289,7 +289,7 @@ Plain CRUD over stored queries so a new analytics slice needs no engineering cha
 
 #### Metric Compiler (Tenant Filter)
 
-- [ ] `p2` - **ID**: `cpt-presentation-component-metric-compiler`
+- [x] `p2` - **ID**: `cpt-presentation-component-metric-compiler`
 
 ##### Why this component exists
 
@@ -297,7 +297,7 @@ Builds contract SQL and owns the single shared `WHERE` where the tenant predicat
 
 ##### Responsibility scope
 
-- Inject a literal `insight_tenant_id = <ctx.tenant>` on every contract read, sourced from request context.
+- Inject a leading literal `tenant_id = <ctx.tenant>` on every read the compiler emits, sourced from the request's `SecurityContext` (carried on `ValidatedMetricResultsRequest`). `tenant_id` is the column the gold observation and cohort contract exposes; the value is the raw tenant UUID, the same representation the metric lineage stamps (no sipHash — that is identity-only). The predicate covers every observation read (`metric_where` / `shared_observation_where`) and both peer-cohort CTE reads.
 - Keep `FINAL` on silver `ReplacingMergeTree` reads.
 - Put `insight_tenant_id` first in `ORDER BY` for any new presentation gold that carries it.
 
@@ -305,6 +305,7 @@ Builds contract SQL and owns the single shared `WHERE` where the tenant predicat
 
 - Does NOT read the tenant value from client SQL.
 - Does NOT implement subtree/hierarchy scoping in Phase A (deferred to the benchmark).
+- Does NOT cover the legacy per-metric `query_ref` path (`execute_metric_query`, `/v1/metrics/{id}/query` and `/v1/metrics/queries`). That path runs arbitrary DB-stored `FROM` shapes (subqueries, bare bronze tables) where a flat `tenant_id = ?` cannot be injected safely, so it stays unscoped and outside the isolation guarantee until it is restricted to tenant-safe sources or given per-query enforcement. It predates this component; #1967 does not widen its exposure.
 
 ##### Related components (by ID)
 
@@ -379,7 +380,7 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 
 | Aspect | Value |
 |--------|-------|
-| Contract | Read-only: silver (`class_*`, `fct_*`, `mtr_*`), identity (`person.*`, `identity.*`), legacy gold in `insight` |
+| Contract | Read-only: silver (`class_*`, `fct_*`, `mtr_*`, `dim_*`), identity (`person.*`, `identity.*`), legacy gold in `insight`. Full surface + additive-only rules: [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) |
 | Presentation namespace | New `presentation` DB: `SELECT` + `CREATE`/`INSERT` for new gold, results, scratch |
 | Access | Executed as the grant-less `presentation` user, whose only privileges come via the `presentation_ro` role (SELECT on contract; CREATE/INSERT only in `presentation`) |
 | Read semantics | `FINAL` on silver `ReplacingMergeTree` reads |

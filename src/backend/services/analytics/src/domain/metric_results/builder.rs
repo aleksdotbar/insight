@@ -456,6 +456,7 @@ mod tests {
 
     fn request(person_ids: Vec<&str>, from: &str, to: &str) -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
+            tenant_id: uuid::Uuid::from_u128(0x1967),
             entity_type: "person".to_owned(),
             person_ids: person_ids
                 .into_iter()

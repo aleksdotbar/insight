@@ -522,9 +522,11 @@ pub(crate) fn compile_peer_batch_query(
     filters: &[ValidatedDimensionFilter],
 ) -> CompiledQuery {
     let mut params = Vec::new();
+    params.push(req.tenant_id.to_string());
     params.push(req.entity_type.clone());
     params.push(cohort_key.to_owned());
     params.extend(req.person_ids.iter().map(Uuid::to_string));
+    params.push(req.tenant_id.to_string());
     params.push(req.entity_type.clone());
     params.push(cohort_key.to_owned());
     let value_selects = item_value_selects(defs, &mut params, period_alias);
@@ -547,7 +549,7 @@ pub(crate) fn compile_peer_batch_query(
                     assumeNotNull(person_id) AS person_id,
                     any(cohort_id) AS resolved_cohort_id
                 FROM {cohort_table}
-                WHERE entity_type = ?
+                WHERE tenant_id = ? AND entity_type = ?
                   AND cohort_key = ?
                   AND person_id IN ({person_id_params})
                   AND cohort_id IS NOT NULL
@@ -562,7 +564,7 @@ pub(crate) fn compile_peer_batch_query(
                     assumeNotNull(person_id) AS person_id,
                     any(cohort_id) AS resolved_cohort_id
                 FROM {cohort_table}
-                WHERE entity_type = ?
+                WHERE tenant_id = ? AND entity_type = ?
                   AND cohort_key = ?
                   AND person_id IS NOT NULL
                   AND cohort_id IS NOT NULL
@@ -790,6 +792,7 @@ fn shared_observation_where(
     filters: &[ValidatedDimensionFilter],
     params: &mut Vec<String>,
 ) -> String {
+    params.push(req.tenant_id.to_string());
     params.push(req.entity_type.clone());
     params.push(req.from.to_string());
     params.push(req.to.to_string());
@@ -800,7 +803,7 @@ fn shared_observation_where(
     }
     let pair_placeholders = vec!["(?, ?)"; pairs.len()].join(", ");
     let mut where_clause = format!(
-        "entity_type = ? AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND (source_key, measure_key) IN ({pair_placeholders})"
+        "tenant_id = ? AND entity_type = ? AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND (source_key, measure_key) IN ({pair_placeholders})"
     );
     where_clause.push_str(&dimension_filter_where(filters, params));
     where_clause
@@ -853,21 +856,21 @@ fn batch_observation_table(defs: &[&MetricDefinition]) -> String {
     observation_table(def.observation_relation())
 }
 
-// No tenant_id predicate: warehouse tenant isolation is not implemented
-// platform-wide (the legacy query engine also queries without it), and the
-// control-plane tenant UUID has no defined mapping to the warehouse
-// tenant_id strings stamped at ingestion. The observation and cohort
-// contracts keep the tenant_id column so isolation can be added here in one
-// place once the platform defines that mapping.
+// INVARIANT: every observation read leads with `tenant_id = ?`, bound from the
+// request's SecurityContext (never client SQL), so a request scoped to tenant A
+// cannot read tenant B's rows. `tenant_id` is the column the gold observation
+// and cohort contract exposes; the value is the raw tenant UUID, the same
+// representation the metric lineage stamps. The placeholder is first here and
+// its value first in `metric_where_params` — keep the two in lockstep.
 fn metric_where(def: &MetricDefinition) -> &'static str {
     match &def.spec {
         ComputationSpec::Sum { .. }
         | ComputationSpec::Median { .. }
         | ComputationSpec::DistinctCount { .. } => {
-            "source_key = ? AND entity_type = ? AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND measure_key = ?"
+            "tenant_id = ? AND source_key = ? AND entity_type = ? AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND measure_key = ?"
         }
         ComputationSpec::Ratio { .. } => {
-            "source_key = ? AND entity_type = ? AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND measure_key IN (?, ?)"
+            "tenant_id = ? AND source_key = ? AND entity_type = ? AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND measure_key IN (?, ?)"
         }
     }
 }
@@ -899,6 +902,7 @@ fn metric_where_params(def: &MetricDefinition, req: &ValidatedMetricResultsReque
         ComputationSpec::Sum { value }
         | ComputationSpec::Median { value }
         | ComputationSpec::DistinctCount { value } => vec![
+            req.tenant_id.to_string(),
             value.source_key.clone(),
             req.entity_type.clone(),
             req.from.to_string(),
@@ -910,6 +914,7 @@ fn metric_where_params(def: &MetricDefinition, req: &ValidatedMetricResultsReque
             denominator,
             ..
         } => vec![
+            req.tenant_id.to_string(),
             numerator.source_key.clone(),
             req.entity_type.clone(),
             req.from.to_string(),
@@ -1108,8 +1113,12 @@ mod tests {
         }
     }
 
+    const TEST_TENANT: uuid::Uuid = uuid::Uuid::from_u128(0x1967);
+    const TEST_TENANT_STR: &str = "00000000-0000-0000-0000-000000001967";
+
     fn request() -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
+            tenant_id: TEST_TENANT,
             entity_type: "person".to_owned(),
             person_ids: vec![Uuid::from_u128(0xa), Uuid::from_u128(0xb)],
             from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default(),
@@ -1123,7 +1132,11 @@ mod tests {
         let (sum, ratio) = (sum_metric(), ratio_metric());
         let query = compile_period_batch_query(&[&sum, &ratio], &request(), &[]);
         assert!(query.sql.contains("FROM insight.ai_metric_observations"));
-        assert!(!query.sql.contains("tenant_id"));
+        assert!(
+            query
+                .sql
+                .contains("WHERE tenant_id = ? AND entity_type = ?")
+        );
         assert!(query.sql.contains("AS m0"));
         assert!(query.sql.contains("AS m1"));
         assert!(
@@ -1149,7 +1162,8 @@ mod tests {
                 "accepted_edit_actions",
                 "ai_usage",
                 "tool_use_offered",
-                // shared scope
+                // shared scope (tenant predicate leads)
+                TEST_TENANT_STR,
                 "person",
                 "2026-01-01",
                 "2026-01-31",
@@ -1188,6 +1202,7 @@ mod tests {
                 "accepted_edit_actions",
                 "ai_usage",
                 "tool_use_offered",
+                TEST_TENANT_STR,
                 "person",
                 "2026-01-01",
                 "2026-01-31",
@@ -1199,6 +1214,36 @@ mod tests {
                 "00000000-0000-0000-0000-00000000000b",
             ]
         );
+    }
+
+    #[test]
+    fn tenant_predicate_leads_and_binds_context_tenant_on_every_contract_read() {
+        let sum = sum_metric();
+
+        let ts = compile_timeseries_query(&sum, &request(), Bucket::Day, &[], &[], None);
+        assert!(ts.sql.contains("WHERE tenant_id = ?"), "timeseries read");
+        assert_eq!(ts.params.first().map(String::as_str), Some(TEST_TENANT_STR));
+        assert_eq!(ts.sql.matches('?').count(), ts.params.len());
+
+        let rank = compile_group_ranking_query(&sum, &request(), &["tool".to_owned()], &[], 5);
+        assert!(rank.sql.contains("WHERE tenant_id = ?"), "ranking read");
+        assert_eq!(
+            rank.params.first().map(String::as_str),
+            Some(TEST_TENANT_STR)
+        );
+
+        // The peer query reads the contract three times (targets, cohort,
+        // metric_values); each must carry the tenant predicate and its value.
+        let peer = compile_peer_batch_query(&[&sum], &request(), "org_unit", &[]);
+        assert_eq!(peer.sql.matches("tenant_id = ?").count(), 3);
+        assert_eq!(
+            peer.params
+                .iter()
+                .filter(|p| p.as_str() == TEST_TENANT_STR)
+                .count(),
+            3
+        );
+        assert_eq!(peer.sql.matches('?').count(), peer.params.len());
     }
 
     #[test]
@@ -1352,14 +1397,21 @@ mod tests {
         assert_eq!(
             query.params,
             vec![
+                // targets CTE (tenant predicate leads every read)
+                TEST_TENANT_STR,
                 "person",
                 "org_unit",
                 "00000000-0000-0000-0000-00000000000a",
                 "00000000-0000-0000-0000-00000000000b",
+                // cohort CTE
+                TEST_TENANT_STR,
                 "person",
                 "org_unit",
+                // item value selects
                 "ai_usage",
                 "accepted_lines",
+                // metric_values shared scope
+                TEST_TENANT_STR,
                 "person",
                 "2026-01-01",
                 "2026-01-31",

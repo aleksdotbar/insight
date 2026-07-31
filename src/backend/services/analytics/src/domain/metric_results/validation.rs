@@ -31,6 +31,7 @@ pub(crate) const HISTOGRAM_BINS: usize = 10;
 
 #[derive(Debug)]
 pub struct ValidatedMetricResultsRequest {
+    pub tenant_id: Uuid,
     pub entity_type: String,
     /// Canonical person UUIDs (wire field `entity.ids`, parsed — the runtime
     /// keys on `person_id` since the identity cutover).
@@ -173,6 +174,7 @@ pub async fn validate_request(
     }
 
     let validated = ValidatedMetricResultsRequest {
+        tenant_id,
         entity_type,
         person_ids,
         from,
@@ -1157,6 +1159,7 @@ mod tests {
     fn projected_view_limit_counts_timeseries_buckets() {
         let def = sum_definition(vec![]);
         let validated = ValidatedMetricResultsRequest {
+            tenant_id: Uuid::nil(),
             entity_type: "person".to_owned(),
             person_ids: (0..100).map(|i| Uuid::from_u128(i + 1)).collect(),
             from: day("2026-01-01"),
@@ -1187,6 +1190,7 @@ mod tests {
             }),
         };
         let validated = ValidatedMetricResultsRequest {
+            tenant_id: Uuid::nil(),
             entity_type: "person".to_owned(),
             person_ids: vec![Uuid::from_u128(1)],
             from: day("2025-07-21"),
@@ -1214,6 +1218,7 @@ mod tests {
     fn projected_view_limit_counts_histogram_bins() {
         // 501 entities × 10 bins > 5000 projected rows.
         let validated = ValidatedMetricResultsRequest {
+            tenant_id: Uuid::nil(),
             entity_type: "person".to_owned(),
             person_ids: (0..501).map(|i| Uuid::from_u128(i + 1)).collect(),
             from: day("2026-01-01"),
@@ -1231,6 +1236,7 @@ mod tests {
     fn projected_view_limit_allows_small_requests() {
         let def = sum_definition(vec![]);
         let validated = ValidatedMetricResultsRequest {
+            tenant_id: Uuid::nil(),
             entity_type: "person".to_owned(),
             person_ids: vec![Uuid::from_u128(1)],
             from: day("2026-01-01"),
