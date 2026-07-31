@@ -537,7 +537,7 @@ pub(crate) fn normalize_entity_id(entity_type: &str, entity_id: &str) -> String 
     }
 }
 
-fn normalize_key(field: &'static str, value: &str) -> Result<String, CanonicalError> {
+pub(crate) fn normalize_key(field: &'static str, value: &str) -> Result<String, CanonicalError> {
     let value = value.trim().to_ascii_lowercase();
     if value.is_empty() {
         return invalid(field, "value must not be empty");

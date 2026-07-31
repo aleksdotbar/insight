@@ -65,6 +65,8 @@ sea-orm-migration = { version = "1.1", features = ["runtime-tokio", "sqlx-mysql"
 # IDs and time
 uuid = { version = "1.19", features = ["serde", "v7"] }
 chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+sha2 = "0.10"
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # Logging

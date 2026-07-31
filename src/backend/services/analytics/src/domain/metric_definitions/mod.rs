@@ -15,5 +15,6 @@ pub use definition::{
     MetricDirection, MetricFormat, ObservationRelation,
 };
 pub use repository::load_definitions;
+pub(crate) use repository::load_definitions_with_ids;
 pub use seeds::reconcile_builtin_definitions;
 pub use validator::MetricDefinitionValidator;

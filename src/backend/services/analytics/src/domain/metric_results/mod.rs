@@ -21,3 +21,6 @@ pub use dto::{
     MetricResultsEntityDto, MetricResultsPeriodDto, MetricResultsRequest, MetricResultsResponse,
 };
 pub use validation::{ValidatedMetricResultsRequest, validate_request};
+pub(crate) use validation::{
+    normalize_entity_id, normalize_entity_type, normalize_key, normalize_metric_key,
+};
