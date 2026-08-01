@@ -71,8 +71,8 @@ jobs:
       # bump-descriptors, publish-chart, and the `latest` tag.
       should_push: ${{ steps.tag.outputs.should_push }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
         id: filter
         with:
           filters: |
@@ -177,7 +177,7 @@ jobs:
       matrix: ${{ steps.scan.outputs.matrix }}
       any: ${{ steps.scan.outputs.any }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Need parent commit for the changed-paths diff.
           fetch-depth: 0
@@ -265,9 +265,9 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: needs.changes.outputs.should_push == 'true'
         with:
           registry: ${{ env.REGISTRY }}
@@ -291,7 +291,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
       - name: Upload digest
         if: needs.changes.outputs.should_push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digests-analytics-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -307,18 +307,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: digests-analytics-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
         with:
           images: ${{ env.IMAGE_PREFIX }}/insight-analytics
@@ -339,7 +339,7 @@ jobs:
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE_PREFIX }}/insight-analytics
           subject-digest: ${{ steps.inspect.outputs.digest }}
@@ -366,9 +366,9 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: needs.changes.outputs.should_push == 'true'
         with:
           registry: ${{ env.REGISTRY }}
@@ -391,7 +391,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
       - name: Upload digest
         if: needs.changes.outputs.should_push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digests-authenticator-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -407,18 +407,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: digests-authenticator-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
         with:
           images: ${{ env.IMAGE_PREFIX }}/insight-authenticator
@@ -439,7 +439,7 @@ jobs:
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE_PREFIX }}/insight-authenticator
           subject-digest: ${{ steps.inspect.outputs.digest }}
@@ -466,9 +466,9 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: needs.changes.outputs.should_push == 'true'
         with:
           registry: ${{ env.REGISTRY }}
@@ -491,7 +491,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
       - name: Upload digest
         if: needs.changes.outputs.should_push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digests-gateway-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -507,18 +507,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: digests-gateway-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
         with:
           images: ${{ env.IMAGE_PREFIX }}/insight-gateway
@@ -539,7 +539,7 @@ jobs:
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE_PREFIX }}/insight-gateway
           subject-digest: ${{ steps.inspect.outputs.digest }}
@@ -567,11 +567,11 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false # don't leave the token in .git/config
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: needs.changes.outputs.should_push == 'true'
         with:
           registry: ${{ env.REGISTRY }}
@@ -594,7 +594,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
       - name: Upload digest
         if: needs.changes.outputs.should_push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digests-identity-resolution-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -610,18 +610,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: digests-identity-resolution-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
         with:
           images: ${{ env.IMAGE_PREFIX }}/insight-identity-resolution
@@ -642,7 +642,7 @@ jobs:
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE_PREFIX }}/insight-identity-resolution
           subject-digest: ${{ steps.inspect.outputs.digest }}
@@ -677,11 +677,11 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: needs.changes.outputs.should_push == 'true'
         with:
           registry: ${{ env.REGISTRY }}
@@ -759,7 +759,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
       - name: Upload digest
         if: needs.changes.outputs.should_push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digests-toolbox-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -775,18 +775,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: digests-toolbox-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
         with:
           images: ${{ env.IMAGE_PREFIX }}/insight-toolbox
@@ -807,7 +807,7 @@ jobs:
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE_PREFIX }}/insight-toolbox
           subject-digest: ${{ steps.inspect.outputs.digest }}
@@ -843,9 +843,9 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         if: needs.changes.outputs.should_push == 'true'
         with:
           registry: ${{ env.REGISTRY }}
@@ -870,7 +870,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
       - name: Upload digest
         if: needs.changes.outputs.should_push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digests-${{ matrix.entry.name }}-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -894,18 +894,18 @@ jobs:
         entry: ${{ fromJson(needs.discover-images.outputs.matrix) }}
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: digests-${{ matrix.entry.name }}-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: meta
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.entry.name }}
@@ -926,7 +926,7 @@ jobs:
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE_PREFIX }}/${{ matrix.entry.name }}
           subject-digest: ${{ steps.inspect.outputs.digest }}
@@ -993,12 +993,12 @@ jobs:
     steps:
       - name: Mint chart-release App token
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         with:
           app-id: ${{ vars.AUTOMATION_APP_ID }}
           private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
@@ -1176,12 +1176,12 @@ jobs:
       # packages: write — the App was deliberately not granted that scope.
       - name: Mint chart-release App token
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         with:
           app-id: ${{ vars.AUTOMATION_APP_ID }}
           private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history needed because we'll commit back to the same branch.
           fetch-depth: 0
@@ -1190,7 +1190,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: '3.14.0'
 
@@ -1348,7 +1348,7 @@ jobs:
       # (~/.docker/config.json) — `helm registry login` above writes to helm's
       # own config, which the attest action cannot see. Without this login the
       # attest step dies with "No credentials found for registry ghcr.io".
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -1359,7 +1359,7 @@ jobs:
       #   gh attestation verify oci://ghcr.io/constructorfabric/charts/insight:<ver> \
       #     --repo constructorfabric/insight
       - name: Attest chart provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ghcr.io/constructorfabric/charts/insight
           subject-digest: ${{ steps.helm_push.outputs.digest }}
