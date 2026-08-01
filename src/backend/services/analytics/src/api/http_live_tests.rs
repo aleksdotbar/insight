@@ -805,14 +805,18 @@ async fn metric_results_loads_drilldown_capabilities_before_clickhouse_error() -
         return Ok(());
     };
     let fixture = DrilldownFixture::insert(&db, &["git.commits"], &[]).await?;
+    let identity = spawn_identity(&[VISIBLE_PERSON]).await?;
     let result: anyhow::Result<()> = async {
-        let app = app(db.clone(), fixture.tenant_id);
+        // A visible person id, not an email: since the identity cutover an email
+        // is refused by validation, which would give a 4xx before the request
+        // ever reached the drilldown-capability load this test is about.
+        let app = app_with_identity(db.clone(), fixture.tenant_id, identity);
         let resp = app
             .oneshot(json_req(
                 "POST",
                 "/v1/metric-results",
                 &json!({
-                    "entity": {"type": "person", "ids": ["person@example.com"]},
+                    "entity": {"type": "person", "ids": [VISIBLE_PERSON.to_string()]},
                     "period": {"from": "2026-07-01", "to": "2026-07-28"},
                     "metrics": [{
                         "metric_key": "git.commits",
