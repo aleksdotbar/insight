@@ -8,7 +8,9 @@ name: Trivy SCA
 #              YAML uploads as `trivy-helm` to keep synthetic paths out of `trivy-fs`.
 #
 # Do not change without reading why:
-#   - keep `-w /src`; do not switch to `--ignorefile` — it exits FATAL when the file is absent.
+#   - waivers live in `.trivyignore.yaml`, passed explicitly: Trivy auto-detects the plain
+#     `.trivyignore` but NOT the YAML form, and only the YAML form can scope a waiver to a
+#     path. The file is committed, so `--ignorefile` cannot hit its absent-file FATAL.
 #   - the report pass must not run the secret scanner: its SARIF is world-readable here.
 
 on:
@@ -43,12 +45,12 @@ jobs:
 
       - name: Trivy fs scan — CRITICAL only (report-only)
         # Waivers: `.trivyignore` at the repo root, date-scoped — `CVE-... exp:YYYY-MM-DD # <issue>`.
-        # Keep `-w /src`; `--ignorefile` exits FATAL when the file is absent.
+        # `.trivyignore.yaml` must be passed explicitly — the YAML form is not auto-detected.
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/src:ro" \
             -w /src \
-            "$TRIVY_IMAGE" fs \
+            --ignorefile /src/.trivyignore.yaml \n            "$TRIVY_IMAGE" fs \
               --scanners vuln,secret,misconfig \
               --severity CRITICAL \
               --ignore-unfixed \
@@ -95,7 +97,7 @@ jobs:
             -v "${{ github.workspace }}:/src" \
             -v /tmp/trivy-cache:/root/.cache \
             -w /src \
-            "$TRIVY_IMAGE" fs \
+            --ignorefile /src/.trivyignore.yaml \n            "$TRIVY_IMAGE" fs \
               --scanners vuln,misconfig \
               --severity CRITICAL,HIGH,MEDIUM,LOW \
               --include-dev-deps \
@@ -211,7 +213,7 @@ jobs:
             -v "${{ github.workspace }}:/src" \
             -v /tmp/trivy-cache:/root/.cache \
             -w /src \
-            "$TRIVY_IMAGE" fs \
+            --ignorefile /src/.trivyignore.yaml \n            "$TRIVY_IMAGE" fs \
               --scanners misconfig \
               --severity CRITICAL,HIGH,MEDIUM,LOW \
               --exit-code 0 \
