@@ -436,6 +436,7 @@ mod tests {
             from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default(),
             to: NaiveDate::from_ymd_opt(2026, 1, 31).unwrap_or_default(),
             metrics,
+            enforce_tenant_scope: true,
         }
     }
 
