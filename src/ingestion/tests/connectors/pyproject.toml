@@ -38,6 +38,12 @@ exclude-newer = "7 days"
 override-dependencies = [
     "nltk>=3.9.3",
     "langchain-core>=0.3.81",
+    # airbyte-cdk 6.60.x resolves cryptography 44.0.3, which carries a Bleichenbacher
+    # timing oracle in PKCS#1 v1.5 decryption (CVE-2026-26007) and GHSA-537c-gmf6-5ccf.
+    # The harness never handles a key or a TLS handshake of its own -- requests-mock
+    # intercepts every call before the transport -- but the CDK's connector-builder
+    # secret handling imports it, so the version still ships.
+    "cryptography>=48.0.1",
 ]
 
 [tool.pytest.ini_options]
