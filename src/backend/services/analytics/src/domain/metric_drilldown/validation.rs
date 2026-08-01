@@ -199,11 +199,11 @@ async fn load_evidence_plan(
     })
 }
 
-// The evidence relations this endpoint reads are still keyed by the lowercased
-// email (`entity_id`): the identity cutover added `person_id` to the observation
-// and cohort relations, not to evidence. So this is the last email-keyed person
-// surface, and it is NOT behind the visibility gate the other person-keyed
-// routes use — both tracked in #2109.
+// INVARIANT: the evidence relations this endpoint reads are keyed by the
+// lowercased email, not by `person_id` — the identity cutover reached the
+// observation and cohort relations only. Every other person-keyed route takes a
+// person UUID, so this one must NOT be handed one, and it is not behind the
+// visibility gate those routes use.
 fn normalize_evidence_entity_id(entity_id: &str) -> String {
     entity_id.trim().to_ascii_lowercase()
 }
