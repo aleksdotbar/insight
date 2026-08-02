@@ -583,3 +583,7 @@ trufflehog-findings.jsonl
 
 # Seed manifest — per-stand runtime output (PROFILE.md is the committed view).
 deploy/seed/manifest.json
+
+# pytest-playwright's artefact directory: traces, screenshots and video from a
+# stand run. Written by `./dev-compose.sh test-stand test`, uploaded by CI.
+/test-results/

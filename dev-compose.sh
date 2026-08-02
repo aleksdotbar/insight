@@ -1276,6 +1276,13 @@ containers to report healthy.
           The suite aims itself at this stand; override with pytest's own
           --base-url <url> and --stand-manifest <path> when pointing it
           somewhere else.
+
+          --image <ref>  Run inside an already-pulled ui-tests image instead
+                         of on the host, sharing the gateway's network
+                         namespace. Never builds: pull the image first. Test
+                         paths are then IMAGE-SIDE (/tests/stand/ui, not
+                         tests/stand/ui), and pytest-playwright's artefacts
+                         land in ./test-results as usual.
   down    Stop the stand and REMOVE its volumes, so the next `up` starts
           from empty databases.
 
@@ -1394,6 +1401,86 @@ test_stand_wait_ready() {
   return 1
 }
 
+# The gateway's port INSIDE its own container (docker-compose.yml publishes it
+# as "${GATEWAY_PORT:-8080}:8080"). A runner sharing the gateway's network
+# namespace talks to this, not to the published host port.
+TEST_STAND_GATEWAY_CONTAINER_PORT=8080
+# docker-compose.yml pins `container_name: insight-gateway`, so the namespace to
+# join is a fixed name rather than something to discover.
+TEST_STAND_GATEWAY_CONTAINER=insight-gateway
+# Where pytest-playwright writes traces, screenshots and video. `test-results`
+# is its own default and the image's WORKDIR is /tests, so mounting the host
+# directory at /tests/test-results makes the default land on the host with no
+# --output flag to keep in step.
+TEST_STAND_ARTIFACT_DIR="test-results"
+
+# Run the suite inside the published ui-tests image against the running stand.
+#
+# The image is never built here: CI pulls it, a developer builds it once by
+# hand (see deploy/compose/ui-tests.Dockerfile). This function only wires it to
+# the stand, and the wiring is the part that is easy to get wrong.
+#
+# Network namespace, not the compose network. The session cookie is
+# `__Host-`-prefixed, so the browser stores it only from a trustworthy origin,
+# and over plain http `localhost` is the only host name that qualifies. Joining
+# the gateway's namespace means one URL — http://localhost:8080 — serves the
+# browser and the HTTP clients alike, with no Chromium flags (which do not lift
+# the restriction anyway — measured, see tests/stand/ui/conftest.py).
+#
+# Arguments are passed to pytest verbatim and are IMAGE-SIDE paths: the suite
+# lives at /tests/stand in the image, so select with /tests/stand/ui, not
+# tests/stand/ui.
+test_stand_test_in_image() {
+  local image="$1" gw_port="$2"
+  shift 2
+
+  # The realm registers http://localhost:${GATEWAY_PORT}/auth/callback while an
+  # in-namespace browser reaches the gateway at its container port. When those
+  # differ the OIDC redirect_uri does not match and the login fails several
+  # steps later, as an opaque IdP error. Refuse up front instead.
+  if [[ "$gw_port" != "$TEST_STAND_GATEWAY_CONTAINER_PORT" ]]; then
+    echo "ERROR: --image needs GATEWAY_PORT=${TEST_STAND_GATEWAY_CONTAINER_PORT} (this stand: ${gw_port})." >&2
+    echo "       A containerised runner reaches the gateway at its container port," >&2
+    echo "       but the realm registered http://localhost:${gw_port}/auth/callback," >&2
+    echo "       so the login would fail on a redirect_uri mismatch." >&2
+    return 1
+  fi
+
+  local manifest="deploy/seed/manifest.json"
+  [[ -f "$manifest" ]] || {
+    echo "ERROR: $manifest not found — seed the stand first: ./dev-compose.sh test-stand seed" >&2
+    return 1; }
+
+  docker image inspect "$image" >/dev/null 2>&1 || {
+    echo "ERROR: image '$image' is not present locally. Pull it first:" >&2
+    echo "         docker pull $image" >&2
+    echo "       This verb never builds it — the image is a published artefact." >&2
+    return 1; }
+
+  # Created here rather than by the container, so it belongs to the invoking
+  # user instead of root and the artefacts stay readable afterwards.
+  mkdir -p "$TEST_STAND_ARTIFACT_DIR"
+
+  local run_args=(
+    --rm
+    --network "container:${TEST_STAND_GATEWAY_CONTAINER}"
+    -e "INSIGHT_STAND_BASE_URL=http://localhost:${TEST_STAND_GATEWAY_CONTAINER_PORT}"
+    -v "$PWD/${manifest}:/deploy/seed/manifest.json:ro"
+    -v "$PWD/${TEST_STAND_ARTIFACT_DIR}:/tests/${TEST_STAND_ARTIFACT_DIR}"
+  )
+
+  # The persona password comes from the generated realm export when it is
+  # readable, and from the environment otherwise. Mounting the realm keeps a
+  # keycloak stand working with no secret to distribute; the env var stays the
+  # path for a stand whose realm this checkout cannot see.
+  local realm="deploy/compose/keycloak/realm-insight.generated.json"
+  [[ -f "$realm" ]] && run_args+=(-v "$PWD/${realm}:/${realm}:ro")
+  [[ -n "${INSIGHT_STAND_PERSONA_PASSWORD:-}" ]] && run_args+=(-e INSIGHT_STAND_PERSONA_PASSWORD)
+
+  echo "=== running the suite in ${image} (namespace: ${TEST_STAND_GATEWAY_CONTAINER}) ==="
+  docker run "${run_args[@]}" "$image" "$@"
+}
+
 cmd_test_stand() {
   local verb="${1:-help}"
   [[ $# -gt 0 ]] && shift
@@ -1450,6 +1537,40 @@ cmd_test_stand() {
     test)
       # Runs against an already-up stand: never brings it up, seeds it, or
       # tears it down, so a failing suite leaves the stand intact to inspect.
+      #
+      # Two runners, one verb. On the host (default) the suite runs from
+      # tests/ with uv. With --image it runs inside an already-pulled ui-tests
+      # image instead, which is what CI uses: the browser, its version and the
+      # locked dependency set then come from a published artefact rather than
+      # from whatever the runner happens to have installed.
+      local image=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --image=*) image="${1#*=}"; shift ;;
+          --image)
+            [[ $# -ge 2 ]] || { echo "ERROR: --image requires a value." >&2; return 2; }
+            image="$2"; shift 2 ;;
+          # Only a LEADING --image is ours; everything from here on is pytest's.
+          *) break ;;
+        esac
+      done
+
+      # Read the port from the stand's own env file rather than the ambient
+      # shell, so a stand on a non-default GATEWAY_PORT is probed where it
+      # actually listens.
+      local gw_port
+      gw_port="$(grep -E '^[[:space:]]*GATEWAY_PORT=' "$TEST_STAND_ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2)"
+      gw_port="${gw_port:-${GATEWAY_PORT:-8080}}"
+      curl -sf -o /dev/null --max-time 5 "http://localhost:${gw_port}/" 2>/dev/null || {
+        echo "ERROR: gateway is not answering on http://localhost:${gw_port}/." >&2
+        echo "       Bring the stand up first: ./dev-compose.sh test-stand up" >&2
+        return 1; }
+
+      if [[ -n "$image" ]]; then
+        test_stand_test_in_image "$image" "$gw_port" "$@"
+        return $?
+      fi
+
       [[ -d tests/stand ]] || {
         echo "ERROR: tests/stand does not exist yet (it is created in a later phase)." >&2
         return 1; }
@@ -1460,16 +1581,6 @@ cmd_test_stand() {
         echo "ERROR: uv not found on PATH. The suite's dependencies (pytest, httpx," >&2
         echo "       playwright) are locked in tests/uv.lock and installed with uv:" >&2
         echo "         brew install uv   # or: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
-        return 1; }
-      # Read the port from the stand's own env file rather than the ambient
-      # shell, so a stand on a non-default GATEWAY_PORT is probed where it
-      # actually listens.
-      local gw_port
-      gw_port="$(grep -E '^[[:space:]]*GATEWAY_PORT=' "$TEST_STAND_ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2)"
-      gw_port="${gw_port:-${GATEWAY_PORT:-8080}}"
-      curl -sf -o /dev/null --max-time 5 "http://localhost:${gw_port}/" 2>/dev/null || {
-        echo "ERROR: gateway is not answering on http://localhost:${gw_port}/." >&2
-        echo "       Bring the stand up first: ./dev-compose.sh test-stand up" >&2
         return 1; }
       # --frozen: run exactly the locked dependency set, never re-resolve
       # silently, so the host runner and the ui-tests image stay identical.

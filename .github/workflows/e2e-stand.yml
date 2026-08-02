@@ -1,0 +1,303 @@
+name: E2E — Compose stand
+
+# The deployed-stand suite (tests/stand) run against a real compose stack: the
+# ghcr frontend pinned to the chart's appVersion, a real Keycloak login, and
+# gold data dbt actually built. Distinct from e2e-bronze-to-api.yml, which
+# exercises the in-process ingestion rig and carries this repo's four blocking
+# coverage gates — that workflow is untouched by this one.
+#
+# Two independently-reporting checks, split by what they need rather than by
+# what they cover:
+#
+#   api-smoke    tests/stand/api  — 112 HTTP contract tests. No browser.
+#   ui-journeys  tests/stand/ui + tests/stand/metrics — the browser journeys,
+#                run inside the published ui-tests image.
+#
+# **Both are NON-REQUIRED and are deliberately in no branch-protection
+# ruleset.** They stand up a full stack against a live IdP; until they have a
+# track record they must not be able to block a merge. Whoever proposes making
+# them required should first look at the wall-clock and flake rate recorded in
+# .cf-studio/.plans/stage1-compose-e2e-suite/out/ci-wiring.md.
+#
+# Every stand operation goes through ./dev-compose.sh test-stand — never the
+# bare up/down/seed a human developer uses. The pinned frontend, Keycloak auth
+# and the dbt-readiness gate live behind that verb family; the plain
+# subcommands resolve to the developer's defaults and would silently exercise a
+# different stand.
+
+on:
+  pull_request:
+    branches: [main]
+    # Native path filtering, the same shape as authenticator.yml's trigger.
+    paths:
+      - "tests/stand/**"
+      - "tests/lib/**"
+      - "tests/pyproject.toml"
+      - "tests/uv.lock"
+      - "deploy/seed/**"
+      - "deploy/compose/**"
+      - "docker-compose.yml"
+      - "dev-compose.sh"
+      # The cross-repo hook: insight-front's CI dispatches build-images.yml with
+      # a frontend_tag, which bumps this chart's appVersion — and the stand pins
+      # its frontend image from exactly that value. Without this entry a
+      # frontend bump would never be exercised by a browser here.
+      - "src/frontend/helm/**"
+      - ".github/workflows/e2e-stand.yml"
+      - ".github/workflows/scripts/redact-playwright-trace.py"
+  # A scheduled run always evaluates against the default branch, so this is the
+  # main-branch lane whatever ref the file is authored on. Nightly rather than
+  # per-push: the stand is expensive and nothing here is a merge gate.
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which stand to run against. Only 'compose' is implemented."
+        required: false
+        type: choice
+        options: [compose]
+        default: compose
+
+# One run per PR. A rebase or a force-push obsoletes whatever is in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read # pulls insight-front (via compose) and insight-ui-tests
+
+env:
+  # Built and published by build-images.yml's ui-tests job. Pulled here, never
+  # built: a workflow that builds its own runner tests the runner it just built
+  # rather than the one a developer would pull.
+  UI_TESTS_IMAGE: ghcr.io/constructorfabric/insight-ui-tests:latest
+
+jobs:
+  # Stages 2 (CI stand) and 3 (E2E stand) are meant to add a target here rather
+  # than copy this file. Until they do, `compose` is the only implemented value
+  # and anything else is a mistake worth failing on — a dispatch that silently
+  # ran the wrong stand would be worse than one that refused.
+  resolve-target:
+    name: resolve-target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      target: ${{ steps.resolve.outputs.target }}
+    steps:
+      - id: resolve
+        # Through the environment, not string interpolation: an input spliced
+        # into a shell body is a script-injection sink even when the input is a
+        # `choice` today and someone widens it to a string tomorrow.
+        env:
+          REQUESTED: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          TARGET="${REQUESTED:-compose}"
+          if [ "$TARGET" != "compose" ]; then
+            echo "::error::unsupported target '$TARGET' — only 'compose' is implemented"
+            exit 1
+          fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "target: $TARGET"
+
+  # ─── api-smoke ────────────────────────────────────────────────────────────
+  # HTTP-only, so it runs from the repo with uv rather than in the browser
+  # image. `--ignore` rather than a path argument: `test-stand test` always
+  # passes `tests/stand` to pytest and forwards these on top, so naming a
+  # subdirectory would ADD to the full collection instead of narrowing it.
+  # Measured: 112 collected here, 12 in ui-journeys, 124 for the whole suite.
+  api-smoke:
+    name: api-smoke
+    needs: resolve-target
+    if: needs.resolve-target.outputs.target == 'compose'
+    runs-on: ubuntu-latest
+    # Generous on purpose: `test-stand up` compiles the Rust backend from
+    # source on a cold runner. See out/ci-wiring.md — cutting this is the
+    # first thing to revisit once a real run has been measured.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false # don't leave the token in .git/config
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          cache-suffix: stand-api
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `up` writes .env.compose.test-stand, forces the pinned frontend and
+      # Keycloak, seeds, and then blocks until a gold metric proves dbt
+      # rebuilt for THIS run. It does not return success before that, so no
+      # separate readiness wait belongs here — and no separate `seed` step
+      # either: re-seeding after the gate would rebuild the data the gate just
+      # vouched for and leave nothing checking the result.
+      - name: Bring the stand up
+        run: ./dev-compose.sh test-stand up
+
+      - name: Run the API suite
+        run: |
+          ./dev-compose.sh test-stand test \
+            --ignore=tests/stand/ui \
+            --ignore=tests/stand/metrics
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          set -uo pipefail
+          mkdir -p compose-logs
+          echo "::group::containers"
+          docker ps -a || true
+          echo "::endgroup::"
+          echo "::group::container logs"
+          for name in $(docker ps -a --filter "name=insight-" --format '{{.Names}}' || true); do
+            docker logs --tail=400 "$name" > "compose-logs/${name}.log" 2>&1 || true
+            echo "----- ${name} -----"
+            tail -n 120 "compose-logs/${name}.log" || true
+          done
+          echo "::endgroup::"
+          echo "::group::stand configuration"
+          # Named keys only — the generated env file also carries the local
+          # database passwords, and this output is world-readable on a public run.
+          grep -E '^(FRONTEND_MODE|FRONTEND_IMAGE|AUTH_MODE|GATEWAY_PORT|AUTHENTICATOR_OIDC_ISSUER)=' \
+            .env.compose.test-stand || true
+          echo "::endgroup::"
+
+      - name: Upload compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-smoke-compose-logs
+          path: compose-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # always(), not failure(): a cancelled run must still tear its stack
+      # down, and `down` passes --volumes so the next run starts from empty
+      # databases rather than inheriting this one's rows.
+      - name: Tear the stand down
+        if: always()
+        run: |
+          [ -f .env.compose.test-stand ] || { echo "no stand env file — nothing to tear down"; exit 0; }
+          ./dev-compose.sh test-stand down
+
+  # ─── ui-journeys ──────────────────────────────────────────────────────────
+  # No `needs` on api-smoke and none from it: each is an independently
+  # reportable check, so a red API contract does not hide a broken login.
+  ui-journeys:
+    name: ui-journeys
+    needs: resolve-target
+    if: needs.resolve-target.outputs.target == 'compose'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12" # runs the redaction script only — stdlib alone
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pulled, never built. build-images.yml publishes it; building it here
+      # would mean testing an image no developer will ever pull.
+      - name: Pull the ui-tests image
+        run: docker pull "$UI_TESTS_IMAGE"
+
+      - name: Bring the stand up
+        run: ./dev-compose.sh test-stand up
+
+      # `--image` runs the suite inside the pulled image, joined to the
+      # gateway's network namespace so the browser reaches the app at
+      # http://localhost:8080 — the only origin over plain http from which a
+      # `__Host-`-prefixed session cookie is stored at all. Paths are
+      # image-side (/tests/stand/...) because the suite is baked into it.
+      #
+      # retain-on-failure for trace and video: a green run then carries no
+      # session credentials off the runner at all, which is a smaller problem
+      # than redacting one.
+      - name: Run the browser journeys
+        run: |
+          ./dev-compose.sh test-stand test --image "$UI_TESTS_IMAGE" \
+            /tests/stand/ui /tests/stand/metrics \
+            --browser chromium \
+            --tracing=retain-on-failure \
+            --screenshot=only-on-failure \
+            --video=retain-on-failure
+
+      # BETWEEN capture and upload, and always — a failed run is exactly when a
+      # trace exists. A Playwright trace replays a real signed-in session: it
+      # carries the `__Host-sid` cookie and every Authorization header, twice
+      # over (raw headers and a parsed HAR `cookies` array). The script fails
+      # closed — a trace it cannot rewrite and verify is deleted, not uploaded.
+      - name: Strip credentials from traces
+        if: always()
+        run: python3 .github/workflows/scripts/redact-playwright-trace.py test-results
+
+      - name: Upload traces and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-journeys-traces
+          path: |
+            test-results/**/*.zip
+            test-results/**/*.png
+          # A green run keeps neither, by the capture policy above.
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload video
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-journeys-video
+          path: test-results/**/*.webm
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          set -uo pipefail
+          mkdir -p compose-logs
+          echo "::group::containers"
+          docker ps -a || true
+          echo "::endgroup::"
+          echo "::group::container logs"
+          for name in $(docker ps -a --filter "name=insight-" --format '{{.Names}}' || true); do
+            docker logs --tail=400 "$name" > "compose-logs/${name}.log" 2>&1 || true
+            echo "----- ${name} -----"
+            tail -n 120 "compose-logs/${name}.log" || true
+          done
+          echo "::endgroup::"
+          echo "::group::stand configuration"
+          grep -E '^(FRONTEND_MODE|FRONTEND_IMAGE|AUTH_MODE|GATEWAY_PORT|AUTHENTICATOR_OIDC_ISSUER)=' \
+            .env.compose.test-stand || true
+          echo "::endgroup::"
+
+      - name: Upload compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-journeys-compose-logs
+          path: compose-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear the stand down
+        if: always()
+        run: |
+          [ -f .env.compose.test-stand ] || { echo "no stand env file — nothing to tear down"; exit 0; }
+          ./dev-compose.sh test-stand down
