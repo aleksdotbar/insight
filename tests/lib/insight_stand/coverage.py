@@ -83,7 +83,9 @@ UNIVERSAL_BOILERPLATE = frozenset({429})
 #:     That is `update` and `delete`, which take an id; `list`, `get_one` and
 #:     `create` cannot reach it, and a cross-tenant READ is 404 by opacity
 #:     (`threshold_not_found_response`).
-#:   * `admin_threshold/lock_enforcer.rs` — `threshold_locked`, same two writes.
+#:   * `admin_threshold/lock_enforcer.rs` — `threshold_locked`, on all three
+#:     WRITES. `create` reaches it too (service.rs step 8, `check_broader_locks`):
+#:     a broader scope's lock shadows a narrower create. Reads do not.
 #:
 #: Nothing else in the service gates on anything: `is_tenant_admin`,
 #: `authorize_*` and `require_admin` appear nowhere in `handlers.rs`,
@@ -112,11 +114,11 @@ BLOCKED: dict[str, frozenset[int]] = {
     "POST /v1/metrics/{id}/thresholds": _NO_AUTHORIZATION_PATH,
     "PUT /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHORIZATION_PATH,
     "DELETE /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHORIZATION_PATH,
-    # Admin thresholds: only the two id-taking WRITES can refuse (cross-tenant
-    # row, or a broader scope's lock). The rest reach the stubbed role check.
+    # Admin thresholds: the three WRITES can refuse (a broader scope's lock,
+    # and for the id-taking two, a cross-tenant row). Only the reads are left
+    # with nothing but the stubbed role check.
     "GET /v1/admin/metric-thresholds": _NO_AUTHORIZATION_PATH,
     "GET /v1/admin/metric-thresholds/{id}": _NO_AUTHORIZATION_PATH,
-    "POST /v1/admin/metric-thresholds": _NO_AUTHORIZATION_PATH,
     # Saved queries — no owner check and no role check; cross-tenant is 404.
     "GET /v1/queries": _NO_AUTHORIZATION_PATH,
     "POST /v1/queries": _NO_AUTHORIZATION_PATH,

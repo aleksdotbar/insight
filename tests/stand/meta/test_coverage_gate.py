@@ -197,9 +197,12 @@ def test_401_and_403_are_required_where_a_handler_can_answer_them() -> None:
 def test_403_is_subtracted_only_where_no_handler_can_produce_it() -> None:
     """The other half, and the one that makes the table above honest.
 
-    26 of analytics' 29 operations reach no authorization check at all — the
+    25 of analytics' 30 operations reach no authorization check at all — the
     admin surface's `is_tenant_admin` is a stub returning true, and nothing in
     the metrics, saved-query, catalogue or drilldown handlers gates on anything.
+    The five that can refuse are the three admin-threshold WRITES (a broader
+    scope's lock, plus a cross-tenant row on the two taking an id) and
+    `POST /v1/metric-results` (person visibility).
     The spec declares 403 on all 29 regardless (`.standard_errors`, #1669), so
     requiring it everywhere demands a response the service has no code to send.
 
@@ -209,8 +212,11 @@ def test_403_is_subtracted_only_where_no_handler_can_produce_it() -> None:
     assert 403 not in coverage.UNIVERSAL_BOILERPLATE, "must stay a per-route judgement"
     assert coverage.BLOCKED["GET /v1/metrics"] == frozenset({403})
     assert "POST /v1/metric-results" not in coverage.BLOCKED
-    assert "PUT /v1/admin/metric-thresholds/{id}" not in coverage.BLOCKED
-    assert "DELETE /v1/admin/metric-thresholds/{id}" not in coverage.BLOCKED
+    for write in ("POST /v1/admin/metric-thresholds",
+                  "PUT /v1/admin/metric-thresholds/{id}",
+                  "DELETE /v1/admin/metric-thresholds/{id}"):
+        assert write not in coverage.BLOCKED, f"{write} reaches the lock enforcer"
+    assert "GET /v1/admin/metric-thresholds" in coverage.BLOCKED, "reads cannot refuse"
 
     spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 401, 403]}}))
     report = coverage.SpecReport(
