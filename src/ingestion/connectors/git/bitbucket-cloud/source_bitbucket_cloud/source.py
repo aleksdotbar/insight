@@ -16,18 +16,19 @@ from source_bitbucket_cloud.streams.branches import BranchesStream
 from source_bitbucket_cloud.streams.commit_branch_reachability import CommitBranchReachabilityStream
 from source_bitbucket_cloud.streams.commits import CommitsStream
 from source_bitbucket_cloud.streams.file_changes import FileChangesStream
-from source_bitbucket_cloud.streams.metric_events import (
-    DeploymentsStream,
-    EnvironmentsStream,
-    IssueChangesStream,
-    IssueCommentsStream,
-    IssuesStream,
-    PipelinesStream,
-    PipelineStepsStream,
-    PipelineStepTestReportsStream,
-    PRTasksStream,
-    TagsStream,
-)
+# Unwired until a model reads them — see the note in streams().
+# from source_bitbucket_cloud.streams.metric_events import (
+#     DeploymentsStream,
+#     EnvironmentsStream,
+#     IssueChangesStream,
+#     IssueCommentsStream,
+#     IssuesStream,
+#     PipelinesStream,
+#     PipelineStepsStream,
+#     PipelineStepTestReportsStream,
+#     PRTasksStream,
+#     TagsStream,
+# )
 from source_bitbucket_cloud.streams.pr_activity import PRActivityStream
 from source_bitbucket_cloud.streams.pr_comments import PRCommentsStream
 from source_bitbucket_cloud.streams.pr_commits import PRCommitsStream
@@ -118,22 +119,32 @@ class SourceBitbucketCloud(AbstractSource):
         pr_activity = PRActivityStream(**shared)
         pr_comments = PRCommentsStream(**shared)
         pr_commits = PRCommitsStream(**shared)
-        pipelines = PipelinesStream(**shared)
-        pipeline_steps = PipelineStepsStream(**shared)
-        pipeline_step_test_reports = PipelineStepTestReportsStream(**shared)
-        deployments = DeploymentsStream(**shared)
-        environments = EnvironmentsStream(**shared)
-        tags = TagsStream(**shared)
-        issues = IssuesStream(**shared)
-        issue_comments = IssueCommentsStream(**shared)
-        issue_changes = IssueChangesStream(**shared)
-        pr_tasks = PRTasksStream(**shared)
 
         # Airbyte reads streams in catalog order, so a sync that is cut short
         # keeps whatever the transform layer consumes. Within that, the streams
         # whose cost a watermark bounds run before the commit-range streams,
         # whose first read of a repository is bounded only by its history: a run
         # that ends early then still delivers the bounded half whole.
+        #
+        # Pipelines, tags, deployments, environments, issues and pull-request
+        # tasks are wired out below rather than merely ordered last: no model
+        # reads them, and collecting them took most of a full pass. Re-enabling
+        # one means uncommenting it and its import — the stream classes, schemas
+        # and tests are all still here — but two things come with it. The
+        # platform may have dropped the state of a stream it no longer sees, so
+        # the first pass back can be a backfill; and tags pages a repository's
+        # whole tag history every time, so it wants the idle gate branches uses
+        # before it returns to a large workspace.
+        # pipelines = PipelinesStream(**shared)
+        # pipeline_steps = PipelineStepsStream(**shared)
+        # pipeline_step_test_reports = PipelineStepTestReportsStream(**shared)
+        # deployments = DeploymentsStream(**shared)
+        # environments = EnvironmentsStream(**shared)
+        # tags = TagsStream(**shared)
+        # issues = IssuesStream(**shared)
+        # issue_comments = IssueCommentsStream(**shared)
+        # issue_changes = IssueChangesStream(**shared)
+        # pr_tasks = PRTasksStream(**shared)
         streams = [
             repos,
             branches,
@@ -145,17 +156,6 @@ class SourceBitbucketCloud(AbstractSource):
             commits,
             file_changes,
             commit_branch_reachability,
-            # Below: no dbt model reads these yet.
-            tags,
-            deployments,
-            environments,
-            pipelines,
-            pipeline_steps,
-            pipeline_step_test_reports,
-            pr_tasks,
-            issues,
-            issue_comments,
-            issue_changes,
         ]
         _logger.info(
             f"streams: wired {len(streams)} streams (workspaces={shared['workspaces']} "

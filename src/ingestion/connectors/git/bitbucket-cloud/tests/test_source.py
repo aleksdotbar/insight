@@ -68,19 +68,7 @@ UNBOUNDED_STREAMS = ["commits", "file_changes", "commit_branch_reachability"]
 
 def test_streams_are_independent_and_share_client_and_catalog():
     streams = SourceBitbucketCloud().streams(CONFIG)
-    assert [stream.name for stream in streams] == [
-        *TRANSFORMED_STREAMS,
-        "tags",
-        "deployments",
-        "environments",
-        "pipelines",
-        "pipeline_steps",
-        "pipeline_step_test_reports",
-        "pull_request_tasks",
-        "issues",
-        "issue_comments",
-        "issue_changes",
-    ]
+    assert [stream.name for stream in streams] == TRANSFORMED_STREAMS
     assert len({id(stream._client) for stream in streams}) == 1
     assert len({id(stream._catalog) for stream in streams}) == 1
     assert not any(hasattr(stream, "parent") for stream in streams)
