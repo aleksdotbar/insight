@@ -171,23 +171,52 @@ def test_a_literal_path_wins_over_a_same_arity_template() -> None:
     assert validated == {"GET /v1/metrics/queries": {200}}
 
 
-def test_401_and_403_are_required_rather_than_boilerplate() -> None:
-    """The authorization codes stay required, pinned.
+def test_401_and_403_are_required_where_a_handler_can_answer_them() -> None:
+    """The authorization codes stay required, pinned — on a route that has them.
 
-    This suite crosses a real gateway with a real session, so both are reachable
-    — and they are the codes it is uniquely able to prove. The rig requires 401
-    too now, but still blocks 403 per-route as boilerplate it has no role gate
-    to produce; copying that exclusion across would silently stop requiring the
-    authorization behaviour this whole suite exists for.
+    `POST /v1/metric-results` is the one analytics operation whose 403 comes
+    from a visibility check rather than a role stub, so it is deliberately NOT
+    in BLOCKED. This suite crosses a real gateway with a real session, which
+    makes it the only one able to prove either code; dropping them into
+    UNIVERSAL_BOILERPLATE would stop requiring the authorization behaviour the
+    whole suite exists for.
     """
-    spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 401, 403, 429, 500]}}))
-    report = coverage.SpecReport(spec_ops=spec_ops, validated={"GET /v1/metrics": {200}}, unmatched=[])
+    op = "POST /v1/metric-results"
+    spec_ops = coverage.spec_operations(
+        _spec({"/v1/metric-results": {"post": [200, 401, 403, 429, 500]}})
+    )
+    report = coverage.SpecReport(spec_ops=spec_ops, validated={op: {200}}, unmatched=[])
 
-    required = report.required["GET /v1/metrics"]
+    required = report.required[op]
     assert 401 in required and 403 in required
     assert 429 not in required, "no rate limiter fronts this stand"
     assert 500 not in required, "a server fault is not deterministically inducible"
-    assert report.uncovered["GET /v1/metrics"] == {401, 403}
+    assert report.uncovered[op] == {401, 403}
+
+
+def test_403_is_subtracted_only_where_no_handler_can_produce_it() -> None:
+    """The other half, and the one that makes the table above honest.
+
+    26 of analytics' 29 operations reach no authorization check at all — the
+    admin surface's `is_tenant_admin` is a stub returning true, and nothing in
+    the metrics, saved-query, catalogue or drilldown handlers gates on anything.
+    The spec declares 403 on all 29 regardless (`.standard_errors`, #1669), so
+    requiring it everywhere demands a response the service has no code to send.
+
+    Per-route and sourced, never universal: `GET /v1/metrics` cannot refuse,
+    `POST /v1/metric-results` can, and the difference is which handlers exist.
+    """
+    assert 403 not in coverage.UNIVERSAL_BOILERPLATE, "must stay a per-route judgement"
+    assert coverage.BLOCKED["GET /v1/metrics"] == frozenset({403})
+    assert "POST /v1/metric-results" not in coverage.BLOCKED
+    assert "PUT /v1/admin/metric-thresholds/{id}" not in coverage.BLOCKED
+    assert "DELETE /v1/admin/metric-thresholds/{id}" not in coverage.BLOCKED
+
+    spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 401, 403]}}))
+    report = coverage.SpecReport(
+        spec_ops=spec_ops, validated={"GET /v1/metrics": {200}}, unmatched=[]
+    )
+    assert report.required["GET /v1/metrics"] == {200, 401}, "403 subtracted, nothing else"
 
 
 def test_an_undeclared_code_the_suite_proved_is_reported() -> None:

@@ -69,7 +69,69 @@ UNIVERSAL_BOILERPLATE = frozenset({429})
 #:
 #: Self-cleaning: an entry that becomes observed, or leaves the spec, is
 #: reported so the list cannot quietly rot.
-BLOCKED: dict[str, frozenset[int]] = {}
+#:
+#: Every entry here is 403, and all of them for one reason: analytics has three
+#: places that can produce one, and 26 of its 29 operations reach none of them.
+#:
+#:   * `domain/person_visibility.rs`  — asking about somebody outside the
+#:     caller's visible set. Reached only by `POST /v1/metric-results`.
+#:   * `api/admin/error_map.rs::not_tenant_admin_response` — reached by the
+#:     admin-threshold surface, but its `is_tenant_admin` is a STUB returning
+#:     true for every session ("until the real Auth wiring lands",
+#:     `domain/auth.rs`). So the role half is unreachable product-wide, and only
+#:     the OTHER trigger fires: a write addressing a row in another tenant.
+#:     That is `update` and `delete`, which take an id; `list`, `get_one` and
+#:     `create` cannot reach it, and a cross-tenant READ is 404 by opacity
+#:     (`threshold_not_found_response`).
+#:   * `admin_threshold/lock_enforcer.rs` — `threshold_locked`, same two writes.
+#:
+#: Nothing else in the service gates on anything: `is_tenant_admin`,
+#: `authorize_*` and `require_admin` appear nowhere in `handlers.rs`,
+#: `saved_queries.rs`, `catalog.rs`, `metric_definitions.rs` or
+#: `metric_drilldown.rs`. The spec declares 403 on all 29 anyway, because
+#: `.standard_errors` stamps the same seven codes on every route (#1669).
+#:
+#: This does NOT retract the module docstring's point. 403 stays out of
+#: UNIVERSAL_BOILERPLATE — where a handler HAS the path, this suite is the only
+#: one that can prove it, and it does on all three. What is subtracted here is
+#: per-route and sourced, which is also how the entries expire: when the real
+#: authorization wiring lands, these become observable and the gate says so.
+_NO_AUTHORIZATION_PATH = frozenset({403})
+
+BLOCKED: dict[str, frozenset[int]] = {
+    # Metrics CRUD + query — no gate of any kind.
+    "GET /v1/metrics": _NO_AUTHORIZATION_PATH,
+    "POST /v1/metrics": _NO_AUTHORIZATION_PATH,
+    "GET /v1/metrics/{id}": _NO_AUTHORIZATION_PATH,
+    "PUT /v1/metrics/{id}": _NO_AUTHORIZATION_PATH,
+    "DELETE /v1/metrics/{id}": _NO_AUTHORIZATION_PATH,
+    "POST /v1/metrics/{id}/query": _NO_AUTHORIZATION_PATH,
+    "POST /v1/metrics/queries": _NO_AUTHORIZATION_PATH,
+    # Legacy per-metric thresholds — the #1663 surface, also ungated.
+    "GET /v1/metrics/{id}/thresholds": _NO_AUTHORIZATION_PATH,
+    "POST /v1/metrics/{id}/thresholds": _NO_AUTHORIZATION_PATH,
+    "PUT /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHORIZATION_PATH,
+    "DELETE /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHORIZATION_PATH,
+    # Admin thresholds: only the two id-taking WRITES can refuse (cross-tenant
+    # row, or a broader scope's lock). The rest reach the stubbed role check.
+    "GET /v1/admin/metric-thresholds": _NO_AUTHORIZATION_PATH,
+    "GET /v1/admin/metric-thresholds/{id}": _NO_AUTHORIZATION_PATH,
+    "POST /v1/admin/metric-thresholds": _NO_AUTHORIZATION_PATH,
+    # Saved queries — no owner check and no role check; cross-tenant is 404.
+    "GET /v1/queries": _NO_AUTHORIZATION_PATH,
+    "POST /v1/queries": _NO_AUTHORIZATION_PATH,
+    "GET /v1/queries/{id}": _NO_AUTHORIZATION_PATH,
+    "PUT /v1/queries/{id}": _NO_AUTHORIZATION_PATH,
+    "DELETE /v1/queries/{id}": _NO_AUTHORIZATION_PATH,
+    "POST /v1/queries/{id}/run": _NO_AUTHORIZATION_PATH,
+    # Read-only catalogue + drilldown.
+    "GET /v1/columns": _NO_AUTHORIZATION_PATH,
+    "GET /v1/columns/{table}": _NO_AUTHORIZATION_PATH,
+    "GET /v1/metric-definitions": _NO_AUTHORIZATION_PATH,
+    "POST /v1/catalog/get_metrics": _NO_AUTHORIZATION_PATH,
+    "POST /v1/metric-drilldown": _NO_AUTHORIZATION_PATH,
+    "GET /v1/persons/{email}": _NO_AUTHORIZATION_PATH,
+}
 
 
 def spec_operations(spec: Mapping[str, Any]) -> dict[str, list[int]]:
