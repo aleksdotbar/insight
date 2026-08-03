@@ -14,6 +14,8 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
 
     def repository_records(self, repo, bucket_id: int) -> Iterable[Mapping[str, Any]]:
         del bucket_id
+        if self.out_of_window(repo):
+            return
         prior = self.repository_state(repo)
         repo_updated_on = str(repo.raw.get("updated_on") or "")
         if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
@@ -30,6 +32,8 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
             old_head = previous_heads.get(branch_name)
             new_head = current_heads.get(branch_name)
             if old_head == new_head:
+                continue
+            if new_head and not old_head and not self.head_in_window(branch_by_name[branch_name]):
                 continue
             if new_head:
                 yield from self._changes(

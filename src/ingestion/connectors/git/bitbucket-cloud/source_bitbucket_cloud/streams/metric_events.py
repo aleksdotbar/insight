@@ -28,7 +28,7 @@ class RepositorySnapshotStream(BitbucketStream):
         )
         for record in records:
             identity = record.get("uuid") or record.get("id") or record.get("name")
-            if identity is None:
+            if identity is None or not self.include(record):
                 continue
             entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), identity)
             entity_keys.add(entity_key)
@@ -59,6 +59,9 @@ class RepositorySnapshotStream(BitbucketStream):
     def enabled(self, repo) -> bool:
         return True
 
+    def include(self, record: Mapping[str, Any]) -> bool:
+        return True
+
     def project(self, record: Mapping[str, Any]) -> Mapping[str, Any]:
         return {}
 
@@ -82,6 +85,12 @@ class EnvironmentsStream(RepositorySnapshotStream):
 class TagsStream(RepositorySnapshotStream):
     name = "tags"
     resource = "refs/tags"
+
+    def include(self, record: Mapping[str, Any]) -> bool:
+        tagged_at = str((record.get("target") or {}).get("date") or "")
+        if not self._start_date or not tagged_at:
+            return True
+        return tagged_at[:10] >= self._start_date
 
     def project(self, record: Mapping[str, Any]) -> Mapping[str, Any]:
         return {**record, "target_hash": (record.get("target") or {}).get("hash")}

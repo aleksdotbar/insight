@@ -14,6 +14,8 @@ class FileChangesStream(CommitRangeMixin, BitbucketIncrementalStream):
 
     def repository_records(self, repo, bucket_id: int) -> Iterable[Mapping[str, Any]]:
         del bucket_id
+        if self.out_of_window(repo):
+            return
         prior = self.repository_state(repo)
         repo_updated_on = str(repo.raw.get("updated_on") or "")
         if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
@@ -23,11 +25,12 @@ class FileChangesStream(CommitRangeMixin, BitbucketIncrementalStream):
             # range fetch entirely. This is what keeps the per-repository
             # request budget at zero for the idle majority of a large fleet.
             return
-        _, current_heads = self.branch_snapshot(repo)
+        branches, current_heads = self.branch_snapshot(repo)
         current_head_shas = sorted(set(current_heads.values()))
         previous_head_shas = prior.get("head_shas") or []
         if current_head_shas != previous_head_shas:
-            for commit in self.new_commits(repo, current_head_shas, previous_head_shas):
+            includes = current_head_shas if previous_head_shas else self.cold_includes(branches)
+            for commit in self.new_commits(repo, includes, previous_head_shas):
                 committed_date = commit.get("date")
                 if self._start_date and committed_date and str(committed_date)[:10] < self._start_date:
                     continue

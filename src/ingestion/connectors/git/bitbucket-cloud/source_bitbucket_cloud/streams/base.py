@@ -228,6 +228,16 @@ class BitbucketStream(Stream, ABC):
     def repository_records(self, repo: RepositoryRef, bucket_id: int) -> Iterable[Mapping[str, Any]]:
         raise NotImplementedError
 
+    def out_of_window(self, repo: RepositoryRef) -> bool:
+        """True when nothing a push produces can fall inside the start window.
+
+        Commits, branches and tags only appear by being pushed, and a push
+        moves the repository's updated_on, so a repository last touched before
+        start_date holds nothing this sync is asked for.
+        """
+        updated_on = str(repo.raw.get("updated_on") or "")
+        return bool(self._start_date and updated_on and updated_on[:10] < self._start_date)
+
     def bucket(self, stream_slice: Mapping[str, Any] | None) -> tuple[int, list[RepositoryRef]]:
         bucket_id = int((stream_slice or {}).get("bucket_id", 0))
         return bucket_id, self.repositories_for_slice(stream_slice)

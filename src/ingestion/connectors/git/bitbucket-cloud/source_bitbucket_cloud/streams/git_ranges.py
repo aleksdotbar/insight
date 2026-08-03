@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import date, timedelta
 from typing import TypeVar
 
 from source_bitbucket_cloud.client import BitbucketApiError, BranchRef, RepositoryCatalog, RepositoryRef
 
 Heads = TypeVar("Heads", list[str], dict[str, str])
+
+# A branch head this far behind the window can only reach commits the date
+# filter discards, and ranging it pages the whole history it points at. The
+# margin absorbs the clock skew of user-supplied commit dates.
+COLD_START_MARGIN = timedelta(days=90)
 
 # Bitbucket names only the unresolvable shas it noticed, so a repository with
 # several dead heads needs more than one pruning round; the cap keeps a
@@ -20,6 +26,22 @@ class CommitRangeMixin:
     def branch_snapshot(self, repo: RepositoryRef) -> tuple[list[BranchRef], dict[str, str]]:
         branches = self._catalog.branches(repo)
         return branches, {branch.name: branch.head_sha for branch in branches}
+
+    def head_in_window(self, branch: BranchRef) -> bool:
+        """Whether a never-ranged branch is worth reading from scratch."""
+        floor = self._cold_floor()
+        if floor is None or not branch.target_date:
+            return True
+        return str(branch.target_date)[:10] >= floor
+
+    def cold_includes(self, branches: Sequence[BranchRef]) -> list[str]:
+        return sorted({branch.head_sha for branch in branches if self.head_in_window(branch)})
+
+    def _cold_floor(self) -> str | None:
+        start_date = getattr(self, "_start_date", None)
+        if not start_date:
+            return None
+        return (date.fromisoformat(start_date) - COLD_START_MARGIN).isoformat()
 
     def retained_heads(self, current: Heads, previous: Heads) -> Heads:
         """Never trade a known head set for an empty listing.

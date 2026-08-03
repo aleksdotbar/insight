@@ -30,6 +30,8 @@ class BranchesStream(BitbucketIncrementalStream):
     cursor_field = "updated_on"
 
     def repository_records(self, repo, bucket_id: int) -> Iterable[Mapping[str, Any]]:
+        if self.out_of_window(repo):
+            return
         prior = self.repository_state(repo)
         repo_updated_on = str(repo.raw.get("updated_on") or "")
         if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
