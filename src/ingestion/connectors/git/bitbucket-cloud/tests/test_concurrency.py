@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from contextlib import closing
 
 import pytest
 from source_bitbucket_cloud.client import BitbucketApiError, RepositoryRef
@@ -313,3 +314,33 @@ class TestStateFollowsTheRecords:
         records.close()
 
         assert stream.state["repositories"] == {}, "nothing drained, nothing claimed"
+
+
+class TestOutputRotatesBetweenRepositories:
+    def test_one_fast_producer_does_not_hold_the_floor(self):
+        """A producer that refills between yields would otherwise emit its whole
+        repository first, leaving every other worker parked on a full buffer."""
+        repos = fleet_in_one_bucket(2)
+        history = 1_500
+
+        class FastClient(FleetClient):
+            def commits_between(self, repo, include, exclude):
+                return iter([{"hash": f"{repo.slug}-{index}", "date": DATE} for index in range(history)])
+
+        stream = build(repos, FastClient(repos), 2)
+        opening: list[str] = []
+
+        # The consumer has to be the slower side, otherwise it empties each
+        # queue before the producer can refill and rotation is not being tested.
+        # Closed explicitly: an abandoned read leaves workers parked, and this
+        # test is the one that fails while holding the generator.
+        with closing(stream.read_records(None, stream_slice={"bucket_id": 0})) as records:
+            for record in records:
+                opening.append(record["repo_slug"])
+                time.sleep(0.0001)
+                if len(opening) == history // 2:
+                    break
+
+        assert len(set(opening)) == 2, (
+            f"the first {len(opening)} records all came from {opening[0]}; output must rotate"
+        )

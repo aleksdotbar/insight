@@ -6,6 +6,7 @@ import logging
 import queue
 import re
 import threading
+import time
 import uuid
 from abc import ABC
 from collections import deque
@@ -38,7 +39,16 @@ STATE_VERSION = 3
 # Records a worker may run ahead of the consumer, per repository. Bounded so a
 # repository with a long history cannot buffer itself into memory.
 RECORD_BUFFER = 500
+# Records taken from one repository before moving to the next. A producer that
+# refills faster than the consumer emits would otherwise hold the floor until
+# its repository finished, leaving every other worker parked on a full buffer.
+DRAIN_BATCH = 64
 QUEUE_POLL_SECONDS = 0.5
+# A worker parks on a full buffer until the consumer catches up. If nothing is
+# consuming for this long the consumer is gone — an abandoned generator whose
+# frame something still holds — and the workers have to be released, or the
+# non-daemon pool threads keep the process alive at exit.
+ABANDONED_CONSUMER_SECONDS = 300.0
 DEFAULT_CONCURRENCY = 4
 MAX_CONCURRENCY = 16
 _READ_DONE = object()
@@ -280,7 +290,7 @@ class BitbucketStream(Stream, ABC):
     def _drain_ready(self, pending: deque[_PendingRead]) -> Iterable[Mapping[str, Any]]:
         drained_any = False
         for read in list(pending):
-            while True:
+            for _ in range(DRAIN_BATCH):
                 try:
                     item = read.records.get_nowait()
                 except queue.Empty:
@@ -348,14 +358,18 @@ class BitbucketStream(Stream, ABC):
     def apply_staged_state(self, entries: Mapping[str, Mapping[str, Any]]) -> None:
         del entries
 
-    @staticmethod
-    def _offer(records: queue.Queue[Any], item: Any, stop: threading.Event) -> bool:
+    def _offer(self, records: queue.Queue[Any], item: Any, stop: threading.Event) -> bool:
         """Park on a full buffer until the consumer catches up, or we abandon."""
+        deadline = time.monotonic() + ABANDONED_CONSUMER_SECONDS
         while not stop.is_set():
             try:
                 records.put(item, timeout=QUEUE_POLL_SECONDS)
             except queue.Full:
-                continue
+                if time.monotonic() < deadline:
+                    continue
+                logger.warning(f"{self.name}: nothing has consumed records for {ABANDONED_CONSUMER_SECONDS:.0f}s")
+                stop.set()
+                return False
             return True
         return False
 
