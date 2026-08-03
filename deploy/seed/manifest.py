@@ -33,9 +33,9 @@ MANIFEST_VERSION = 1
 # Values copied verbatim from deploy/compose/keycloak/gen-realm.py, which
 # builds the Keycloak realm from this same roster. The two must agree exactly
 # or a persona will authenticate as someone the API does not recognise.
-REALM_NAME = "insight"                      # gen-realm.py REALM_NAME
-EXECUTIVE_ORG_UNIT = "executive"            # gen-realm.py _org_unit, teamless
-OPERATOR_ORG_UNIT = "operations"            # gen-realm.py OPERATOR_ORG_UNIT
+REALM_NAME = "insight"  # gen-realm.py REALM_NAME
+EXECUTIVE_ORG_UNIT = "executive"  # gen-realm.py _org_unit, teamless
+OPERATOR_ORG_UNIT = "operations"  # gen-realm.py OPERATOR_ORG_UNIT
 ROLE_TO_REALM_ROLES: dict[str, list[str]] = {
     "ceo": ["insight-admin", "insight-lead"],
     "lead": ["insight-lead"],
@@ -86,10 +86,10 @@ CANONICAL_ENV: dict[str, str] = {
 # instead of shipping.
 _FORBIDDEN_LITERALS = frozenset(
     {
-        "insight-dev",                       # gen-realm.py dev password
+        "insight-dev",  # gen-realm.py dev password
         "insight-authenticator-dev-secret",  # gen-realm.py client secret
-        "insight-local",                     # MariaDB / ClickHouse dev password
-        "root-local",                        # MariaDB root password
+        "insight-local",  # MariaDB / ClickHouse dev password
+        "root-local",  # MariaDB root password
     }
 )
 _FORBIDDEN_KEY_SUBSTRINGS = ("password", "secret", "token", "credential", "passwd")

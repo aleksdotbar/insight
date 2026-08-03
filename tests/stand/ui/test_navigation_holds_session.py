@@ -128,7 +128,9 @@ def test_reloading_a_deep_link_holds_the_session(
     person = PersonView(page)
     person.go(persona.person.uuid)
     expect(person.person_heading(persona.person.display_name)).to_be_visible()
-    _assert_still_signed_in(page, base_url, f"loading {PersonView.path(persona.person.uuid)} directly")
+    _assert_still_signed_in(
+        page, base_url, f"loading {PersonView.path(persona.person.uuid)} directly"
+    )
 
     page.reload(wait_until="domcontentloaded")
     expect(person.person_heading(persona.person.display_name)).to_be_visible()

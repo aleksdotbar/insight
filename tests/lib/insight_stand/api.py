@@ -51,6 +51,7 @@ class StandSession(Protocol):
 
     def headers(self) -> Mapping[str, str]: ...
 
+
 #: Anything `json.loads` can return. Recursive, so a caller indexing into a
 #: decoded body keeps a real type instead of falling off into `Any`.
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]

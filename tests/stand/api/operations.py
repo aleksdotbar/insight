@@ -87,6 +87,7 @@ def _a(method: str, suffix: str) -> Operation:
 def _i(method: str, suffix: str) -> Operation:
     return Operation(method=method, path=identity_path(suffix), service="identity")
 
+
 #: analytics — 30 operations.
 ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
     _a("GET", "/v1/metrics"),

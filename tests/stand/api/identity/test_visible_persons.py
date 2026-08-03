@@ -56,9 +56,7 @@ def test_only_the_people_the_caller_may_see_come_back(
 
     response = lead_session.client.post(
         VISIBLE_PERSONS,
-        json_body={
-            "person_ids": [self_, report, outsider, other_tenant, UNKNOWN_PERSON_ID]
-        },
+        json_body={"person_ids": [self_, report, outsider, other_tenant, UNKNOWN_PERSON_ID]},
     )
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
 

@@ -26,13 +26,7 @@ from pathlib import Path
 _SEED_DIR = Path(__file__).resolve().parents[2] / "seed"
 sys.path.insert(0, str(_SEED_DIR))
 
-from profiles import (  # noqa: E402
-    TENANT_OTHER,
-    Person,
-    build_other_tenant_roster,
-    build_roster,
-    get_dev_user_email,
-)
+from profiles import TENANT_OTHER, Person, build_other_tenant_roster, build_roster, get_dev_user_email  # noqa: E402
 
 REALM_NAME = "insight"
 DEV_PASSWORD = "insight-dev"
@@ -94,12 +88,7 @@ def _protocol_mappers(tenant_id: str) -> list[dict]:
             "protocol": "openid-connect",
             "protocolMapper": "oidc-usermodel-attribute-mapper",
             "consentRequired": False,
-            "config": {
-                **common,
-                "user.attribute": "tenant_id",
-                "claim.name": "tenant_id",
-                "jsonType.label": "String",
-            },
+            "config": {**common, "user.attribute": "tenant_id", "claim.name": "tenant_id", "jsonType.label": "String"},
         },
         {
             "name": "org_unit",
@@ -233,10 +222,7 @@ def main() -> None:
     parser.add_argument(
         "--dev-email",
         default=None,
-        help=(
-            "Roster-anchor email for the dev-lead persona. Falls back to "
-            "DEV_USER_EMAIL when omitted."
-        ),
+        help=("Roster-anchor email for the dev-lead persona. Falls back to DEV_USER_EMAIL when omitted."),
     )
     parser.add_argument(
         "--authenticator-redirect",

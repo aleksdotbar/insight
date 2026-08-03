@@ -25,14 +25,7 @@ tests_stand:
   dependency_manager: "uv"
   lockfile: "tests/uv.lock"
   notes: >-
-    The Python floor matches deploy/seed/pyproject.toml, whose manifest and
-    PROFILE renderer this suite reads. uv provisions that interpreter in every
-    runner, including inside the ui-tests image whose own system Python is
-    older, so the floor holds everywhere rather than being a host-only
-    aspiration. Still outstanding: every GitHub Actions workflow pins
-    python-version "3.12", below this floor — reconciling that is CI
-    enablement's job, not a reason to lower the suite.
-
+    The Python floor matches deploy/seed/pyproject.toml, whose manifest and PROFILE renderer this suite reads. uv provisions that interpreter in every runner, including inside the ui-tests image whose own system Python is older, so the floor holds everywhere rather than being a host-only aspiration. Still outstanding: every GitHub Actions workflow pins python-version "3.12", below this floor — reconciling that is CI enablement's job, not a reason to lower the suite. #magic___^_^___line
 # Browser runner image for tests/stand — deploy/compose/ui-tests.Dockerfile.
 # Both images pinned by tag AND digest so a rebuild cannot drift. Resolved
 # 2026-07-31 from the registry tag lists, cross-checked against the
@@ -46,9 +39,4 @@ ui_tests:
   # because it is the reason uv provisions an interpreter instead of using it.
   base_image_python: "3.12.3"
   notes: >-
-    Browsers (chromium 1228) are baked into the base image and used as-is;
-    there is no `playwright install` step. The pip playwright pin must equal
-    the image's Playwright version or the package looks for a browser build the
-    image does not contain — the build asserts that, along with the interpreter
-    satisfying the >=3.13 floor and tests/lib importing on it, so a mismatch
-    fails the image rather than a journey.
+    Browsers (chromium 1228) are baked into the base image and used as-is; there is no `playwright install` step. The pip playwright pin must equal the image's Playwright version or the package looks for a browser build the image does not contain — the build asserts that, along with the interpreter satisfying the >=3.13 floor and tests/lib importing on it, so a mismatch fails the image rather than a journey.

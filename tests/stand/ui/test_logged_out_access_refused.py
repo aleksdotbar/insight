@@ -57,8 +57,7 @@ def test_an_anonymous_browser_is_sent_to_the_idp(
             "was served without a session"
         )
         assert [c["name"] for c in context.cookies(base_url)] == [], (
-            f"an anonymous visit to {route} left cookies on {base_url}: "
-            f"{context.cookies(base_url)}"
+            f"an anonymous visit to {route} left cookies on {base_url}: {context.cookies(base_url)}"
         )
     finally:
         context.close()

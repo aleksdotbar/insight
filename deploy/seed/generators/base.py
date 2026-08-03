@@ -294,8 +294,6 @@ def bulk_insert(
 
     types = [have[c] for c in columns]
     if any("DateTime" in t for t in types):
-        rows = [
-            tuple(_coerce(v, t) for v, t in zip(row, types, strict=True)) for row in rows
-        ]
+        rows = [tuple(_coerce(v, t) for v, t in zip(row, types, strict=True)) for row in rows]
     client.insert(table, rows, column_names=columns, database=schema)
     return len(rows)

@@ -108,9 +108,7 @@ def test_run_query_404_unknown(api: ApiClient) -> None:
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
 
 
-def test_run_query_415_wrong_content_type(
-    api: ApiClient, scratch_saved_query: SavedQuery
-) -> None:
+def test_run_query_415_wrong_content_type(api: ApiClient, scratch_saved_query: SavedQuery) -> None:
     """`/run` takes an OPTIONAL body, and still refuses one it cannot read.
 
     Optional is the reason to assert it separately from the create case above:
@@ -155,9 +153,7 @@ def test_a_statement_that_is_not_a_read_is_refused_on_create(
     )
 
 
-def test_an_update_revalidates_the_sql(
-    api: ApiClient, scratch_saved_query: SavedQuery
-) -> None:
+def test_an_update_revalidates_the_sql(api: ApiClient, scratch_saved_query: SavedQuery) -> None:
     """And again on update — a stored query that passed once can be rewritten.
 
     Validating only on create would leave the gate trivially bypassable: store

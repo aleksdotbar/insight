@@ -91,9 +91,9 @@ class Person:
     uuid: str
     email: str
     team: str | None  # None for the CEO and the admin operator
-    role: str         # "ceo" | "lead" | "ic" | "admin"
+    role: str  # "ceo" | "lead" | "ic" | "admin"
     parent_uuid: str | None  # report-to chain; None = no org_chart edge
-    first_name: str = ""     # assigned deterministically in build_roster
+    first_name: str = ""  # assigned deterministically in build_roster
     last_name: str = ""
 
     @property
@@ -105,16 +105,68 @@ class Person:
 # are stable. Seeded into MariaDB `identity.persons` (value_type=display_name/
 # first_name/last_name) so the UI shows names instead of falling back to email.
 _FIRST_NAMES = [
-    "Ava", "Liam", "Maya", "Noah", "Zoe", "Ethan", "Aria", "Leo", "Nora",
-    "Kai", "Ivy", "Owen", "Mila", "Ezra", "Luna", "Finn", "Ruby", "Milo",
-    "Sage", "Cole", "Iris", "Jude", "Elle", "Reid", "Wren", "Beau", "Faye",
-    "Cruz", "Tess", "Rhys",
+    "Ava",
+    "Liam",
+    "Maya",
+    "Noah",
+    "Zoe",
+    "Ethan",
+    "Aria",
+    "Leo",
+    "Nora",
+    "Kai",
+    "Ivy",
+    "Owen",
+    "Mila",
+    "Ezra",
+    "Luna",
+    "Finn",
+    "Ruby",
+    "Milo",
+    "Sage",
+    "Cole",
+    "Iris",
+    "Jude",
+    "Elle",
+    "Reid",
+    "Wren",
+    "Beau",
+    "Faye",
+    "Cruz",
+    "Tess",
+    "Rhys",
 ]
 _LAST_NAMES = [
-    "Carter", "Nguyen", "Patel", "Rivera", "Brooks", "Okafor", "Meyer",
-    "Sato", "Flores", "Haas", "Kelly", "Novak", "Reyes", "Park", "Bauer",
-    "Costa", "Lund", "Amari", "Dixon", "Frost", "Grant", "Hale", "Ivers",
-    "Jansen", "Keir", "Lowe", "Mora", "Nash", "Okeefe", "Pratt",
+    "Carter",
+    "Nguyen",
+    "Patel",
+    "Rivera",
+    "Brooks",
+    "Okafor",
+    "Meyer",
+    "Sato",
+    "Flores",
+    "Haas",
+    "Kelly",
+    "Novak",
+    "Reyes",
+    "Park",
+    "Bauer",
+    "Costa",
+    "Lund",
+    "Amari",
+    "Dixon",
+    "Frost",
+    "Grant",
+    "Hale",
+    "Ivers",
+    "Jansen",
+    "Keir",
+    "Lowe",
+    "Mora",
+    "Nash",
+    "Okeefe",
+    "Pratt",
 ]
 
 
@@ -138,57 +190,71 @@ class TeamProfile:
 
 
 TEAM_PROFILES: dict[str, TeamProfile] = {
-    "development": TeamProfile(name="development", weights={
-        "github":      1.5,   # heavy
-        "jira":        0.8,
-        "slack":       0.8,
-        "m365":        0.6,
-        "zoom":        0.6,
-        "gmail":       0.4,
-        "bamboohr":    0.6,
-        "cursor":      1.2,
-        "claude_team": 1.0,
-        "chatgpt":     0.6,
-    }),
-    "sales": TeamProfile(name="sales", weights={
-        "hubspot":    1.5,
-        "salesforce": 1.0,
-        "slack":      0.8,
-        "m365":       1.0,
-        "zoom":       1.2,
-        "gmail":      1.2,
-        "bamboohr":   0.4,
-        "chatgpt":    0.6,
-        "jira":       0.3,
-    }),
-    "hr": TeamProfile(name="hr", weights={
-        "slack":    0.6,
-        "m365":     0.8,
-        "zoom":     0.6,
-        "gmail":    0.8,
-        "bamboohr": 1.5,
-        "jira":     0.5,
-        "chatgpt":  0.4,
-    }),
-    "support": TeamProfile(name="support", weights={
-        "slack":               1.2,
-        "m365":                0.8,
-        "zoom":                0.5,
-        "gmail":               0.8,
-        "bamboohr":            0.4,
-        "jira":                1.3,
-        # No Zendesk connector in the repo — support rows use this
-        # placeholder data_source so the per-team distinction is visible.
-        "zendesk-placeholder": 1.5,
-        "chatgpt":             0.5,
-        "claude_team":         0.6,
-    }),
+    "development": TeamProfile(
+        name="development",
+        weights={
+            "github": 1.5,  # heavy
+            "jira": 0.8,
+            "slack": 0.8,
+            "m365": 0.6,
+            "zoom": 0.6,
+            "gmail": 0.4,
+            "bamboohr": 0.6,
+            "cursor": 1.2,
+            "claude_team": 1.0,
+            "chatgpt": 0.6,
+        },
+    ),
+    "sales": TeamProfile(
+        name="sales",
+        weights={
+            "hubspot": 1.5,
+            "salesforce": 1.0,
+            "slack": 0.8,
+            "m365": 1.0,
+            "zoom": 1.2,
+            "gmail": 1.2,
+            "bamboohr": 0.4,
+            "chatgpt": 0.6,
+            "jira": 0.3,
+        },
+    ),
+    "hr": TeamProfile(
+        name="hr",
+        weights={
+            "slack": 0.6,
+            "m365": 0.8,
+            "zoom": 0.6,
+            "gmail": 0.8,
+            "bamboohr": 1.5,
+            "jira": 0.5,
+            "chatgpt": 0.4,
+        },
+    ),
+    "support": TeamProfile(
+        name="support",
+        weights={
+            "slack": 1.2,
+            "m365": 0.8,
+            "zoom": 0.5,
+            "gmail": 0.8,
+            "bamboohr": 0.4,
+            "jira": 1.3,
+            # No Zendesk connector in the repo — support rows use this
+            # placeholder data_source so the per-team distinction is visible.
+            "zendesk-placeholder": 1.5,
+            "chatgpt": 0.5,
+            "claude_team": 0.6,
+        },
+    ),
 }
 
 COMPANY_EMAIL_SUFFIX = "company.nonpresent"
 
+
 def build_email(person: str) -> str:
     return f"{person}@{COMPANY_EMAIL_SUFFIX}".lower()
+
 
 def build_roster(dev_user_email: str) -> list[Person]:
     """The 25-person organisation anchored on `dev_user_email`, plus the operator."""
@@ -204,14 +270,34 @@ def build_roster(dev_user_email: str) -> list[Person]:
     )
 
     leads: list[Person] = [
-        Person(uuid=DEV_LEAD_UUID, email=dev_user_email,
-               team="development", role="lead", parent_uuid=CEO_UUID),
-        Person(uuid=SALES_LEAD_UUID, email=build_email("email_sales_lead"),
-               team="sales", role="lead", parent_uuid=CEO_UUID),
-        Person(uuid=HR_LEAD_UUID, email=build_email("email_hr_lead"),
-               team="hr", role="lead", parent_uuid=CEO_UUID),
-        Person(uuid=SUPPORT_LEAD_UUID, email=build_email("email_support_lead"),
-               team="support", role="lead", parent_uuid=CEO_UUID),
+        Person(
+            uuid=DEV_LEAD_UUID,
+            email=dev_user_email,
+            team="development",
+            role="lead",
+            parent_uuid=CEO_UUID,
+        ),
+        Person(
+            uuid=SALES_LEAD_UUID,
+            email=build_email("email_sales_lead"),
+            team="sales",
+            role="lead",
+            parent_uuid=CEO_UUID,
+        ),
+        Person(
+            uuid=HR_LEAD_UUID,
+            email=build_email("email_hr_lead"),
+            team="hr",
+            role="lead",
+            parent_uuid=CEO_UUID,
+        ),
+        Person(
+            uuid=SUPPORT_LEAD_UUID,
+            email=build_email("email_support_lead"),
+            team="support",
+            role="lead",
+            parent_uuid=CEO_UUID,
+        ),
     ]
 
     ics: list[Person] = []
@@ -219,13 +305,15 @@ def build_roster(dev_user_email: str) -> list[Person]:
         assert lead.team is not None
         tid = _TEAM_INDEX[lead.team]
         for n in range(1, 6):
-            ics.append(Person(
-                uuid=_ic_uuid(tid, n),
-                email=build_email(f"email_{lead.team}_{n:02d}"),
-                team=lead.team,
-                role="ic",
-                parent_uuid=lead.uuid,
-            ))
+            ics.append(
+                Person(
+                    uuid=_ic_uuid(tid, n),
+                    email=build_email(f"email_{lead.team}_{n:02d}"),
+                    team=lead.team,
+                    role="ic",
+                    parent_uuid=lead.uuid,
+                )
+            )
 
     # The admin operator: an account that ADMINISTERS the product rather than a
     # person the product measures. Deliberately outside the organisation, and

@@ -54,10 +54,7 @@ CHANGE_TYPES = ("added", "modified", "renamed", "deleted")
 
 def _eligible(roster: Sequence[Person]) -> list[Person]:
     """Persons whose team profile has any git weight."""
-    return [
-        p for p in roster
-        if p.team and TEAM_PROFILES[p.team].weights.get("github", 0) > 0
-    ]
+    return [p for p in roster if p.team and TEAM_PROFILES[p.team].weights.get("github", 0) > 0]
 
 
 def seed_class_git_commits(
@@ -68,10 +65,20 @@ def seed_class_git_commits(
 ) -> int:
     truncate(client, "silver", "class_git_commits")
     cols = [
-        "insight_tenant_id", "commit_hash", "project_key", "repo_slug",
+        "insight_tenant_id",
+        "commit_hash",
+        "project_key",
+        "repo_slug",
         "source_id",
-        "tenant_id", "author_email", "date", "is_merge_commit",
-        "file_path", "lines_added", "lines_removed", "data_source", "_version",
+        "tenant_id",
+        "author_email",
+        "date",
+        "is_merge_commit",
+        "file_path",
+        "lines_added",
+        "lines_removed",
+        "data_source",
+        "_version",
     ]
     rows: list[tuple[object, ...]] = []
     version = 1
@@ -88,12 +95,24 @@ def seed_class_git_commits(
                 # LOC per commit capped at ≤200 by construction.
                 added = float(rng.randint(2, 180))
                 removed = float(rng.randint(0, 80))
-                rows.append((
-                    tenant_uuid, sha.replace("-", ""), PROJECT_KEY, REPO_SLUG,
-                    SOURCE_ID,
-                    tenant_uuid, p.email, d, is_merge,
-                    "src/main.rs", added, removed, "insight_github", version,
-                ))
+                rows.append(
+                    (
+                        tenant_uuid,
+                        sha.replace("-", ""),
+                        PROJECT_KEY,
+                        REPO_SLUG,
+                        SOURCE_ID,
+                        tenant_uuid,
+                        p.email,
+                        d,
+                        is_merge,
+                        "src/main.rs",
+                        added,
+                        removed,
+                        "insight_github",
+                        version,
+                    )
+                )
     return bulk_insert(client, "silver", "class_git_commits", cols, rows)
 
 
@@ -105,16 +124,29 @@ def seed_class_git_pull_requests(
 ) -> int:
     truncate(client, "silver", "class_git_pull_requests")
     cols = [
-        "insight_tenant_id", "pr_id", "author_email", "author_name",
-        "state", "created_on", "merged_on", "closed_on",
-        "lines_added", "lines_removed", "tenant_id", "data_source", "_version",
+        "insight_tenant_id",
+        "pr_id",
+        "author_email",
+        "author_name",
+        "state",
+        "created_on",
+        "merged_on",
+        "closed_on",
+        "lines_added",
+        "lines_removed",
+        "tenant_id",
+        "data_source",
+        "_version",
         # gold/git_metric_observations puts `destination_branch` into a
         # dimension tuple whose value slot is non-nullable, and guards only
         # the empty string (`if(x = '', '__unknown__', x)`), not NULL. Emit
         # both branch names explicitly, as a real git connector would,
         # rather than relying on the column default.
-        "source_branch", "destination_branch",
-        "source_id", "project_key", "repo_slug",
+        "source_branch",
+        "destination_branch",
+        "source_id",
+        "project_key",
+        "repo_slug",
     ]
     rows: list[tuple[object, ...]] = []
     version = 1
@@ -129,13 +161,12 @@ def seed_class_git_pull_requests(
             for i in range(n_prs):
                 pr_id = deterministic_int("git.pr", p.uuid, d.isoformat(), str(i))
                 created = _dt.datetime.combine(
-                    d, _dt.time(9 + rng.randint(0, 8), rng.randint(0, 59), tzinfo=_dt.UTC),
+                    d,
+                    _dt.time(9 + rng.randint(0, 8), rng.randint(0, 59), tzinfo=_dt.UTC),
                 )
                 merged_in_h = rng.randint(1, 72) if rng.random() < 0.85 else None
                 merged_on = (
-                    created + _dt.timedelta(hours=merged_in_h)
-                    if merged_in_h is not None
-                    else None
+                    created + _dt.timedelta(hours=merged_in_h) if merged_in_h is not None else None
                 )
                 # Uppercase to match the gold model's state filters
                 # (git_metric_observations: prs.state = 'MERGED').
@@ -143,16 +174,28 @@ def seed_class_git_pull_requests(
                 merged_naive = None if merged_on is None else merged_on.replace(tzinfo=None)
                 pr_added = float(rng.randint(20, 350))
                 pr_removed = float(rng.randint(0, 180))
-                rows.append((
-                    tenant_uuid, pr_id, p.email, author_name,
-                    state, created.replace(tzinfo=None),
-                    merged_naive, merged_naive,   # closed_on tracks merged_on for merged PRs
-                    pr_added, pr_removed,
-                    tenant_uuid, "insight_github",
-                    version,
-                    f"feature/pr-{pr_id}", "main",
-                    SOURCE_ID, PROJECT_KEY, REPO_SLUG,
-                ))
+                rows.append(
+                    (
+                        tenant_uuid,
+                        pr_id,
+                        p.email,
+                        author_name,
+                        state,
+                        created.replace(tzinfo=None),
+                        merged_naive,
+                        merged_naive,  # closed_on tracks merged_on for merged PRs
+                        pr_added,
+                        pr_removed,
+                        tenant_uuid,
+                        "insight_github",
+                        version,
+                        f"feature/pr-{pr_id}",
+                        "main",
+                        SOURCE_ID,
+                        PROJECT_KEY,
+                        REPO_SLUG,
+                    )
+                )
     return bulk_insert(client, "silver", "class_git_pull_requests", cols, rows)
 
 
@@ -166,16 +209,24 @@ def seed_class_git_file_changes(
     code/spec/config classifier finds non-empty bands."""
     truncate(client, "silver", "class_git_file_changes")
     cols = [
-        "insight_tenant_id", "commit_hash", "project_key", "repo_slug",
+        "insight_tenant_id",
+        "commit_hash",
+        "project_key",
+        "repo_slug",
         "source_id",
-        "tenant_id", "file_path", "lines_added", "lines_removed", "_version",
+        "tenant_id",
+        "file_path",
+        "lines_added",
+        "lines_removed",
+        "_version",
         # gold/git_metric_observations turns these into the `file_extension`
         # and `change_type` dimensions on code_lines_added / lines_added /
         # lines_removed, mapping '' -> '__unknown__'. Left unwritten they
         # default to '', so both dimensions collapse to a single "Unknown"
         # bucket — the same output as seeding nothing. A real connector
         # derives them from the filename and the API status, so do the same.
-        "file_extension", "change_type",
+        "file_extension",
+        "change_type",
     ]
     rows: list[tuple[object, ...]] = []
     version = 1
@@ -205,13 +256,22 @@ def seed_class_git_file_changes(
                     change_type = CHANGE_TYPES[
                         deterministic_int("git.fc.change", sha_clean, str(j)) % len(CHANGE_TYPES)
                     ]
-                    rows.append((
-                        tenant_uuid, sha_clean, PROJECT_KEY, REPO_SLUG,
-                        SOURCE_ID,
-                        tenant_uuid, path,
-                        added, removed, version,
-                        extension, change_type,
-                    ))
+                    rows.append(
+                        (
+                            tenant_uuid,
+                            sha_clean,
+                            PROJECT_KEY,
+                            REPO_SLUG,
+                            SOURCE_ID,
+                            tenant_uuid,
+                            path,
+                            added,
+                            removed,
+                            version,
+                            extension,
+                            change_type,
+                        )
+                    )
     return bulk_insert(client, "silver", "class_git_file_changes", cols, rows)
 
 
@@ -236,8 +296,15 @@ def seed_class_git_pull_requests_commits(
     """
     truncate(client, "silver", "class_git_pull_requests_commits")
     cols = [
-        "tenant_id", "source_id", "project_key", "repo_slug",
-        "pr_id", "commit_hash", "commit_order", "data_source", "_version",
+        "tenant_id",
+        "source_id",
+        "project_key",
+        "repo_slug",
+        "pr_id",
+        "commit_hash",
+        "commit_order",
+        "data_source",
+        "_version",
     ]
     rows: list[tuple[object, ...]] = []
     version = 1
@@ -253,7 +320,9 @@ def seed_class_git_pull_requests_commits(
             if n_commits == 0:
                 continue
             hashes = [
-                deterministic_uuid("git.commit", p.uuid, d.isoformat(), str(i))[:40].replace("-", "")
+                deterministic_uuid("git.commit", p.uuid, d.isoformat(), str(i))[:40].replace(
+                    "-", ""
+                )
                 for i in range(n_commits)
             ]
             # Re-derive the day's PR ids the same way.
@@ -266,10 +335,19 @@ def seed_class_git_pull_requests_commits(
                 # every PR gets at least one and no commit is double-linked.
                 linked = hashes[i::n_prs] if n_prs else []
                 for order, commit_hash in enumerate(linked):
-                    rows.append((
-                        tenant_uuid, SOURCE_ID, PROJECT_KEY, REPO_SLUG,
-                        pr_id, commit_hash, order, "insight_github", version,
-                    ))
+                    rows.append(
+                        (
+                            tenant_uuid,
+                            SOURCE_ID,
+                            PROJECT_KEY,
+                            REPO_SLUG,
+                            pr_id,
+                            commit_hash,
+                            order,
+                            "insight_github",
+                            version,
+                        )
+                    )
     return bulk_insert(client, "silver", "class_git_pull_requests_commits", cols, rows)
 
 
@@ -281,9 +359,14 @@ def generate(
 ) -> dict[str, int]:
     _ = clamp  # imported for future use; silence unused warning under strict ruff
     return {
-        "silver.class_git_commits":       seed_class_git_commits(client, roster, tenant_uuid, days),
-        "silver.class_git_pull_requests": seed_class_git_pull_requests(client, roster, tenant_uuid, days),
-        "silver.class_git_file_changes":  seed_class_git_file_changes(client, roster, tenant_uuid, days),
-        "silver.class_git_pull_requests_commits":
-            seed_class_git_pull_requests_commits(client, roster, tenant_uuid, days),
+        "silver.class_git_commits": seed_class_git_commits(client, roster, tenant_uuid, days),
+        "silver.class_git_pull_requests": seed_class_git_pull_requests(
+            client, roster, tenant_uuid, days
+        ),
+        "silver.class_git_file_changes": seed_class_git_file_changes(
+            client, roster, tenant_uuid, days
+        ),
+        "silver.class_git_pull_requests_commits": seed_class_git_pull_requests_commits(
+            client, roster, tenant_uuid, days
+        ),
     }

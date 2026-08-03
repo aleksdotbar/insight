@@ -106,12 +106,14 @@ def seed_table_columns(cur: pymysql.cursors.Cursor) -> list[dict[str, str]]:
 #: so the SQL it builds carries identifiers rather than only bound values —
 #: which means the identifiers need a source of truth that is not the query
 #: itself. This is it: a name absent from here never reaches a statement.
-_KNOWN_TABLES: frozenset[str] = frozenset({
-    "table_columns",
-    "metric_definitions",
-    "metric_definition_inputs",
-    "metric_definition_dimensions",
-})
+_KNOWN_TABLES: frozenset[str] = frozenset(
+    {
+        "table_columns",
+        "metric_definitions",
+        "metric_definition_inputs",
+        "metric_definition_dimensions",
+    }
+)
 
 #: MySQL identifier shape. Deliberately narrower than what MySQL accepts: every
 #: column in this schema is snake_case ASCII, so anything else is either a
@@ -201,7 +203,9 @@ def _clone_children(cur: pymysql.cursors.Cursor, table: str, src: bytes, dst: by
     return len(rows)
 
 
-def seed_definition_override(cur: pymysql.cursors.Cursor, tenant_uuid: str) -> dict[str, str] | None:
+def seed_definition_override(
+    cur: pymysql.cursors.Cursor, tenant_uuid: str
+) -> dict[str, str] | None:
     """Override one product definition's label for this tenant.
 
     WHICH key is chosen at seed time rather than pinned here: the product's
@@ -226,8 +230,7 @@ def seed_definition_override(cur: pymysql.cursors.Cursor, tenant_uuid: str) -> d
     columns = _writable_columns(cur, "metric_definitions")
     selected = _column_list(columns)
     cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        f"SELECT {selected} FROM {definitions} "
-        "WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
+        f"SELECT {selected} FROM {definitions} WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
     )
     row = cur.fetchone()
     if row is None:

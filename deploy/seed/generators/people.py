@@ -42,27 +42,27 @@ if TYPE_CHECKING:
 
 _TEAM_DEPARTMENT = {
     "development": "Development",
-    "sales":       "Sales",
-    "hr":          "HR",
-    "support":     "Support",
+    "sales": "Sales",
+    "hr": "HR",
+    "support": "Support",
 }
 
 _TEAM_DIVISION = {
     "development": "Engineering",
-    "sales":       "Go-to-Market",
-    "hr":          "People Ops",
-    "support":     "Customer Success",
+    "sales": "Go-to-Market",
+    "hr": "People Ops",
+    "support": "Customer Success",
 }
 
 _JOB_TITLES = {
-    ("development", "lead"):  "Engineering Manager",
-    ("development", "ic"):    "Software Engineer",
-    ("sales", "lead"):        "Sales Manager",
-    ("sales", "ic"):          "Account Executive",
-    ("hr", "lead"):           "HR Lead",
-    ("hr", "ic"):             "People Partner",
-    ("support", "lead"):      "Support Lead",
-    ("support", "ic"):        "Support Engineer",
+    ("development", "lead"): "Engineering Manager",
+    ("development", "ic"): "Software Engineer",
+    ("sales", "lead"): "Sales Manager",
+    ("sales", "ic"): "Account Executive",
+    ("hr", "lead"): "HR Lead",
+    ("hr", "ic"): "People Partner",
+    ("support", "lead"): "Support Lead",
+    ("support", "ic"): "Support Engineer",
 }
 
 
@@ -127,12 +127,14 @@ def seed_class_people(
     rows: list[tuple[object, ...]] = []
     for p in _measured_persons(roster):
         dept = _TEAM_DEPARTMENT.get(p.team or "", "Executive")
-        rows.append((
-            deterministic_uuid("class_people", p.email),
-            p.email.lower(),
-            dept,
-            tenant_uuid,
-        ))
+        rows.append(
+            (
+                deterministic_uuid("class_people", p.email),
+                p.email.lower(),
+                dept,
+                tenant_uuid,
+            )
+        )
     return bulk_insert(client, "silver", "class_people", cols, rows)
 
 
@@ -223,19 +225,21 @@ def seed_bamboohr_employees(
         if sup_email is not None:
             sup = next(q for q in roster if q.email == sup_email)
             sup_name = _display_name(sup)
-        rows.append((
-            deterministic_uuid("bamboohr.employee", p.email),
-            "Active",
-            first or full,
-            last or "",
-            full,
-            p.email,
-            _TEAM_DEPARTMENT.get(p.team or "", "Executive"),
-            _TEAM_DIVISION.get(p.team or "", "Executive"),
-            _job_title(p),
-            (sup_email or ""),
-            sup_name,
-        ))
+        rows.append(
+            (
+                deterministic_uuid("bamboohr.employee", p.email),
+                "Active",
+                first or full,
+                last or "",
+                full,
+                p.email,
+                _TEAM_DEPARTMENT.get(p.team or "", "Executive"),
+                _TEAM_DIVISION.get(p.team or "", "Executive"),
+                _job_title(p),
+                (sup_email or ""),
+                sup_name,
+            )
+        )
     return bulk_insert(client, "bronze_bamboohr", "employees", cols, rows)
 
 
@@ -245,7 +249,7 @@ def generate(
     tenant_uuid: str,
 ) -> dict[str, int]:
     return {
-        "silver.class_people":           seed_class_people(client, roster, tenant_uuid),
-        "identity.identity_persons":     seed_identity_persons(client, roster, tenant_uuid),
-        "bronze_bamboohr.employees":     seed_bamboohr_employees(client, roster),
+        "silver.class_people": seed_class_people(client, roster, tenant_uuid),
+        "identity.identity_persons": seed_identity_persons(client, roster, tenant_uuid),
+        "bronze_bamboohr.employees": seed_bamboohr_employees(client, roster),
     }
