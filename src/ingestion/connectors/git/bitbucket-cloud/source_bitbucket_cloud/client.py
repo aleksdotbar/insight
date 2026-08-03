@@ -352,6 +352,30 @@ class BitbucketClient:
     # dedups any overlap by unique_key.
     COMMITS_INCLUDE_CHUNK = 100
 
+    # Everything the commit streams read. The default payload additionally
+    # carries the message rendered to HTML, a summary rendering of it again,
+    # and a links map per commit — several times this projection, multiplied by
+    # the highest-volume endpoint in the connector. A field misspelled here is
+    # silently dropped by the API and surfaces as a NULL column, so the list is
+    # pinned by a test against the commits schema.
+    COMMIT_FIELDS = ",".join(
+        [
+            "values.hash",
+            "values.date",
+            "values.message",
+            "values.author.raw",
+            "values.author.user.display_name",
+            "values.author.user.uuid",
+            "values.author.user.account_id",
+            "values.committer.raw",
+            "values.committer.user.display_name",
+            "values.committer.user.uuid",
+            "values.committer.user.account_id",
+            "values.parents.hash",
+            "next",
+        ]
+    )
+
     def commits_between(
         self, repo: RepositoryRef, current_heads: Sequence[str], previous_heads: Sequence[str]
     ) -> Iterable[Mapping[str, Any]]:
@@ -367,7 +391,7 @@ class BitbucketClient:
             yield from self.paginate(
                 self.repo_path(repo, "commits"),
                 method="POST",
-                params={"pagelen": "100"},
+                params={"pagelen": "100", "fields": self.COMMIT_FIELDS},
                 data=form,
             )
 
