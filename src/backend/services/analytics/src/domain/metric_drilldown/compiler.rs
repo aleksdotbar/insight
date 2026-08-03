@@ -11,14 +11,11 @@ use super::dto::{
 };
 use super::error::config_error;
 
-/// The entity predicate translates the canonical person id into that person's
-/// CURRENT source emails through the same resolution map the gold build joins
-/// (`identity.identity_persons`, latest-observation-wins per email): the
-/// evidence relations stay email-keyed on purpose — coverage measures the
-/// resolution gap from them — so the translation happens here, at read time.
-/// Rows can drift from the observation the user clicked between an identity
-/// sync and the next gold rebuild; evidence is advisory detail, and the
-/// alternative (persisting the map each build) buys little for the cost.
+/// `entity_id` on the evidence relations is the canonical person id since the
+/// identity cutover, resolved ONCE per gold build — the same snapshot the
+/// observation the user clicked was attributed with, so drilldown explains
+/// exactly that selection (no read-time re-resolution, no drift between an
+/// identity sync and the next rebuild; the snapshot check covers both).
 pub fn compile_query(
     req: &ValidatedMetricDrilldown,
 ) -> Result<(String, Vec<String>), CanonicalError> {
@@ -44,6 +41,7 @@ fn compile_value_query(req: &ValidatedMetricDrilldown) -> (String, Vec<String>) 
         params.push(input.role.as_db().to_owned());
     }
     params.extend([
+        req.tenant_id.to_string(),
         req.plan.source_key.clone(),
         req.selection.entity.r#type.clone(),
         req.selection.entity.id.clone(),
@@ -64,6 +62,8 @@ fn compile_value_query(req: &ValidatedMetricDrilldown) -> (String, Vec<String>) 
         &mut params,
     );
     let limit = req.limit + 1;
+    let tenant =
+        crate::domain::metric_results::compiler::tenant_predicate(req.enforce_tenant_scope);
     let sql = format!(
         "WITH {role_expr} AS role \
          SELECT role, toString(evidence.metric_date) AS metric_date, ifNull(toString(evidence.observed_at), '') AS observed_at, \
@@ -73,12 +73,7 @@ fn compile_value_query(req: &ValidatedMetricDrilldown) -> (String, Vec<String>) 
                 ifNull(evidence.subject_key, '') AS subject_key, \
                 toJSONString(evidence.dimensions) AS dimensions_json, evidence.details \
          FROM {database}.{table} AS evidence \
-         WHERE evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id IN (SELECT email FROM (\
-             SELECT lower(trimBoth(value_effective)) AS email, person_id \
-             FROM identity.identity_persons \
-             WHERE value_type = 'email' AND value_effective IS NOT NULL AND trimBoth(value_effective) != '' \
-             ORDER BY email, created_at DESC, id DESC LIMIT 1 BY email\
-         ) WHERE person_id = toUUID(?)) \
+         WHERE {tenant} AND evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id = ? \
            AND evidence.metric_date >= toDate(?) AND evidence.metric_date <= toDate(?) \
            AND evidence.measure_key IN ({measures}){filter_sql}{cursor_sql} \
          ORDER BY role, metric_date, ifNull(toString(observed_at), ''), source_key, measure_key, record_id, record_kind, ifNull(subject_key, '') \
@@ -106,6 +101,7 @@ fn compile_ratio_query(
     let mut params = vec![
         numerator.measure_key.clone(),
         denominator.measure_key.clone(),
+        req.tenant_id.to_string(),
         req.plan.source_key.clone(),
         req.selection.entity.r#type.clone(),
         req.selection.entity.id.clone(),
@@ -122,6 +118,8 @@ fn compile_ratio_query(
         &mut params,
     );
     let limit = req.limit + 1;
+    let tenant =
+        crate::domain::metric_results::compiler::tenant_predicate(req.enforce_tenant_scope);
     let sql = format!(
         "SELECT * FROM (\
             SELECT 'value' AS role, toString(evidence.metric_date) AS metric_date, \
@@ -134,12 +132,7 @@ fn compile_ratio_query(
                    '' AS subject_key, any(toJSONString(evidence.dimensions)) AS dimensions_json, \
                    CAST(map() AS Map(String, String)) AS details \
             FROM {database}.{table} AS evidence \
-            WHERE evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id IN (SELECT email FROM (\
-             SELECT lower(trimBoth(value_effective)) AS email, person_id \
-             FROM identity.identity_persons \
-             WHERE value_type = 'email' AND value_effective IS NOT NULL AND trimBoth(value_effective) != '' \
-             ORDER BY email, created_at DESC, id DESC LIMIT 1 BY email\
-         ) WHERE person_id = toUUID(?)) \
+            WHERE {tenant} AND evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id = ? \
               AND evidence.metric_date >= toDate(?) AND evidence.metric_date <= toDate(?) \
               AND evidence.measure_key IN (?, ?){filter_sql} \
             GROUP BY evidence.metric_date\
@@ -213,7 +206,9 @@ mod tests {
     use crate::domain::metric_definitions::EvidenceGranularity;
     use crate::domain::metric_drilldown::dto::EvidencePresentation;
     use crate::domain::metric_drilldown::presentation::evidence_presentation;
-    use crate::domain::metric_drilldown::test_support::{TEST_PERSON, input, plan, validated};
+    use crate::domain::metric_drilldown::test_support::{
+        TEST_PERSON, TEST_TENANT, input, plan, validated,
+    };
 
     #[test]
     fn value_query_binds_filters_and_cursor() {
@@ -258,9 +253,10 @@ mod tests {
             [
                 "commit_count", // role expression branch
                 "value",
-                "git", // scope: source, entity type, entity id
+                &TEST_TENANT.to_string(), // tenant predicate leads the scope
+                "git",                    // scope: source, entity type, entity id
                 "person",
-                &TEST_PERSON.to_string(), // resolved to source emails via the identity map
+                &TEST_PERSON.to_string(), // canonical entity_id, resolved at build time
                 "2026-07-01",             // period bounds
                 "2026-07-31",
                 "commit_count", // measure_key IN
@@ -323,9 +319,10 @@ mod tests {
             [
                 "focus_hours", // sumIf numerator, then denominator
                 "work_hours",
-                "git", // scope: source, entity type, entity id
+                &TEST_TENANT.to_string(), // tenant predicate leads the scope
+                "git",                    // scope: source, entity type, entity id
                 "person",
-                &TEST_PERSON.to_string(), // resolved to source emails via the identity map
+                &TEST_PERSON.to_string(), // canonical entity_id, resolved at build time
                 "2026-07-01",             // period bounds
                 "2026-07-31",
                 "focus_hours", // measure_key IN

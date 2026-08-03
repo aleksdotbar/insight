@@ -18,11 +18,10 @@ SELECT
     tenant_id,
     source_key,
     entity_type,
-    -- entity_id IS the canonical person id: `entity_type + entity_id`
-    -- identifies the measured entity, so the resolved UUID goes in it rather
-    -- than beside it. The source-native email stays in the evidence relations,
-    -- which identity_resolution_coverage measures the resolution gap from.
-    {{ canonical_entity_id() }},
+    -- entity_id arrives ALREADY canonical from evidence (resolved once per
+    -- build); '' marks a row identity could not resolve, which stays out of
+    -- every serving relation and is counted by identity_resolution_coverage.
+    entity_id,
     metric_date,
     CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
     measure_key,
@@ -30,9 +29,6 @@ SELECT
     CAST(NULL AS Nullable(String)) AS subject_key,
     dimensions
 FROM {{ ref('wiki_metric_evidence') }}
-{{ resolved_person_id_join("wiki_metric_evidence") }}
-WHERE {{ resolved_only() }}
--- Grouped on the join column, not the `entity_id` alias: an alias shadowing a
--- source column lands the aggregate in the outer scope (ILLEGAL_AGGREGATION).
--- One person's several source emails now collapse into one canonical row.
-GROUP BY tenant_id, source_key, entity_type, identity_map.person_id, metric_date, measure_key, dimensions
+WHERE entity_id != ''
+-- One person's several source accounts collapse into one canonical row.
+GROUP BY tenant_id, source_key, entity_type, entity_id, metric_date, measure_key, dimensions

@@ -30,7 +30,8 @@ pub async fn query_metric_drilldown(
     Json(req): Json<MetricDrilldownRequest>,
 ) -> Result<Json<MetricDrilldownResponse>, CanonicalError> {
     let started = Instant::now();
-    let req = validate_request(&state.db, &state.ch, ctx.subject_tenant_id(), req).await?;
+    let mut req = validate_request(&state.db, &state.ch, ctx.subject_tenant_id(), req).await?;
+    req.enforce_tenant_scope = state.config.metric_catalog.enforce_tenant_scope;
 
     // Visibility gate BEFORE any ClickHouse work, same predicate and failure
     // matrix as `/v1/metric-results`: this endpoint serves per-person evidence

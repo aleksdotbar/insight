@@ -50,20 +50,9 @@
 {% endmacro %}
 
 {#-
-  Companions for the observation models' final projections, so the join and
-  the column read identically across every model (and grep finds one shape):
-
-      SELECT
-          ...,
-          {{ resolved_person_id_column() }},
-          ...
-      FROM value_measures
-      {{ resolved_person_id_join('value_measures') }}
-      WHERE ...
-
-  The `if` keeps a join miss an honest NULL instead of the zero UUID a plain
-  LEFT JOIN default would mint — join_use_nulls deliberately stays off
-  model-wide so the models' other joins keep their semantics.
+  Companions for the models that join the map directly (the evidence wrappers
+  and the cohort relation): the join and the resolved-check read identically
+  across consumers, so grep finds one shape.
 -#}
 
 {% macro resolved_person_id_join(rel) %}
@@ -71,13 +60,6 @@
         ON identity_map.email = lower(trimBoth({{ rel }}.entity_id))
 {% endmacro %}
 
-{% macro resolved_person_id_column() %}
-    if(
-        identity_map.email != '',
-        toNullable(identity_map.person_id),
-        CAST(NULL AS Nullable(UUID))
-    ) AS person_id
-{% endmacro %}
 
 {#-
   The canonical serving shape: `entity_type + entity_id` identifies the

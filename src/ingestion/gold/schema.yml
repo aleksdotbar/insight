@@ -26,7 +26,17 @@ models:
               arguments:
                 values: ['person']
       - name: entity_id
-        description: "Normalized measured entity identifier"
+        description: >
+          Canonical person id, resolved ONCE per gold build ('' when identity
+          does not know the source email — those rows stay for coverage and
+          reach no serving relation). The same snapshot every downstream
+          relation answers for.
+        tests:
+          - not_null
+      - name: source_entity_id
+        description: >
+          Source-native email the row was resolved from — provenance and the
+          coverage denominator; never a serving key.
         tests:
           - not_null
       - name: metric_date
@@ -124,12 +134,11 @@ models:
       - name: entity_id
         description: >
           Canonical person id — `entity_type + entity_id` identifies the
-          measured entity, and for a person that identity IS the person id
-          resolved from the identity log (resolve_person_id macro). Source
-          rows whose email identity cannot resolve are absent: with entity_id
-          being the person id there is nothing to serve them under, and
-          identity_resolution_coverage measures that gap from the evidence
-          relations, which keep every source row keyed by its email.
+          measured entity, and for a person that identity IS the person id,
+          stamped into the evidence relations once per gold build. Source rows
+          whose email identity cannot resolve never reach this relation;
+          identity_resolution_coverage counts them from evidence, which keeps
+          the source email as source_entity_id.
         tests:
           - not_null
       - name: metric_date
@@ -207,12 +216,11 @@ models:
       - name: entity_id
         description: >
           Canonical person id — `entity_type + entity_id` identifies the
-          measured entity, and for a person that identity IS the person id
-          resolved from the identity log (resolve_person_id macro). Source
-          rows whose email identity cannot resolve are absent: with entity_id
-          being the person id there is nothing to serve them under, and
-          identity_resolution_coverage measures that gap from the evidence
-          relations, which keep every source row keyed by its email.
+          measured entity, and for a person that identity IS the person id,
+          stamped into the evidence relations once per gold build. Source rows
+          whose email identity cannot resolve never reach this relation;
+          identity_resolution_coverage counts them from evidence, which keeps
+          the source email as source_entity_id.
         tests:
           - not_null
       - name: metric_date
@@ -295,12 +303,11 @@ models:
       - name: entity_id
         description: >
           Canonical person id — `entity_type + entity_id` identifies the
-          measured entity, and for a person that identity IS the person id
-          resolved from the identity log (resolve_person_id macro). Source
-          rows whose email identity cannot resolve are absent: with entity_id
-          being the person id there is nothing to serve them under, and
-          identity_resolution_coverage measures that gap from the evidence
-          relations, which keep every source row keyed by its email.
+          measured entity, and for a person that identity IS the person id,
+          stamped into the evidence relations once per gold build. Source rows
+          whose email identity cannot resolve never reach this relation;
+          identity_resolution_coverage counts them from evidence, which keeps
+          the source email as source_entity_id.
         tests:
           - not_null
       - name: metric_date
@@ -393,12 +400,11 @@ models:
       - name: entity_id
         description: >
           Canonical person id — `entity_type + entity_id` identifies the
-          measured entity, and for a person that identity IS the person id
-          resolved from the identity log (resolve_person_id macro). Source
-          rows whose email identity cannot resolve are absent: with entity_id
-          being the person id there is nothing to serve them under, and
-          identity_resolution_coverage measures that gap from the evidence
-          relations, which keep every source row keyed by its email.
+          measured entity, and for a person that identity IS the person id,
+          stamped into the evidence relations once per gold build. Source rows
+          whose email identity cannot resolve never reach this relation;
+          identity_resolution_coverage counts them from evidence, which keeps
+          the source email as source_entity_id.
         tests:
           - not_null
       - name: metric_date
@@ -519,12 +525,11 @@ models:
       - name: entity_id
         description: >
           Canonical person id — `entity_type + entity_id` identifies the
-          measured entity, and for a person that identity IS the person id
-          resolved from the identity log (resolve_person_id macro). Source
-          rows whose email identity cannot resolve are absent: with entity_id
-          being the person id there is nothing to serve them under, and
-          identity_resolution_coverage measures that gap from the evidence
-          relations, which keep every source row keyed by its email.
+          measured entity, and for a person that identity IS the person id,
+          stamped into the evidence relations once per gold build. Source rows
+          whose email identity cannot resolve never reach this relation;
+          identity_resolution_coverage counts them from evidence, which keeps
+          the source email as source_entity_id.
         tests:
           - not_null
       - name: metric_date
@@ -585,12 +590,11 @@ models:
       - name: entity_id
         description: >
           Canonical person id — `entity_type + entity_id` identifies the
-          measured entity, and for a person that identity IS the person id
-          resolved from the identity log (resolve_person_id macro). Source
-          rows whose email identity cannot resolve are absent: with entity_id
-          being the person id there is nothing to serve them under, and
-          identity_resolution_coverage measures that gap from the evidence
-          relations, which keep every source row keyed by its email.
+          measured entity, and for a person that identity IS the person id,
+          stamped into the evidence relations once per gold build. Source rows
+          whose email identity cannot resolve never reach this relation;
+          identity_resolution_coverage counts them from evidence, which keeps
+          the source email as source_entity_id.
         tests:
           - not_null
       - name: cohort_key
@@ -607,15 +611,16 @@ models:
 
   - name: identity_resolution_coverage
     description: >
-      Identity-resolution match rate measured over ACTIVITY (observation
+      Identity-resolution match rate measured over ACTIVITY (evidence source
       rows), one row per source (git/ai_usage/collab/task/wiki) plus
-      hr_cohorts for the peer-membership view. Row-weighted on purpose —
+      hr_cohorts for the peer-membership relation. A TABLE materialized in
+      the same gold build as the serving relations, reading the resolution
+      snapshot stamped into evidence — so coverage answers for exactly what
+      is served, never a fresher map. Row-weighted on purpose —
       unresolved_rows counts what the dashboards actually lose;
       unresolved_people counts the distinct unknown emails behind the gap
       (roughly the operator decisions that would close it). The "match rate
       is reported" surface of the identity epic for the metrics pipeline.
-      A view: always exactly as fresh as the last gold build + the identity
-      sync that preceded it.
     columns:
       - name: source_key
         description: "Observation source_key, or 'hr_cohorts' for the cohort membership"

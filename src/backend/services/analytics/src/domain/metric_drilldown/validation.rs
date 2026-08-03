@@ -148,6 +148,10 @@ async fn validate_common(
     Ok(ValidatedMetricDrilldown {
         selection,
         person_id,
+        tenant_id,
+        // The handler overwrites this from config; false is the runtime-wide
+        // default (#1967) so tests compile queries in the degraded form.
+        enforce_tenant_scope: false,
         from,
         to,
         limit,

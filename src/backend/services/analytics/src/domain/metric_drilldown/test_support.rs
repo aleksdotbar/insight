@@ -78,6 +78,7 @@ pub(super) fn row() -> EvidenceQueryRow {
 }
 
 pub(super) const TEST_PERSON: Uuid = Uuid::from_u128(0x019e_2830_0000_7000_8000_0000_0000_0001);
+pub(super) const TEST_TENANT: Uuid = Uuid::from_u128(0x019e_2830_0000_7000_8000_0000_0000_00aa);
 
 pub(super) fn validated(plan: EvidencePlan) -> ValidatedMetricDrilldown {
     let selection = MetricDrilldownSelection {
@@ -98,6 +99,8 @@ pub(super) fn validated(plan: EvidencePlan) -> ValidatedMetricDrilldown {
     };
     ValidatedMetricDrilldown {
         person_id: TEST_PERSON,
+        tenant_id: TEST_TENANT,
+        enforce_tenant_scope: true,
         fingerprint: selection_fingerprint(Uuid::nil(), &selection)
             .unwrap_or_else(|error| panic!("selection fingerprint must build: {error}")),
         selection,

@@ -1,5 +1,7 @@
 {{ config(
-    materialized='view',
+    materialized='table',
+    engine='MergeTree',
+    order_by=['tenant_id', 'entity_type', 'cohort_key', 'entity_id'],
     schema='insight',
     alias='metric_entity_cohorts_current',
     tags=['gold']
@@ -19,8 +21,11 @@
 -- wrong team's percentiles. The guard lives here, at the grain it applies to,
 -- not in every query that reads this view.
 --
--- A view: the resolution join runs per peer request, which is fine while the
--- identity log is thousands of rows; materialize if that ever changes.
+-- A TABLE, materialized in the same gold build as the observation relations:
+-- as a view it resolved against the LIVE identity map on every peer request,
+-- so after an identity sync and before the next gold rebuild its entity_id
+-- could disagree with the observations' — missing targets and wrong peer
+-- membership. One build, one resolution snapshot, everywhere.
 
 -- `resolved_cohort_id`, NOT `cohort_id`: an aggregate alias that shadows the
 -- source column makes ClickHouse read it as an aggregate inside an aggregate
