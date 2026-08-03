@@ -1,9 +1,8 @@
 # The compose-stand suite
 
 Deployed-stand tests for Insight: a real Keycloak login, four browser
-journeys against the SPA, an API-contract suite, and a metrics harness — all
-run against a local `docker-compose` stand seeded deterministically for
-tests (`deploy/seed`).
+journeys against the SPA, and an API-contract suite — all run against a local
+`docker-compose` stand seeded deterministically for tests (`deploy/seed`).
 
 This suite assumes an **already-running, already-seeded** stand. It never
 starts compose, applies migrations, or spawns service processes itself —
@@ -19,7 +18,6 @@ persona resolution) lives in `../lib`; both are one uv project
 | `conftest.py` | Session wiring: manifest loading, `--stand-manifest`, the `session_for` persona factory, `requires_seed` / capability-marker enforcement. |
 | `api/` | HTTP contract tests — no browser. |
 | `ui/` | The four browser journeys, plus `ui/pages/` (page objects). |
-| `metrics/` | The golden-metrics harness. |
 
 ## Running it locally
 
@@ -64,11 +62,12 @@ disagree. Before adding a test, read it for:
 - **the roster and fixtures** — the `fixtures{}` table is the set of stable,
   role-shaped names (`dev_lead`, `admin_operator`, …) a test may declare
   against; a raw email or UUID is never a stable target.
-- **populated / golden metrics** — as of this suite, that table is empty by
-  design (see `deploy/seed/golden_metrics.py`'s admission criteria). A test
-  asserting a metric's exact value has nothing to read yet; check this table
-  before writing one so you don't duplicate that gap or assert a value the
-  seed cannot yet promise.
+- **populated / golden metrics** — that table is empty by design (see
+  `deploy/seed/golden_metrics.py`'s admission criteria: an expectation must be
+  computable from the seed inputs, not read back out of the gold layer). No
+  test here asserts a metric's exact value, and none should until the table
+  has entries — reading a number off a running stand and asserting it back
+  only proves that the code which produced it produced it.
 - **capabilities** — e.g. `ingestion`, which this stand does not have
   (compose seeds silver/gold directly). A test that needs a capability the
   stand may lack should carry the matching marker (below), not assume it.
@@ -133,9 +132,13 @@ isolation and the service-principal route are left to the in-process
 `bronze-to-api` rig; `/v1/columns` is asserted only against an empty
 universe (the seed does not populate `table_columns`).
 
-Three gaps worth naming separately, because none of them is "nobody got to
-it" — each follows from what a deployed stand is:
+Four gaps worth naming separately, because none of them is "nobody got to
+it":
 
+- **No metrics harness.** There is no suite here that asserts a served metric
+  against a declared expectation. One was written and is being migrated
+  separately, so this directory has `api/` and `ui/` and nothing else — do not
+  read the absence as "metric values are not worth testing".
 - **Nothing measures this suite's own coverage.** There is no per-operation,
   per-status-code gate here, so a route that gains a status code no test
   exercises goes unreported. The rig has one

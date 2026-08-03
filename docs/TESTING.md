@@ -106,17 +106,18 @@ cd src/ingestion/tests/e2e
   **shallow acceptance validation** runs in **Beta**.
 - Every user-facing surface **should** have at least one smoke assertion.
 - A separate **compose-stand suite** (`tests/stand`, documented in `tests/stand/README.md`) drives a real Keycloak
-  login and four browser journeys against the SPA, an API-contract suite, and a metrics harness — all against a
-  local `docker-compose` stand seeded deterministically for tests (`deploy/seed`). Run it with
-  `./dev-compose.sh test-stand up|test|down`.
+  login and four browser journeys against the SPA, plus an API-contract suite — all against a local
+  `docker-compose` stand seeded deterministically for tests (`deploy/seed`). Run it with
+  `./dev-compose.sh test-stand up|test|down`. It asserts no metric VALUE: the seed's `golden_metrics` is empty by
+  design, and a harness for it is being migrated separately.
 
 **CI:** `functional-k3s.yml` — ephemeral k3d install. Today it only *installs*; a real smoke must build + import the
 PR's images and assert `/health` + a few golden metrics.
 
-**CI:** `e2e-stand.yml` — two **non-required** checks against the compose-stand suite: `api-smoke` (112 HTTP
-contract tests, no browser) and `ui-journeys` (12 tests: the four browser journeys plus the metrics harness, run
-inside the published `ui-tests` image). Neither blocks merge — both stand up a full stack against a live IdP and,
-as of this writing, have not yet run in GitHub Actions, so their flake rate is unmeasured.
+**CI:** `e2e-stand.yml` — two **non-required** checks against the compose-stand suite: `api-smoke` (117 HTTP
+contract tests, no browser) and `ui-journeys` (10 tests: the four browser journeys, run inside the published
+`ui-tests` image). Neither blocks merge — both stand up a full stack against a live IdP and their flake rate is
+still unmeasured.
 
 ---
 

@@ -188,6 +188,11 @@ class GoldenMetric:
     design. See `deploy/seed/golden_metrics.py` for why, and read
     `Manifest.golden_metrics_note` to tell "none measured yet" apart from
     "measured and genuinely zero".
+
+    No test under `stand/` reads this yet: the harness that did is being
+    migrated separately. It is parsed regardless because `Manifest` models the
+    document the seed writes — dropping the field would mean a manifest missing
+    it stopped being an error, which is the opposite of what a reader is for.
     """
 
     metric_key: str

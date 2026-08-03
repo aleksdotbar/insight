@@ -9,9 +9,9 @@ name: E2E — Compose stand
 # Two independently-reporting checks, split by what they need rather than by
 # what they cover:
 #
-#   api-smoke    tests/stand/api  — 117 HTTP contract tests. No browser.
-#   ui-journeys  tests/stand/ui + tests/stand/metrics — the browser journeys,
-#                run inside the published ui-tests image.
+#   api-smoke    tests/stand/api — 117 HTTP contract tests. No browser.
+#   ui-journeys  tests/stand/ui  — the browser journeys, run inside the
+#                published ui-tests image.
 #
 # **Both are NON-REQUIRED and are deliberately in no branch-protection
 # ruleset.** They stand up a full stack against a live IdP; until they have a
@@ -105,9 +105,9 @@ jobs:
   # ─── api-smoke ────────────────────────────────────────────────────────────
   # HTTP-only, so it runs from the repo with uv rather than in the browser
   # image. `--ignore` rather than a path argument: `test-stand test` always
-  # passes `tests/stand` to pytest and forwards these on top, so naming a
+  # passes `tests/stand` to pytest and forwards this on top, so naming a
   # subdirectory would ADD to the full collection instead of narrowing it.
-  # Measured: 117 collected here, 12 in ui-journeys, 129 for the whole suite.
+  # Measured: 117 collected here, 10 in ui-journeys, 127 for the whole suite.
   api-smoke:
     name: api-smoke
     needs: resolve-target
@@ -146,10 +146,7 @@ jobs:
         run: ./dev-compose.sh test-stand up
 
       - name: Run the API suite
-        run: |
-          ./dev-compose.sh test-stand test \
-            --ignore=tests/stand/ui \
-            --ignore=tests/stand/metrics
+        run: ./dev-compose.sh test-stand test --ignore=tests/stand/ui
 
       - name: Dump diagnostics on failure
         if: failure()
@@ -261,7 +258,7 @@ jobs:
       - name: Run the browser journeys
         run: |
           ./dev-compose.sh test-stand test --image "$UI_TESTS_IMAGE" \
-            /tests/stand/ui /tests/stand/metrics \
+            /tests/stand/ui \
             --browser chromium \
             --tracing=retain-on-failure \
             --screenshot=only-on-failure \
