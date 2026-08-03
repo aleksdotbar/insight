@@ -61,6 +61,15 @@ CAPABILITY_MARKERS: dict[str, str] = {
     "requires_ingestion": "ingestion",
 }
 
+# `requires_catalogue(<part>)` -> is that part present? Separate from the
+# capability markers above because a catalogue part is DATA the seed wrote, not
+# a boolean the stand declares about itself — `has_capability` would have to
+# invent a capability name for each one.
+CATALOGUE_PARTS: dict[str, Callable[[Manifest], bool]] = {
+    "table_columns": lambda m: bool(m.catalogue.table_columns),
+    "definition_override": lambda m: m.catalogue.definition_override is not None,
+}
+
 _MANIFEST: Manifest | None = None
 _MANIFEST_PATH: Path | None = None
 _ENDPOINT: StandEndpoint | None = None
@@ -178,6 +187,10 @@ def pytest_collection_modifyitems(
       would hide the rest and force a fix-rerun-discover loop.
     * capability markers — a missing capability is a legitimate property of
       this stand, not a defect, so it skips that item alone.
+    * `requires_catalogue` — same resolution as a capability, for the rows
+      `deploy/seed/analytics.py` writes. A stand seeded without that step is a
+      real state, and a test that needs those rows must say so rather than
+      assert against an empty universe and pass for the wrong reason.
     """
     del config
 
@@ -209,6 +222,26 @@ def pytest_collection_modifyitems(
             + f"\n  available fixtures: {available}"
             + "\n  Re-seed the stand:  ./dev-compose.sh test-stand seed"
         )
+
+    for item in items:
+        for marker in item.iter_markers(name="requires_catalogue"):
+            for part in marker.args:
+                if part not in CATALOGUE_PARTS:
+                    raise pytest.UsageError(
+                        f"requires_catalogue({part!r}) on {item.nodeid}: unknown part. "
+                        f"Supported: {', '.join(sorted(CATALOGUE_PARTS))}"
+                    )
+                if CATALOGUE_PARTS[part](manifest):
+                    continue
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason=(
+                            f"requires_catalogue: no {part!r} in the manifest's catalogue "
+                            f"({manifest.source_path}) — re-seed with the analytics step: "
+                            "./dev-compose.sh test-stand seed all"
+                        )
+                    )
+                )
 
     for item in items:
         for marker_name, capability in CAPABILITY_MARKERS.items():

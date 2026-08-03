@@ -1,29 +1,26 @@
 """`/v1/columns` — the drilldown column catalogue.
 
-    GET /v1/columns           200
-    GET /v1/columns/{table}   200 · 400 undecodable
+    GET /v1/columns           200 · lists every catalogued column
+    GET /v1/columns/{table}   200 · filtered to that table · 400 undecodable
 
-**Asserted against an empty universe on this stand, and that is a real gap.**
-`table_columns` has no write endpoint — it is operator- or migration-seeded in a
-real deployment, and `deploy/seed` does not populate it — so both routes return
-`{"items": []}` here and the per-table filter cannot be exercised against data.
+`table_columns` has no write endpoint — a deployment provisions it by operator
+or migration — so nothing a test can call creates a row, and this suite holds no
+database connection to insert one with (that would be a back door around the
+deployed path it exists to exercise). `deploy/seed/analytics.py` seeds the rows
+instead and the manifest names them, so the per-table filter is asserted against
+data rather than vacuously against an empty universe.
 
-The in-process rig fills the gap by inserting rows straight into MariaDB. This
-suite deliberately does not: a database connection would hand every test a back
-door around the deployed path, which is the only thing it exists to exercise.
-Closing this properly means seeding `table_columns` in `deploy/seed` and naming
-it in the manifest — see `out/endpoint-coverage-preconditions.md` (P6).
-
-Until then these two cases prove the routes are reachable, authenticated and
-correctly shaped, and nothing about filtering. Stated here rather than left for
-a reader to infer from a test that looks thorough.
+Two tables, not one: a filter is only exercised when asking for A can be shown
+NOT to return B's columns. A single catalogued table would pass against a
+handler that ignores the parameter entirely.
 
 The 401 half is in `test_gateway.py`, swept over every operation at once.
 """
 
 from __future__ import annotations
 
-from insight_stand import ApiClient, analytics_path
+import pytest
+from insight_stand import ApiClient, Manifest, analytics_path
 
 from .schemas import EXTRACTOR_REJECTION_CONTENT_TYPE, ColumnListResponse
 
@@ -34,6 +31,55 @@ def test_columns_listing_is_200(api: ApiClient) -> None:
     response = api.get(COLUMNS)
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
     response.parse(ColumnListResponse)
+
+
+@pytest.mark.requires_catalogue("table_columns")
+def test_columns_listing_carries_every_catalogued_column(
+    api: ApiClient, stand_manifest: Manifest
+) -> None:
+    """The unfiltered listing serves what the seed catalogued.
+
+    Superset, not equality: the rows are seeded tenant-less (platform-visible),
+    and a deployment is free to have catalogued more. Asserting the exact set
+    would fail on a stand that is merely richer than this one.
+    """
+    response = api.get(COLUMNS)
+    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
+
+    served = {(item.clickhouse_table, item.field_name) for item in response.parse(ColumnListResponse).items}
+    expected = {(row.table, row.field) for row in stand_manifest.catalogue.table_columns}
+    assert expected <= served, (
+        f"the catalogue is missing rows the seed wrote: {sorted(expected - served)} "
+        f"(served {sorted(served)})"
+    )
+
+
+@pytest.mark.requires_catalogue("table_columns")
+def test_columns_for_a_table_are_filtered_to_it(
+    api: ApiClient, stand_manifest: Manifest
+) -> None:
+    """Asking for one catalogued table does not return the other's columns.
+
+    This is the assertion the empty universe made impossible: a handler that
+    ignored `{table}` entirely would answer both routes identically and pass
+    every other test in this module.
+    """
+    catalogued = stand_manifest.catalogue.table_columns
+    assert len(catalogued) >= 2, (
+        "the filter needs two catalogued tables to be provable; the manifest names "
+        f"{[row.table for row in catalogued]}"
+    )
+    first, second = catalogued[0], catalogued[1]
+
+    response = api.get(f"{COLUMNS}/{first.table}")
+    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
+
+    served = {item.field_name for item in response.parse(ColumnListResponse).items}
+    assert first.field in served, f"{first.table} did not serve its own column {first.field!r}: {served}"
+    assert second.field not in served, (
+        f"asking for {first.table} returned {second.table}'s column {second.field!r} — "
+        f"the per-table filter is not applied: {served}"
+    )
 
 
 def test_columns_for_a_table_is_200(api: ApiClient) -> None:

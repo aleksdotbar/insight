@@ -16,7 +16,7 @@ builder that writes `manifest.json`, so the two cannot disagree.
 | realm | `insight` |
 | anchor_date | `2026-06-30` |
 | data_window | `2026-05-02..2026-06-30` |
-| seed_revision | `6ec2b12537b76fa8` |
+| seed_revision | `2c25c9f8c3181dd3` |
 | manifest_version | 1 |
 
 `anchor_date` is the last day carrying seeded activity. It is resolved
@@ -83,6 +83,23 @@ renaming one breaks every test that declares it.
 | `sales_lead` | `email_sales_lead@company.nonpresent` | sales | lead | `aaaaaaaa-0000-0000-0000-000000000020` |
 | `support_ic` | `email_support_01@company.nonpresent` | support | ic | `bbbbbbbb-0000-0000-0000-000000040001` |
 | `support_lead` | `email_support_lead@company.nonpresent` | support | lead | `aaaaaaaa-0000-0000-0000-000000000040` |
+
+## Catalogue rows
+
+Rows the product provisions by operator or migration, so no endpoint
+creates them and no test fixture can either — the suite holds no
+database connection. Seeded by `deploy/seed/analytics.py` and named
+here so a test reads the name rather than hardcoding one.
+
+`table_columns` — the universe `/v1/columns/{table}` serves:
+
+| clickhouse_table | field_name |
+|---|---|
+| `stand_catalog_alpha` | `alpha_measure` |
+| `stand_catalog_beta` | `beta_measure` |
+
+**No tenant `metric_definitions` override.** Nothing proves the listing
+resolves a tenant's label over the product default.
 
 ## Populated / golden metrics
 

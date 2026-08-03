@@ -193,8 +193,64 @@ def _fixtures(personas: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return catalog
 
 
-def build_manifest(env: Mapping[str, str], seeded: list[str] | None = None) -> dict[str, Any]:
-    """Build the manifest document. Pure: no I/O beyond reading own sources."""
+#: Rows `analytics.py` writes into the analytics database. Declared here, not
+#: there, because `render_profile.py` must import no third-party package and
+#: that module needs pymysql — so the NAMES live with the manifest and the
+#: writing lives with the seed.
+#:
+#: Two DISTINCT tables, because one proves nothing: the per-table filter is only
+#: exercised when asking for A can be shown not to return B's columns. The names
+#: are obviously synthetic so they cannot collide with a real gold table — in
+#: particular not with `gold_metric_values`, which a stand test asserts is EMPTY.
+CATALOGUED_TABLES: tuple[tuple[str, str], ...] = (
+    ("stand_catalog_alpha", "alpha_measure"),
+    ("stand_catalog_beta", "beta_measure"),
+)
+
+#: Label written onto the overridden definition. Distinguishable on sight, so a
+#: listing that served the product default instead is obvious in a failure.
+OVERRIDE_LABEL = "Stand tenant override"
+
+
+def canonical_catalogue() -> dict[str, Any]:
+    """What `seed analytics` writes, minus what only a live run can know.
+
+    The table rows are static, so the committed PROFILE can name them. WHICH
+    definition gets overridden is resolved against the database at seed time, so
+    it stays absent here — a canonical page must not invent a metric_key.
+    """
+    return {
+        "table_columns": [{"table": t, "field": f} for t, f in CATALOGUED_TABLES],
+        "definition_override": None,
+    }
+
+
+def _catalogue(written: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalise the analytics seed's report into a stable manifest shape.
+
+    Always the same keys, so a consumer branches on emptiness rather than on a
+    key being absent — the difference between "not seeded" and "seeded nothing"
+    is not one a reader should have to infer from a KeyError.
+    """
+    written = written or {}
+    return {
+        "table_columns": list(written.get("table_columns") or []),
+        "definition_override": written.get("definition_override") or None,
+    }
+
+
+def build_manifest(
+    env: Mapping[str, str],
+    seeded: list[str] | None = None,
+    catalogue: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the manifest document. Pure: no I/O beyond reading own sources.
+
+    `catalogue` carries what the analytics seed WROTE — the table names it
+    catalogued and which definition it overrode. Passed in rather than looked
+    up, because one of those facts (the overridden metric_key) is only knowable
+    against a live database and this function reads none.
+    """
     dev_email = (env.get("DEV_USER_EMAIL") or "").strip().lower()
     if not dev_email:
         dev_email = CANONICAL_ENV["DEV_USER_EMAIL"]
@@ -219,6 +275,11 @@ def build_manifest(env: Mapping[str, str], seeded: list[str] | None = None) -> d
         "personas": personas,
         "service_urls": dict(SERVICE_URLS),
         "fixtures": _fixtures(personas),
+        # What the analytics seed catalogued, so a test names it instead of
+        # hardcoding a table or guessing which definition was overridden. Empty
+        # on a stand seeded without that step — which is a real state, not a
+        # bug, so consumers must treat it as "cannot assert" rather than fail.
+        "catalogue": _catalogue(catalogue),
         "golden_metrics": list(GOLDEN_METRICS),
         "golden_metrics_note": GOLDEN_METRICS_NOTE,
         "capabilities": {

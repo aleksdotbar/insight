@@ -131,6 +131,45 @@ def render_profile(doc: dict[str, Any]) -> str:
         ],
     )
 
+    catalogue = doc.get("catalogue") or {}
+    lines += [
+        "",
+        "## Catalogue rows",
+        "",
+        "Rows the product provisions by operator or migration, so no endpoint",
+        "creates them and no test fixture can either — the suite holds no",
+        "database connection. Seeded by `deploy/seed/analytics.py` and named",
+        "here so a test reads the name rather than hardcoding one.",
+        "",
+    ]
+    if catalogue.get("table_columns"):
+        lines += ["`table_columns` — the universe `/v1/columns/{table}` serves:", ""]
+        lines += _table(
+            ["clickhouse_table", "field_name"],
+            [[f"`{row['table']}`", f"`{row['field']}`"] for row in catalogue["table_columns"]],
+        )
+        lines += [""]
+    else:
+        lines += [
+            "**No `table_columns` rows.** `/v1/columns/{table}` answers an empty",
+            "list for every table, so the per-table filter cannot be asserted",
+            "against data — a broken filter looks exactly like a correct one.",
+            "",
+        ]
+
+    override = catalogue.get("definition_override")
+    if override:
+        lines += [
+            f"`metric_definitions` — `{override['metric_key']}` carries the tenant label",
+            f"`{override['label']}`, so a listing that served the product default instead",
+            "is visible on sight.",
+        ]
+    else:
+        lines += [
+            "**No tenant `metric_definitions` override.** Nothing proves the listing",
+            "resolves a tenant's label over the product default.",
+        ]
+
     lines += ["", "## Populated / golden metrics", ""]
     if doc["golden_metrics"]:
         lines += _table(

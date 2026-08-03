@@ -1,7 +1,7 @@
 """The read-only analytics surfaces that describe what the product can measure.
 
     POST /v1/catalog/get_metrics    200
-    GET  /v1/metric-definitions     200
+    GET  /v1/metric-definitions     200 · tenant label wins over the default
     GET  /v1/persons/{email}        200 · 400 undecodable · 404 unknown
 
 Grouped because they answer the same kind of question — "what does this stand
@@ -18,6 +18,7 @@ The 401 half is in `test_gateway.py`, swept over every operation at once.
 
 from __future__ import annotations
 
+import pytest
 from insight_stand import ApiClient, Manifest, analytics_path
 
 from .schemas import (
@@ -48,6 +49,37 @@ def test_metric_definitions_200(api: ApiClient) -> None:
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
     definitions = response.parse(MetricDefinitionListResponse)
     assert definitions.metrics, "no metric definitions — did the migrations run?"
+
+
+@pytest.mark.requires_catalogue("definition_override")
+def test_metric_definitions_resolve_the_tenant_label(
+    api: ApiClient, stand_manifest: Manifest
+) -> None:
+    """A tenant row wins over the product default for the same metric_key.
+
+    The whole point of tenant-scoped definitions, and invisible without one: on
+    a stand where every definition is the product's, a listing that ignored
+    tenant scoping entirely would look perfectly correct.
+
+    `deploy/seed/analytics.py` writes the row (there is no endpoint for it) and
+    records which key it re-labelled, so this reads the answer from the manifest
+    rather than assuming the seed picked any particular metric.
+    """
+    override = stand_manifest.catalogue.definition_override
+    assert override is not None, "the requires_catalogue marker should have skipped this"
+
+    response = api.get(analytics_path("/v1/metric-definitions"))
+    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
+
+    served = {m.metric_key: m.label for m in response.parse(MetricDefinitionListResponse).metrics}
+    assert override.metric_key in served, (
+        f"the overridden key {override.metric_key!r} is absent from the listing: "
+        f"{sorted(served)[:10]}"
+    )
+    assert served[override.metric_key] == override.label, (
+        f"{override.metric_key} served the label {served[override.metric_key]!r}; the tenant row "
+        f"says {override.label!r}. The listing is serving the product default over the tenant's."
+    )
 
 
 def test_person_by_email_200(api: ApiClient, stand_manifest: Manifest) -> None:
