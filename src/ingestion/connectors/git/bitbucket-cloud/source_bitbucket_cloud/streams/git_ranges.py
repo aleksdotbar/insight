@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import date, timedelta
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from source_bitbucket_cloud.client import BitbucketApiError, BranchRef, RepositoryCatalog, RepositoryRef
 
@@ -52,11 +52,25 @@ class CommitRangeMixin:
         """
         return current if current or not previous else previous
 
+    def complete_read(self, current: Heads, previous: Heads, unresolved: Collection[str]) -> bool:
+        """Whether this pass actually saw everything the repository offers.
+
+        Only holds back the cursor for what could not be read: a head the API
+        refused to resolve, or a listing that came back empty for a repository
+        known to have branches. A head deliberately left out of the range
+        (out of the start window) is still a complete read.
+        """
+        return not unresolved and bool(current or not previous)
+
+    def cursor_value(self, prior: Mapping[str, Any], repo_updated_on: str, complete: bool) -> str:
+        return repo_updated_on if complete else str(prior.get("repo_updated_on") or "")
+
     def new_commits(
         self,
         repo: RepositoryRef,
         current_heads: Sequence[str],
         previous_heads: Sequence[str],
+        unresolved: set[str] | None = None,
     ) -> Iterable[Mapping[str, object]]:
         includes = list(current_heads)
         excludes = list(previous_heads)
@@ -72,6 +86,8 @@ class CommitRangeMixin:
                 # emitted; bronze collapses the overlap on unique_key.
                 missing = exc.missing_shas
                 if missing.intersection(includes) or missing.intersection(excludes):
+                    if unresolved is not None:
+                        unresolved.update(missing.intersection(includes))
                     includes = [sha for sha in includes if sha not in missing]
                     excludes = [sha for sha in excludes if sha not in missing]
                     if not includes:

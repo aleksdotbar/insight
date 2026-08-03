@@ -48,9 +48,35 @@ class TestEmptyListingDoesNotForgetHeads:
 
         read_all_buckets(stream)
 
-        assert stream.state["repositories"][repo_state_key(repo)][field] == self.known(stream_class), (
+        stored = stream.state["repositories"][repo_state_key(repo)]
+        assert stored[field] == self.known(stream_class), (
             "an empty listing must not cost the exclude set — the next range would re-read all history"
         )
+        assert stored["repo_updated_on"] == "older", (
+            "advancing the cursor over an empty listing would gate away whatever the push carried"
+        )
+
+    def test_the_listing_is_retried_even_if_nothing_is_pushed_after_it(self, stream_class, repo):
+        """The empty answer may have been the API's, not the repository's. The
+        next pass must look again rather than trust an idle gate that was
+        closed by a read which saw nothing."""
+        field = HEAD_FIELD[stream_class]
+        client = FakeClient()
+        client.branch_values[repo.uuid] = []
+        stream = self.build(stream_class, client, repo)
+        stream.state = synced_state(repo, field, self.known(stream_class), "older")
+        read_all_buckets(stream)
+
+        client.branch_values[repo.uuid] = [branch("main", "fresh")]
+        client.commit_values = [{"hash": "fresh", "date": DATE}]
+        retried = self.build(stream_class, client, repo)
+        retried.state = stream.state
+        client.commit_calls.clear()
+
+        read_all_buckets(retried)
+
+        assert client.commit_calls, "the repository must be looked at again"
+        assert all(excludes for _, excludes in client.commit_calls), "and diffed against the retained head"
 
     def test_a_reappearing_branch_is_diffed_not_re_read(self, stream_class, repo):
         field = HEAD_FIELD[stream_class]

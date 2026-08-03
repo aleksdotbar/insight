@@ -28,6 +28,7 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
         branches, current_heads = self.branch_snapshot(repo)
         previous_heads = prior.get("heads") or {}
         branch_by_name = {branch.name: branch for branch in branches}
+        unresolved: set[str] = set()
         for branch_name in sorted(set(current_heads) | set(previous_heads)):
             old_head = previous_heads.get(branch_name)
             new_head = current_heads.get(branch_name)
@@ -42,6 +43,7 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
                     new_head,
                     old_head,
                     "added",
+                    unresolved,
                 )
             if old_head and new_head:
                 yield from self._changes(
@@ -50,6 +52,7 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
                     old_head,
                     new_head,
                     "removed",
+                    unresolved,
                 )
             if old_head and not new_head:
                 entity_key = unique_key(
@@ -73,21 +76,27 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
                     committed_at=None,
                     reachability_action="branch_deleted",
                 )
+        stored = {
+            name: head for name, head in self.retained_heads(current_heads, previous_heads).items()
+            if name not in unresolved
+        }
+        complete = self.complete_read(current_heads, previous_heads, unresolved)
         self.commit_repository_state(
             repo,
             {
-                "heads": self.retained_heads(current_heads, previous_heads),
-                "repo_updated_on": repo_updated_on,
+                "heads": stored,
+                "repo_updated_on": self.cursor_value(prior, repo_updated_on, complete),
             },
         )
 
-    def _changes(self, repo, branch, include: str, exclude: str | None, action: str):
+    def _changes(self, repo, branch, include: str, exclude: str | None, action: str, unresolved: set[str]):
         try:
             commits = list(self._client.commits_between(repo, [include], [exclude] if exclude else []))
         except BitbucketApiError as exc:
             if exc.status_code == 404 and include in exc.missing_shas:
                 # The head this range starts from is gone: nothing is reachable
                 # from it, and no other branch of the repository is affected.
+                unresolved.add(branch.name)
                 return
             if exc.status_code != 404 or not exclude:
                 raise

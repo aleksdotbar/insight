@@ -27,18 +27,22 @@ class CommitsStream(CommitRangeMixin, BitbucketIncrementalStream):
         branches, current_heads = self.branch_snapshot(repo)
         current_head_shas = sorted(set(current_heads.values()))
         previous_head_shas = prior.get("head_shas") or []
+        unresolved: set[str] = set()
         if current_head_shas != previous_head_shas:
             includes = current_head_shas if previous_head_shas else self.cold_includes(branches)
-            for commit in self.new_commits(repo, includes, previous_head_shas):
+            for commit in self.new_commits(repo, includes, previous_head_shas, unresolved):
                 record = self._record(repo, commit)
                 if self._start_date and record.get("date") and str(record["date"])[:10] < self._start_date:
                     continue
                 yield record
+
+        stored = [sha for sha in self.retained_heads(current_head_shas, previous_head_shas) if sha not in unresolved]
+        complete = self.complete_read(current_head_shas, previous_head_shas, unresolved)
         self.commit_repository_state(
             repo,
             {
-                "head_shas": self.retained_heads(current_head_shas, previous_head_shas),
-                "repo_updated_on": repo_updated_on,
+                "head_shas": stored,
+                "repo_updated_on": self.cursor_value(prior, repo_updated_on, complete),
             },
         )
 

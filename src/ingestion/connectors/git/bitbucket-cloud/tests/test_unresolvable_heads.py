@@ -74,9 +74,36 @@ class TestMissingShasArePruned:
 
         assert records == []
         assert stream._failed_repositories == [], "an unresolvable head is not a sync failure"
-        assert stream.state["repositories"][repo_state_key(repo)]["head_shas"] == ["ghost"], (
-            "the head is still recorded, so a later push diffs against it"
-        )
+        assert stream.state["repositories"][repo_state_key(repo)]["head_shas"] == []
+
+    def test_an_unread_head_is_not_checkpointed(self, repo):
+        client = UnresolvableClient({"ghost"})
+        client.branch_values[repo.uuid] = [branch("main", "alive"), branch("old", "ghost")]
+
+        stream = build(CommitsStream, client, repo)
+        read_all_buckets(stream)
+
+        stored = stream.state["repositories"][repo_state_key(repo)]
+        assert stored["head_shas"] == ["alive"], "recording a head we could not read would claim it was synced"
+        assert stored["repo_updated_on"] == "", "the cursor must stay open so the head is tried again"
+
+    def test_a_head_that_resolves_later_is_read_without_a_new_push(self, repo):
+        """The 404 may be transient. Nothing else moves in the repository — no
+        push, so no new updated_on — and the head must still be picked up."""
+        client = UnresolvableClient({"ghost"})
+        client.branch_values[repo.uuid] = [branch("main", "alive"), branch("old", "ghost")]
+        first = build(CommitsStream, client, repo)
+        read_all_buckets(first)
+
+        client.unresolvable.clear()
+        client.commit_calls.clear()
+        second = build(CommitsStream, client, repo)
+        second.state = first.state
+        records = read_all_buckets(second)
+
+        assert client.commit_calls, "the idle gate must not close over an unread head"
+        assert "ghost" in [r["hash"] for r in records]
+        assert second.state["repositories"][repo_state_key(repo)]["head_shas"] == ["alive", "ghost"]
 
     def test_stale_excludes_are_still_dropped_when_no_shas_are_named(self, repo):
         class BareNotFound(FakeClient):
@@ -150,3 +177,14 @@ class TestReachabilitySkipsVanishedHeads:
         assert stream._failed_repositories == []
         branches_seen = {r["branch_name"] for r in records if r["record_type"] == "item"}
         assert branches_seen == {"main"}
+
+    def test_the_skipped_branch_is_not_checkpointed(self, repo):
+        client = UnresolvableClient({"ghost"})
+        client.branch_values[repo.uuid] = [branch("main", "alive"), branch("old", "ghost")]
+
+        stream = build(CommitBranchReachabilityStream, client, repo)
+        read_all_buckets(stream)
+
+        stored = stream.state["repositories"][repo_state_key(repo)]
+        assert stored["heads"] == {"main": "alive"}
+        assert stored["repo_updated_on"] == ""
