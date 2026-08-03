@@ -133,11 +133,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # `up` writes .env.compose.test-stand, forces the pinned frontend and
-      # Keycloak, seeds, and then blocks until a gold metric proves dbt
-      # rebuilt for THIS run. It does not return success before that, so no
+      # Keycloak, seeds, and then blocks until EVERY gold observation table the
+      # seed populates proves dbt rebuilt it for THIS run and left a positive
+      # observation in it. It does not return success before that, so no
       # separate readiness wait belongs here — and no separate `seed` step
       # either: re-seeding after the gate would rebuild the data the gate just
       # vouched for and leave nothing checking the result.
+      #
+      # The gate covers ClickHouse only. A service that failed to start is not
+      # its business and will surface as a test failure instead.
       - name: Bring the stand up
         run: ./dev-compose.sh test-stand up
 

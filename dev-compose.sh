@@ -1281,7 +1281,8 @@ and a readiness gate that waits for dbt-built gold data rather than for
 containers to report healthy.
 
   up      Generate .env.compose.test-stand, bring the stack up, seed it, and
-          block until a gold metric proves dbt has refreshed.
+          block until EVERY gold observation table the seed populates proves
+          dbt rebuilt it for this run and left a positive observation in it.
   seed    Re-seed the running stand (default target: all).
   test    Run the stand suite against an already-up stand. Passes extra
           arguments through to pytest — no `--` separator.
@@ -1340,44 +1341,47 @@ test_stand_write_env() {
   fi
 }
 
-# Pick the metric the readiness gate polls.
+# Every gold observation table this seed is expected to populate. The gate
+# requires ALL of them: one table proves that dbt ran, not that the seed
+# produced the data a test will look for, and the two failures are told apart
+# by nobody once the suite starts failing on missing rows.
 #
-# Hardcoding one metric couples the gate to whatever the seed happened to
-# populate when this was written. Phase 1's verdict records which metrics are
-# actually non-trivial, so prefer that; `tasks_closed` is only the fallback.
-# Echoes "<table> <measure_key>".
-test_stand_pick_canary() {
-  local verdict=".cf-studio/.plans/stage1-compose-e2e-suite/out/seed-reality.md"
-  local default_table="task_metric_observations" default_key="tasks_closed"
-  if [[ -f "$verdict" ]]; then
-    # Prefer tasks_closed when the verdict lists it as non-trivial.
-    if grep -E '^\|' "$verdict" | grep -q -e 'tasks_closed.*counter.*non-trivial'; then
-      printf '%s %s' "$default_table" "$default_key"; return 0
-    fi
-    local row key
-    row="$(grep -E '^\|.*\| *counter *\|.*non-trivial' "$verdict" | head -1 || true)"
-    if [[ -n "$row" ]]; then
-      # metric_key is the first backticked cell on the row.
-      key="$(printf '%s' "$row" | sed -n 's/.*`\([a-z0-9_]*\)`.*/\1/p' | head -1)"
-      if [[ -n "$key" ]]; then
-        local model
-        model="$(printf '%s' "$row" | grep -oE '\b(task|git|collab|ai|wiki)\b' | head -1 || true)"
-        [[ -n "$model" ]] && { printf '%s %s' "${model}_metric_observations" "$key"; return 0; }
-      fi
-    fi
-  fi
-  printf '%s %s' "$default_table" "$default_key"
+# The list is committed rather than derived. It was read off the evidence
+# models' own sources (src/ingestion/gold/<family>_metric_evidence.sql) against
+# what deploy/seed/generators/ writes:
+#
+#   task    <- task_issue_state / task_status_spans / task_worklog_flow  (task.py)
+#   git     <- class_git_{commits,file_changes,pull_requests,…}          (git.py)
+#   collab  <- class_collab_{chat,email,meeting}_activity, focus_metrics (collab.py)
+#   ai      <- class_ai_{assistant,dev}_usage                            (ai.py)
+#
+# `wiki_metric_observations` is absent ON PURPOSE: its evidence model reads
+# class_wiki_* and there is no wiki generator, so requiring it would hang every
+# run. The crm, support, hr and people generators have no observation table of
+# their own — they feed other surfaces — so they cannot be gated on here.
+TEST_STAND_READY_TABLES=(
+  task_metric_observations
+  git_metric_observations
+  collab_metric_observations
+  ai_metric_observations
+)
+
+test_stand_ch_query() {
+  local ch_port="${CLICKHOUSE_HTTP_PORT:-8123}"
+  local ch_user="${CLICKHOUSE_USER:-insight}" ch_pass="${CLICKHOUSE_PASSWORD:-insight-local}"
+  trim "$(curl -sf -u "${ch_user}:${ch_pass}" --data-binary "$1" \
+          "http://localhost:${ch_port}/" 2>/dev/null || true)"
 }
 
-# Block until a gold metric proves dbt has refreshed for THIS run.
+# 0 when `table` was rebuilt during this run AND carries a positive observation.
+# Otherwise non-zero, echoing which half failed.
 #
-# Container health only proves a process started, and a fixed sleep is a
-# guess. Scoping on observed_at is what stops rows left by a previous,
-# un-torn-down run from satisfying the gate instantly.
-test_stand_wait_ready() {
-  local table="$1" measure_key="$2" run_started_at="$3"
-  local elapsed=0 val="" rebuilt="" ch_port="${CLICKHOUSE_HTTP_PORT:-8123}"
-  local ch_user="${CLICKHOUSE_USER:-insight}" ch_pass="${CLICKHOUSE_PASSWORD:-insight-local}"
+# Asserted without naming a measure_key. A specific key would have to be kept in
+# step with the measure catalogue, and would make the gate pass while every OTHER
+# measure in the table was empty — `countIf(value > 0)` asks the question the
+# gate actually has, which is whether this family produced any signal at all.
+test_stand_table_ready() {
+  local table="$1" run_started_at="$2"
   # Run scoping. The obvious filter — `observed_at >= run_started_at` — cannot
   # work: the gold model projects observed_at as a literal
   # CAST(NULL AS Nullable(DateTime64(3))), so it is NULL on every row and the
@@ -1386,28 +1390,62 @@ test_stand_wait_ready() {
   # metadata, and it answers exactly the question the gate cares about —
   # "did dbt rebuild this during THIS run, or am I looking at a previous
   # run's rows?"
-  local rebuilt_query="SELECT max(modification_time) >= toDateTime('${run_started_at}') FROM system.parts WHERE database = 'insight' AND table = '${table}' AND active"
-  local query="SELECT sum(value) FROM insight.${table} WHERE measure_key = '${measure_key}'"
+  local rebuilt populated
+  rebuilt="$(test_stand_ch_query "SELECT max(modification_time) >= toDateTime('${run_started_at}') FROM system.parts WHERE database = 'insight' AND table = '${table}' AND active")"
+  if [[ "$rebuilt" != "1" ]]; then
+    echo "not rebuilt since ${run_started_at} (got '${rebuilt:-<no response>}', want 1)"
+    return 1
+  fi
 
-  echo "=== Readiness gate: waiting for ${measure_key} in insight.${table} (since ${run_started_at}) ==="
+  populated="$(test_stand_ch_query "SELECT countIf(value > 0) > 0 FROM insight.${table}")"
+  if [[ "$populated" != "1" ]]; then
+    echo "rebuilt, but holds no positive observation (got '${populated:-<no response>}', want 1)"
+    return 1
+  fi
+  return 0
+}
+
+# Block until EVERY gold observation table proves dbt refreshed it for THIS run.
+#
+# Container health only proves a process started, and a fixed sleep is a guess.
+# Requiring the whole set rather than one canary is what stops a stand where a
+# single generator family produced nothing from being reported ready — that
+# failure otherwise surfaces much later, as tests failing on absent rows.
+test_stand_wait_ready() {
+  local run_started_at="$1"
+  local elapsed=0 table reason
+  local pending=() reasons=()
+
+  echo "=== Readiness gate: waiting for ${#TEST_STAND_READY_TABLES[@]} gold observation tables rebuilt since ${run_started_at} ==="
   while [[ "$elapsed" -lt "$TEST_STAND_READY_TIMEOUT" ]]; do
-    rebuilt="$(curl -sf -u "${ch_user}:${ch_pass}" --data-binary "$rebuilt_query" \
-             "http://localhost:${ch_port}/" 2>/dev/null || true)"
-    val="$(curl -sf -u "${ch_user}:${ch_pass}" --data-binary "$query" \
-             "http://localhost:${ch_port}/" 2>/dev/null || true)"
-    val="$(trim "${val:-}")"
-    if [[ "$(trim "${rebuilt:-}")" == "1" ]] \
-       && [[ -n "$val" ]] && awk -v v="$val" 'BEGIN{exit !(v+0>0)}' 2>/dev/null; then
-      echo "Readiness gate: ${measure_key}=${val} after ${elapsed}s — dbt rebuilt insight.${table} for this run."
+    pending=(); reasons=()
+    for table in "${TEST_STAND_READY_TABLES[@]}"; do
+      # Declared above the assignment: `local reason=$(…)` would mask the exit
+      # status of the command substitution behind `local`'s own.
+      if ! reason="$(test_stand_table_ready "$table" "$run_started_at")"; then
+        pending+=("$table")
+        reasons+=("         insight.${table}: ${reason}")
+      fi
+    done
+
+    if [[ ${#pending[@]} -eq 0 ]]; then
+      echo "Readiness gate: all ${#TEST_STAND_READY_TABLES[@]} gold observation tables rebuilt and populated after ${elapsed}s."
       return 0
     fi
+
     sleep "$TEST_STAND_READY_INTERVAL"
     elapsed=$((elapsed + TEST_STAND_READY_INTERVAL))
   done
 
+  # Every failing table, not just the first: one generator family being empty
+  # and dbt never having run at all look identical when only one name is shown.
   echo "ERROR: readiness gate timed out after ${TEST_STAND_READY_TIMEOUT}s." >&2
-  echo "       ${measure_key} in insight.${table} was: '${val:-<no response>}' (want > 0)," >&2
-  echo "       table-rebuilt-since-run-start was: '${rebuilt:-<no response>}' (want 1)." >&2
+  echo "       ${#pending[@]} of ${#TEST_STAND_READY_TABLES[@]} gold observation tables never became ready:" >&2
+  # Guarded: `set -u` makes expanding an empty array an error on bash < 4.4, and
+  # a zero-iteration loop (a timeout of 0) would leave this one empty.
+  if [[ ${#reasons[@]} -gt 0 ]]; then
+    printf '%s\n' "${reasons[@]}" >&2
+  fi
   echo "       The stack is still up. Re-run the seed with:" >&2
   echo "         ./dev-compose.sh test-stand seed" >&2
   return 1
@@ -1532,10 +1570,7 @@ cmd_test_stand() {
       # Re-seed explicitly now that the env file is complete.
       cmd_seed --env-file "$TEST_STAND_ENV_FILE" all || return 1
 
-      local canary table measure_key
-      canary="$(test_stand_pick_canary)"
-      table="${canary%% *}"; measure_key="${canary##* }"
-      test_stand_wait_ready "$table" "$measure_key" "$run_started_at" || return 1
+      test_stand_wait_ready "$run_started_at" || return 1
 
       echo "=== test-stand is ready ==="
       ;;
