@@ -31,7 +31,13 @@ class CommitsStream(CommitRangeMixin, BitbucketIncrementalStream):
                 if self._start_date and record.get("date") and str(record["date"])[:10] < self._start_date:
                     continue
                 yield record
-        self.commit_repository_state(repo, {"head_shas": current_head_shas, "repo_updated_on": repo_updated_on})
+        self.commit_repository_state(
+            repo,
+            {
+                "head_shas": self.retained_heads(current_head_shas, previous_head_shas),
+                "repo_updated_on": repo_updated_on,
+            },
+        )
 
     def _record(self, repo, commit: Mapping[str, Any]) -> Mapping[str, Any]:
         sha = str(commit.get("hash") or "")

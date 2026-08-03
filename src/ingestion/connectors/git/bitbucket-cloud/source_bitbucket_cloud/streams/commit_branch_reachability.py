@@ -69,7 +69,13 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
                     committed_at=None,
                     reachability_action="branch_deleted",
                 )
-        self.commit_repository_state(repo, {"heads": current_heads, "repo_updated_on": repo_updated_on})
+        self.commit_repository_state(
+            repo,
+            {
+                "heads": self.retained_heads(current_heads, previous_heads),
+                "repo_updated_on": repo_updated_on,
+            },
+        )
 
     def _changes(self, repo, branch, include: str, exclude: str | None, action: str):
         try:

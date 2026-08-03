@@ -32,7 +32,13 @@ class FileChangesStream(CommitRangeMixin, BitbucketIncrementalStream):
                 if self._start_date and committed_date and str(committed_date)[:10] < self._start_date:
                     continue
                 yield from self._diffstat(repo, str(commit.get("hash") or ""), committed_date)
-        self.commit_repository_state(repo, {"head_shas": current_head_shas, "repo_updated_on": repo_updated_on})
+        self.commit_repository_state(
+            repo,
+            {
+                "head_shas": self.retained_heads(current_head_shas, previous_head_shas),
+                "repo_updated_on": repo_updated_on,
+            },
+        )
 
     def _diffstat(self, repo, sha: str, committed_date: Any) -> Iterable[Mapping[str, Any]]:
         if not sha:

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from typing import TypeVar
 
 from source_bitbucket_cloud.client import BitbucketApiError, BranchRef, RepositoryCatalog, RepositoryRef
+
+Heads = TypeVar("Heads", list[str], dict[str, str])
 
 # Bitbucket names only the unresolvable shas it noticed, so a repository with
 # several dead heads needs more than one pruning round; the cap keeps a
@@ -17,6 +20,15 @@ class CommitRangeMixin:
     def branch_snapshot(self, repo: RepositoryRef) -> tuple[list[BranchRef], dict[str, str]]:
         branches = self._catalog.branches(repo)
         return branches, {branch.name: branch.head_sha for branch in branches}
+
+    def retained_heads(self, current: Heads, previous: Heads) -> Heads:
+        """Never trade a known head set for an empty listing.
+
+        Stored heads are only ever the exclude side of the next range, so a
+        stale one can suppress nothing but a sha already reported. Dropping
+        them costs a full history re-read as soon as a branch reappears.
+        """
+        return current if current or not previous else previous
 
     def new_commits(
         self,
