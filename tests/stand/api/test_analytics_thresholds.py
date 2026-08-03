@@ -21,7 +21,7 @@ The 401 half is in `test_gateway.py`, swept over every operation at once.
 from __future__ import annotations
 
 import pytest
-from insight_stand import ApiClient, analytics_path
+from insight_stand import OTHER_TENANT_FIXTURE, ApiClient, PersonaSession, analytics_path
 
 from . import scratch
 from .schemas import (
@@ -150,3 +150,50 @@ def test_admin_threshold_404_unknown(api: ApiClient) -> None:
     response = api.get(f"{ADMIN_THRESHOLDS}/{scratch.UNKNOWN_ID}")
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
     assert response.parse(ProblemDocument).status == 404
+
+
+@pytest.mark.requires_seed(OTHER_TENANT_FIXTURE)
+def test_admin_threshold_403_across_tenants(
+    api: ApiClient, other_tenant_session: PersonaSession
+) -> None:
+    """A row belonging to one tenant is refused to a caller from another.
+
+    The only authorization property a single-tenant stand cannot show: with one
+    tenant nobody should ever be refused, so a service that ignored `tenant_id`
+    entirely would pass every other test in this file. `deploy/seed` therefore
+    provisions a second tenant holding one person, whose whole purpose is to be
+    this caller.
+
+    Refused as a real login, not a forged token — the same Keycloak flow every
+    other persona uses, differing only in the tenant claim the realm carries for
+    that user. Update AND delete, because they are separate handlers and a gate
+    applied to one is not evidence about the other.
+    """
+    metric_id = _catalog_metric_id(api)
+    scoped = {"metric_id": metric_id, "scope": "tenant"}
+    for row in api.get(ADMIN_THRESHOLDS, params=scoped).parse(AdminMetricThresholdList).items:
+        api.delete(f"{ADMIN_THRESHOLDS}/{row.id}")
+
+    created = api.post(ADMIN_THRESHOLDS, json_body={**scoped, "good": 0.0, "warn": 0.0})
+    assert created.status_code == 201, f"create: {created.status_code} {created.text[:300]}"
+    threshold_id = scratch.track(ADMIN_THRESHOLDS, "id", created.parse(AdminMetricThresholdView).id)
+
+    intruder = other_tenant_session.client
+    update = intruder.put(f"{ADMIN_THRESHOLDS}/{threshold_id}", json_body={"good": 9.0, "warn": 9.0})
+    assert update.status_code == 403, (
+        f"a caller from another tenant updated the row (status {update.status_code}): "
+        f"{update.text[:300]}"
+    )
+    delete = intruder.delete(f"{ADMIN_THRESHOLDS}/{threshold_id}")
+    assert delete.status_code == 403, (
+        f"a caller from another tenant deleted the row (status {delete.status_code}): "
+        f"{delete.text[:300]}"
+    )
+
+    # The owner still has it, unchanged — proof the refusals refused rather than
+    # 403-ing after the fact.
+    survives = api.get(f"{ADMIN_THRESHOLDS}/{threshold_id}")
+    assert survives.status_code == 200, f"read back: {survives.status_code} {survives.text[:300]}"
+    assert survives.parse(AdminMetricThresholdView).good == 0.0
+
+    assert api.delete(f"{ADMIN_THRESHOLDS}/{threshold_id}").status_code == 204

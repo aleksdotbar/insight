@@ -26,7 +26,13 @@ from pathlib import Path
 _SEED_DIR = Path(__file__).resolve().parents[2] / "seed"
 sys.path.insert(0, str(_SEED_DIR))
 
-from profiles import Person, build_roster, get_dev_user_email  # noqa: E402
+from profiles import (  # noqa: E402
+    TENANT_OTHER,
+    Person,
+    build_other_tenant_roster,
+    build_roster,
+    get_dev_user_email,
+)
 
 REALM_NAME = "insight"
 DEV_PASSWORD = "insight-dev"
@@ -73,11 +79,27 @@ def _protocol_mappers(tenant_id: str) -> list[dict]:
             # The authenticator reads this single-string claim (idp.tenant_claim,
             # default `tenant_id`) — one and only one tenant per token — and it
             # becomes the gateway JWT's `tenant_id`.
+            #
+            # Read from the USER, not hardcoded on the client, so the realm can
+            # hold people in more than one tenant. A hardcoded value gives every
+            # persona the same tenant, which makes cross-tenant refusal
+            # unobservable: there is no caller who should be refused, so a
+            # service ignoring `tenant_id` entirely would pass. Same mapper
+            # shape as `org_unit` below, which has always been per-user.
+            #
+            # `_user` sets the attribute on every user and refuses to emit one
+            # without it — a user missing it would get a token with no tenant
+            # and fail at login, which is a worse failure than a build error.
             "name": "tenant_id",
             "protocol": "openid-connect",
-            "protocolMapper": "oidc-hardcoded-claim-mapper",
+            "protocolMapper": "oidc-usermodel-attribute-mapper",
             "consentRequired": False,
-            "config": {**common, "claim.name": "tenant_id", "claim.value": tenant_id, "jsonType.label": "String"},
+            "config": {
+                **common,
+                "user.attribute": "tenant_id",
+                "claim.name": "tenant_id",
+                "jsonType.label": "String",
+            },
         },
         {
             "name": "org_unit",
@@ -148,8 +170,14 @@ def _client_insight_authenticator(tenant_id: str, redirect_uris: list[str], secr
     }
 
 
-def _user(person: Person) -> dict:
+def _user(person: Person, tenant_id: str) -> dict:
     org_unit = _org_unit(person)
+    # Refused rather than defaulted: a user whose `tenant_id` attribute is
+    # missing logs in and gets a token with no tenant claim, which fails deep
+    # inside the authenticator with nothing pointing back here. A realm that
+    # will not build is the cheaper failure.
+    if not tenant_id:
+        raise ValueError(f"{person.email}: no tenant_id — every realm user must carry one")
     return {
         "id": person.uuid,
         "username": person.email,
@@ -159,7 +187,7 @@ def _user(person: Person) -> dict:
         "enabled": True,
         "emailVerified": True,
         "credentials": [{"type": "password", "value": DEV_PASSWORD, "temporary": False}],
-        "attributes": {"org_unit": [org_unit]},
+        "attributes": {"org_unit": [org_unit], "tenant_id": [tenant_id]},
         "groups": [f"/{org_unit}"],
         "realmRoles": _ROLE_TO_REALM_ROLES[person.role],
     }
@@ -176,13 +204,22 @@ def build_realm(
     dev_user_email: str, tenant_id: str, authenticator_redirects: list[str], authenticator_secret: str
 ) -> dict:
     roster = build_roster(dev_user_email)
+    # The second tenant's single person, in the SAME realm. One realm because
+    # the authenticator is configured with one issuer and one client — a second
+    # realm would need a second authenticator. Tenancy is a claim, not an
+    # identity provider, and this keeps the test of it honest: same login, same
+    # client, same everything except the tenant the token carries.
+    other_roster = build_other_tenant_roster()
     return {
         "realm": REALM_NAME,
         "enabled": True,
         "sslRequired": "none",
         "roles": {"realm": [{"name": name} for name in REALM_ROLES]},
         "groups": [{"name": team, "path": f"/{team}"} for team in TEAMS],
-        "users": [_user(person) for person in roster],
+        "users": [
+            *(_user(person, tenant_id) for person in roster),
+            *(_user(person, TENANT_OTHER) for person in other_roster),
+        ],
         "clients": [
             _client_insight(tenant_id),
             _client_insight_authenticator(tenant_id, authenticator_redirects, authenticator_secret),

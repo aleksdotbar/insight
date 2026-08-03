@@ -175,6 +175,12 @@ def _fixtures(personas: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     # cannot perturb any visibility assertion.
     if profiles.ADMIN_OPERATOR_UUID in by_uuid:
         catalog["admin_operator"] = ref(by_uuid[profiles.ADMIN_OPERATOR_UUID])
+    # The second tenant's only person. Named like any other fixture so a
+    # cross-tenant test declares `requires_seed("other_tenant_lead")` rather
+    # than reaching for a UUID — and so a stand seeded without them says which
+    # name is missing.
+    if profiles.OTHER_TENANT_PERSON_UUID in by_uuid:
+        catalog["other_tenant_lead"] = ref(by_uuid[profiles.OTHER_TENANT_PERSON_UUID])
     for name, uuid in (
         ("sales_lead", profiles.SALES_LEAD_UUID),
         ("hr_lead", profiles.HR_LEAD_UUID),
@@ -260,7 +266,10 @@ def build_manifest(
     days = _days(env)
     window_start = anchor - _dt.timedelta(days=days - 1)
 
-    personas = [_persona(p) for p in profiles.build_roster(dev_email)]
+    personas = [
+        _persona(p)
+        for p in (*profiles.build_roster(dev_email), *profiles.build_other_tenant_roster())
+    ]
 
     auth_mode = (env.get("AUTH_MODE") or "").strip().lower()
     issuer = (env.get("AUTHENTICATOR_OIDC_ISSUER") or "").strip()
@@ -271,6 +280,10 @@ def build_manifest(
     return {
         "manifest_version": MANIFEST_VERSION,
         "tenant": tenant,
+        # `tenant` above stays the default one, unchanged, because everything
+        # already reads it. This names BOTH, so a cross-tenant test can say
+        # which caller it means without hardcoding a UUID.
+        "tenants": {"default": tenant, "other": profiles.TENANT_OTHER},
         "realm": {"name": REALM_NAME, "issuer": issuer},
         "personas": personas,
         "service_urls": dict(SERVICE_URLS),

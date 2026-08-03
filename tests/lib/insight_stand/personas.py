@@ -68,6 +68,11 @@ OPERATOR_PERSON_ROLE: Final[str] = "admin"
 #: The manifest fixture name for that account.
 ADMIN_OPERATOR_FIXTURE: Final[str] = "admin_operator"
 
+#: The manifest fixture name for the second tenant's only person. Their whole
+#: purpose is to be a caller the product refuses, so they hold no role, no team
+#: and no org-chart edge — see `deploy/seed/profiles.py::build_other_tenant_roster`.
+OTHER_TENANT_FIXTURE: Final[str] = "other_tenant_lead"
+
 
 def _load_realm(path: Path | None = None) -> dict[str, Any] | None:
     """The stand's realm export, or None when it is not on disk.
@@ -287,6 +292,7 @@ __all__: Sequence[str] = (
     "LEAD_ROLE",
     "MEMBER_ROLE",
     "OPERATOR_PERSON_ROLE",
+    "OTHER_TENANT_FIXTURE",
     "PASSWORD_ENV",
     "REALM_EXPORT_PATH",
     "ROLE_TO_REALM_ROLES",

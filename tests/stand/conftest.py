@@ -42,6 +42,7 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
     MANIFEST_PATH,
     MANIFEST_PATH_ENV,
     MEMBER_ROLE,
+    OTHER_TENANT_FIXTURE,
     ApiClient,
     Manifest,
     ManifestError,
@@ -384,6 +385,24 @@ def admin_operator_session(
     person rather than a grant bolted onto the CEO.
     """
     return session_for(ADMIN_OPERATOR_FIXTURE)
+
+
+@pytest.fixture(scope="session")
+def other_tenant_session(
+    session_for: Callable[[str], PersonaSession],
+) -> PersonaSession:
+    """A real login as somebody in a DIFFERENT tenant.
+
+    Not a forged token and not a header override: the same Keycloak login every
+    other persona uses, differing only in the `tenant_id` the realm carries for
+    that user. What it proves is therefore the deployed path — a caller the
+    product should refuse, refused for the reason it would be in a deployment.
+
+    A test using this must declare `requires_seed("other_tenant_lead")`, so a
+    stand seeded without them aborts naming the missing fixture rather than
+    failing at login with something less obvious.
+    """
+    return session_for(OTHER_TENANT_FIXTURE)
 
 
 @pytest.fixture(scope="session")

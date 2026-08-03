@@ -23,7 +23,9 @@ from profiles import (
     DEV_SEED_SOURCE_TYPE,
     ORG_CHART_SOURCE_TYPE,
     TEAM_PROFILES,
+    TENANT_OTHER,
     Person,
+    build_other_tenant_roster,
     build_roster,
     get_dev_user_email,
 )
@@ -289,6 +291,18 @@ def run() -> None:
         dev_email,
     )
 
+    # The second tenant's population, seeded by the SAME functions rather than
+    # by a variant of them: every row they write is already tenant-scoped, so
+    # running them again under a different tenant is the whole difference. A
+    # per-person tenant field would have had to thread through five writers and
+    # every generator, to express one row.
+    other_roster = build_other_tenant_roster()
+    LOG.info(
+        "seeding %d person(s) under tenant %s (cross-tenant refusal fixture)",
+        len(other_roster),
+        TENANT_OTHER,
+    )
+
     with _connect() as conn:
         cur = conn.cursor()
         n_persons = seed_persons(cur, tenant, roster)
@@ -296,6 +310,13 @@ def run() -> None:
         n_org = seed_org_chart(cur, tenant, roster)
         n_roles = seed_person_roles(cur, tenant, roster)
         n_acct = seed_account_person_map(cur, tenant, roster)
+
+        # No org_chart and no person_roles for them: they are a caller, not a
+        # subject. An edge would put them in somebody's subtree, and a role
+        # would make the refusal ambiguous — is it the tenant or the grant?
+        n_persons += seed_persons(cur, TENANT_OTHER, other_roster)
+        n_names += seed_person_names(cur, TENANT_OTHER, other_roster)
+        n_acct += seed_account_person_map(cur, TENANT_OTHER, other_roster)
 
     LOG.info(
         "DONE: persons=%d (new), names=%d (new), org_chart=%d (new), "

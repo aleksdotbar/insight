@@ -31,6 +31,20 @@ from dataclasses import dataclass, field, replace
 # docker-compose.yml and deploy/compose/keycloak/gen-realm.py.
 TENANT_DEFAULT = "00000000-df51-5b42-9538-d2b56b7ee953"
 
+# A SECOND tenant, holding exactly one person and nothing else.
+#
+# Cross-tenant refusal is the one authorization property a single-tenant stand
+# cannot show at all: with one tenant there is no caller who should be refused,
+# so a service that ignored `tenant_id` entirely would pass every test. One
+# person is all it takes — the assertion is that they are refused, which needs
+# no data of their own.
+#
+# Deliberately NOT part of the organisation: no org-chart edge, no team, and no
+# activity, so they cannot appear in another persona's subtree or move a metric.
+# The same reasoning as the admin operator, one tenant over.
+TENANT_OTHER = "11111111-1111-4111-8111-111111111111"
+OTHER_TENANT_PERSON_UUID = "dddddddd-0000-0000-0000-000000000001"
+
 DEV_LEAD_UUID = "00000000-0000-0000-0000-000000000010"
 
 CEO_UUID = "aaaaaaaa-0000-0000-0000-000000000001"
@@ -245,6 +259,29 @@ def build_roster(dev_user_email: str) -> list[Person]:
         replace(p, first_name=fn, last_name=ln)
         for i, p in enumerate([ceo, *leads, *ics, admin_operator])
         for fn, ln in [_name_at(i)]
+    ]
+
+
+def build_other_tenant_roster() -> list[Person]:
+    """The second tenant's entire population: one lead, alone.
+
+    Returned as its own roster rather than appended to `build_roster` so the
+    demo organisation is untouched — the names in that list are assigned by
+    build-order index, and anything inserted into it renames people and churns
+    every display name in the seeded data.
+
+    Their name is fixed rather than drawn from `_name_at`, for the same reason.
+    """
+    return [
+        Person(
+            uuid=OTHER_TENANT_PERSON_UUID,
+            email=build_email("email_other_tenant_lead"),
+            team=None,
+            role="lead",
+            parent_uuid=None,
+            first_name="Vera",
+            last_name="Kovac",
+        )
     ]
 
 

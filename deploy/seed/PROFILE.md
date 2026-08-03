@@ -13,10 +13,11 @@ builder that writes `manifest.json`, so the two cannot disagree.
 | Field | Value |
 |---|---|
 | tenant | `00000000-df51-5b42-9538-d2b56b7ee953` |
+| tenant (other) | `11111111-1111-4111-8111-111111111111` |
 | realm | `insight` |
 | anchor_date | `2026-06-30` |
 | data_window | `2026-05-02..2026-06-30` |
-| seed_revision | `2c25c9f8c3181dd3` |
+| seed_revision | `b45ee1486b4a981b` |
 | manifest_version | 1 |
 
 `anchor_date` is the last day carrying seeded activity. It is resolved
@@ -28,7 +29,12 @@ page was rendered against, not necessarily the one on your stand.
 
 ## Roster
 
-26 people. `uuid` is both the Keycloak user id and the
+27 people, all but one in the default tenant. The
+exception is `other_tenant_lead`, who exists ONLY so cross-tenant refusal
+has a caller to refuse — no team, no org-chart edge, no activity, so they
+cannot appear in another persona's subtree or move a metric.
+
+`uuid` is both the Keycloak user id and the
 `identity.persons` person id, so a login and an API row refer to the same
 person.
 
@@ -60,6 +66,7 @@ person.
 | `email_support_04@company.nonpresent` | Reid Jansen | support | ic | insight-member | `bbbbbbbb-0000-0000-0000-000000040004` |
 | `email_support_05@company.nonpresent` | Wren Keir | support | ic | insight-member | `bbbbbbbb-0000-0000-0000-000000040005` |
 | `email_admin_operator@company.nonpresent` | Beau Lowe | — | admin | insight-admin | `cccccccc-0000-0000-0000-000000000001` |
+| `email_other_tenant_lead@company.nonpresent` | Vera Kovac | — | lead | insight-lead | `dddddddd-0000-0000-0000-000000000001` |
 
 No password appears here or in `manifest.json`. Personas are referenced
 by identity; the shared local login secret lives in the compose env and
@@ -79,6 +86,7 @@ renaming one breaks every test that declares it.
 | `development_ic` | `email_development_01@company.nonpresent` | development | ic | `bbbbbbbb-0000-0000-0000-000000010001` |
 | `hr_ic` | `email_hr_01@company.nonpresent` | hr | ic | `bbbbbbbb-0000-0000-0000-000000030001` |
 | `hr_lead` | `email_hr_lead@company.nonpresent` | hr | lead | `aaaaaaaa-0000-0000-0000-000000000030` |
+| `other_tenant_lead` | `email_other_tenant_lead@company.nonpresent` | — | lead | `dddddddd-0000-0000-0000-000000000001` |
 | `sales_ic` | `email_sales_01@company.nonpresent` | sales | ic | `bbbbbbbb-0000-0000-0000-000000020001` |
 | `sales_lead` | `email_sales_lead@company.nonpresent` | sales | lead | `aaaaaaaa-0000-0000-0000-000000000020` |
 | `support_ic` | `email_support_01@company.nonpresent` | support | ic | `bbbbbbbb-0000-0000-0000-000000040001` |

@@ -214,6 +214,33 @@ class GoldenMetric:
 
 
 @dataclass(frozen=True)
+class Tenants:
+    """Every tenant the stand seeded, named.
+
+    `other` is a tenant holding exactly one person and nothing else. It exists
+    because cross-tenant refusal is the one authorization property a
+    single-tenant stand cannot show at all: with one tenant there is no caller
+    who should be refused, so a service ignoring `tenant_id` entirely would pass
+    every test.
+
+    It is optional. A stand seeded before this field existed reports `other` as
+    None, and a test that needs it declares `requires_seed("other_tenant_lead")`
+    rather than reading this — the fixture catalogue is where a missing person
+    is reported by name.
+    """
+
+    default: str
+    other: str | None
+
+    @classmethod
+    def parse(cls, doc: Mapping[str, Any], fallback: str, where: str) -> Tenants:
+        other = doc.get("other")
+        if other is not None and not isinstance(other, str):
+            raise ManifestError(f"{where}.other: must be a string, got {type(other).__name__}")
+        return cls(default=str(doc.get("default") or fallback), other=other)
+
+
+@dataclass(frozen=True)
 class CataloguedTable:
     """One `table_columns` row the seed wrote: a table and a column in it."""
 
@@ -290,6 +317,7 @@ class Manifest:
 
     manifest_version: int
     tenant: str
+    tenants: Tenants
     realm: Realm
     personas: tuple[Person, ...]
     service_urls: Mapping[str, str]
@@ -386,9 +414,15 @@ class Manifest:
         if not all(isinstance(step, str) for step in seeded_raw):
             raise ManifestError(f"{where}.seeded: every entry must be a string")
 
+        tenant = _require(doc, "tenant", str, where)
         return cls(
             manifest_version=version,
-            tenant=_require(doc, "tenant", str, where),
+            tenant=tenant,
+            # Optional, like `catalogue`: a manifest written before the second
+            # tenant existed still parses, and reports `other` as absent.
+            tenants=Tenants.parse(
+                _as_mapping(doc.get("tenants") or {}, f"{where}.tenants"), tenant, f"{where}.tenants"
+            ),
             realm=Realm.parse(_as_mapping(_require(doc, "realm", dict, where), f"{where}.realm")),
             personas=personas,
             service_urls=dict(urls_raw),
@@ -477,6 +511,7 @@ __all__: Sequence[str] = (
     "Manifest",
     "Person",
     "Realm",
+    "Tenants",
     "default_manifest_path",
     "load_manifest",
 )
