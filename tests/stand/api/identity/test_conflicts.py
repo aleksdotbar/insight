@@ -22,9 +22,17 @@ test that follows it.
 from __future__ import annotations
 
 import pytest
-from insight_stand import ADMIN_ROLE, ApiClient, Manifest, PersonaSession, identity_path
+from insight_stand import ApiClient, Manifest, PersonaSession, identity_path
 
-from ..schemas import PersonRole, PersonRoleList, ProblemDocument, RoleList
+from ..schemas import PersonRole, PersonRoleList, ProblemDocument, Role, RoleList
+
+#: identity's own role, in `person_roles` — NOT `insight_stand.ADMIN_ROLE`,
+#: which is the KEYCLOAK REALM role (`insight-admin`). They are different
+#: authorities and only this one admits a caller to the admin API
+#: (`test_admin.py` states that at length). Using the realm name here created a
+#: role rather than colliding with one, and the sibling test below then found
+#: and deleted the row this file had just made.
+IDENTITY_ADMIN_ROLE = "admin"
 
 #: The Rust service answers 409; its retired .NET predecessor answered 422 for
 #: the two "still in use" cases. Both are accepted so the assertion is about
@@ -41,9 +49,12 @@ def _roles(client: ApiClient) -> RoleList:
 
 def _admin_role_id(client: ApiClient) -> str:
     for role in _roles(client).items:
-        if role.name == ADMIN_ROLE:
+        if role.name == IDENTITY_ADMIN_ROLE:
             return str(role.role_id)
-    raise AssertionError(f"no {ADMIN_ROLE!r} role in the catalogue")
+    raise AssertionError(
+        f"no {IDENTITY_ADMIN_ROLE!r} role in the catalogue: "
+        f"{[r.name for r in _roles(client).items]}"
+    )
 
 
 def _active_admin_assignments(client: ApiClient) -> list[PersonRole]:
@@ -67,9 +78,18 @@ def test_a_role_name_already_in_the_catalogue_is_409(
     second row with that name would make which one it finds arbitrary, and the
     grant it checks would depend on ordering.
     """
-    response = admin_operator_session.client.post(
-        identity_path("/v1/roles"), json_body={"name": ADMIN_ROLE}
-    )
+    client = admin_operator_session.client
+    existing = _admin_role_id(client)  # fails loudly if the name is not taken
+
+    response = client.post(identity_path("/v1/roles"), json_body={"name": IDENTITY_ADMIN_ROLE})
+    if response.status_code == 201:
+        # The constraint did not hold. Remove the duplicate before anything
+        # else reads the catalogue by name, since a second row makes every
+        # lookup arbitrary — including this module's own.
+        created = str(response.parse(Role).role_id)
+        if created != existing:
+            client.delete(identity_path(f"/v1/roles/{created}"))
+
     assert response.status_code == 409, (
         f"a duplicate role name answered {response.status_code} rather than 409: "
         f"{response.text[:300]}"

@@ -147,20 +147,20 @@ OFF_SCHEMA_ROUTES: tuple[tuple[str, str, int], ...] = (
     ("POST", "/v1/metric-drilldown/export", LEGACY_422),
 )
 
-#: A JSON array where every one of these routes declares an object. Chosen
-#: because it is off-schema for ALL of them without this table needing to know
-#: a field name apiece — and because the obvious alternative is not off-schema
-#: at all. An unknown KEY (`{"stand": …}`) deserializes cleanly into any request
-#: type whose fields are optional: serde ignores what it does not recognise, the
-#: update is a valid all-None one, and the handler runs. Four routes here are
-#: exactly that shape, so the first version of this test asserted 422 and got
-#: 404 from the id lookup that followed.
+#: A JSON STRING where every one of these routes declares an object. Getting
+#: this right took two attempts and both failures were instructive:
 #:
-#: Which is worth stating on its own: the update types accept unknown fields
-#: silently, unlike `GetMetricsRequest` and the admin CRUD types, which are
-#: `deny_unknown_fields` and refuse them (`test_catalog.py`). Same product, two
-#: conventions.
-OFF_SCHEMA_BODY: JsonValue = []
+#:   {"stand": …}  an unknown KEY is not off-schema for a type whose fields are
+#:                 all optional — serde ignores what it does not recognise, the
+#:                 request is a valid all-default one, and the handler runs.
+#:   []            neither is an ARRAY. serde's derived struct deserializer
+#:                 accepts a sequence as well as a map, matching fields
+#:                 positionally, so an empty array is again all-defaults.
+#:
+#: A scalar is the shape that cannot become a struct either way: there is no
+#: `visit_str` on a struct visitor, so it fails at the extractor whatever the
+#: fields are. Route-independent, which is what this table needs.
+OFF_SCHEMA_BODY: JsonValue = "not the request type"
 
 #: `POST /v1/queries/{id}/run` is deliberately absent. It binds
 #: `Option<Json<RunSavedQueryRequest>>`, so a rejected body is not simply a

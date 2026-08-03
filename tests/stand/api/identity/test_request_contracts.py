@@ -167,14 +167,29 @@ def test_deleting_without_the_grant_is_403(
     )
 
 
-#: The admin WRITES, which the 403 cases below reach without a grant. Bodies
-#: are minimal and never valid — the gate answers before anything reads them,
-#: which is the property under test.
+#: The admin WRITES. Each needs a body the extractor ACCEPTS, so that what the
+#: 403 below proves is the grant check and not a parse failure.
 ADMIN_WRITES: tuple[tuple[str, str], ...] = (
     ("POST", "/v1/roles"),
     ("POST", "/v1/person-roles"),
     ("POST", "/v1/visibility"),
 )
+
+#: Shapes each route's extractor accepts. The IDS name nobody — a refusal must
+#: not depend on the referenced rows existing, and an ungranted caller must be
+#: turned away before anything is looked up either way.
+_VALID_BODIES: dict[str, dict[str, str]] = {
+    "/v1/roles": {"name": "stand-never-created"},
+    "/v1/person-roles": {"person_id": scratch.UNKNOWN_ID, "role_id": scratch.UNKNOWN_ID},
+    "/v1/visibility": {
+        "viewer_person_id": scratch.UNKNOWN_ID,
+        "viewed_person_id": scratch.UNKNOWN_ID,
+    },
+}
+
+
+def _valid_body(suffix: str) -> dict[str, str]:
+    return _VALID_BODIES[suffix]
 
 
 @pytest.mark.requires_seed("admin_operator", "ceo")
@@ -182,20 +197,30 @@ ADMIN_WRITES: tuple[tuple[str, str], ...] = (
 def test_creating_without_the_grant_is_403(
     realm_admin_session: PersonaSession, method: str, suffix: str
 ) -> None:
-    """The gate answers before the body is validated, on the writes too.
+    """The body is validated BEFORE the grant is checked — asserted as it is.
 
-    `test_admin_validation.py` proves these routes refuse a malformed body with
-    a 400; this proves the caller is checked first, so an ungranted caller
-    cannot use validation messages to learn what the API expects. The body sent
-    here is deliberately invalid — a 400 would mean the gate ran second.
+    I expected the opposite and the stand said otherwise: an ungranted caller
+    sending an unparseable body gets 400 `request body did not match the
+    expected schema`, not 403. So the extractor runs first, which is Axum
+    doing what Axum does — the gate lives inside the handler, and no handler
+    runs until its extractors succeed.
+
+    Worth knowing rather than worth alarm. It means a caller with no grant can
+    learn that a route exists and roughly what shape it wants, which is a
+    small disclosure and an unavoidable one at this layer. What it must NOT
+    leak is anything about the DATA, and that is what the 403-before-404
+    ordering on the deletes above pins.
+
+    A VALID body is what proves the grant is checked at all, so this sends one
+    and requires the refusal.
     """
     response = realm_admin_session.client.request(
-        method, identity_path(suffix), json_body={"stand": "not a valid body"}
+        method, identity_path(suffix), json_body=dict(_valid_body(suffix))
     )
     assert response.status_code == 403, (
         f"{method} {suffix} answered {response.status_code} to a caller holding the "
-        f"realm role but no grant; 400 would mean the body was read first: "
-        f"{response.text[:300]}"
+        f"realm role but no grant — a well-formed request from an ungranted caller "
+        f"must be refused: {response.text[:300]}"
     )
 
 

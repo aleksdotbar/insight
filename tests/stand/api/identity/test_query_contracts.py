@@ -66,11 +66,17 @@ def _people(node: SubchartNode) -> set[str]:
 def test_person_roles_filtered_by_person_shows_only_that_person(
     admin_operator_session: PersonaSession, stand_manifest: Manifest
 ) -> None:
-    """The operator holds a grant; the dev lead holds none. Both halves asserted.
+    """The operator holds an ACTIVE grant; the dev lead holds none. Both halves.
 
     Without the empty half this passes for a listing that ignores the filter
     entirely, since the operator's own grant would be in the unfiltered answer
     too.
+
+    `active=true` on the empty half is load-bearing rather than decorative. A
+    revoke here is temporal — `DELETE` sets `valid_to` and the row stays — so
+    an earlier test's granted-then-revoked assignment is still a row the
+    unfiltered filter correctly returns. Asserting "no rows at all" would blame
+    the filter for the audit trail doing its job.
     """
     operator = stand_manifest.fixture("admin_operator")
     lead = stand_manifest.fixture("dev_lead")
@@ -83,10 +89,13 @@ def test_person_roles_filtered_by_person_shows_only_that_person(
         f"{[str(r.person_id) for r in mine.items]}"
     )
 
-    theirs = _person_roles(client, f"?person={lead.uuid}")
-    assert theirs.items == [], (
-        f"?person={lead.uuid} returned {len(theirs.items)} grants for somebody who holds none "
-        "— the filter is being ignored"
+    theirs = _person_roles(client, f"?person={lead.uuid}&active=true")
+    assert [row for row in theirs.items if row.in_force] == [], (
+        f"?person={lead.uuid}&active=true returned {len(theirs.items)} grants in force "
+        "for somebody who holds none"
+    )
+    assert all(str(row.person_id) == lead.uuid for row in theirs.items), (
+        "the person filter returned rows about somebody else"
     )
 
 
