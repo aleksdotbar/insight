@@ -8,7 +8,7 @@ SELECT
     entity_id,
     measure_key,
     count() AS row_count
-FROM {{ ref('wiki_metric_observations') }}
+FROM {{ ref('ai_metric_observations') }}
 WHERE NOT match(entity_id, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
    OR entity_id = '00000000-0000-0000-0000-000000000000'
 GROUP BY entity_id, measure_key

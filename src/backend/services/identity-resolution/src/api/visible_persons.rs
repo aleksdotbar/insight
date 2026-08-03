@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::Json;
@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use toolkit_canonical_errors::CanonicalError;
 use toolkit_security::SecurityContext;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use super::AppState;
 use super::canonical_json::CanonicalJson;
@@ -15,18 +16,24 @@ use super::error::VisibilityError;
 use super::gate::require_caller;
 use crate::infra::db::{persons_repo, subchart_repo};
 
-// One bound parameter per email, so the request bounds the query.
-const MAX_EMAILS: usize = 1000;
+// One bound parameter per person id, so the request bounds the query. Equal to
+// the analytics metric-results cap on purpose: that endpoint forwards a whole
+// cleared request here, so a smaller cap would reject a request analytics
+// already accepted.
+const MAX_PERSON_IDS: usize = 1000;
 
+/// Canonical person UUIDs to check (the metric runtime's key since the
+/// identity cutover — the earlier email-based draft of this endpoint never
+/// shipped).
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct VisiblePersonsRequest {
-    pub emails: Vec<String>,
+    pub person_ids: Vec<Uuid>,
 }
 impl toolkit::api::api_dto::RequestApiDto for VisiblePersonsRequest {}
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct VisiblePersonsResponse {
-    pub visible: Vec<String>,
+    pub visible: Vec<Uuid>,
 }
 impl toolkit::api::api_dto::ResponseApiDto for VisiblePersonsResponse {}
 
@@ -38,86 +45,63 @@ pub async fn filter_visible_persons(
     let caller = require_caller(&ctx)?;
     let tenant = ctx.subject_tenant_id();
 
-    let requested = normalize_emails(&req.emails)?;
+    let requested = dedup_person_ids(&req.person_ids)?;
 
-    let resolved = persons_repo::resolve_person_ids_by_emails(&state.db, tenant, &requested)
-        .await
-        .map_err(read_err)?;
-
-    // INVARIANT: the collation matches loosely (case, accents, padding), so a
-    // candidate may be a different person whose email merely compares equal.
-    // Consumers key rows by the email bytes — drop any candidate not storing it.
-    let mut candidates_by_index: BTreeMap<usize, Vec<uuid::Uuid>> = BTreeMap::new();
-    for (index, person_id, stored_email) in resolved {
-        let Some(requested_email) = requested.get(index) else {
-            continue;
-        };
-        if !stored_email.trim().eq_ignore_ascii_case(requested_email) {
-            continue;
-        }
-        candidates_by_index
-            .entry(index)
-            .or_default()
-            .push(person_id);
-    }
-
-    let visible_indices = if subchart_repo::has_wildcard_grant(&state.db, tenant, caller)
+    // A wildcard grant covers everyone IN THE TENANT, not everyone whose UUID
+    // the caller can type: the echo is intersected with the tenant's persons
+    // log, or a wildcard holder in tenant A could get tenant B's ids confirmed
+    // as visible — and analytics treats this answer as authorization. Not an
+    // existence oracle beyond what the grant already implies: a wildcard
+    // holder may see every person the tenant has.
+    let visible = if subchart_repo::has_wildcard_grant(&state.db, tenant, caller)
         .await
         .map_err(read_err)?
     {
-        candidates_by_index.keys().copied().collect()
+        persons_repo::persons_in_tenant(&state.db, tenant, &requested)
+            .await
+            .map_err(read_err)?
     } else {
-        let candidates = candidates_by_index
-            .values()
-            .flatten()
-            .copied()
-            .collect::<Vec<_>>();
         let visible = subchart_repo::visible_targets(
             &state.db,
             tenant,
             caller,
-            &candidates,
+            &requested,
             &state.config.org_chart_source_type,
         )
         .await
         .map_err(read_err)?
         .into_iter()
-        .collect::<std::collections::HashSet<_>>();
+        .collect::<HashSet<_>>();
 
-        candidates_by_index
-            .iter()
-            .filter(|(_, ids)| ids.iter().any(|id| visible.contains(id)))
-            .map(|(index, _)| *index)
-            .collect::<Vec<_>>()
+        requested
+            .into_iter()
+            .filter(|person_id| visible.contains(person_id))
+            .collect()
     };
-
-    let visible = visible_indices
-        .into_iter()
-        .filter_map(|index| requested.get(index).cloned())
-        .collect();
 
     Ok(Json(VisiblePersonsResponse { visible }))
 }
 
-fn normalize_emails(emails: &[String]) -> Result<Vec<String>, CanonicalError> {
-    if emails.len() > MAX_EMAILS {
-        return Err(invalid(&format!("at most {MAX_EMAILS} emails per request")));
+fn dedup_person_ids(person_ids: &[Uuid]) -> Result<Vec<Uuid>, CanonicalError> {
+    if person_ids.len() > MAX_PERSON_IDS {
+        return Err(invalid(&format!(
+            "at most {MAX_PERSON_IDS} person ids per request"
+        )));
     }
 
-    let mut seen: HashSet<String> = HashSet::with_capacity(emails.len());
-    let mut out: Vec<String> = Vec::with_capacity(emails.len());
-    for email in emails {
-        let email = email.trim();
-        if email.is_empty() {
+    let mut seen: HashSet<Uuid> = HashSet::with_capacity(person_ids.len());
+    let mut out: Vec<Uuid> = Vec::with_capacity(person_ids.len());
+    for person_id in person_ids {
+        if person_id.is_nil() {
             continue;
         }
-        if seen.insert(email.to_ascii_lowercase()) {
-            out.push(email.to_owned());
+        if seen.insert(*person_id) {
+            out.push(*person_id);
         }
     }
 
     if out.is_empty() {
-        return Err(invalid("emails must not be empty"));
+        return Err(invalid("person_ids must not be empty"));
     }
 
     Ok(out)
@@ -125,7 +109,7 @@ fn normalize_emails(emails: &[String]) -> Result<Vec<String>, CanonicalError> {
 
 fn invalid(detail: &str) -> CanonicalError {
     VisibilityError::invalid_argument()
-        .with_field_violation("emails", detail, "invalid_emails")
+        .with_field_violation("person_ids", detail, "invalid_person_ids")
         .create()
 }
 
@@ -136,46 +120,41 @@ fn read_err(e: anyhow::Error) -> CanonicalError {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "test setup panics on a broken fixture")]
 mod tests {
     use super::*;
 
     #[test]
-    fn blank_and_duplicate_emails_collapse_keeping_input_spelling() {
-        let got = normalize_emails(&[
-            "  Ada@Example.COM ".to_owned(),
-            "ada@example.com".to_owned(),
-            "   ".to_owned(),
-            "bob@example.com".to_owned(),
-            "   bob@example.com".to_owned(),
+    fn nil_and_duplicate_person_ids_collapse() {
+        let got = dedup_person_ids(&[
+            Uuid::from_u128(1),
+            Uuid::from_u128(1),
+            Uuid::nil(),
+            Uuid::from_u128(2),
         ])
         .expect("a non-empty list");
 
-        assert_eq!(
-            got,
-            vec!["Ada@Example.COM".to_owned(), "bob@example.com".to_owned()],
-            "first spelling wins and case-variants are one entry"
-        );
+        assert_eq!(got, vec![Uuid::from_u128(1), Uuid::from_u128(2)]);
     }
 
     #[test]
-    fn an_all_blank_list_is_rejected() {
-        assert!(normalize_emails(&[String::new(), "  ".to_owned()]).is_err());
-        assert!(normalize_emails(&[]).is_err());
+    fn an_all_nil_list_is_rejected() {
+        assert!(dedup_person_ids(&[Uuid::nil()]).is_err());
+        assert!(dedup_person_ids(&[]).is_err());
     }
 
     #[test]
-    fn more_emails_than_the_cap_are_rejected() {
-        let many = (0..=MAX_EMAILS)
-            .map(|i| format!("p{i}@example.com"))
+    fn more_person_ids_than_the_cap_are_rejected() {
+        let many = (0..=MAX_PERSON_IDS)
+            .map(|i| Uuid::from_u128(i as u128 + 1))
             .collect::<Vec<_>>();
-        assert!(normalize_emails(&many).is_err(), "over-cap rejected");
+        assert!(dedup_person_ids(&many).is_err(), "over-cap rejected");
 
-        let at_cap = (0..MAX_EMAILS)
-            .map(|i| format!("p{i}@example.com"))
+        let at_cap = (0..MAX_PERSON_IDS)
+            .map(|i| Uuid::from_u128(i as u128 + 1))
             .collect::<Vec<_>>();
         assert!(
-            normalize_emails(&at_cap).is_ok(),
+            dedup_person_ids(&at_cap).is_ok(),
             "the cap itself is allowed"
         );
     }

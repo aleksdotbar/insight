@@ -7,9 +7,7 @@ use crate::domain::metric_definitions::definition::MetricInputRole;
 use crate::domain::metric_definitions::{
     EvidenceGranularity, MetricDefinition, load_definitions_with_ids,
 };
-use crate::domain::metric_results::{
-    normalize_entity_id, normalize_entity_type, normalize_key, normalize_metric_key,
-};
+use crate::domain::metric_results::{normalize_entity_type, normalize_key, normalize_metric_key};
 
 use super::capability::EvidenceInputRow;
 use super::capability::healthy_evidence;
@@ -35,7 +33,9 @@ struct CommonRequest {
     cursor: Option<String>,
 }
 
-use super::error::{config_error, db_error, evidence_unavailable, invalid, parse_date};
+use super::error::{
+    config_error, db_error, evidence_unavailable, invalid, invalid_error, parse_date,
+};
 use super::presentation::evidence_presentation;
 
 pub async fn validate_request(
@@ -108,10 +108,16 @@ async fn validate_common(
     if entity_type != "person" {
         return invalid("entity.type", "only person entities are supported");
     }
-    let entity_id = normalize_entity_id(&entity_type, &entity.id);
-    if entity_id.is_empty() {
-        return invalid("entity.id", "person entity id must not be empty");
-    }
+    // Canonical person id, like every other person-keyed route since the
+    // identity cutover; the pre-cutover email shape (and the nil UUID, which
+    // parses but is never a person) is a loud 400. The compiler translates the
+    // id back to the person's source emails, because the evidence relations
+    // deliberately stay email-keyed (coverage measures the gap from them).
+    let person_id = uuid::Uuid::parse_str(entity.id.trim())
+        .ok()
+        .filter(|id| !id.is_nil())
+        .ok_or_else(|| invalid_error("entity.id", "entity.id must be a person UUID"))?;
+    let entity_id = person_id.to_string();
     if limit == 0 || limit > max_limit {
         return invalid("limit", format!("limit must be between 1 and {max_limit}"));
     }
@@ -167,6 +173,11 @@ async fn validate_common(
     };
     Ok(ValidatedMetricDrilldown {
         selection,
+        person_id,
+        tenant_id,
+        // The handler overwrites this from config; false is the runtime-wide
+        // default (#1967) so tests compile queries in the degraded form.
+        enforce_tenant_scope: false,
         from,
         to,
         limit,

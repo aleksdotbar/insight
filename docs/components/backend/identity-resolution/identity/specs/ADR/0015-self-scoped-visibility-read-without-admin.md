@@ -54,10 +54,20 @@ users.
 ## Decision Outcome
 
 `POST /v1/visible-persons` is authenticated but **not** admin-gated. It
-takes emails and answers with the subset the caller may see, evaluated by
-the same union the rest of the service uses: the caller, their active
-grants, the whole tenant on a wildcard grant, and their `org_chart`
-descendants.
+takes canonical person ids (UUIDs) and answers with the subset the caller
+may see, evaluated by the same union the rest of the service uses: the
+caller, their active grants, the whole tenant on a wildcard grant, and
+their `org_chart` descendants.
+
+The request shape is UUIDs because the metrics runtime keys on `person_id`
+since the identity cutover; the email-taking first cut of this endpoint
+(and its `resolve_person_ids_by_emails` position-keyed resolution, needed
+because `value_id` compares case- and accent-insensitively) is gone with
+it. On a wildcard grant the answer is the request intersected with the
+tenant's persons log: the grant covers everyone in the tenant, not everyone
+whose UUID the caller can type, and consumers read this answer as
+authorization — echoing a foreign tenant's id back would confirm it as
+visible.
 
 Three properties keep it least-privilege despite the missing admin gate:
 
@@ -69,7 +79,9 @@ Three properties keep it least-privilege despite the missing admin gate:
   `POST /v1/profiles` one id at a time.
 - **Absence carries the denial.** An id the caller may not see and an id
   that resolves to nobody are both simply absent, so the endpoint is not
-  an existence oracle.
+  an existence oracle beyond what the caller's own grants already imply —
+  a wildcard holder learns tenant membership, which their grant lets them
+  enumerate through `POST /v1/profiles` anyway.
 
 Roles stay out of the predicate. Holding the `admin` role confers no
 visibility, exactly as before — administering identity and seeing people
@@ -132,8 +144,7 @@ allow would be the failure this endpoint exists to prevent.
 ## Traceability
 
 - Endpoint: `services/identity-resolution/src/api/visible_persons.rs`
-- SQL: `subchart_repo::visible_targets`, `subchart_repo::has_wildcard_grant`,
-  `persons_repo::resolve_person_ids_by_emails`
+- SQL: `subchart_repo::visible_targets`, `subchart_repo::has_wildcard_grant`
 - Tests: `infra::db::visible_set_live_tests`,
   `src/ingestion/tests/e2e/identity/test_visible_persons.py`
 - Related: ADR-0012 (admin-only reads — relaxed here for one read),

@@ -32,7 +32,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::config::GearConfig;
-use crate::domain::sync_service::{SyncSummary, run_sync};
+use crate::domain::sync_service::{SyncError, SyncSummary, run_sync};
 use crate::infra::db::{self, ops_repo, persons_log_repo::MariaDbPersonsLogReader, seed_repo};
 use crate::infra::identity_persons::ClickHouseIdentityPersonsWriter;
 use crate::seed_runner::{SYSTEM_AUTHOR, resolve_tenant};
@@ -183,13 +183,14 @@ async fn guarded_sync(
     );
 
     let run = async {
-        let rows = reader.count().await?;
-        if let Err(msg) = empty_log_guard(rows, force) {
-            return Err(SyncRunError::Guard(msg));
-        }
-        run_sync(&reader, &writer, chrono::Utc::now().naive_utc())
+        // The empty-log guard lives with the rows it judges (see `run_sync`), so
+        // a seed emptying the log mid-run cannot slip past a stale count.
+        run_sync(&reader, &writer, chrono::Utc::now().naive_utc(), force)
             .await
-            .map_err(SyncRunError::Failed)
+            .map_err(|e| match e {
+                SyncError::EmptyLog(msg) => SyncRunError::Guard(msg),
+                SyncError::Failed(e) => SyncRunError::Failed(e),
+            })
     };
 
     tokio::time::timeout(SYNC_TIMEOUT, run)
@@ -202,44 +203,9 @@ async fn guarded_sync(
         })
 }
 
-/// The pure guard decision: refuse publishing an EMPTY log unless `--force`.
-/// An empty read is far more often a misconfigured database / wiped stand
-/// than a real "no people", and publishing it atomically erases a populated
-/// mirror. The message is operator-facing.
-fn empty_log_guard(log_rows: u64, force: bool) -> Result<(), String> {
-    if force || log_rows > 0 {
-        return Ok(());
-    }
-    Err(
-        "empty-log guard: the persons log has 0 rows — publishing would erase the \
-         ClickHouse snapshot (misconfigured database_url? wiped stand?); re-run with \
-         --force to publish the empty snapshot deliberately"
-            .to_owned(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn empty_log_refused_and_names_the_fix() -> anyhow::Result<()> {
-        let Err(msg) = empty_log_guard(0, false) else {
-            anyhow::bail!("empty log must be refused");
-        };
-        assert!(msg.contains("--force"), "{msg}");
-        Ok(())
-    }
-
-    #[test]
-    fn force_publishes_the_empty_snapshot() {
-        assert!(empty_log_guard(0, true).is_ok());
-    }
-
-    #[test]
-    fn non_empty_log_passes() {
-        assert!(empty_log_guard(1, false).is_ok());
-    }
 
     #[tokio::test]
     async fn default_config_fails_cleanly() {

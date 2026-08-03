@@ -39,12 +39,16 @@ pub async fn query_metric_results(
     let tenant_id = ctx.subject_tenant_id();
     let mut req = validate_request(&state.db, tenant_id, req).await?;
     req.enforce_tenant_scope = state.config.metric_catalog.enforce_tenant_scope;
+
+    // Visibility gate BEFORE any ClickHouse work: the caller may only query
+    // persons inside their visible set (identity /v1/visible-persons, by
+    // person UUID since the cutover). Service principals bypass.
     authorize_entity_ids(
         &state.identity,
         &ctx,
         super::forwarded_authorization(&headers),
-        &req.entity_type,
-        &req.entity_ids,
+        req.entity.entity_type(),
+        req.entity.person_ids(),
     )
     .await?;
 
@@ -115,8 +119,8 @@ pub async fn query_metric_results(
         let selection = crate::domain::metric_results::MetricResultSelectionDto {
             metric_key: metric.def.key().to_owned(),
             entity: crate::domain::metric_results::MetricResultsEntityDto {
-                r#type: req.entity_type.clone(),
-                ids: req.entity_ids.clone(),
+                r#type: req.entity.entity_type().to_owned(),
+                ids: req.entity.entity_ids(),
             },
             period: crate::domain::metric_results::MetricResultsPeriodDto {
                 from: req.from.to_string(),

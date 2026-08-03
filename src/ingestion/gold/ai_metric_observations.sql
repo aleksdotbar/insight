@@ -17,15 +17,21 @@ SELECT
     tenant_id,
     source_key,
     entity_type,
+    -- entity_id arrives ALREADY canonical from evidence (resolved once per
+    -- build); '' marks a row identity could not resolve, which stays out of
+    -- every serving relation and is counted by identity_resolution_coverage.
     entity_id,
-    -- Canonical person from the identity log; NULL = unknown email (see
-    -- macros/resolve_person_id.sql). entity_id stays the runtime key.
-    {{ resolved_person_id_column() }},
     metric_date,
-    observed_at,
+    CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
     measure_key,
-    contribution AS value,
+    -- Grouped to CANONICAL grain: a person's several source accounts land in
+    -- ONE row per (person, day, measure, subject, dims). Additive measures sum
+    -- across accounts; day flags collapse by their own semantics (max — active
+    -- under any account; min for meeting_free_day — free only if every account
+    -- was); distinct subjects stay their own rows via subject_key in the key.
+    toNullable({{ collapsed_value('contribution', max_keys=['active_day']) }}) AS value,
     subject_key,
     dimensions
 FROM {{ ref('ai_metric_evidence') }}
-{{ resolved_person_id_join("ai_metric_evidence") }}
+WHERE entity_id != ''
+GROUP BY tenant_id, source_key, entity_type, entity_id, metric_date, measure_key, subject_key, dimensions

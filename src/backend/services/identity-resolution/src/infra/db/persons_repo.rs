@@ -10,7 +10,7 @@
 
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilter,
-    QueryResult, Statement, Value,
+    QueryResult, QuerySelect, Statement,
 };
 use uuid::Uuid;
 
@@ -64,82 +64,6 @@ pub async fn resolve_person_ids_by_email(
 
     let rows = db.query_all(stmt).await?;
     person_ids_from_rows(rows)
-}
-
-/// Batch form of [`resolve_person_ids_by_email`], returning `(index,
-/// person_id, stored_email)` per current match, where `index` is the offset in
-/// `emails`. Group by index: no rows means nobody, one means resolved, more
-/// than one means ambiguous. Keyed by index because `value_id` is
-/// `utf8mb4_unicode_ci` — matching is case-, accent- and pad-insensitive, so the
-/// stored text cannot be mapped back reliably. `stored_email` is that stored
-/// spelling, for callers that key by the email bytes.
-///
-/// # Errors
-///
-/// Returns an error if the query fails or a stored `person_id` is not 16 bytes.
-pub async fn resolve_person_ids_by_emails(
-    db: &DatabaseConnection,
-    tenant_id: Uuid,
-    emails: &[String],
-) -> anyhow::Result<Vec<(usize, Uuid, String)>> {
-    if emails.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // INVARIANT: only generated indices are interpolated; every email is bound.
-    // `inputs` is a materialised UNION, so its column carries the session
-    // charset and collation; CONVERT + COLLATE pins matching to the column's own
-    // regardless of what the connection negotiated.
-    let inputs = (0..emails.len())
-        .map(|idx| format!("SELECT {idx} AS idx, ? AS email"))
-        .collect::<Vec<_>>()
-        .join(" UNION ALL ");
-
-    let sql = format!(
-        "WITH ranked AS (
-            SELECT
-                person_id,
-                value_id,
-                ROW_NUMBER() OVER (
-                    PARTITION BY insight_tenant_id, person_id, insight_source_type, insight_source_id, value_type
-                    ORDER BY created_at DESC, id DESC
-                ) AS rn
-            FROM persons
-            WHERE insight_tenant_id = ?
-              AND value_type = 'email'
-        ),
-        inputs AS ({inputs})
-        SELECT DISTINCT i.idx AS idx, r.person_id AS person_id, r.value_id AS stored_email
-        FROM inputs i
-        JOIN ranked r
-          ON  r.rn = 1
-          AND r.value_id = CONVERT(i.email USING utf8mb4) COLLATE utf8mb4_unicode_ci"
-    );
-
-    let mut values: Vec<Value> = Vec::with_capacity(emails.len() + 1);
-    values.push(tenant_id.as_bytes().to_vec().into());
-    values.extend(emails.iter().map(|email| email.trim().to_owned().into()));
-
-    let rows = db
-        .query_all(Statement::from_sql_and_values(
-            DbBackend::MySql,
-            &sql,
-            values,
-        ))
-        .await?;
-
-    rows.iter()
-        .map(|r| {
-            let idx: i64 = r.try_get("", "idx")?;
-            let person_id: Vec<u8> = r.try_get("", "person_id")?;
-            let stored_email: String = r.try_get("", "stored_email")?;
-            Ok((
-                usize::try_from(idx)?,
-                Uuid::from_slice(&person_id)?,
-                stored_email,
-            ))
-        })
-        .collect()
 }
 
 /// Tenant-AGNOSTIC email → `person_id` resolution for the login bootstrap (the
@@ -240,6 +164,60 @@ pub async fn resolve_person_ids_by_source_id(
 
     let rows = db.query_all(stmt).await?;
     person_ids_from_rows(rows)
+}
+
+/// Whether the tenant's persons log holds any observation for `person_id`.
+///
+/// The existence question the `value_type='person_id'` profile lookup needs:
+/// the log is the person registry, so "has at least one row" IS "the person
+/// exists in this tenant". Kept as a bounded EXISTS-shaped probe rather than
+/// reusing `fetch_person_observations`, which pulls every row of the person.
+///
+/// # Errors
+///
+/// Returns an error if the query fails.
+/// The subset of `person_ids` with at least one observation in the tenant's
+/// persons log — the batch form of [`person_exists`], for the wildcard branch
+/// of the visible-persons filter: a wildcard grant covers everyone IN THE
+/// TENANT, so ids from another tenant (or from nowhere) must not be echoed
+/// back as visible.
+///
+/// # Errors
+///
+/// Returns an error if the query fails or a stored `person_id` is not 16 bytes.
+pub async fn persons_in_tenant(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    person_ids: &[Uuid],
+) -> anyhow::Result<Vec<Uuid>> {
+    if person_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = persons::Entity::find()
+        .select_only()
+        .column(persons::Column::PersonId)
+        .filter(persons::Column::InsightTenantId.eq(tenant_id.as_bytes().to_vec()))
+        .filter(persons::Column::PersonId.is_in(person_ids.iter().map(|id| id.as_bytes().to_vec())))
+        .distinct()
+        .into_tuple::<Vec<u8>>()
+        .all(db)
+        .await?;
+
+    rows.iter().map(|raw| Ok(Uuid::from_slice(raw)?)).collect()
+}
+
+pub async fn person_exists(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    person_id: Uuid,
+) -> anyhow::Result<bool> {
+    let found = persons::Entity::find()
+        .filter(persons::Column::InsightTenantId.eq(tenant_id.as_bytes().to_vec()))
+        .filter(persons::Column::PersonId.eq(person_id.as_bytes().to_vec()))
+        .one(db)
+        .await?;
+    Ok(found.is_some())
 }
 
 /// Fetch every observation row for a person within the tenant (all value types,

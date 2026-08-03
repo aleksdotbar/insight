@@ -2,14 +2,17 @@
 
 A minimal loopback HTTP backend the analytics identity fan-outs resolve against:
 
-- `POST {identity_url}/v1/profiles` with `{value_type:"email", value:<email>}` —
-  a canned profile for a seeded email (→ 200) and 404 for every other, so the
-  persons endpoint exercises its real 200/404 contract.
-- `POST {identity_url}/v1/visible-persons` — the emails the caller may see,
-  which the metric-results authorization gate compares against the requested
-  entity ids. The reply is the intersection of the request with the fixture
-  personas, so the metric suite's requests resolve as authorized and anyone
-  else is refused.
+- `POST {identity_url}/v1/profiles` — a canned profile for a seeded person
+  (→ 200) and 404 for every other, so the persons endpoint exercises its real
+  200/404 contract. Both key forms are served: `{value_type:"person_id",
+  value:<uuid>}`, which is what the analytics persons facade sends since the
+  identity cutover, and `{value_type:"email", value:<email>}`.
+- `POST {identity_url}/v1/visible-persons` — the person UUIDs the caller may
+  see (the identity-cutover contract), which the metric-results authorization
+  gate compares against the requested ids. The reply is the intersection of
+  the request with the fixture personas' derived UUIDs (`person_id_for`), so
+  the metric suite's requests resolve as authorized and anyone else is
+  refused.
 
 Resolves purely by the request `value` and ignores headers on purpose. Analytics
 forwards the caller's gateway JWT (Authorization) on this hop (NGINX_BFF G1), but
@@ -22,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import uuid as _uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
@@ -52,7 +56,10 @@ UNKNOWN_EMAIL = "nobody@example.com"
 
 # The metric fixtures' personas — the set the stub reports as visible, so
 # `POST /v1/metric-results` authorizes requests for them; an email outside this
-# set is refused by the gate.
+# set is refused by the gate. The metric rig does NOT rely on this tuple: it
+# calls `IdentityStub.allow_visible()` with the personas its yaml addresses, so
+# a new fixture persona cannot fail as a phantom 403. The tuple remains the
+# default for suites that spawn the stub without a yaml (api/…).
 VISIBLE_EMAILS: tuple[str, ...] = (
     SEEDED_EMAIL,
     "alice@example.com",
@@ -62,6 +69,24 @@ VISIBLE_EMAILS: tuple[str, ...] = (
     "frank@example.com",
     "grace@example.com",
 )
+
+# Deterministic persona UUIDs: uuid5 over the lowercased email in a fixed
+# namespace. One derivation shared by the stub's visible set, the metric
+# rig's email→person_id request translation and its identity_persons
+# seeding — so the same yaml persona always resolves to the same person.
+_PERSONA_NAMESPACE = _uuid.UUID("6e2e0000-0000-4000-8000-000000000001")
+
+
+def person_id_for(email: str) -> str:
+    """Canonical person UUID of a fixture persona (uuid5 of the email)."""
+    return str(_uuid.uuid5(_PERSONA_NAMESPACE, email.strip().lower()))
+
+
+# The seeded person's canonical id, and one that resolves to nobody: the
+# analytics persons facade is keyed by person_id since the identity cutover.
+SEEDED_PERSON_ID = person_id_for(SEEDED_EMAIL)
+UNKNOWN_PERSON_ID = "019e2810-0000-7000-8000-0000000000ff"
+
 
 _PROFILES_PATH = "/v1/profiles"
 _VISIBLE_PERSONS_PATH = "/v1/visible-persons"
@@ -90,15 +115,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_profile(body)
 
     def _send_visible(self, body: dict[str, Any]) -> None:
-        requested = body.get("emails") or []
-        visible = {email.lower() for email in self.server.visible}  # type: ignore[attr-defined]
-        self._send(200, {"visible": [e for e in requested if isinstance(e, str) and e.lower() in visible]})
+        # Person UUIDs since the identity cutover (the gate forwards the
+        # validated request ids verbatim).
+        requested = body.get("person_ids") or []
+        visible = {person_id_for(email) for email in self.server.visible}  # type: ignore[attr-defined]
+        self._send(200, {"visible": [p for p in requested if isinstance(p, str) and p.lower() in visible]})
 
     def _send_profile(self, body: dict[str, Any]) -> None:
-        email = body.get("value", "")
-        person = self.server.people.get(email)  # type: ignore[attr-defined]
+        value = body.get("value", "")
+        people: dict[str, dict[str, Any]] = self.server.people  # type: ignore[attr-defined]
+        if body.get("value_type") == "person_id":
+            key = {person_id_for(email): email for email in people}.get(str(value).lower())
+            person = people.get(key) if key else None
+        else:
+            person = people.get(value)
+
         if person is None:
-            self._send(404, {"error": "person not found", "value": email})
+            self._send(404, {"error": "person not found", "value": value})
         else:
             self._send(200, person)
 
@@ -122,9 +155,7 @@ class IdentityStub:
     """
 
     def __init__(
-        self,
-        people: dict[str, dict[str, Any]] | None = None,
-        visible: tuple[str, ...] = VISIBLE_EMAILS,
+        self, people: dict[str, dict[str, Any]] | None = None, visible: tuple[str, ...] = VISIBLE_EMAILS
     ) -> None:
         self._people = dict(people) if people is not None else {SEEDED_EMAIL: SEEDED_PERSON}
         self._visible = visible
@@ -141,6 +172,14 @@ class IdentityStub:
         self._thread = threading.Thread(target=server.serve_forever, name="identity-stub", daemon=True)
         self._thread.start()
         LOG.info("identity stub listening on %s", self.url)
+
+    def allow_visible(self, emails: tuple[str, ...] | list[str]) -> None:
+        """Replace the visible set at runtime (the metric rig passes the
+        personas its yaml addresses, so a new fixture persona is never a
+        phantom 403 from a stale hand-maintained list)."""
+        self._visible = tuple(emails)
+        if self._server is not None:
+            self._server.visible = self._visible  # type: ignore[attr-defined]
 
     @property
     def url(self) -> str:

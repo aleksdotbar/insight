@@ -31,7 +31,6 @@ tenant_id String,
 source_key String,
 entity_type String,
 entity_id String,
-person_id Nullable(UUID),
 metric_date Date,
 observed_at Nullable(DateTime64(3)),
 measure_key String,
@@ -45,15 +44,22 @@ Rules:
 - Observations belong to source measures, not final metrics.
 - `source_key` identifies the logical source.
 - `measure_key` identifies the source measure.
-- `entity_type` and `entity_id` identify the measured entity.
-- `person_id` is the canonical person resolved from the identity log at
-  build time (`resolve_person_id` dbt macro; NULL = identity does not know
-  the email). ADDITIVE, not yet consumed: the runtime still keys on
-  `entity_id`, and the schema validator's `OBSERVATION_COLUMNS` /
-  `COHORT_COLUMNS` deliberately exclude it until the person_id API cutover
-  — probing for a column nothing reads would gate metric availability on
-  the next dbt rebuild after a deploy, for no reader's benefit. The cohort
-  view carries the same column under the same rule.
+- `entity_type` and `entity_id` identify the measured entity — one
+  polymorphic pair, on the wire and in the relations alike.
+- For `entity_type = 'person'` that identity IS the canonical person id,
+  resolved from the identity log at build time (`resolve_person_id` dbt
+  macro). Gold therefore serves canonical grain: one row per person, with a
+  person's several source emails already summed together. A source row whose
+  email identity cannot resolve is ABSENT rather than guessed — with
+  `entity_id` being the person id there is nothing to serve it under.
+  Unresolved work is not lost from view: the evidence relations keep every
+  source row keyed by its source-native email, and
+  `insight.identity_resolution_coverage` reports the gap per source from
+  there.
+- The cohort relation is canonical-grained under the same rule, and a person
+  whose HR emails claim different org units is EXCLUDED from peer comparison
+  (contested membership is never tie-broken). The peer query reads that grain
+  straight; it does not repair it per request.
 - `observed_at` is reserved for future point-in-time semantics.
 - `subject_key` carries the counted subject for distinct-count measures (a
   date, a tool) and is NULL on every other measure's rows.
@@ -481,9 +487,15 @@ Request caps, checked before any per-request enumeration work:
 - at most 1000 entity ids per request.
 - at most 400 days per period.
 
-Entity id normalization is a property of the entity type: `person` ids are
-emails and are trimmed and lowercased to match observation sources, which
-emit lowercased emails; other entity types are trimmed only.
+Entity ids for `person` are canonical person UUIDs since the identity
+cutover: trimmed, parsed as UUIDs (any casing / hyphenless accepted,
+canonicalized on echo), deduplicated. A non-UUID value — including the
+pre-cutover email shape — is a client error, never a silent empty result, and
+so is the nil UUID, which is syntactically valid but never a person.
+
+The id cap counts SUBMITTED ids, before they are parsed: blanks are skipped
+and duplicates collapse, so capping the parsed count would let a padded
+request through and pay for the parse of every entry first.
 
 Reject with a client error when:
 
@@ -503,19 +515,33 @@ Reject with a client error when:
 
 ## Authorization
 
-v1 decision: any authenticated member of a tenant may query metric results
-for any entity ids in that tenant. Peer views expose aggregates only (no peer
-entity ids); period, timeseries, and breakdown views expose per-entity values.
-Entity-level scoping (self, reports, role-based) is deferred to the real
-authorization system; this endpoint must adopt it when it lands.
+Entity-level scoping is enforced, not deferred. The caller is resolved from
+the gateway JWT, and identity answers in one batch call which of the requested
+person ids that caller may see (`POST /v1/visible-persons`: self, active
+grants, a tenant-wide wildcard grant, and org-chart descendants). One id
+outside the answer refuses the WHOLE request with 403 — never a partial
+response, which is indistinguishable from absent data. The check runs before
+any ClickHouse work.
 
-Warehouse tenant isolation is not implemented platform-wide: compiled queries
-do not filter on the warehouse `tenant_id` column, matching the rest of the
-platform's single-tenant posture. The control-plane tenant id has no defined
-mapping to the warehouse `tenant_id` strings stamped at ingestion; defining
-that mapping and adding the predicate (one place: the compiler's shared WHERE
-clause) is the multi-tenant unlock. The observation and cohort contracts keep
-the column so that change needs no contract migration.
+Reaching identity is mandatory: an unconfigured or unreachable identity
+service is a server error, so an authorization backend that is down can never
+read as "permitted". Service principals bypass the gate. `person` is the only
+entity type with a rule; any other type fails closed.
+
+Peer views expose aggregates only (no peer entity ids); period, timeseries,
+and breakdown views expose per-entity values — for ids the caller is allowed
+to see.
+
+Warehouse tenant isolation is compiled into every observation and cohort
+read but is OFF BY DEFAULT: the predicate is `tenant_id = ?` only when
+`metric_catalog.enforce_tenant_scope` is set, and degrades to a match-all
+(`tenant_id = ? OR 1 = 1`) otherwise, because the `tenant_id` stamped at
+ingestion has no defined mapping to the control-plane tenant yet — an exact
+match would silently empty every metric. Until an environment aligns the
+stamp and flips the flag, this runtime is SINGLE-TENANT: with the filter
+degraded, a peer pool sharing a `cohort_id` across tenants would mix them,
+so multi-tenant deployment is unsupported rather than partially isolated.
+Defining the mapping and defaulting the flag on is the multi-tenant unlock.
 
 Schema validation checks:
 

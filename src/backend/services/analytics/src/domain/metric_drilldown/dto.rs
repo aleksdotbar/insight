@@ -120,6 +120,13 @@ impl toolkit::api::api_dto::ResponseApiDto for MetricDrilldownResponse {}
 #[derive(Debug)]
 pub struct ValidatedMetricDrilldown {
     pub selection: MetricDrilldownSelection,
+    /// Canonical person id parsed from `selection.entity.id` — what the
+    /// visibility gate authorizes and the compiler binds to `entity_id`.
+    pub person_id: uuid::Uuid,
+    pub tenant_id: uuid::Uuid,
+    /// Same runtime policy switch as metric-results (#1967): the evidence read
+    /// leads with `tenant_id = ?` when set, degrades to match-all otherwise.
+    pub enforce_tenant_scope: bool,
     pub from: NaiveDate,
     pub to: NaiveDate,
     pub limit: usize,

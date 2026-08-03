@@ -18,6 +18,7 @@ use crate::domain::metric::{
     CreateMetricRequest, Metric, MetricSummary, TableColumn, UpdateMetricRequest,
 };
 use crate::domain::metric_filter::{self, MetricFilter};
+use crate::domain::person_visibility::authorize_entity_ids;
 use crate::domain::query::{
     BatchQueryRequest, BatchQueryResponse, BatchQueryResult, PageInfo, QueryRequest, QueryResponse,
 };
@@ -34,8 +35,26 @@ use toolkit_security::SecurityContext;
 pub async fn get_person(
     Extension(state): Extension<Arc<AppState>>,
     headers: axum::http::HeaderMap,
-    Path(email): Path<String>,
+    Path(person_id): Path<String>,
 ) -> Result<impl IntoResponse, CanonicalError> {
+    // The path key is the canonical person id since the identity cutover: a
+    // pre-cutover email URL is a loud 400, not a 404 that reads as "no such
+    // person". The nil UUID is syntactically valid but never a person. Parsed
+    // before the backend check, so the client error does not depend on whether
+    // identity happens to be configured.
+    let parsed = Uuid::parse_str(person_id.trim())
+        .ok()
+        .filter(|id| !id.is_nil())
+        .ok_or_else(|| {
+            PersonError::invalid_argument()
+                .with_field_violation(
+                    "person_id",
+                    "person_id must be a person UUID",
+                    "invalid_person_id",
+                )
+                .create()
+        })?;
+
     if !state.identity.is_configured() {
         return Err(
             CanonicalError::internal("identity resolution service not configured").create(),
@@ -48,7 +67,7 @@ pub async fn get_person(
 
     let person = state
         .identity
-        .get_person(&email, authorization)
+        .get_person(parsed, authorization)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "identity resolution request failed");
@@ -61,7 +80,7 @@ pub async fn get_person(
             CanonicalError::internal("failed to serialize person").create()
         })?)),
         None => Err(PersonError::not_found("person not found")
-            .with_resource(email)
+            .with_resource(person_id)
             .create()),
     }
 }
@@ -206,24 +225,45 @@ pub async fn query_metric(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
     Path(id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<QueryRequest>,
 ) -> Result<impl IntoResponse, CanonicalError> {
-    let response = execute_metric_query(&state, &ctx, id, req).await?;
+    let response = execute_metric_query(
+        &state,
+        &ctx,
+        super::forwarded_authorization(&headers),
+        id,
+        req,
+    )
+    .await?;
     Ok(Json(response))
 }
 
 pub async fn query_metrics_batch(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<BatchQueryRequest>,
 ) -> Result<impl IntoResponse, CanonicalError> {
+    // Owned once: every query in the batch forwards the same caller credential.
+    let authorization = super::forwarded_authorization(&headers).map(str::to_owned);
+
     let tasks = req.queries.into_iter().map(|item| {
         let state = state.clone();
         let ctx = ctx.clone();
+        let authorization = authorization.clone();
         async move {
             let id = item.id;
             let metric_id = item.metric_id;
-            match execute_metric_query(&state, &ctx, metric_id, item.query).await {
+            match execute_metric_query(
+                &state,
+                &ctx,
+                authorization.as_deref(),
+                metric_id,
+                item.query,
+            )
+            .await
+            {
                 Ok(response) => BatchQueryResult::Ok {
                     id,
                     metric_id,
@@ -246,6 +286,7 @@ pub async fn query_metrics_batch(
 async fn execute_metric_query(
     state: &Arc<AppState>,
     ctx: &SecurityContext,
+    authorization: Option<&str>,
     id: Uuid,
     req: QueryRequest,
 ) -> Result<QueryResponse, CanonicalError> {
@@ -285,10 +326,30 @@ async fn execute_metric_query(
     // have resolved person_id columns).
     //
     // TODO: Full implementation should also:
-    // - Validate person_id / person_id IN values from $filter against AccessScope (IDOR prevention)
     // - Resolve person_ids when identity_url is set
     // - Parse $select to restrict returned columns
     // - Implement cursor-based pagination (decode $skip → keyset)
+
+    // Visibility gate BEFORE any ClickHouse work, same predicate and same
+    // failure matrix as `POST /v1/metric-results`: a caller may only name
+    // person ids inside their visible set. Without it a caller could read
+    // another person's values here by naming their id — the class the sibling
+    // endpoint answers 403 for.
+    //
+    // `org_unit_id` filters stay ungated: no visibility rule for org units
+    // exists yet (see the analytics DESIGN), and failing them closed would
+    // take out every department distribution metric.
+    let filtered_person_ids = person_ids_from_filter(&filter)?;
+    if !filtered_person_ids.is_empty() {
+        authorize_entity_ids(
+            &state.identity,
+            ctx,
+            authorization,
+            "person",
+            &filtered_person_ids,
+        )
+        .await?;
+    }
 
     let (select_expr, from_clause, group_by) = parse_query_ref(&metric.query_ref).map_err(|e| {
         tracing::error!(error = %e, query_ref = %metric.query_ref, "invalid query_ref");
@@ -484,6 +545,41 @@ fn round_floats(value: serde_json::Value) -> serde_json::Value {
         }
         other => other,
     }
+}
+
+/// Person ids named by a `$filter` — `person_id eq '<id>'` and
+/// `person_id in ('<id>',…)` — parsed as canonical person UUIDs off the typed
+/// filter model, so the gate sees exactly what the query builder will bind.
+///
+/// A value that is not a person UUID is a client error rather than something to
+/// gate: since the identity cutover `person_id` is a UUID column, so a
+/// pre-cutover email would reach ClickHouse as a cast failure (a 500 the caller
+/// cannot act on) and would name nobody the gate could check.
+fn person_ids_from_filter(filter: &MetricFilter) -> Result<Vec<Uuid>, CanonicalError> {
+    let named = filter
+        .person_id
+        .iter()
+        .chain(filter.person_ids.iter().flatten());
+
+    let mut out = Vec::new();
+    for value in named {
+        let person_id = Uuid::parse_str(value.trim())
+            .ok()
+            .filter(|id| !id.is_nil())
+            .ok_or_else(|| {
+                MetricError::invalid_argument()
+                    .with_field_violation(
+                        "$filter",
+                        "person_id must be a person UUID",
+                        "invalid_person_id",
+                    )
+                    .create()
+            })?;
+        if !out.contains(&person_id) {
+            out.push(person_id);
+        }
+    }
+    Ok(out)
 }
 
 /// `OData` input budgets for the metric query surface. `max_top` keeps the
@@ -1262,6 +1358,60 @@ fn model_to_column(m: entities::table_columns::Model) -> TableColumn {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── person_ids_from_filter ──────────────────────────────
+
+    const A: Uuid = Uuid::from_u128(0x019e_2820_0000_7000_8000_0000_0000_000a);
+    const B: Uuid = Uuid::from_u128(0x019e_2820_0000_7000_8000_0000_0000_000b);
+
+    fn parsed(raw: &str) -> Result<MetricFilter, Box<dyn std::error::Error>> {
+        Ok(MetricFilter::parse(raw, &query_limits())?)
+    }
+
+    #[test]
+    fn filter_person_ids_collect_from_both_eq_and_in_without_duplicates()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let f = parsed(&format!(
+            "person_id eq '{A}' and person_id in ('{A}', '{B}')"
+        ))?;
+        assert_eq!(person_ids_from_filter(&f).ok(), Some(vec![A, B]));
+        Ok(())
+    }
+
+    #[test]
+    fn a_filter_naming_nobody_needs_no_authorization_call() -> Result<(), Box<dyn std::error::Error>>
+    {
+        assert_eq!(
+            person_ids_from_filter(&MetricFilter::default()).ok(),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            person_ids_from_filter(&parsed("metric_date ge '2026-03-04'")?).ok(),
+            Some(Vec::new())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_pre_cutover_email_in_the_filter_is_a_client_error()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Not a 500 from a ClickHouse cast failure, and not silently ungated:
+        // it names nobody the visibility gate could check.
+        assert!(person_ids_from_filter(&parsed("person_id eq 'a@x.com'")?).is_err());
+        assert!(person_ids_from_filter(&parsed("person_id in ('a@x.com')")?).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn the_nil_uuid_in_the_filter_is_a_client_error() -> Result<(), Box<dyn std::error::Error>> {
+        assert!(
+            person_ids_from_filter(&parsed(
+                "person_id eq '00000000-0000-0000-0000-000000000000'"
+            )?)
+            .is_err()
+        );
+        Ok(())
+    }
 
     // ── parse_query_ref ─────────────────────────────────────
 

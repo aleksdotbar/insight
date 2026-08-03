@@ -50,20 +50,9 @@
 {% endmacro %}
 
 {#-
-  Companions for the observation models' final projections, so the join and
-  the column read identically across every model (and grep finds one shape):
-
-      SELECT
-          ...,
-          {{ resolved_person_id_column() }},
-          ...
-      FROM value_measures
-      {{ resolved_person_id_join('value_measures') }}
-      WHERE ...
-
-  The `if` keeps a join miss an honest NULL instead of the zero UUID a plain
-  LEFT JOIN default would mint — join_use_nulls deliberately stays off
-  model-wide so the models' other joins keep their semantics.
+  Companions for the models that join the map directly (the evidence wrappers
+  and the cohort relation): the join and the resolved-check read identically
+  across consumers, so grep finds one shape.
 -#}
 
 {% macro resolved_person_id_join(rel) %}
@@ -71,10 +60,71 @@
         ON identity_map.email = lower(trimBoth({{ rel }}.entity_id))
 {% endmacro %}
 
-{% macro resolved_person_id_column() %}
-    if(
-        identity_map.email != '',
-        toNullable(identity_map.person_id),
-        CAST(NULL AS Nullable(UUID))
-    ) AS person_id
+
+{#-
+  The canonical serving shape: `entity_type + entity_id` identifies the
+  measured entity, and for `person` that identity IS the canonical person id.
+  So gold projects the resolved UUID INTO entity_id rather than carrying a
+  second identity column beside the source-native email.
+
+      SELECT
+          ...,
+          {{ canonical_entity_id() }},
+          ...
+      FROM value_measures
+      {{ resolved_person_id_join('value_measures') }}
+      WHERE {{ resolved_only() }}
+      GROUP BY ..., identity_map.person_id, ...
+
+  Grouped on `identity_map.person_id`, never on the `entity_id` alias: an alias
+  that shadows a source column makes ClickHouse substitute it into the outer
+  scope (ILLEGAL_AGGREGATION, code 184).
+
+  Text, not UUID: `entity_id` is a String across every entity type, and the
+  contract is polymorphic — a UUID column would make the shape person-only.
+-#}
+{% macro canonical_entity_id() %}
+    toString(assumeNotNull(identity_map.person_id)) AS entity_id
+{% endmacro %}
+
+{#-
+  Keeps unresolved source rows OUT of the canonical relations: with entity_id
+  BEING the person id, a row identity cannot resolve has no identity to serve
+  under. Nothing is hidden — the pre-resolution evidence relations keep every
+  source row, and identity_resolution_coverage measures the gap from there.
+-#}
+{% macro resolved_only() %}
+    identity_map.email != ''
+{% endmacro %}
+
+{#-
+  Collapsing a person's several source aliases into their one canonical row.
+
+  Additive measures sum: two accounts' commits are that person's commits.
+  DAY FLAGS must not. A presence marker is `1` per (alias, day), so summing
+  says a person with two accounts had two active days in one day —
+  `max` keeps it one.
+
+  `meeting_free_day` is the INVERSE flag: the day is free only if EVERY alias
+  was free, so one alias with meetings makes it 0 — `min`, not `max`. Getting
+  that backwards would report the busiest people as the most protected.
+
+  Distinct-count measures need nothing here: the runtime counts
+  `uniqExact(subject_key)`, so two aliases naming the same subject collapse on
+  read. Event-grain rows are not aggregated at all.
+-#}
+{% macro collapsed_value(expr, max_keys=[], min_keys=[]) %}
+    {%- if not max_keys and not min_keys -%}
+    sum({{ expr }})
+    {%- else -%}
+    multiIf(
+        {%- if max_keys %}
+        measure_key IN ('{{ max_keys | join("', '") }}'), max({{ expr }}),
+        {%- endif %}
+        {%- if min_keys %}
+        measure_key IN ('{{ min_keys | join("', '") }}'), min({{ expr }}),
+        {%- endif %}
+        sum({{ expr }})
+    )
+    {%- endif -%}
 {% endmacro %}
