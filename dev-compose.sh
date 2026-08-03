@@ -690,6 +690,18 @@ YML
       dev|built|ghcr) profiles+=(--profile "front-$FRONTEND_MODE") ;;
       *) echo "ERROR: FRONTEND_MODE must be dev|built|ghcr (got: $FRONTEND_MODE)" >&2; return 1 ;;
     esac
+    # Each variant listens on its own port, and the gateway has to be told
+    # which. Getting it wrong is a confusing failure: the container is up and
+    # its name resolves, so the gateway reports "connect() failed (111:
+    # Connection refused)" rather than anything about a port.
+    if [[ -z "${FRONTEND_INTERNAL_PORT:-}" ]]; then
+      case "$FRONTEND_MODE" in
+        dev)   FRONTEND_INTERNAL_PORT=5173 ;;  # vite
+        built) FRONTEND_INTERNAL_PORT=80   ;;  # stock nginx image, runs as root
+        ghcr)  FRONTEND_INTERNAL_PORT=8080 ;;  # published image, runs as uid 101
+      esac
+      export FRONTEND_INTERNAL_PORT
+    fi
   fi
   profiles+=(--profile "auth-$AUTH_MODE")
 
