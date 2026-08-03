@@ -1,6 +1,6 @@
 """`POST /v1/metric-results` — the endpoint the dashboard actually calls.
 
-    POST /v1/metric-results   200 · 422 off-schema
+    POST /v1/metric-results   200 · 403 outside the visible set · 422 off-schema
 
 The widest single request in the API: an entity, a period and a list of metrics
 each with its own views. Worth a deployed-path test more than most, because it
@@ -19,7 +19,12 @@ from __future__ import annotations
 
 from insight_stand import ApiClient, ApiResponse, Manifest, analytics_path
 
-from .schemas import MetricDefinitionListResponse, MetricResultsResponse, PeriodView
+from .schemas import (
+    MetricDefinitionListResponse,
+    MetricResultsResponse,
+    PeriodView,
+    ProblemDocument,
+)
 
 METRIC_RESULTS = analytics_path("/v1/metric-results")
 
@@ -76,8 +81,8 @@ def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
     """One person, the seeded window, one metric — and a REAL number back.
 
     The entity id is the person's EMAIL, which is what this endpoint keys on.
-    That is not obvious and getting it wrong is silent: see
-    `test_metric_results_by_uuid_answers_null` below.
+    That is not obvious, and getting it wrong is refused rather than answered:
+    see `test_metric_results_403_by_uuid` below.
 
     The period comes from the manifest's own `data_window`, so the request asks
     for the range the stand was actually seeded over rather than a guess.
@@ -103,37 +108,33 @@ def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
     )
 
 
-def test_metric_results_by_uuid_answers_null(
-    api: ApiClient, stand_manifest: Manifest
-) -> None:
-    """Asking by canonical person UUID returns 200 and no data. Pinned, not endorsed.
+def test_metric_results_403_by_uuid(api: ApiClient, stand_manifest: Manifest) -> None:
+    """Asking by canonical person UUID is refused, not answered emptily.
 
-    The manifest, the org chart, `/v1/subchart` and `/v1/profiles` all identify
-    a person by UUID; this endpoint alone keys on email. Supplying the UUID does
-    not fail — it answers a well-formed 200 with `value: null`, indistinguishable
-    from "this person genuinely has no activity".
+    The manifest, the org chart, `/v1/subchart` and `/v1/profiles` all identify a
+    person by UUID; this endpoint alone keys on email. That mismatch used to be
+    silent — a UUID produced a well-formed 200 with `value: null`, which a
+    dashboard cannot tell apart from "this person genuinely has no activity".
 
-    That is a silent-empty-dashboard hazard and worth reporting upstream: a
-    caller holding the canonical identifier gets a plausible empty answer rather
-    than a 400. Asserted here so the behaviour is recorded rather than
-    rediscovered, and so a fix that starts resolving UUIDs — or starts
-    rejecting them — fails this test and gets noticed.
+    It is a refusal now, and by an indirect route worth knowing: every id in the
+    request is checked against the caller's visible set, which identity resolves
+    BY EMAIL. A UUID matches nobody there, so the gate reports it unmatched and
+    denies the whole request. Recorded for the same reason the null was — the
+    hazard is gone, but a caller holding the canonical identifier still cannot
+    use it here, and nothing else in the suite would say so.
+
+    It is also the only case in this module that reaches the visibility gate: the
+    request is the 200's, differing solely in the id.
     """
     person = stand_manifest.fixture("dev_lead")
     metric_key = _a_metric_key(api)
 
-    by_email = _values(_ask(api, stand_manifest, person.email, metric_key), metric_key)
-    by_uuid = _values(_ask(api, stand_manifest, person.uuid, metric_key), metric_key)
-
-    assert all(value is not None for _, value in by_email), (
-        "precondition: this person must have data when asked for by email, or the "
-        "comparison below says nothing"
+    response = _ask(api, stand_manifest, person.uuid, metric_key)
+    assert response.status_code == 403, (
+        f"asking for {person.email} by UUID answered {response.status_code}, expected the "
+        f"visibility gate's refusal: {response.text[:300]}"
     )
-    assert by_uuid == [(person.uuid, None)], (
-        f"asking for {person.email} by UUID returned {by_uuid}; the recorded behaviour "
-        "is a single null. If this now resolves, delete this test and drop the note "
-        "from test_metric_results_200"
-    )
+    assert response.parse(ProblemDocument).status == 403
 
 
 def test_metric_results_422_off_schema(api: ApiClient) -> None:
