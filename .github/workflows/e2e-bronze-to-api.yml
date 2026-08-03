@@ -291,9 +291,8 @@ jobs:
     #
     # It no longer folds in an endpoint-coverage gate, because after the
     # retirement this workflow has none — the endpoint contracts, and the gate
-    # over them, live in `e2e-stand.yml` (tests/stand). That gate is NOT yet a
-    # required check, so until it is made one, no endpoint coverage is enforced
-    # on merge. Making `api-smoke` required is the action that closes this.
+    # over them, live in `e2e-stand.yml`, whose own umbrella ("Stand E2E") is
+    # the check that enforces them.
     needs:
       - build
       - e2e-metrics

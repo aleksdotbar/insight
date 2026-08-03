@@ -36,23 +36,15 @@ name: E2E — Compose stand
 on:
   pull_request:
     branches: [main]
-    # Native path filtering, the same shape as authenticator.yml's trigger.
-    paths:
-      - "tests/stand/**"
-      - "tests/lib/**"
-      - "tests/pyproject.toml"
-      - "tests/uv.lock"
-      - "deploy/seed/**"
-      - "deploy/compose/**"
-      - "docker-compose.yml"
-      - "dev-compose.sh"
-      # The cross-repo hook: insight-front's CI dispatches build-images.yml with
-      # a frontend_tag, which bumps this chart's appVersion — and the stand pins
-      # its frontend image from exactly that value. Without this entry a
-      # frontend bump would never be exercised by a browser here.
-      - "src/frontend/helm/**"
-      - ".github/workflows/e2e-stand.yml"
-      - ".github/workflows/scripts/redact-playwright-trace.py"
+    # Deliberately NO `paths:` filter. This workflow emits a REQUIRED check,
+    # and GitHub reports a required check whose workflow never ran as pending
+    # rather than passed — a path filter here would block every PR that did not
+    # happen to touch one of the listed directories. Relevance is decided by
+    # the `changes` job below instead, which is cheap and always reports.
+  # Merge-queue builds: the queue's gh-readonly-queue/* branches emit
+  # merge_group, and a required check must report there or every queued PR
+  # times out and is evicted.
+  merge_group:
   # A scheduled run always evaluates against the default branch, so this is the
   # main-branch lane whatever ref the file is authored on. Nightly rather than
   # per-push: the stand is expensive and nothing here is a merge gate.
@@ -87,8 +79,51 @@ jobs:
   # than copy this file. Until they do, `compose` is the only implemented value
   # and anything else is a mistake worth failing on — a dispatch that silently
   # ran the wrong stand would be worse than one that refused.
+  # ─── changes ──────────────────────────────────────────────────────────────
+  # What the `on: paths:` filter used to do, moved into a job so the workflow
+  # ALWAYS runs and the umbrella below can always report.
+  #
+  # `src/backend/**` is in the list, and its absence was the reason making this
+  # required would have gated nothing that matters: the endpoint contracts this
+  # suite asserts are implemented there, so a PR changing an analytics handler
+  # has to run the stand or the gate is decorative.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # No base to diff against (merge_group without one, or a manual run):
+          # assume relevant rather than skipping a gate on a guess.
+          if [ -z "${BASE:-}" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "no base sha — running"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE" "$HEAD")"
+          echo "$changed" | sed 's/^/  /'
+          if echo "$changed" | grep -qE '^(tests/(stand|lib)/|tests/pyproject\.toml|tests/uv\.lock|deploy/(seed|compose)/|docker-compose\.yml|dev-compose\.sh|src/backend/|src/frontend/helm/|docs/components/backend/.*/openapi\.json|\.github/workflows/e2e-stand\.yml|\.github/workflows/scripts/redact-playwright-trace\.py)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "nothing the stand covers changed"
+          fi
+
   resolve-target:
     name: resolve-target
+    needs: changes
+    if: ${{ needs.changes.outputs.relevant == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -395,3 +430,43 @@ jobs:
         run: |
           [ -f .env.compose.test-stand ] || { echo "no stand env file — nothing to tear down"; exit 0; }
           ./dev-compose.sh test-stand down
+
+  # ─── the required check ───────────────────────────────────────────────────
+  # One stable context name for branch protection, and the only job here that
+  # runs unconditionally. That is the whole point: a required check must report
+  # on EVERY pull request, including ones that touch nothing this suite covers
+  # and ones where `changes` skipped the lanes.
+  #
+  # `skipped` is therefore a PASS here, unlike in e2e-bronze-to-api.yml's
+  # umbrella where it is a failure. The difference is what the skip means: there
+  # a skipped lane implies a red upstream build, here it means `changes` decided
+  # the diff cannot affect the stand. Treating those the same would either block
+  # every unrelated PR or let a broken build through.
+  stand-suite:
+    name: Stand E2E
+    needs: [changes, api-smoke, ui-journeys]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require both lanes to have passed, or to have been skipped as irrelevant
+        env:
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+          API: ${{ needs.api-smoke.result }}
+          UI: ${{ needs.ui-journeys.result }}
+        run: |
+          set -euo pipefail
+          echo "relevant=$RELEVANT api-smoke=$API ui-journeys=$UI"
+
+          if [ "$RELEVANT" != "true" ]; then
+            echo "nothing the stand covers changed — nothing to prove."
+            exit 0
+          fi
+          for lane in "api-smoke=$API" "ui-journeys=$UI"; do
+            if [ "${lane#*=}" != "success" ]; then
+              echo "::error::${lane%%=*} did not pass (${lane#*=}) — the deployed-stand"\
+                   "contracts are unproven for this change."
+              exit 1
+            fi
+          done
+          echo "Stand E2E passed: both lanes green."
