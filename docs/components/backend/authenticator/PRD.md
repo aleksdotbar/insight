@@ -314,7 +314,7 @@ The system **MUST** expose `GET /internal/authz` on the main listener as the gat
 
 The response carries no correlation id -- it is cacheable, so per-request correlation ids are generated at the edge (see [Gateway DESIGN](../gateway/DESIGN.md)).
 
-**Rationale**: This endpoint replaces the deleted Router's in-process session check + JWT injection; the Cache-Control contract keeps the authenticator in control of gateway-side staleness (revocation takes effect at the gateway within `authz_cache_max_age`, default 30 s).
+**Rationale**: This endpoint is the gateway's session check + JWT injection; the Cache-Control contract keeps the authenticator in control of gateway-side staleness (revocation takes effect at the gateway within `authz_cache_max_age`, default 30 s).
 
 **Actors**: `cpt-insightspec-actor-nginx-gateway`
 
@@ -487,7 +487,7 @@ Viewer identity remains exclusively gateway-authored: no client-supplied header 
 
 - [ ] `p2` - **ID**: `cpt-insightspec-nfr-auth-exchange-p95`
 
-The `/internal/authz` exchange (token mapping + session + JWT reads) **MUST** complete within 5 ms p95 under normal load, keeping total gateway overhead comfortably inside the 15 ms p95 budget the deleted gateway spec carried.
+The `/internal/authz` exchange (token mapping + session + JWT reads) **MUST** complete within 5 ms p95 under normal load, keeping total gateway overhead comfortably inside a 15 ms p95 budget.
 
 **Threshold**: 5 ms p95 for the exchange; two Redis reads on the hot path.
 
