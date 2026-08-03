@@ -265,9 +265,11 @@ The system **MUST** serve many experimental FE builds under path-based addressin
 
 #### Preview Authentication Return Path
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-preview-auth`
+- [x] `p2` - **ID**: `cpt-presentation-fr-preview-auth`
 
-The system **MUST** authenticate preview environments through a single fixed callback using a Redis-backed opaque `state` return path, validated at store time (same-origin, `/exp/` allowlist), with nothing tamperable carried in the URL. (#1972.)
+The system **MUST** authenticate preview environments through a single fixed callback using a Redis-backed opaque `state` return path. The caller-supplied `return_to` **MUST** be sanitized and validated at store time (same-origin, `/exp/` prefix) before it enters the Redis login state, and **MUST NOT** be forwarded through the OIDC callback — only the opaque `state` rides the callback URL. (#1972.)
+
+**Status**: Shipped (#1972). The authenticator already stashes `state -> { return_to, pkce_verifier, nonce }` in Redis (short TTL, delete-on-read) and `302`s to `return_to` off the single fixed callback; #1972 adds the store-time `/exp/` check. `return_to` sanitization gained a configurable `return_to_prefix` knob: empty (default) keeps the permissive main-app posture; a preview-host deployment sets it to `/exp/` so a login can only return to an `/exp/<name>` path, and a non-matching or `..`-traversing value falls back to the configured default.
 
 **Rationale**: One host means one Entra redirect URI; the return path must be safe with no per-experiment Entra change.
 
@@ -418,4 +420,4 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 | No-op tenant filter left in place on a read path | Cross-tenant data leak | Inject the predicate in one shared place; cover with cross-tenant isolation tests |
 | Tenant-id retrofit (#1829) lands out of sync | Filter targets a missing/renamed column | Coordinate the flat filter with engineering #1829 |
 | Manual preview provisioning drifts or leaks | Stale experiments or config rewritten | One route object per experiment, merged by the controller; central config never rewritten |
-| Preview `state` tampering | Open-redirect or session hijack on the return path | Validate `return_to` at store time (same-origin, `/exp/` allowlist); delete-on-read opaque `state` |
+| Preview `state` tampering | Open-redirect or session hijack on the return path | Validate `return_to` at store time (same-origin, `/exp/` prefix); delete-on-read opaque `state` |

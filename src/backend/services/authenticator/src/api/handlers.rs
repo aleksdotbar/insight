@@ -52,7 +52,11 @@ pub async fn login(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<LoginParams>,
 ) -> Response {
-    let return_to = sanitize_return_to(params.return_to.as_deref(), &state.cfg.default_return_to);
+    let return_to = sanitize_return_to(
+        params.return_to.as_deref(),
+        &state.cfg.default_return_to,
+        &state.cfg.return_to_prefix,
+    );
 
     // `__override` (view-as, #1941): carried into the login state only when
     // the environment opts in; otherwise the parameter is inert — and logged,
@@ -1394,14 +1398,37 @@ fn refresh_at_for(cfg: &crate::config::AuthenticatorConfig, expires_at: u64) -> 
         .saturating_add_signed(jitter_seconds(cfg.refresh_jitter_seconds / 2))
 }
 
-/// Sanitize an SPA-supplied `return_to`: accept only a site-relative path (one
-/// leading `/`, not `//` — which would be protocol-relative / open-redirect).
+/// Sanitize an SPA-supplied `return_to`; `default` on rejection. A non-empty
+/// `prefix` (empty = any same-origin path) also confines the path to it.
 #[must_use]
-pub fn sanitize_return_to(candidate: Option<&str>, default: &str) -> String {
-    match candidate {
-        Some(p) if p.starts_with('/') && !p.starts_with("//") => p.to_owned(),
-        _ => default.to_owned(),
+pub fn sanitize_return_to(candidate: Option<&str>, default: &str, prefix: &str) -> String {
+    candidate
+        .filter(|p| is_safe_return_to(p, prefix))
+        .unwrap_or(default)
+        .to_owned()
+}
+
+/// Same-origin and (when `prefix` is set) confined to it — checked on a form
+/// the browser cannot fold into an escape. `\`, `%5c`, `%2e`, `%2f`, and a
+/// literal `..` path segment are rejected, since the WHATWG URL parser turns
+/// them into `/` or `..` *after* this check (`/\host`, `/exp/%2e%2e/admin`).
+fn is_safe_return_to(p: &str, prefix: &str) -> bool {
+    if !p.starts_with('/') || p.starts_with("//") || p.starts_with("/\\") {
+        return false;
     }
+
+    let path = p.split(['?', '#']).next().unwrap_or(p).to_ascii_lowercase();
+    if ["\\", "%5c", "%2e", "%2f"]
+        .iter()
+        .any(|bad| path.contains(bad))
+    {
+        return false;
+    }
+    if path.split('/').any(|seg| seg == "..") {
+        return false;
+    }
+
+    prefix.is_empty() || p.starts_with(prefix)
 }
 
 /// Sanitize the client-supplied `__override` value before it is logged or
@@ -1579,7 +1606,56 @@ mod tests {
 
     #[test]
     fn return_to_accepts_site_relative_paths() {
-        assert_eq!(sanitize_return_to(Some("/dashboard"), "/"), "/dashboard");
+        assert_eq!(
+            sanitize_return_to(Some("/dashboard"), "/", ""),
+            "/dashboard"
+        );
+    }
+
+    #[test]
+    fn return_to_prefix_admits_only_matching_paths() {
+        assert_eq!(
+            sanitize_return_to(Some("/exp/widget-1/"), "/", "/exp/"),
+            "/exp/widget-1/"
+        );
+        // Outside the prefix, traversal, and open-redirect shapes all fall back.
+        assert_eq!(sanitize_return_to(Some("/dashboard"), "/", "/exp/"), "/");
+        assert_eq!(sanitize_return_to(Some("/exp/../admin"), "/", "/exp/"), "/");
+        assert_eq!(
+            sanitize_return_to(Some("//evil.example"), "/", "/exp/"),
+            "/"
+        );
+        assert_eq!(sanitize_return_to(None, "/", "/exp/"), "/");
+    }
+
+    #[test]
+    fn return_to_rejects_percent_encoded_traversal_out_of_prefix() {
+        // `%2e%2e` / `%2f` normalize to `../` in the browser and would escape
+        // the prefix after this check, so they are rejected up front.
+        for encoded in [
+            "/exp/%2e%2e/admin",
+            "/exp/%2E%2E/admin",
+            "/exp/%2e%2e%2fadmin",
+        ] {
+            assert_eq!(
+                sanitize_return_to(Some(encoded), "/", "/exp/"),
+                "/",
+                "should reject: {encoded:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn return_to_rejects_backslash_open_redirect() {
+        // Browsers fold `\` (and its `%5c` encoding) into `/`, so `/\host` and
+        // `/%5chost` resolve off-origin — rejected even with no prefix set.
+        for evil in ["/\\evil.example", "/%5cevil.example", "/%5Cevil.example"] {
+            assert_eq!(
+                sanitize_return_to(Some(evil), "/", ""),
+                "/",
+                "should reject: {evil:?}"
+            );
+        }
     }
 
     #[test]
@@ -1595,9 +1671,12 @@ mod tests {
     #[test]
     fn return_to_rejects_open_redirects() {
         // Protocol-relative and absolute URLs fall back to the default.
-        assert_eq!(sanitize_return_to(Some("//evil.example"), "/"), "/");
-        assert_eq!(sanitize_return_to(Some("https://evil.example"), "/"), "/");
-        assert_eq!(sanitize_return_to(None, "/home"), "/home");
+        assert_eq!(sanitize_return_to(Some("//evil.example"), "/", ""), "/");
+        assert_eq!(
+            sanitize_return_to(Some("https://evil.example"), "/", ""),
+            "/"
+        );
+        assert_eq!(sanitize_return_to(None, "/home", ""), "/home");
     }
 
     #[test]
