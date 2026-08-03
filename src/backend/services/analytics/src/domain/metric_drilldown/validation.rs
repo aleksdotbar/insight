@@ -32,7 +32,9 @@ struct CommonRequest {
     cursor: Option<String>,
 }
 
-use super::error::{config_error, db_error, evidence_unavailable, invalid, invalid_error, parse_date};
+use super::error::{
+    config_error, db_error, evidence_unavailable, invalid, invalid_error, parse_date,
+};
 use super::presentation::evidence_presentation;
 
 pub async fn validate_request(

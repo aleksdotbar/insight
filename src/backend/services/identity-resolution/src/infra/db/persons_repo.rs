@@ -9,9 +9,8 @@
 //! behaviour identical.
 
 use sea_orm::{
-    QuerySelect,
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilter,
-    QueryResult, Statement,
+    QueryResult, QuerySelect, Statement,
 };
 use uuid::Uuid;
 
@@ -199,18 +198,13 @@ pub async fn persons_in_tenant(
         .select_only()
         .column(persons::Column::PersonId)
         .filter(persons::Column::InsightTenantId.eq(tenant_id.as_bytes().to_vec()))
-        .filter(
-            persons::Column::PersonId
-                .is_in(person_ids.iter().map(|id| id.as_bytes().to_vec())),
-        )
+        .filter(persons::Column::PersonId.is_in(person_ids.iter().map(|id| id.as_bytes().to_vec())))
         .distinct()
         .into_tuple::<Vec<u8>>()
         .all(db)
         .await?;
 
-    rows.iter()
-        .map(|raw| Ok(Uuid::from_slice(raw)?))
-        .collect()
+    rows.iter().map(|raw| Ok(Uuid::from_slice(raw)?)).collect()
 }
 
 pub async fn person_exists(

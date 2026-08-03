@@ -261,7 +261,7 @@ mod tests {
                 "git", // scope: source, entity type, entity id
                 "person",
                 &TEST_PERSON.to_string(), // resolved to source emails via the identity map
-                "2026-07-01", // period bounds
+                "2026-07-01",             // period bounds
                 "2026-07-31",
                 "commit_count", // measure_key IN
                 "repository",   // filter: indexOf twice, then values
@@ -326,7 +326,7 @@ mod tests {
                 "git", // scope: source, entity type, entity id
                 "person",
                 &TEST_PERSON.to_string(), // resolved to source emails via the identity map
-                "2026-07-01", // period bounds
+                "2026-07-01",             // period bounds
                 "2026-07-31",
                 "focus_hours", // measure_key IN
                 "work_hours",

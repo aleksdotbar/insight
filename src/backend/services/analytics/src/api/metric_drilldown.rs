@@ -9,13 +9,13 @@ use toolkit_security::SecurityContext;
 
 use super::AppState;
 use crate::api::error::MetricError;
-use crate::domain::person_visibility::authorize_entity_ids;
 use crate::domain::metric_drilldown::{
     EVIDENCE_QUERY_MEMORY_BYTES, EVIDENCE_QUERY_READ_BYTES, EVIDENCE_QUERY_RESULT_BYTES,
     EVIDENCE_QUERY_TIMEOUT_SECS, EvidenceQueryRow, MetricDrilldownRequest, MetricDrilldownResponse,
     build_response, compile_query, decode_evidence_rows, evidence_unavailable, validate_request,
     verify_evidence_snapshot,
 };
+use crate::domain::person_visibility::authorize_entity_ids;
 
 const QUERY_TIMEOUT: Duration = Duration::from_secs(EVIDENCE_QUERY_TIMEOUT_SECS);
 const QUERY_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(2);
