@@ -117,7 +117,7 @@ data:
           vendor: "hyperspot"
           priority: 20
 
-      # Leaf values (database_url, clickhouse_*, identity_url,
-      # metric_catalog.tenant_default_id) come from the Secret via envFrom.
+      # Leaf values (database_url, clickhouse_*, identity_url) come from the
+      # Secret via envFrom.
       analytics:
         config: {}

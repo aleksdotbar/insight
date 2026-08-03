@@ -8,7 +8,6 @@
 //! old `ANALYTICS__*`).
 
 use serde::Deserialize;
-use uuid::Uuid;
 
 /// Configuration consumed by the analytics gear. Deserialized from
 /// `gears.analytics.config`.
@@ -41,7 +40,7 @@ pub struct GearConfig {
     /// `ClickHouse` without alias resolution (MVP mode).
     pub identity_url: String,
 
-    /// Metric Catalog configuration (DESIGN §3.5).
+    /// Metric read configuration.
     pub metric_catalog: MetricCatalogConfig,
 }
 
@@ -60,22 +59,10 @@ impl Default for GearConfig {
     }
 }
 
-/// Configuration consumed by `cpt-metric-cat-component-auth-trait` and the rest
-/// of the catalog stack (DESIGN §3.5). Currently carries only the single-tenant
-/// fallback per `cpt-metric-cat-constraint-tenant-default`; future catalog
-/// knobs (cache TTL, etc.) land here too.
+/// Per-environment knobs for the metric read path.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct MetricCatalogConfig {
-    /// Single-tenant fallback. When set, requests without a session-bound
-    /// tenant resolve to this UUID. Under the auth-disabled host the gateway
-    /// always injects a tenant (`DEFAULT_TENANT_ID`), so this is primarily a
-    /// catalog-resolution hint. The session-bound tenant ALWAYS wins over
-    /// this default (security invariant — see `domain::auth::TenantAuthorization`).
-    ///
-    /// Env: `APP__gears__analytics__config__metric_catalog__tenant_default_id`.
-    pub tenant_default_id: Option<Uuid>,
-
     /// Enforce the per-tenant observation filter (#1967) on metric reads.
     /// Defaults to `false`: the ingested `tenant_id` in the bronze/silver/gold
     /// pipeline is not yet aligned to the JWT tenant, so an exact
