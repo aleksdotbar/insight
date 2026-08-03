@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from source_bitbucket_cloud.streams.base import BUCKET_COUNT, repo_state_key
+from source_bitbucket_cloud.streams.base import BUCKET_COUNT, STATE_VERSION, repo_state_key
 from source_bitbucket_cloud.streams.branches import BranchesStream
 from source_bitbucket_cloud.streams.commit_branch_reachability import CommitBranchReachabilityStream
 from source_bitbucket_cloud.streams.commits import CommitsStream
@@ -26,8 +26,8 @@ def read_all_buckets(stream):
 
 def synced_state(repo, field, value, updated_on):
     return {
-        "version": 3,
-        "bucket_count": 8,
+        "version": STATE_VERSION,
+        "bucket_count": BUCKET_COUNT,
         "repositories": {repo_state_key(repo): {field: value, "repo_updated_on": updated_on}},
     }
 

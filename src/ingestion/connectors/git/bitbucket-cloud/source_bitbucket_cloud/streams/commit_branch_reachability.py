@@ -4,7 +4,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from itertools import chain
 from typing import Any
 
-from source_bitbucket_cloud.client import BitbucketApiError
+from source_bitbucket_cloud.client import BitbucketApiError, BranchRef, RepositoryRef
 from source_bitbucket_cloud.streams.base import BitbucketIncrementalStream, repo_scope, schema, unique_key
 from source_bitbucket_cloud.streams.git_ranges import CommitRangeMixin
 
@@ -98,7 +98,15 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
             },
         )
 
-    def _changes(self, repo, branch, include: str, exclude: str | None, action: str, unresolved: set[str]):
+    def _changes(
+        self,
+        repo: RepositoryRef,
+        branch: BranchRef,
+        include: str,
+        exclude: str | None,
+        action: str,
+        unresolved: set[str],
+    ) -> Iterable[Mapping[str, Any]]:
         # Recovery below has to replace the whole range, so nothing may have
         # been emitted when it runs — but a first read of a branch spans its
         # entire history and several repositories are in flight at once. Hold
@@ -152,7 +160,7 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
     def _reachability_records(self, repo, branch, head, action, commits):
         for commit in commits:
             committed_at = commit.get("date")
-            if self._start_date and committed_at and str(committed_at)[:10] < self._start_date:
+            if self.before_start_date(committed_at):
                 continue
             sha = str(commit.get("hash") or "")
             if not sha:

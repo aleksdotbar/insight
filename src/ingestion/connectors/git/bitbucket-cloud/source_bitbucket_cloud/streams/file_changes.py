@@ -33,7 +33,7 @@ class FileChangesStream(CommitRangeMixin, BitbucketIncrementalStream):
             includes = current_head_shas if previous_head_shas else self.cold_includes(branches)
             for commit in self.new_commits(repo, includes, previous_head_shas, unresolved):
                 committed_date = commit.get("date")
-                if self._start_date and committed_date and str(committed_date)[:10] < self._start_date:
+                if self.before_start_date(committed_date):
                     continue
                 yield from self._diffstat(repo, str(commit.get("hash") or ""), committed_date)
 

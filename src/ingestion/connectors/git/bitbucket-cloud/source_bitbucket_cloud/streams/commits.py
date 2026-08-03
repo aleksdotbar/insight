@@ -32,7 +32,7 @@ class CommitsStream(CommitRangeMixin, BitbucketIncrementalStream):
             includes = current_head_shas if previous_head_shas else self.cold_includes(branches)
             for commit in self.new_commits(repo, includes, previous_head_shas, unresolved):
                 record = self._record(repo, commit)
-                if self._start_date and record.get("date") and str(record["date"])[:10] < self._start_date:
+                if self.before_start_date(record.get("date")):
                     continue
                 yield record
 

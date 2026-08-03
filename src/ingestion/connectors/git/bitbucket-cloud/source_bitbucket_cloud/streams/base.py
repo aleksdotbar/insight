@@ -357,6 +357,9 @@ class BitbucketStream(Stream, ABC):
     def repository_records(self, repo: RepositoryRef, bucket_id: int) -> Iterable[Mapping[str, Any]]:
         raise NotImplementedError
 
+    def before_start_date(self, timestamp: Any) -> bool:
+        return bool(self._start_date and timestamp and str(timestamp)[:10] < self._start_date)
+
     def out_of_window(self, repo: RepositoryRef) -> bool:
         """True when nothing a push produces can fall inside the start window.
 
@@ -403,17 +406,18 @@ class BitbucketStream(Stream, ABC):
 
     def finish_bucket(self, bucket_id: int, repositories: Sequence[RepositoryRef]) -> None:
         del repositories
-        if bucket_id == BUCKET_COUNT - 1:
-            cached_repositories, cached_branches = self._catalog.branch_cache_size
-            logger.info(
-                f"{self.name}: branch_cache repositories={cached_repositories} branches={cached_branches}"
-            )
-        if bucket_id == BUCKET_COUNT - 1 and self._skipped_repositories:
+        if bucket_id != BUCKET_COUNT - 1:
+            return
+
+        cached_repositories, cached_branches = self._catalog.branch_cache_size
+        logger.info(f"{self.name}: branch_cache repositories={cached_repositories} branches={cached_branches}")
+
+        if self._skipped_repositories:
             logger.info(
                 f"{self.name}: skipped {len(self._skipped_repositories)} inaccessible "
                 f"repositories: {', '.join(sorted(set(self._skipped_repositories))[:10])}"
             )
-        if bucket_id == BUCKET_COUNT - 1 and self._failed_repositories:
+        if self._failed_repositories:
             raise RuntimeError(
                 f"{self.name}: {len(self._failed_repositories)} repositories failed this sync: "
                 + ", ".join(self._failed_repositories[:10])

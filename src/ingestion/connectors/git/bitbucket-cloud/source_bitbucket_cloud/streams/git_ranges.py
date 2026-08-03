@@ -74,6 +74,7 @@ class CommitRangeMixin:
     ) -> Iterable[Mapping[str, object]]:
         includes = list(current_heads)
         excludes = list(previous_heads)
+        last_error = BitbucketApiError(404, "", "")
         for _ in range(RANGE_REPAIR_ATTEMPTS):
             try:
                 yield from self._client.commits_between(repo, includes, excludes)

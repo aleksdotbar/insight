@@ -4,7 +4,7 @@ import threading
 import time
 
 import pytest
-from source_bitbucket_cloud.client import BitbucketApiError
+from source_bitbucket_cloud.client import BitbucketApiError, RepositoryRef
 from source_bitbucket_cloud.streams.base import (
     BUCKET_COUNT,
     RECORD_BUFFER,
@@ -22,16 +22,17 @@ def fleet(size: int = 12):
     return [repository(slug=f"repo{index:02d}", uuid=f"{{r-{index}}}") for index in range(size)]
 
 
-def fleet_in_one_bucket(size: int, bucket: int = 0):
+def fleet_in_one_bucket(size: int, bucket: int = 0) -> list[RepositoryRef]:
     """Repositories that all land in the same slice, so one read_records call
     really does run several workers."""
-    repos, index = [], 0
-    while len(repos) < size:
+    repos: list[RepositoryRef] = []
+    for index in range(size * BUCKET_COUNT * 20):
         repo = repository(slug=f"same{index:03d}", uuid=f"{{s-{index}}}")
         if repository_bucket(repo_state_key(repo)) == bucket:
             repos.append(repo)
-        index += 1
-    return repos
+        if len(repos) == size:
+            return repos
+    raise AssertionError(f"could not place {size} repositories in bucket {bucket}")
 
 
 class FleetClient(FakeClient):
@@ -162,9 +163,11 @@ class TestFailuresKeepTheirSemantics:
 
         records = read_all_buckets(stream)
 
-        assert stream._failed_repositories == []
-        assert "ws/repo05" in stream._skipped_repositories
-        assert {r["repo_slug"] for r in records} == {repo.slug for repo in repos} - {"repo05"}
+        assert stream._failed_repositories == [], f"HTTP {status} must not count as a failure"
+        assert "ws/repo05" in stream._skipped_repositories, f"HTTP {status} must be recorded as skipped"
+        assert {r["repo_slug"] for r in records} == {repo.slug for repo in repos} - {"repo05"}, (
+            f"every other repository must still be read past an HTTP {status}"
+        )
 
     def test_a_transient_failure_still_fails_the_sync(self):
         repos = fleet()
@@ -175,6 +178,10 @@ class TestFailuresKeepTheirSemantics:
             read_all_buckets(stream)
 
         assert stream._failed_repositories == ["ws/repo05"]
+        healthy = [repo for repo in repos if repo.slug != "repo05"]
+        assert all(repo_state_key(repo) in stream.state["repositories"] for repo in healthy), (
+            "one repository's failure must not cost its neighbours their checkpoints"
+        )
 
     def test_a_credential_failure_aborts(self):
         repos = fleet()
@@ -197,24 +204,38 @@ class TestFailuresKeepTheirSemantics:
 
 
 class TestBackpressure:
-    def test_a_long_history_does_not_buffer_without_bound(self):
-        """The consumer takes one repository at a time, so a repository with
-        more records than the buffer must park its worker rather than grow."""
-        repos = fleet(2)
+    def test_a_worker_stops_at_the_buffer_instead_of_reading_ahead(self):
+        """Two workers in one slice, each with more history than the buffer
+        holds: they must park rather than grow, and lose nothing by parking."""
+        repos = fleet_in_one_bucket(2)
         overflow = RECORD_BUFFER * 3
 
         class WideClient(FleetClient):
+            def __init__(self, fleet_repos: list[RepositoryRef]) -> None:
+                super().__init__(fleet_repos)
+                self.produced = 0
+
             def commits_between(self, repo, include, exclude):
-                return iter([{"hash": f"{repo.slug}-{n}", "date": DATE} for n in range(overflow)])
+                def history():
+                    for index in range(overflow):
+                        with self._lock:
+                            self.produced += 1
+                        yield {"hash": f"{repo.slug}-{index}", "date": DATE}
+
+                return history()
 
         client = WideClient(repos)
         stream = build(repos, client, 2)
+        records = stream.read_records(None, stream_slice={"bucket_id": 0})
 
-        records = read_all_buckets(stream)
-
-        assert len(records) == overflow * len(repos), (
-            "every record must survive the worker parking on a full buffer"
+        next(records)
+        parked = client.produced
+        assert parked <= 2 * (RECORD_BUFFER + 1), (
+            f"{parked} records fetched before the first was consumed; two buffers hold "
+            f"{2 * RECORD_BUFFER}"
         )
+
+        assert len(list(records)) + 1 == overflow * len(repos), "parking must not drop records"
 
 
 class TestAbandoningTheReadTerminates:

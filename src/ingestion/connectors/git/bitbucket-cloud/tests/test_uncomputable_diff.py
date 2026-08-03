@@ -16,6 +16,7 @@ def read_all_buckets(stream):
         records.extend(stream.read_records(None, stream_slice={"bucket_id": bucket}))
     return records
 
+
 NO_COMMON_ANCESTOR = json.dumps({"type": "error", "error": {"message": "No common ancestor"}})
 MALFORMED_REQUEST = json.dumps({"type": "error", "error": {"message": "Invalid pagelen"}})
 
@@ -86,7 +87,7 @@ class TestClientTolerance:
 
     @pytest.mark.parametrize("body", ["", "<html>gateway</html>", json.dumps({"error": "flat"})])
     def test_unparseable_bodies_have_no_message(self, body):
-        assert BitbucketApiError(400, "u", body).error_message == ""
+        assert BitbucketApiError(400, "u", body).error_message == "", f"should not parse: {body!r}"
 
 
 class TestDiffstatStreamTolerance:

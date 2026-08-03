@@ -252,6 +252,23 @@ class BitbucketClient:
                 return None
             raise
 
+    def _next_page(self, next_value: Any) -> requests.Response | None:
+        """Fetch a continuation page, refusing to end a collection quietly.
+
+        Tolerating a refusal here would hand the caller part of a collection to
+        publish as a complete snapshot, which deletes whatever the unread pages
+        held. It is not a denial either — the collection was readable a moment
+        ago — so it must not mark the whole repository inaccessible.
+        """
+        if not next_value:
+            return None
+        try:
+            return self.request("GET", str(next_value))
+        except BitbucketApiError as error:
+            raise RuntimeError(
+                f"Bitbucket refused a continuation page after the collection had started: {next_value}"
+            ) from error
+
     def paginate_optional(
         self,
         path: str,
@@ -282,11 +299,7 @@ class BitbucketClient:
                     raise RuntimeError(f"Bitbucket pagination loop detected for {next_value}")
                 if next_value:
                     seen.add(str(next_value))
-                current = (
-                    self._optional_request(str(next_value), tolerate_messages=tolerate_messages)
-                    if next_value
-                    else None
-                )
+                current = self._next_page(next_value)
 
         return True, records()
 

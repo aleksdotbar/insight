@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from source_bitbucket_cloud.client import BranchRef
-from source_bitbucket_cloud.streams.base import BUCKET_COUNT, repo_state_key
+from source_bitbucket_cloud.streams.base import BUCKET_COUNT, STATE_VERSION, repo_state_key
 from source_bitbucket_cloud.streams.branches import BranchesStream
 from source_bitbucket_cloud.streams.commit_branch_reachability import CommitBranchReachabilityStream
 from source_bitbucket_cloud.streams.commits import CommitsStream
@@ -167,8 +167,8 @@ class TestColdRepositoriesSkipStaleBranches:
     def test_a_known_repository_ranges_every_head(self, stream_class):
         stream, client, repo = self.make(stream_class)
         stream.state = {
-            "version": 3,
-            "bucket_count": 8,
+            "version": STATE_VERSION,
+            "bucket_count": BUCKET_COUNT,
             "repositories": {repo_state_key(repo): {"head_shas": ["older"], "repo_updated_on": "2026-05-01"}},
         }
 

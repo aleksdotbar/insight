@@ -114,7 +114,9 @@ class TestPaginate:
         assert present is False
         assert list(records) == []
 
-    def test_optional_stops_gracefully_on_later_404(self):
+    def test_optional_refuses_to_truncate_a_started_collection(self):
+        """Ending the collection here would publish part of a snapshot as the
+        whole of it, deleting whatever the unread pages held."""
         client = make_client(
             [
                 Response(body={"values": [{"n": 1}], "next": BASE + "x?page=2"}),
@@ -123,7 +125,22 @@ class TestPaginate:
         )
         present, records = client.paginate_optional("repositories/ws/pipelines")
         assert present is True
-        assert [row["n"] for row in records] == [1]
+        with pytest.raises(RuntimeError, match="continuation page"):
+            list(records)
+
+    def test_a_refused_continuation_is_not_a_denial(self):
+        """A denial marks the repository inaccessible for every later stream;
+        one bad page must not."""
+        client = make_client(
+            [
+                Response(body={"values": [{"n": 1}], "next": BASE + "x?page=2"}),
+                Response(403),
+            ]
+        )
+        _, records = client.paginate_optional("repositories/ws/pipelines")
+        with pytest.raises(RuntimeError) as raised:
+            list(records)
+        assert not isinstance(raised.value, BitbucketApiError)
 
 
 class TestFieldMapping:

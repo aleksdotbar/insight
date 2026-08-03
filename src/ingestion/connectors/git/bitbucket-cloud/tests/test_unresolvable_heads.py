@@ -8,6 +8,7 @@ from source_bitbucket_cloud.client import BitbucketApiError
 from source_bitbucket_cloud.streams.base import BUCKET_COUNT, repo_state_key
 from source_bitbucket_cloud.streams.commit_branch_reachability import CommitBranchReachabilityStream
 from source_bitbucket_cloud.streams.commits import CommitsStream
+from source_bitbucket_cloud.streams.git_ranges import RANGE_REPAIR_ATTEMPTS
 from tests.conftest import SHARED, FakeCatalog, FakeClient, branch, repository
 
 DATE = "2026-06-01T00:00:00+00:00"
@@ -148,7 +149,7 @@ class TestMissingShasArePruned:
         assert records == []
         assert stream._failed_repositories == []
         assert stream._catalog.is_inaccessible(repo)
-        assert len(client.commit_calls) <= 8, "the repair loop must terminate"
+        assert len(client.commit_calls) <= RANGE_REPAIR_ATTEMPTS, "the repair loop must terminate"
 
     def test_unnamed_404_without_excludes_is_a_denial(self, repo):
         class BareNotFound(FakeClient):
