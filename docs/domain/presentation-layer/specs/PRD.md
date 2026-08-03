@@ -259,6 +259,8 @@ The system **MUST** serve many experimental FE builds under path-based addressin
 
 **Rationale**: FE developers need an isolated tier-3 authoring loop that cannot touch customer data.
 
+**Status**: Serving path shipped (#1971): the `insight-preview` Helm chart (`deploy/preview/`) provisions one experiment per release — `Deployment` + `Service` + one prefix-strip `Ingress` under `/exp/<name>` on the shared host, applied and removed by hand. Pinning the shared backend to synthetic data (#1973) is still open, so this requirement stays open.
+
 **Actors**: `cpt-presentation-actor-fe-dev`
 
 #### Preview Authentication Return Path
