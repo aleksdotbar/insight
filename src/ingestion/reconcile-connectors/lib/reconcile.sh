@@ -617,7 +617,7 @@ reconcile_connections() {
     if ! destination_id="$(reconcile_resolve_destination_id "${connector_name}")"; then
       return 1
     fi
-    local discover_json sync_catalog
+    local discover_json sync_catalog source_catalog_id
     # disable_cache=true: bootstrap discover for a source whose definition may
     # have just been (re)created at a new image. Avoid a stale cached catalog.
     if ! discover_json="$(ab_discover_schema "${source_id}" true)"; then
@@ -631,6 +631,11 @@ reconcile_connections() {
         "normalize_catalog_to_append failed for source ${source_id}"
       return 1
     fi
+    # catalogId → sourceCatalogId: anchor schema-change detection to the
+    # catalog this connection is being created with (see
+    # reconcile_refresh_catalog for the stale-banner failure mode).
+    source_catalog_id="$(printf '%s' "${discover_json}" \
+      | python3 -c 'import sys,json;print(json.load(sys.stdin).get("catalogId") or "")')"
     # Airbyte connection is created with scheduleType=manual; Argo
     # CronWorkflow drives sync timing (reconcile_compute_schedule feeds the
     # CronWorkflow render in _reconcile_one_connector). Without this,
@@ -656,7 +661,8 @@ reconcile_connections() {
     # invalid/mismatched DB name (e.g. bronze_bitbucket-cloud).
     if ! new_conn_json="$(ab_create_connection "${workspace_id}" "${source_id}" \
               "${destination_id}" "${conn_name}" "${schedule_json}" \
-              "${tags_json}" "${sync_catalog}" "${namespace_format}")"; then
+              "${tags_json}" "${sync_catalog}" "${namespace_format}" \
+              "${source_catalog_id}")"; then
       reconcile__log ERROR "${connector_name}" \
         "ab_create_connection failed for source ${source_id}"
       return 1
@@ -761,7 +767,7 @@ reconcile_refresh_catalog() {
       "would refresh sync_catalog on connection ${connection_id} (re-discover; new streams/fields auto-enabled)"
     return 0
   fi
-  local discover_json sync_catalog
+  local discover_json sync_catalog source_catalog_id
   # disable_cache=true: this refresh runs on republish (definition/image
   # changed). Airbyte's discover cache is keyed by source config — unchanged
   # on an image-only bump — so a cached discover would return the OLD schema
@@ -777,7 +783,18 @@ reconcile_refresh_catalog() {
       "normalize_catalog_to_append failed during catalog refresh for source ${source_id}"
     return 1
   fi
-  if ! ab_update_connection_sync_catalog "${connection_id}" "${sync_catalog}" >/dev/null; then
+  # catalogId anchors the connection's sourceCatalogId to the catalog we just
+  # applied — without it Airbyte keeps comparing new discovers against the
+  # bootstrap-era catalog and shows "Schema changes detected" forever.
+  # Missing catalogId (older Airbyte) degrades to the previous behaviour.
+  source_catalog_id="$(printf '%s' "${discover_json}" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin).get("catalogId") or "")')"
+  if [[ -z "${source_catalog_id}" ]]; then
+    reconcile__log WARN "${connector_name}" \
+      "discover_schema returned no catalogId — sourceCatalogId not updated (schema-change banner may persist)"
+  fi
+  if ! ab_update_connection_sync_catalog "${connection_id}" "${sync_catalog}" \
+        "${source_catalog_id}" >/dev/null; then
     reconcile__log ERROR "${connector_name}" \
       "ab_update_connection_sync_catalog failed for connection ${connection_id}"
     return 1
