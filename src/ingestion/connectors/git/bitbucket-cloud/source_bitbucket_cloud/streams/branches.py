@@ -39,10 +39,16 @@ class BranchesStream(BitbucketIncrementalStream):
         if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
             return
         branches = self._catalog.branches(repo)
-        if prior.get("branch_count") and not branches:
+        if not branches and prior.get("branch_count") != 0:
             # A snapshot replaces the previous one, so publishing an empty one
-            # deletes every branch this repository had. An answer that sweeping
-            # is not trusted: no marker, no state, look again next pass.
+            # deletes every branch this repository had. One empty answer is
+            # never enough to do that — including the first one seen, since
+            # state written before this rule existed carries no count. Record
+            # the observation and hold the cursor; a second consecutive empty
+            # listing is the repository, not the API, and publishes normally.
+            self.commit_repository_state(
+                repo, {"repo_updated_on": str(prior.get("repo_updated_on") or ""), "branch_count": 0}
+            )
             return
 
         generation = self.generation("branches", *repo_scope(repo))

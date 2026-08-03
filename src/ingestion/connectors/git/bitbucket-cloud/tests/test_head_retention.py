@@ -144,13 +144,38 @@ class TestBranchSnapshotsSurviveAnEmptyListing:
             "and the cursor must stay open so the listing is retried"
         )
 
-    def test_a_repository_that_never_had_branches_still_reports_an_empty_snapshot(self, repo):
+    def test_an_empty_repository_publishes_once_the_answer_repeats(self, repo):
+        """A second consecutive empty listing is the repository, not the API."""
         client = FakeClient()
         client.branch_values[repo.uuid] = []
+        first = self.build(client, repo)
+        first.state = {}
 
-        records = read_all_buckets(self.build(client, repo))
+        assert read_all_buckets(first) == [], "one empty answer is only an observation"
+
+        second = self.build(client, repo)
+        second.state = first.state
+        records = read_all_buckets(second)
 
         markers = [r for r in records if r["record_type"] == "snapshot_complete"]
-        assert markers and markers[0]["snapshot_item_count"] == 0, (
-            "with nothing to lose, an empty answer is just an empty repository"
+        assert markers and markers[0]["snapshot_item_count"] == 0
+        assert markers[0]["snapshot_available"] is True
+
+    def test_state_written_before_this_rule_is_not_trusted_into_a_deletion(self, repo):
+        """Deployed state carries no branch count, so a first empty listing
+        under the new code must not read as 'this repository has no branches'."""
+        client = FakeClient()
+        client.branch_values[repo.uuid] = []
+        stream = self.build(client, repo)
+        stream.state = {
+            "version": STATE_VERSION,
+            "bucket_count": BUCKET_COUNT,
+            "repositories": {repo_state_key(repo): {"repo_updated_on": "older"}},
+        }
+
+        records = read_all_buckets(stream)
+
+        assert records == []
+        assert stream.state["repositories"][repo_state_key(repo)]["repo_updated_on"] == "older", (
+            "the cursor must stay open so the listing is retried"
         )
