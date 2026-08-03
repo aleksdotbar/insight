@@ -1,6 +1,5 @@
 //! HTTP API layer — routes and handlers.
 
-pub(crate) mod admin;
 pub(crate) mod canonical_json;
 mod catalog;
 pub(crate) mod error;
@@ -30,9 +29,6 @@ use utoipa::openapi::schema::{
 };
 
 use crate::config::GearConfig;
-use crate::domain::admin_threshold::AdminThresholdService;
-use crate::domain::admin_threshold::dto as admin_dto;
-use crate::domain::auth::TenantAuthorization;
 use crate::domain::catalog::CatalogReader;
 use crate::domain::catalog::response as catalog_response;
 use crate::domain::metric_definitions::listing as metric_definitions_listing;
@@ -48,28 +44,14 @@ pub struct AppState {
     pub identity: IdentityClient,
     #[allow(dead_code)] // will be used for runtime config access (rate limits, feature flags)
     pub config: GearConfig,
-    /// Schema-validator (Refs #521). Held in `AppState` so admin-crud (#525)
-    /// calls `validator.validate(metric_key)` after a successful threshold
-    /// write. Kept on `AppState` for the legacy /v1/metrics handlers'
-    /// future use too; admin-crud receives its own clone via
-    /// [`AdminThresholdService::new`].
-    #[allow(dead_code)] // admin-crud holds its own clone; #521 only exposes the function
+    /// Schema-validator (Refs #521). Retained so a future per-write path can
+    /// call `validator.validate(metric_key)`; the startup sweep owns its own
+    /// clone.
+    #[allow(dead_code)] // the startup sweep holds its own clone
     pub validator: SchemaValidator,
-    /// Catalog auth-trait. Resolves session-bound tenant against the
-    /// operator-configured single-tenant fallback per
-    /// `cpt-metric-cat-constraint-tenant-default` (Refs #522). The
-    /// `AdminThresholdService` holds its own clone for `is_tenant_admin` /
-    /// `actor_subject`; this field retains the handle for future per-request
-    /// authz wiring once auth is re-enabled on this host.
-    #[allow(dead_code)] // admin-crud holds its own clone; retained for re-enabling auth
-    pub tenant_auth: Arc<dyn TenantAuthorization>,
     /// Catalog read pipeline (Refs #524) — cache + resolver wired together.
     /// Cheap to clone (internally `Arc`s the cache + resolver).
     pub catalog_reader: CatalogReader,
-    /// Admin-CRUD service (Refs #525) — owns the 5 `/v1/admin/metric-thresholds/*`
-    /// endpoints, the validation gauntlet, the `lock-enforcer` SQL, and the
-    /// `audit-emitter` dual-sink contract.
-    pub admin_threshold: AdminThresholdService,
 }
 
 pub(crate) fn forwarded_authorization(headers: &axum::http::HeaderMap) -> Option<&str> {
@@ -335,79 +317,6 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .error_401(openapi)
         .error_500(openapi)
         .handler(metric_definitions::list_metric_definitions)
-        .register(router, openapi);
-
-    // Admin threshold CRUD (Refs #525) — DESIGN §3.2 admin-crud.
-    // Bearer-token-only auth at the gateway (Q1 ack); the catalog
-    // surface enforces canonical envelopes + CSRF closure via the
-    // `CanonicalJson` extractor (Content-Type: application/json
-    // required, deny_unknown_fields on every body shape).
-    router = OperationBuilder::get("/v1/admin/metric-thresholds")
-        .operation_id("analytics_api.admin.thresholds.list")
-        .summary("List admin metric thresholds")
-        .authenticated()
-        .no_license_required()
-        .json_response_with_schema::<admin_dto::ListResponse>(
-            openapi,
-            StatusCode::OK,
-            "List of metric thresholds",
-        )
-        .standard_errors(openapi)
-        .handler(admin::list)
-        .register(router, openapi);
-
-    router = OperationBuilder::post("/v1/admin/metric-thresholds")
-        .operation_id("analytics_api.admin.thresholds.create")
-        .summary("Create an admin metric threshold")
-        .authenticated()
-        .no_license_required()
-        .json_request::<admin_dto::CreateRequest>(openapi, "Metric threshold to create")
-        .json_response_with_schema::<admin_dto::ThresholdView>(
-            openapi,
-            StatusCode::CREATED,
-            "Created metric threshold",
-        )
-        .standard_errors(openapi)
-        .handler(admin::create)
-        .register(router, openapi);
-
-    router = OperationBuilder::get("/v1/admin/metric-thresholds/{id}")
-        .operation_id("analytics_api.admin.thresholds.get")
-        .summary("Get an admin metric threshold by id")
-        .authenticated()
-        .no_license_required()
-        .json_response_with_schema::<admin_dto::ThresholdView>(
-            openapi,
-            StatusCode::OK,
-            "Metric threshold",
-        )
-        .standard_errors(openapi)
-        .handler(admin::get_one)
-        .register(router, openapi);
-
-    router = OperationBuilder::put("/v1/admin/metric-thresholds/{id}")
-        .operation_id("analytics_api.admin.thresholds.update")
-        .summary("Update an admin metric threshold")
-        .authenticated()
-        .no_license_required()
-        .json_request::<admin_dto::UpdateRequest>(openapi, "Metric threshold fields to update")
-        .json_response_with_schema::<admin_dto::ThresholdView>(
-            openapi,
-            StatusCode::OK,
-            "Updated metric threshold",
-        )
-        .standard_errors(openapi)
-        .handler(admin::update)
-        .register(router, openapi);
-
-    router = OperationBuilder::delete("/v1/admin/metric-thresholds/{id}")
-        .operation_id("analytics_api.admin.thresholds.delete")
-        .summary("Delete an admin metric threshold")
-        .authenticated()
-        .no_license_required()
-        .no_content_response(StatusCode::NO_CONTENT, "Metric threshold deleted")
-        .standard_errors(openapi)
-        .handler(admin::delete)
         .register(router, openapi);
 
     // `/health` + `/healthz` are provided by the api-gateway host gear (its

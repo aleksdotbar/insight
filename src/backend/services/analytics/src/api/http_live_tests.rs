@@ -17,7 +17,7 @@
 //! behaviour under test here — the DB-backed handlers return real 2xx.
 //!
 //! Tenant isolation: each test picks its own tenant (either a seed row's tenant
-//! for reads, or a fresh `Uuid::now_v7()` for admin writes), so the suite is
+//! for reads, or a fresh `Uuid::now_v7()` for writes), so the suite is
 //! parallel-safe and does not collide with the domain `live_tests`.
 
 use std::sync::Arc;
@@ -27,7 +27,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use axum::middleware::from_fn_with_state;
 use axum::response::Response;
-use sea_orm::{ConnectOptions, Database, DatabaseConnection, EntityTrait};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -37,13 +37,10 @@ use toolkit_security::SecurityContext;
 
 use crate::api::AppState;
 use crate::config::GearConfig;
-use crate::domain::admin_threshold::AdminThresholdService;
-use crate::domain::auth::{ConfigTenantAuthorization, TenantAuthorization};
 use crate::domain::catalog::{CatalogReader, ThresholdResolver};
 use crate::domain::metric_definitions::test_fixture::DrilldownFixture;
 use crate::domain::schema_validator::SchemaValidator;
 use crate::infra::cache::catalog_cache::{CatalogCache, NoopCatalogCache};
-use crate::infra::db::entities;
 use crate::infra::identity::IdentityClient;
 
 const ENV_VAR: &str = "INTEGRATION_TESTS_MARIADB_URL";
@@ -67,7 +64,7 @@ async fn connect_or_skip() -> Option<DatabaseConnection> {
 }
 
 /// Unreachable ClickHouse client — handlers that never call it (the DB-backed
-/// ones) are unaffected; `query_metric`/`get_person` hit it and 5xx by design.
+/// ones) are unaffected; the ones that do hit it 5xx by design.
 fn dead_ch() -> insight_clickhouse::Client {
     insight_clickhouse::Client::new(insight_clickhouse::Config::new(
         "http://127.0.0.1:1",
@@ -75,29 +72,18 @@ fn dead_ch() -> insight_clickhouse::Client {
     ))
 }
 
-/// Build a full `AppState` against the live DB. Cache is a no-op stub; authz
-/// is the config authorizer (`is_tenant_admin` == true), so the admin write
-/// path is reachable without a real identity provider.
+/// Build a full `AppState` against the live DB. Cache is a no-op stub.
 fn build_state(db: DatabaseConnection, identity: IdentityClient) -> AppState {
     let cache: Arc<dyn CatalogCache> = Arc::new(NoopCatalogCache::default());
-    let tenant_auth: Arc<dyn TenantAuthorization> = Arc::new(ConfigTenantAuthorization::new(None));
     let validator = SchemaValidator::new(db.clone(), dead_ch());
-    let admin_threshold = AdminThresholdService::new(
-        db.clone(),
-        tenant_auth.clone(),
-        cache.clone(),
-        validator.clone(),
-    );
-    let catalog_reader = CatalogReader::new(cache.clone(), ThresholdResolver::new(db.clone()));
+    let catalog_reader = CatalogReader::new(cache, ThresholdResolver::new(db.clone()));
     AppState {
         db,
         ch: dead_ch(),
         identity,
         config: GearConfig::default(),
         validator,
-        tenant_auth,
         catalog_reader,
-        admin_threshold,
     }
 }
 
@@ -272,109 +258,6 @@ async fn metric_results_does_not_deny_a_person_inside_the_callers_visible_set() 
         "a visible person must pass the gate and fail only on the unreachable \
          ClickHouse; a 400 would mean the request never got that far"
     );
-    Ok(())
-}
-
-// ── Admin threshold CRUD round-trip (201 / 200 / 204 mapping) ─────
-
-#[tokio::test]
-#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
-async fn admin_threshold_crud_round_trip() -> TestResult {
-    let Some(db) = connect_or_skip().await else {
-        return Ok(());
-    };
-    // A metric_catalog row to attach the tenant-scope threshold to.
-    let Some(cat) = entities::metric_catalog::Entity::find()
-        .one(&db)
-        .await
-        .unwrap_or_else(|e| panic!("query metric_catalog: {e}"))
-    else {
-        eprintln!("skipping: no metric_catalog row in seed");
-        return Ok(());
-    };
-    let metric_id = cat.id;
-    let tenant = Uuid::now_v7(); // fresh tenant → parallel-safe, no cross-test collision
-    let app = app(db, tenant);
-
-    // LIST (empty for a fresh tenant) → 200
-    let resp = app
-        .clone()
-        .oneshot(get("/v1/admin/metric-thresholds")?)
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // CREATE → 201
-    let create = json!({
-        "metric_id": metric_id,
-        "scope": "tenant",
-        "good": 25.0,
-        "warn": 12.0,
-        "is_locked": false
-    });
-    let resp = app
-        .clone()
-        .oneshot(json_req("POST", "/v1/admin/metric-thresholds", &create)?)
-        .await?;
-    assert_eq!(resp.status(), StatusCode::CREATED, "create should 201");
-    let created = body_json(resp).await?;
-    let id = created["id"]
-        .as_str()
-        .unwrap_or_else(|| panic!("created payload missing string id: {created}"))
-        .to_owned();
-
-    // GET one → 200
-    let resp = app
-        .clone()
-        .oneshot(get(&format!("/v1/admin/metric-thresholds/{id}"))?)
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // UPDATE → 200
-    let update = json!({
-        "scope": "tenant",
-        "good": 30.0,
-        "warn": 15.0,
-        "is_locked": false
-    });
-    let resp = app
-        .clone()
-        .oneshot(json_req(
-            "PUT",
-            &format!("/v1/admin/metric-thresholds/{id}"),
-            &update,
-        )?)
-        .await?;
-    assert_eq!(resp.status(), StatusCode::OK, "update should 200");
-
-    // DELETE → 204
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri(format!("/v1/admin/metric-thresholds/{id}"))
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT, "delete should 204");
-    Ok(())
-}
-
-// ── Rejection paths (canonical envelopes) ────────────────────────
-
-#[tokio::test]
-#[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
-async fn admin_create_with_unknown_field_returns_400() -> TestResult {
-    let Some(db) = connect_or_skip().await else {
-        return Ok(());
-    };
-    let app = app(db, Uuid::now_v7());
-    // `tenant_id` in the body is a denied unknown field per the admin contract.
-    let bad = json!({ "metric_id": Uuid::now_v7(), "scope": "tenant",
-                      "good": 1.0, "warn": 0.5, "is_locked": false, "tenant_id": Uuid::now_v7() });
-    let resp = app
-        .oneshot(json_req("POST", "/v1/admin/metric-thresholds", &bad)?)
-        .await?;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
 

@@ -27,22 +27,11 @@ pub struct SavedQueryError;
 /// `POST /v1/catalog/get_metrics` doesn't currently use this — its body-parse
 /// errors flow through [`super::canonical_json::CanonicalJson`], which emits a
 /// resource-less envelope because body parse failures fire before the
-/// request's target resource is known. Admin-crud (#525) uses
-/// [`ThresholdAdminError`] for threshold-row failures; this namespace is
-/// reserved for future `not_found` / 404 paths that target `metric_catalog`
-/// rows directly.
-#[allow(dead_code)] // first consumer lands with admin-crud (#525)
+/// request's target resource is known. This namespace is reserved for future
+/// `not_found` / 404 paths that target `metric_catalog` rows directly.
+#[allow(dead_code)] // no consumer yet
 #[resource_error("gts.cf.insight.metric_catalog.metric.v1~")]
 pub struct MetricCatalogError;
-
-/// Resource namespace for `/v1/admin/metric-thresholds/*` failures (Refs #525).
-///
-/// Every 4xx / 5xx the admin-crud handler emits carries this `resource_type`
-/// in `context.resource_type`, per DESIGN §3.3's resource-GTS table
-/// (`gts.cf.insight.metric_catalog.threshold.v1~`). The resource shape is a
-/// scoped per-tenant `(scope, role_slug, team_id)` row with lock metadata.
-#[resource_error("gts.cf.insight.metric_catalog.threshold.v1~")]
-pub struct ThresholdAdminError;
 
 /// Resource namespace for tenant-resolution failures
 /// (`cpt-metric-cat-constraint-tenant-default`). The middleware surfaces an

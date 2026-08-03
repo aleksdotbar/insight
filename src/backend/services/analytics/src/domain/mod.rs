@@ -1,5 +1,3 @@
-pub mod admin_threshold;
-pub mod auth;
 pub mod catalog;
 pub mod contract_version;
 pub mod metric_definitions;

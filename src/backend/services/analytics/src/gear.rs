@@ -19,8 +19,6 @@ use toolkit::api::OpenApiRegistry;
 use toolkit::{Gear, GearCtx, RestApiCapability};
 
 use crate::config::GearConfig;
-use crate::domain::admin_threshold::AdminThresholdService;
-use crate::domain::auth::ConfigTenantAuthorization;
 use crate::domain::catalog::{CatalogReader, ThresholdResolver};
 use crate::domain::schema_validator::SchemaValidator;
 use crate::infra::cache::catalog_cache::{CatalogCache, NoopCatalogCache, RedisCatalogCache};
@@ -137,26 +135,14 @@ impl Gear for AnalyticsApiGear {
         // Identity client.
         let identity = infra::identity::IdentityClient::new(&cfg.identity_url)?;
 
-        // Schema-validator (Refs #521). Held in AppState (admin-crud per-write
-        // hook) and cloned into the post-init startup pass below.
+        // Schema-validator (Refs #521). Held in AppState and cloned into the
+        // post-init startup pass below.
         let validator = SchemaValidator::new(db.clone(), ch.clone());
         let metric_definition_validator =
             crate::domain::metric_definitions::MetricDefinitionValidator::new(
                 db.clone(),
                 ch.clone(),
             );
-        // Catalog auth-trait (Refs #522 / #525). v1 stub — see `domain::auth`.
-        let tenant_auth: Arc<dyn crate::domain::auth::TenantAuthorization> = Arc::new(
-            ConfigTenantAuthorization::new(cfg.metric_catalog.tenant_default_id),
-        );
-
-        // Admin-CRUD service (Refs #525).
-        let admin_threshold = AdminThresholdService::new(
-            db.clone(),
-            tenant_auth.clone(),
-            catalog_cache.clone(),
-            validator.clone(),
-        );
 
         let contract_ch = ch.clone();
 
@@ -166,9 +152,7 @@ impl Gear for AnalyticsApiGear {
             identity,
             config: cfg,
             validator: validator.clone(),
-            tenant_auth,
             catalog_reader,
-            admin_threshold,
         };
 
         self.state
