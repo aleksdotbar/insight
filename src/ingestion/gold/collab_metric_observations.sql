@@ -23,34 +23,19 @@ SELECT
     -- which identity_resolution_coverage measures the resolution gap from.
     {{ canonical_entity_id() }},
     metric_date,
-    observed_at,
+    CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
     measure_key,
-    contribution AS value,
+    -- Grouped to CANONICAL grain: a person's several source accounts land in
+    -- ONE row per (person, day, measure, subject, dims). Additive measures sum
+    -- across accounts; day flags collapse by their own semantics (max — active
+    -- under any account; min for meeting_free_day — free only if every account
+    -- was); distinct subjects stay their own rows via subject_key in the key.
+    toNullable({{ collapsed_value('contribution', max_keys=['chat_active_day'], min_keys=['meeting_free_day']) }}) AS value,
     subject_key,
     dimensions
 FROM {{ ref('collab_metric_evidence') }}
 {{ resolved_person_id_join("collab_metric_evidence") }}
 WHERE {{ resolved_only() }}
-  AND measure_key NOT IN ('chat_active_day', 'meeting_free_day')
-
-UNION ALL
-
--- Day flags collapse across a person's source aliases; every other measure
--- above stays one row per source row (additive measures are summed by the
--- runtime, which is correct across aliases).
-SELECT
-    tenant_id,
-    source_key,
-    entity_type,
-    {{ canonical_entity_id() }},
-    metric_date,
-    CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
-    measure_key,
-    toNullable({{ collapsed_value('contribution', max_keys=['chat_active_day'], min_keys=['meeting_free_day']) }}) AS value,
-    CAST(NULL AS Nullable(String)) AS subject_key,
-    dimensions
-FROM {{ ref('collab_metric_evidence') }}
-{{ resolved_person_id_join("collab_metric_evidence") }}
-WHERE {{ resolved_only() }}
-  AND measure_key IN ('chat_active_day', 'meeting_free_day')
-GROUP BY tenant_id, source_key, entity_type, identity_map.person_id, metric_date, measure_key, dimensions
+-- Grouped on the join column, not the `entity_id` alias: an alias shadowing a
+-- source column lands the aggregate in the outer scope (ILLEGAL_AGGREGATION).
+GROUP BY tenant_id, source_key, entity_type, identity_map.person_id, metric_date, measure_key, subject_key, dimensions
