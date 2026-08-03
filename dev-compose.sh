@@ -297,6 +297,54 @@ ensure_fakeidp_issuer() {
   echo "fakeidp issuer → http://$ip:8084 (host IP; browser-reachable, no HTTPS upgrade)"
 }
 
+# The `volumes:` a ghcr'd service keeps, as a YAML block.
+#
+# The flip must drop exactly ONE mount — the host-built binary at
+# ./deploy/compose/build/<svc>/<svc>. A published image already carries it, and
+# leaving the mount in place shadows the image with a file this run never built
+# (or, with nothing built, with a directory compose invents and container init
+# rejects).
+#
+# Every OTHER mount has to survive, which a blanket `volumes: !override []` did
+# not. They are the dev stack's own configuration and no image can carry them:
+# the *-fullauth.yaml that turns ON real gateway-JWT verification (over the
+# committed placeholder config the image bakes), the self-signed CA for the
+# authn-tls discovery front, the per-run authenticator signing key, and the
+# compose route table. Dropping them leaves a service running the placeholder
+# config — an auth-disabled stand, which is precisely what this stand exists to
+# disprove, and it would have looked like a pass.
+#
+# Compose replaces the whole list, so the survivors are restated here rather
+# than subtracted. Keep in step with docker-compose.yml.
+ghcr_volumes_block() {
+  local svc="$1" mount
+  echo "    volumes: !override"
+  for mount in $(ghcr_kept_mounts "$svc"); do
+    echo "      - $mount"
+  done
+}
+
+ghcr_kept_mounts() {
+  case "$1" in
+    analytics)
+      echo "./deploy/compose/analytics-fullauth.yaml:/app/config/insight.yaml:ro"
+      echo "./deploy/compose/authn-tls-certs:/certs:ro"
+      ;;
+    identity-resolution)
+      echo "./deploy/compose/identity-resolution-fullauth.yaml:/app/config/insight.yaml:ro"
+      ;;
+    authenticator)
+      echo "./src/backend/services/authenticator/config:/app/config:ro"
+      echo "./deploy/compose/authenticator-fullauth.yaml:/app/config/insight.yaml:ro"
+      echo "./deploy/compose/authn-tls-certs:/certs:ro"
+      echo "./deploy/compose/authenticator-dev-keys:/app/keys:ro"
+      ;;
+    gateway)
+      echo "./deploy/compose/gateway/routes.yaml:/etc/gateway/routes.yaml:ro"
+      ;;
+  esac
+}
+
 write_watch_override() {
   local svc="$1"
   case "$svc" in
@@ -440,7 +488,7 @@ cmd_up() {
   # ── Resolve which services go to ghcr ────────────────────────────
   # The legacy Rust api-gateway is gone; the nginx `gateway` is the sole :8080
   # entry doing full auth via the authenticator (NGINX_BFF #1583 step 09).
-  local all_backend="analytics identity-resolution"
+  local all_backend="analytics identity-resolution authenticator gateway"
   local watchable_services="analytics"
   local ghcr_list=""
   local watch_list=""
@@ -448,6 +496,8 @@ cmd_up() {
 
   [[ -n "${ANALYTICS_IMAGE:-}" ]] && ghcr_list=$(add "$ghcr_list" analytics)
   [[ -n "${IDENTITY_RESOLUTION_IMAGE:-}" ]] && ghcr_list=$(add "$ghcr_list" identity-resolution)
+  [[ -n "${AUTHENTICATOR_IMAGE:-}" ]] && ghcr_list=$(add "$ghcr_list" authenticator)
+  [[ -n "${GATEWAY_IMAGE:-}" ]] && ghcr_list=$(add "$ghcr_list" gateway)
 
   if [[ -n "$from_ghcr_csv" ]]; then
     local OLD_IFS=$IFS; IFS=','
@@ -492,9 +542,12 @@ cmd_up() {
 
   contains "$ghcr_list" analytics && [[ -z "${ANALYTICS_IMAGE:-}" ]] && export ANALYTICS_IMAGE="ghcr.io/constructorfabric/insight-analytics:${ANALYTICS_GHCR_TAG:-latest}"
   contains "$ghcr_list" identity-resolution && [[ -z "${IDENTITY_RESOLUTION_IMAGE:-}" ]] && export IDENTITY_RESOLUTION_IMAGE="ghcr.io/constructorfabric/insight-identity-resolution:${IDENTITY_RESOLUTION_GHCR_TAG:-latest}"
+  contains "$ghcr_list" authenticator && [[ -z "${AUTHENTICATOR_IMAGE:-}" ]] && export AUTHENTICATOR_IMAGE="ghcr.io/constructorfabric/insight-authenticator:${AUTHENTICATOR_GHCR_TAG:-latest}"
+  contains "$ghcr_list" gateway && [[ -z "${GATEWAY_IMAGE:-}" ]] && export GATEWAY_IMAGE="ghcr.io/constructorfabric/insight-gateway:${GATEWAY_GHCR_TAG:-latest}"
   true
 
   # ── Generate per-run override ────────────────────────────────────
+  # (see ghcr_volumes_block below for what the flip keeps and drops)
   local override="deploy/compose/override.generated.yml"
   mkdir -p compose
   local want_overrides=false
@@ -514,26 +567,31 @@ cmd_up() {
           # hosts pull the amd64 manifest and run it under Rosetta
           # instead of erroring with "no matching manifest for
           # linux/arm64/v8".
+          #
+          # `command: !reset null` falls back to the image's own CMD, which is
+          # the same `-c /app/config/insight.yaml` invocation minus the
+          # watched-path wrapper — so the config mount below is what it reads.
           cat <<YML
   ${svc}:
     build: !reset null
-    volumes: !override []
     entrypoint: !reset null
     command: !reset null
     platform: linux/amd64
+$(ghcr_volumes_block "$svc")
 YML
           if [[ "$svc" == "identity-resolution" ]]; then
             # The one-shot migrate companion must flip to the ghcr image too:
             # left alone it keeps the build + local-binary bind mount (which
             # was intentionally not built in ghcr mode), never starts, and the
             # server blocks forever on service_completed_successfully. The
-            # base command (…migrate) is kept — only build/volumes/platform
-            # change; the image's baked config supplies /app/config/insight.yaml.
+            # base command (…migrate) is kept — the image's CMD has no
+            # subcommand, so resetting it here would start a SERVER that never
+            # completes and the dependents would wait forever.
             cat <<YML
   identity-resolution-migrate:
     build: !reset null
-    volumes: !override []
     platform: linux/amd64
+$(ghcr_volumes_block identity-resolution)
 YML
           fi
         elif contains "$watch_list" "$svc"; then
@@ -636,10 +694,12 @@ YML
       echo "--- Image: fakeidp"
       "${compose_cmd[@]}" --profile auth-fakeidp build fakeidp
     fi
-    # authenticator is always built from source (no ghcr flip for it) and its
-    # binary is bind-mounted as a file — omit it and compose auto-creates the
-    # mount source as an empty directory, failing container init.
-    local rust_bins="authenticator"
+    # A service's binary is bind-mounted as a FILE, so omitting it from the
+    # build while it still has that mount makes compose auto-create the mount
+    # source as an empty directory and container init fails. Every service left
+    # out here must therefore be one the ghcr override took the mount off.
+    local rust_bins=""
+    contains "$ghcr_list" authenticator || rust_bins="authenticator"
     contains "$ghcr_list" analytics || contains "$watch_list" analytics || rust_bins="$rust_bins analytics"
     contains "$ghcr_list" identity-resolution || rust_bins="$rust_bins identity-resolution"
     rust_bins=$(trim "$rust_bins")
@@ -915,7 +975,19 @@ cmd_down() {
 
   if [[ "$wipe" == "true" && -z "$instance" ]]; then
     echo "Wiping host-side build artefacts (deploy/compose/build/)..."
-    rm -rf deploy/compose/build/
+    # The build container writes these as root, so on Linux (every CI runner)
+    # they belong to a uid this shell is not — `rm` then fails on each binary
+    # and, under `set -e`, takes the whole teardown down with it. That turned a
+    # run whose tests all PASSED into a red job.
+    #
+    # Best-effort: nothing here is state the next run depends on, since a fresh
+    # `up` rebuilds or re-pulls. What is left behind is reported rather than
+    # fatal.
+    rm -rf deploy/compose/build/ 2>/dev/null || {
+      echo "NOTE: some build artefacts could not be removed (root-owned — the" >&2
+      echo "      build container wrote them). They are rebuilt on the next up:" >&2
+      find deploy/compose/build -type f 2>/dev/null | sed 's/^/        /' >&2 || true
+    }
   elif [[ "$wipe" == "true" ]]; then
     echo "Preserving worktree build artefacts."
   fi
@@ -1276,13 +1348,25 @@ cmd_test_stand_help() {
   cat <<'EOF'
 usage: dev-compose.sh test-stand <up|seed|test|down> [args]
 
-The stack in test configuration: pinned ghcr frontend, real Keycloak login,
-and a readiness gate that waits for dbt-built gold data rather than for
-containers to report healthy.
+The stack in test configuration: pinned ghcr images for the frontend and all
+four backend services, real Keycloak login, and a readiness gate that waits
+for dbt-built gold data rather than for containers to report healthy.
 
   up      Generate .env.compose.test-stand, bring the stack up, seed it, and
           block until EVERY gold observation table the seed populates proves
           dbt rebuilt it for this run and left a positive observation in it.
+
+          The four backend services (analytics, authenticator,
+          identity-resolution, gateway) and the frontend are PULLED, each
+          pinned to its own chart's appVersion — never :latest, and never
+          compiled here. Building them took ~26 minutes for code the stand
+          does not change.
+
+          --build-backend  Compile the backend from this working tree instead.
+                           Needed to test a backend change: `up` otherwise
+                           refuses when the tree differs from origin/main
+                           under src/backend/, since the pinned images would
+                           not be what ran.
   seed    Re-seed the running stand (default target: all).
   test    Run the stand suite against an already-up stand. Passes extra
           arguments through to pytest — no `--` separator.
@@ -1304,15 +1388,81 @@ Isolation: reads and writes .env.compose.test-stand only — never your own
 EOF
 }
 
-# Resolve the frontend image from the chart's appVersion, so the stand runs
-# the same build the umbrella chart would deploy. Never `:latest`, which
-# would make a run unreproducible.
-test_stand_frontend_image() {
-  local chart="src/frontend/helm/Chart.yaml" version
-  [[ -f "$chart" ]] || { echo "ERROR: $chart not found — cannot pin the frontend image." >&2; return 1; }
+# Resolve an image from its own chart's appVersion, so the stand runs the same
+# build the umbrella chart would deploy. Never `:latest`, which would make a run
+# unreproducible — build-images.yml's bump-descriptors writes these on every
+# successful main push, so an appVersion names an image that provably exists.
+test_stand_pinned_image() {
+  local chart="$1" name="$2" version
+  [[ -f "$chart" ]] || { echo "ERROR: $chart not found — cannot pin $name." >&2; return 1; }
   version="$(awk -F'"' '/^appVersion:/ {print $2; exit}' "$chart")"
-  [[ -n "$version" ]] || { echo "ERROR: no appVersion in $chart — cannot pin the frontend image." >&2; return 1; }
-  printf 'ghcr.io/constructorfabric/insight-front:%s' "$version"
+  [[ -n "$version" ]] || { echo "ERROR: no appVersion in $chart — cannot pin $name." >&2; return 1; }
+  printf 'ghcr.io/constructorfabric/insight-%s:%s' "$name" "$version"
+}
+
+test_stand_frontend_image() {
+  test_stand_pinned_image src/frontend/helm/Chart.yaml front
+}
+
+# The backend services the stand runs from published images rather than from
+# source, as "<compose env var>|<chart path>|<image name>".
+#
+# This is where the stand's wall-clock went: building these four meant compiling
+# the Rust workspace twice — once on the host for the bind-mounted binaries, then
+# again inside each service image — for ~26 minutes, per job. And never for code
+# under test: e2e-stand.yml's path filter excludes src/backend/**, so the
+# workflow only fires on changes that leave the backend identical to main's.
+TEST_STAND_PINNED_BACKENDS=(
+  "ANALYTICS_IMAGE|src/backend/services/analytics/helm/Chart.yaml|analytics"
+  "AUTHENTICATOR_IMAGE|src/backend/services/authenticator/helm/Chart.yaml|authenticator"
+  "IDENTITY_RESOLUTION_IMAGE|src/backend/services/identity-resolution/helm/Chart.yaml|identity-resolution"
+  "GATEWAY_IMAGE|src/backend/services/gateway/helm/Chart.yaml|gateway"
+)
+
+# Pin and pull every backend image, or fail.
+#
+# Fails rather than falling back to a build on purpose. A silent fallback is how
+# a 26-minute compile comes back invisibly — and worse, a stand built from a
+# working tree while the report says it ran the published build.
+test_stand_pull_backends() {
+  local entry var chart name image
+  echo "=== Pinning the backend to published images (skip with --build-backend) ==="
+  for entry in "${TEST_STAND_PINNED_BACKENDS[@]}"; do
+    IFS='|' read -r var chart name <<<"$entry"
+    image="$(test_stand_pinned_image "$chart" "$name")" || return 1
+    echo "    ${name}: ${image}"
+    docker pull --quiet "$image" >/dev/null || {
+      echo "ERROR: cannot pull $image (pinned by $chart's appVersion)." >&2
+      echo "       Not falling back to a source build — that would report a pass" >&2
+      echo "       for an image this run never ran. Check ghcr access, or pass" >&2
+      echo "       --build-backend to build from source deliberately." >&2
+      return 1; }
+    update_env_var "$TEST_STAND_ENV_FILE" "$var" "$image"
+  done
+}
+
+# Refuse to pin when the working tree's backend differs from what the charts
+# describe.
+#
+# The appVersions track main. A branch that edits src/backend/** and then runs
+# against published images would report green for code it never executed. The PR
+# path filter makes this unreachable in the normal lane; this covers
+# workflow_dispatch and local runs, which bypass it.
+test_stand_backend_matches_charts() {
+  git rev-parse --git-dir >/dev/null 2>&1 || return 0
+  git remote get-url origin >/dev/null 2>&1 || return 0
+  git rev-parse --verify --quiet origin/main >/dev/null || return 0
+
+  local changed
+  changed="$(git diff --name-only origin/main -- src/backend 2>/dev/null | head -5)"
+  [[ -z "$changed" ]] && return 0
+
+  echo "ERROR: this tree changes src/backend/ relative to origin/main:" >&2
+  printf '         %s\n' $changed >&2
+  echo "       The stand pins each backend image to its chart's appVersion, which" >&2
+  echo "       tracks main — so those changes would NOT be what runs. Pass" >&2
+  echo "       --build-backend to build this tree instead." >&2
+  return 1
 }
 
 # Derive the test env file from the committed example, overriding only the
@@ -1537,11 +1687,12 @@ cmd_test_stand() {
 
   case "$verb" in
     up)
-      local auth_mode="keycloak" image
+      local auth_mode="keycloak" image build_backend=false
       while [[ $# -gt 0 ]]; do
         case "$1" in
           --auth=*) auth_mode="${1#*=}"; shift ;;
           --auth)   auth_mode="$2"; shift 2 ;;
+          --build-backend) build_backend=true; shift ;;
           -h|--help) cmd_test_stand_help; return 0 ;;
           *) echo "ERROR: unknown test-stand up option: $1" >&2; return 2 ;;
         esac
@@ -1549,6 +1700,16 @@ cmd_test_stand() {
 
       image="$(test_stand_frontend_image)" || return 1
       test_stand_write_env "$image" "$auth_mode" || return 1
+
+      # Pinning writes the four *_IMAGE vars into the env file, which is what
+      # makes cmd_up put those services in its ghcr list — so this has to happen
+      # before cmd_up reads it.
+      if [[ "$build_backend" != true ]]; then
+        test_stand_backend_matches_charts || return 1
+        test_stand_pull_backends || return 1
+      else
+        echo "=== --build-backend: compiling the backend from this tree ==="
+      fi
 
       local up_args=(--env-file "$TEST_STAND_ENV_FILE")
       [[ "$auth_mode" == keycloak ]] && up_args+=(--authenticator-redirect "$(test_stand_origin)/auth/callback")

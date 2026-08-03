@@ -1,10 +1,17 @@
 name: E2E — Compose stand
 
-# The deployed-stand suite (tests/stand) run against a real compose stack: the
-# ghcr frontend pinned to the chart's appVersion, a real Keycloak login, and
+# The deployed-stand suite (tests/stand) run against a real compose stack: ghcr
+# images pinned to each component's chart appVersion, a real Keycloak login, and
 # gold data dbt actually built. Distinct from e2e-bronze-to-api.yml, which
 # exercises the in-process ingestion rig and carries this repo's four blocking
 # coverage gates — that workflow is untouched by this one.
+#
+# Nothing here compiles the backend. `test-stand up` pulls analytics,
+# authenticator, identity-resolution and gateway at their charts' appVersions;
+# building them cost ~26 min per job, twice over (host binaries, then again
+# inside each image), for code this workflow never changes — `paths:` below
+# deliberately excludes src/backend/**. A PR that DOES touch the backend is
+# refused by `up` rather than silently tested against main's images.
 #
 # Two independently-reporting checks, split by what they need rather than by
 # what they cover:
@@ -113,10 +120,11 @@ jobs:
     needs: resolve-target
     if: needs.resolve-target.outputs.target == 'compose'
     runs-on: ubuntu-latest
-    # Generous on purpose: `test-stand up` compiles the Rust backend from
-    # source on a cold runner. See out/ci-wiring.md — cutting this is the
-    # first thing to revisit once a real run has been measured.
-    timeout-minutes: 90
+    # Was 90 while `up` compiled the backend; measured at 28m for that run, of
+    # which 26m was the build. Pulling instead should land near 8m, so 45
+    # leaves ~5x headroom for a cold runner and a slow registry while no longer
+    # letting a hung stand burn an hour and a half.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
@@ -196,7 +204,9 @@ jobs:
     needs: resolve-target
     if: needs.resolve-target.outputs.target == 'compose'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Same reasoning as api-smoke's, plus the ui-tests image pull. The journeys
+    # themselves took 28s.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
