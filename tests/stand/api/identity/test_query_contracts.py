@@ -103,12 +103,7 @@ def test_person_roles_filtered_by_person_shows_only_that_person(
 def test_person_roles_filtered_by_role_and_active_narrows_on_both(
     admin_operator_session: PersonaSession,
 ) -> None:
-    """Two filters at once, and `active=true` means `valid_to is null`.
-
-    A revoke is temporal here — `DELETE` sets `valid_to` rather than removing
-    the row — so `active=true` is the difference between the grants in force
-    and every grant that ever existed.
-    """
+    """Two filters at once, and `active=true` means `valid_to is null`."""
     client = admin_operator_session.client
     catalogue = client.get(identity_path("/v1/roles"))
     assert catalogue.status_code == 200, f"roles: {catalogue.status_code}"
@@ -207,10 +202,6 @@ def test_subchart_depth_cuts_the_descent_where_it_says(
         f"depth={depth} rendered a grandchild — the descent was not cut: {sorted(rendered)}"
     )
     if depth == 0:
-        assert lead.uuid not in rendered, (
-            f"depth=0 rendered a subordinate: {sorted(rendered)}"
-        )
+        assert lead.uuid not in rendered, f"depth=0 rendered a subordinate: {sorted(rendered)}"
     else:
-        assert lead.uuid in rendered, (
-            f"depth=1 dropped the root's own report: {sorted(rendered)}"
-        )
+        assert lead.uuid in rendered, f"depth=1 dropped the root's own report: {sorted(rendered)}"

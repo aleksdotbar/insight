@@ -23,15 +23,14 @@ What is redacted, in every JSON structure inside `*.trace` and `*.network`:
 * any object key that is itself a sensitive header name;
 * **every `cookies` array**, whatever the individual cookie is called.
 
-That last one is not a generalisation for its own sake — it is the case the
-first version of this script missed. A trace records each request TWICE: once as
-raw headers, and once as a parsed HAR entry with `request.cookies` /
-`response.cookies` as `[{"name": "__Host-sid", "value": "..."}]`. Redacting by
-header name leaves that copy untouched, because the name there is the COOKIE's
-name, not `Cookie`. Measured against a real Chromium trace: the session value
-survived in `trace.network` with only the header rule in place. So cookie values
-are redacted by POSITION (inside a `cookies` array) rather than by name, and no
-future cookie name has to be added here to stay covered.
+A trace records each request TWICE: once as raw headers, and once as a parsed
+HAR entry with `request.cookies` / `response.cookies` as
+`[{"name": "__Host-sid", "value": "..."}]`. Redacting by header name leaves that
+second copy untouched — the name there is the COOKIE's name, not `Cookie` — and
+a real Chromium trace kept the session value in `trace.network` with only the
+header rule in place. So cookie values are redacted by POSITION (inside a
+`cookies` array) rather than by name, and no future cookie name has to be added
+here to stay covered.
 
 Matching is case-insensitive: the wire is case-insensitive about header names
 and traces preserve whatever casing the sender used.
@@ -59,14 +58,7 @@ from typing import Any
 
 #: Header names whose values are credentials. Lowercase; matching lowercases the
 #: candidate before comparing.
-SENSITIVE_HEADERS: frozenset[str] = frozenset(
-    {
-        "cookie",
-        "set-cookie",
-        "authorization",
-        "proxy-authorization",
-    }
-)
+SENSITIVE_HEADERS: frozenset[str] = frozenset({"cookie", "set-cookie", "authorization", "proxy-authorization"})
 
 #: What a redacted value becomes. Deliberately not an empty string — a reader of
 #: the trace should be able to tell "this header was present and removed" from
@@ -89,10 +81,7 @@ def _redact_cookie_array(node: Any) -> Any:
     """
     if not isinstance(node, list):
         return _redact(node)
-    return [
-        {**item, "value": PLACEHOLDER} if isinstance(item, dict) and "value" in item else item
-        for item in node
-    ]
+    return [{**item, "value": PLACEHOLDER} if isinstance(item, dict) and "value" in item else item for item in node]
 
 
 def _redact(node: Any) -> Any:
@@ -113,11 +102,7 @@ def _redact(node: Any) -> Any:
         for key, value in node.items():
             if key == COOKIE_ARRAY_KEY:
                 result[key] = _redact_cookie_array(value)
-            elif (
-                isinstance(key, str)
-                and key.lower() in SENSITIVE_HEADERS
-                and isinstance(value, str)
-            ):
+            elif isinstance(key, str) and key.lower() in SENSITIVE_HEADERS and isinstance(value, str):
                 # The `{"cookie": "...", "authorization": "..."}` header-map shape.
                 result[key] = PLACEHOLDER
             else:
@@ -174,9 +159,7 @@ def _find_leaks(archive: Path) -> list[str]:
                             and isinstance(cookie.get("value"), str)
                             and cookie["value"] != PLACEHOLDER
                         ):
-                            leaks.append(
-                                f"{where}: cookie {cookie.get('name')!r} survived redaction"
-                            )
+                            leaks.append(f"{where}: cookie {cookie.get('name')!r} survived redaction")
                 scan(value, where)
         elif isinstance(node, list):
             for item in node:
@@ -197,9 +180,7 @@ def redact_archive(archive: Path) -> None:
     """Rewrite one trace zip in place, then prove the rewrite held."""
     with tempfile.TemporaryDirectory() as tmp:
         rewritten = Path(tmp) / archive.name
-        with zipfile.ZipFile(archive) as src, zipfile.ZipFile(
-            rewritten, "w", zipfile.ZIP_DEFLATED
-        ) as dst:
+        with zipfile.ZipFile(archive) as src, zipfile.ZipFile(rewritten, "w", zipfile.ZIP_DEFLATED) as dst:
             for info in src.infolist():
                 raw = src.read(info)
                 if info.filename.endswith(NDJSON_SUFFIXES):
@@ -218,14 +199,14 @@ def redact_archive(archive: Path) -> None:
 def main(argv: list[str]) -> int:
     roots = [Path(a) for a in argv[1:]]
     if not roots:
-        print("usage: redact-playwright-trace.py <dir> [<dir> ...]", file=sys.stderr)
+        print("usage: redact-playwright-trace.py <dir> [<dir> ...]", file=sys.stderr)  # noqa: T201
         return 2
 
     traces = sorted({p for root in roots if root.is_dir() for p in root.rglob("*.zip")})
     if not traces:
         # Not an error. A green run with `--tracing=retain-on-failure` keeps no
         # trace at all, and that is the common case.
-        print("no trace archives found — nothing to redact")
+        print("no trace archives found — nothing to redact")  # noqa: T201
         return 0
 
     failed = 0
@@ -235,11 +216,11 @@ def main(argv: list[str]) -> int:
         except Exception as exc:  # noqa: BLE001 — any failure means "do not publish"
             failed += 1
             trace.unlink(missing_ok=True)
-            print(f"::error::deleted {trace} — could not verify redaction: {exc}")
+            print(f"::error::deleted {trace} — could not verify redaction: {exc}")  # noqa: T201
         else:
-            print(f"redacted {trace}")
+            print(f"redacted {trace}")  # noqa: T201
 
-    print(f"redacted {len(traces) - failed}/{len(traces)} trace archive(s)")
+    print(f"redacted {len(traces) - failed}/{len(traces)} trace archive(s)")  # noqa: T201
     return 1 if failed else 0
 
 

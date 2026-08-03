@@ -11,7 +11,7 @@ out at `pytest_sessionfinish`.
 stand) reads that ledger back and answers two questions:
 
   1. Did every operation the CATALOGUE names get exercised, by something other
-     than the anonymous sweep? `api/test_gateway.py` calls all 45 operations
+     than the anonymous sweep? `api/test_gateway.py` calls all 48 operations
      without a session, so every one has an observation — and a route whose only
      observed code is 401 was swept and never tested. Counting it as covered is
      precisely the mistake this gate exists to prevent.
@@ -244,13 +244,9 @@ def isolated() -> Iterator[None]:
     through a session does not start a new measurement — it DELETES the run's,
     and the gate then reports on whatever happened afterwards.
 
-    Not hypothetical, and not a small error either: the first CI run of this
-    gate reported 6 of 47 operations exercised and 41 never called, against a
-    suite that had just passed 129 tests. The six were the leak sweep's, made
-    after `tests/stand/meta/` had exercised `reset()` and wiped everything
-    before them. A gate that reads a wiped ledger reports a catastrophe in the
-    suite rather than a bug in itself, which is the most expensive way to be
-    wrong.
+    Not hypothetical: a gate that reads a wiped ledger reports a catastrophe in
+    the suite rather than a bug in itself, which is the most expensive way to be
+    wrong. `tests/stand/meta/conftest.py` applies this autouse for that reason.
     """
     saved = {key: set(codes) for key, codes in _OBSERVED.items()}
     try:
@@ -428,9 +424,7 @@ class SpecReport:
         }
 
         coverable = sum(len(codes) for codes in self.required.values())
-        covered = sum(
-            len(self.required[op] & self.validated.get(op, set())) for op in ops
-        )
+        covered = sum(len(self.required[op] & self.validated.get(op, set())) for op in ops)
         self.total_coverable = coverable
         self.total_covered = covered
         self.coverage_pct = 100.0 if not coverable else round(100.0 * covered / coverable, 1)
@@ -505,10 +499,7 @@ def violations(catalogue: CatalogueReport, spec: SpecReport | None) -> list[str]
         for label in catalogue.swept_only
     ]
     if spec is not None:
-        out += [
-            f"MISSING: {op} is documented and exercised by no test"
-            for op in spec.missing
-        ]
+        out += [f"MISSING: {op} is documented and exercised by no test" for op in spec.missing]
     return out
 
 
@@ -526,7 +517,10 @@ def advisories(spec: SpecReport | None) -> list[str]:
         "unreachable — drop the entry"
         for op, seen in spec.blocked_observed.items()
     ]
-    out += [f"stale BLOCKED: {op} is no longer in the spec — drop the entry" for op in spec.stale_blocked]
+    out += [
+        f"stale BLOCKED: {op} is no longer in the spec — drop the entry"
+        for op in spec.stale_blocked
+    ]
     out += [
         f"stale BLOCKED: {op} no longer declares {sorted(gone)} — the document was "
         "corrected, so the exclusion suppresses nothing; drop it"

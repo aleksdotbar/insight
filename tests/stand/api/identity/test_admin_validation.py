@@ -55,9 +55,7 @@ def _a_role_id(session: PersonaSession) -> str:
     return str(catalogue[0].role_id)
 
 
-def _refused(
-    session: PersonaSession, method: str, suffix: str, body: Mapping[str, str]
-) -> None:
+def _refused(session: PersonaSession, method: str, suffix: str, body: Mapping[str, str]) -> None:
     response = session.client.request(method, identity_path(suffix), json_body=dict(body))
     assert response.status_code == 400, (
         f"{method} {suffix} accepted {body!r} ({response.status_code}) rather than "
@@ -86,10 +84,9 @@ def test_a_person_role_grant_naming_nobody_is_refused(
 ) -> None:
     """Nil on either side of the grant, and both must be refused.
 
-    Parametrised over the two halves rather than written once, because they
-    fail for different reasons and a validator that checks only one is exactly
-    the bug worth catching — a grant of a real role to nobody, or of nothing to
-    a real person, both persist happily if unchecked.
+    They fail for different reasons, and a validator that checks only one is
+    exactly the bug worth catching — a grant of a real role to nobody, or of
+    nothing to a real person, both persist happily if unchecked.
     """
     person = stand_manifest.fixture("dev_lead")
     role_id = _a_role_id(admin_operator_session)

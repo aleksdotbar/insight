@@ -18,11 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field
 #: `AwareDatetime` and every response with a timestamp fails to validate.
 #:
 #: `tests/generate_schemas.py` substitutes this alias for `AwareDatetime` in the
-#: generated module. That substitution is the ONE hand-written thing in a
-#: generated file, and it is deliberate: the alternative is a suite that cannot
-#: read a metric. It is a pinned DEVIATION, not an opinion about the right
-#: shape — a client that generated its parser from the published contract, which
-#: is what publishing it is for, breaks on every one of these.
+#: generated module — the ONE hand-written thing in a generated file. A pinned
+#: DEVIATION, not a preference: any client that generated its parser from the
+#: published contract breaks on these too.
 #:
 #: Delete the substitution and this alias together once the service emits
 #: offsets (or the spec stops claiming date-time).
@@ -66,9 +64,7 @@ class ListResponse[T](BaseModel):
 
     Generic because it is genuinely one shape: identity says so in its own source
     ("wire parity with the .NET ListResponse: the cursor is declared but
-    pagination is not implemented — always null"), and analytics matches. One
-    model here retires the per-module `_items` and `_names` helpers that were
-    otherwise being rewritten per path group.
+    pagination is not implemented — always null"), and analytics matches.
     """
 
     items: list[T]

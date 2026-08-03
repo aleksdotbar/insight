@@ -285,14 +285,12 @@ jobs:
 
   e2e-suite:
     name: Run E2E suite
-    # The required check the `main` ruleset names. It keeps that name across
-    # the api/identity retirement precisely so branch protection needs no
-    # change: only what it waits on shrinks.
+    # The required check the `main` ruleset names — the name is branch-protection
+    # config, so keep it even as `needs:` changes.
     #
-    # It no longer folds in an endpoint-coverage gate, because after the
-    # retirement this workflow has none — the endpoint contracts, and the gate
-    # over them, live in `e2e-stand.yml`, whose own umbrella ("Stand E2E") is
-    # the check that enforces them.
+    # It no longer folds in an endpoint-coverage gate: after the api/identity
+    # retirement this workflow has none — those contracts and their gate live in
+    # `e2e-stand.yml`, under its own umbrella ("Stand E2E").
     needs:
       - build
       - e2e-metrics

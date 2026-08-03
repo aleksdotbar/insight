@@ -9,9 +9,7 @@ share one authenticated page across journeys, and each journey is a statement
 about a complete round trip from a cold browser; sharing would make the later
 ones depend on the earlier ones having run.
 
-Kept here rather than in one journey's module for the boring reason: a test
-module importing another test module couples them for no benefit and breaks the
-importer when the importee is renamed.
+
 """
 
 from __future__ import annotations

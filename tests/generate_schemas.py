@@ -55,17 +55,23 @@ _SCHEMAS = _TESTS / "stand" / "api" / "schemas"
 # strictness — these models are regenerated in the same change that adds a
 # field, so an undeclared one is real drift rather than a benign addition.
 CODEGEN_ARGS = (
-    "--input-file-type", "openapi",
-    "--output-model-type", "pydantic_v2.BaseModel",
-    "--target-python-version", "3.13",
+    "--input-file-type",
+    "openapi",
+    "--output-model-type",
+    "pydantic_v2.BaseModel",
+    "--target-python-version",
+    "3.13",
     "--use-standard-collections",
     "--use-union-operator",
     "--use-schema-description",
     "--field-constraints",
-    "--extra-fields", "forbid",
+    "--extra-fields",
+    "forbid",
     "--disable-timestamp",
-    "--formatters", "ruff-format",
-    "--formatters", "ruff-check",
+    "--formatters",
+    "ruff-format",
+    "--formatters",
+    "ruff-check",
 )
 
 ANALYTICS_HEADER = '''"""Analytics response shapes — GENERATED, do not edit.
@@ -185,7 +191,9 @@ def declares_only_200(spec_path: Path) -> str | None:
 
     for operations in (spec.get("paths") or {}).values():
         for operation in operations.values():
-            declared |= {status for status in (operation.get("responses") or {}) if status.isdigit()}
+            declared |= {
+                status for status in (operation.get("responses") or {}) if status.isdigit()
+            }
 
     if declared <= {"200"}:
         return None
@@ -221,19 +229,14 @@ TARGETS: tuple[Generated | Bodyless | Untrusted, ...] = (
         spec=_SPECS / "gateway" / "openapi.json",
         reason="publishes no OpenAPI document (NGINX + Lua; `GET /healthz` is its only own route)",
     ),
-    # The committed document is still the retired .NET one: it declares
-    # `/v1/persons/{email}` (identity answers 404 — the path moved to
-    # analytics), declares `POST /v1/persons-seed` (405), spells the subchart
-    # parameter `{personId}` where the service serves `{person_id}`, omits both
-    # persons-sync operations, and lists only `200` for every operation.
-    # `identity.py` is hand-written from the Rust DTOs until the service emits
-    # its own document (it has no `openapi` subcommand yet, unlike analytics and
-    # authenticator).
+    # The committed document is still the retired .NET one — it declares routes
+    # the service does not serve, omits ones it does, and lists only `200`
+    # everywhere (enumerated in `stand/api/schemas/__init__.py`). `identity.py` is
+    # hand-written from the Rust DTOs until identity grows an `openapi`
+    # subcommand of its own, as analytics and authenticator have.
     #
-    # It was `Bodyless` until the document grew one body — `POST
-    # /v1/visible-persons`, a route the Rust service does serve. That said
-    # nothing about whether the REST of the document is true, which is what the
-    # decision actually turns on, so the check now re-derives provenance.
+    # NOT `Bodyless`: the document does describe one body (`POST
+    # /v1/visible-persons`), and body count says nothing about provenance.
     Untrusted(
         name="identity-resolution",
         spec=_SPECS / "identity-resolution" / "openapi.json",

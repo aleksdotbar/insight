@@ -1,6 +1,6 @@
 """Shared floor for the Insight deployed-stand test suite (`tests/stand/`).
 
-Four things live here, and nothing else:
+This package holds:
 
 * `manifest` — the typed model of the stand's self-description
   (`deploy/seed/manifest.json`), the only source of fixture names, capabilities

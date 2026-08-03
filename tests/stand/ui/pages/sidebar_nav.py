@@ -5,14 +5,8 @@ route change: the SPA swaps the view without reloading the document. That is a
 different operation from `page.goto()`, which throws the document away and boots
 the app again, and only one of the two is what a user does to get around.
 
-Measured on this stand rather than assumed — stamping `window` before the
-transition and reading it back after:
-
-    click "Metric catalog"   window survived   -> client-side route change
-    page.goto("/whats-new")  window lost       -> full document reload
-
-Both are worth exercising and they catch different failures, so
-`test_navigation_holds_session.py` does each deliberately.
+Measured on this stand: a click keeps `window` alive, `page.goto()` does not.
+`test_navigation_holds_session.py` exercises both deliberately.
 
 Accessible names come from the rendered sidebar, not from the bundle's i18n
 catalog: "Metric catalog", "What's new", "Personal", "Team", plus one link per

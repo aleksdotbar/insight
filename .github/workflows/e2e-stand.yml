@@ -3,29 +3,26 @@ name: E2E — Compose stand
 # The deployed-stand suite (tests/stand) run against a real compose stack: ghcr
 # images pinned to each component's chart appVersion, a real Keycloak login, and
 # gold data dbt actually built. Distinct from e2e-bronze-to-api.yml, which
-# exercises the in-process ingestion rig and carries this repo's four blocking
-# coverage gates — that workflow is untouched by this one.
+# exercises the in-process ingestion rig and now carries one blocking gate
+# (metric coverage) — that workflow is untouched by this one.
 #
 # Nothing here compiles the backend. `test-stand up` pulls analytics,
 # authenticator, identity-resolution and gateway at their charts' appVersions;
 # building them cost ~26 min per job, twice over (host binaries, then again
-# inside each image), for code this workflow never changes — `paths:` below
-# deliberately excludes src/backend/**. A PR that DOES touch the backend is
-# refused by `up` rather than silently tested against main's images.
+# inside each image). A PR that DOES touch the backend is refused by `up`
+# rather than silently tested against main's images.
 #
 # Two independently-reporting checks, split by what they need rather than by
 # what they cover:
 #
-#   api-smoke    tests/stand/api — 123 HTTP contract tests, plus the harness's
-#                own 10 (tests/stand/meta) and the coverage gate. No browser.
-#   ui-journeys  tests/stand/ui  — the browser journeys, run inside the
+#   api-smoke    tests/stand/api — 257 HTTP contract tests, plus the harness's
+#                own 16 (tests/stand/meta) and the coverage gate. No browser.
+#   ui-journeys  tests/stand/ui  — 10 browser journeys, run inside the
 #                published ui-tests image.
 #
-# **Both are NON-REQUIRED and are deliberately in no branch-protection
-# ruleset.** They stand up a full stack against a live IdP; until they have a
-# track record they must not be able to block a merge. Whoever proposes making
-# them required should first look at the wall-clock and flake rate recorded in
-# .cf-studio/.plans/stage1-compose-e2e-suite/out/ci-wiring.md.
+# Neither is required on its own. The `Stand E2E` umbrella below is the check
+# meant to be required once it has a track record — see the wall-clock and
+# flake rate in .cf-studio/.plans/stage1-compose-e2e-suite/out/ci-wiring.md.
 #
 # Every stand operation goes through ./dev-compose.sh test-stand — never the
 # bare up/down/seed a human developer uses. The pinned frontend, Keycloak auth
@@ -75,10 +72,8 @@ env:
   UI_TESTS_IMAGE: ghcr.io/constructorfabric/insight-ui-tests:latest
 
 jobs:
-  # Stages 2 (CI stand) and 3 (E2E stand) are meant to add a target here rather
-  # than copy this file. Until they do, `compose` is the only implemented value
-  # and anything else is a mistake worth failing on — a dispatch that silently
-  # ran the wrong stand would be worse than one that refused.
+  # Stages 2 (CI stand) and 3 (E2E stand) are meant to add a target to
+  # `resolve-target` below rather than copy this file.
   # ─── changes ──────────────────────────────────────────────────────────────
   # What the `on: paths:` filter used to do, moved into a job so the workflow
   # ALWAYS runs and the umbrella below can always report.
@@ -150,7 +145,7 @@ jobs:
   # image. `--ignore` rather than a path argument: `test-stand test` always
   # passes `tests/stand` to pytest and forwards this on top, so naming a
   # subdirectory would ADD to the full collection instead of narrowing it.
-  # Measured: 133 collected here, 10 in ui-journeys, 143 for the whole suite.
+  # Measured: 273 collected here, 10 in ui-journeys, 283 for the whole suite.
   api-smoke:
     name: api-smoke
     needs: resolve-target
@@ -378,11 +373,8 @@ jobs:
         run: python3 .github/workflows/scripts/redact-playwright-trace.py test-results
 
       - name: Upload traces and screenshots
-        # Gated on redaction having SUCCEEDED, not merely run. The script fails
-        # closed — a trace it cannot fully parse and rewrite is deleted and the
-        # exit code is non-zero — so a failure means at least one artifact was not
-        # proven clean. Uploading regardless is the exact outcome the ordering of
-        # these steps exists to prevent.
+        # Gated on redaction having SUCCEEDED, not merely run: a non-zero exit
+        # means at least one artifact was not proven clean.
         if: always() && steps.redact.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

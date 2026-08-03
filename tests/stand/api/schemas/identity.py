@@ -120,9 +120,7 @@ class IdentityValue(BaseModel):
     `insight_source_id` rather than `person_id`, and no tenant at all: the
     tenant is exactly what is still unknown at that point.
 
-    Declared here rather than generated, for the reason the coverage gate does
-    not gate identity on its document: the committed spec is the retired .NET
-    contract, and it describes neither this route's shape nor several others.
+
     """
 
     value_type: str

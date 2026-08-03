@@ -6,9 +6,7 @@
 
 Split by SERVICE because that is the axis along which a test's setup differs:
 identity's answers depend on who is asking (the org chart, the admin row, the
-kind of principal), analytics' mostly on what was created. Grouping by path was
-already implicit in the old `test_analytics_*.py` / `test_identity_*.py`
-prefixes; a directory says it once instead of on every filename.
+kind of principal), analytics' mostly on what was created.
 
 `test_gateway.py` stays at this level on purpose. It sweeps 401 over every
 operation in `operations.py`, both services at once, because refusing an

@@ -21,12 +21,8 @@ and returns 200, so it belongs in an analytics module when one grows to
 cover it.
 
 Every PERSON below was logged in by driving the deployed OIDC chain against
-Keycloak. Still no token is minted anywhere in this suite: the one non-person
-caller, the service principal exercising `/internal/*`, gets its credential by
-exchanging an RFC 7523 assertion at the authenticator's own token endpoint — the
-issuance path a real service uses. A minted bearer would prove the service
-verifies a JWT, which the in-process rig already covers, and would say nothing
-about whether such a caller can be issued one here.
+Keycloak; no token is minted anywhere in this suite. The one non-person caller
+is the service principal in `test_internal.py`, which states how it is issued.
 """
 
 from __future__ import annotations
@@ -54,27 +50,19 @@ SUBCHART = identity_path("/v1/subchart")
 
 
 def _forest(session: PersonaSession) -> SubchartForest:
-    """That persona's visible forest, validated.
-
-    One call replaces the `_roots` / `_nodes` / `_people` trio this module used
-    to carry, and the `type Node` alias with it. `SubchartForest` states the
-    shape once and walks itself, so a malformed payload fails as a statement
-    about the response rather than as a `TypeError` from the first subscript.
+    """That persona's visible forest, parsed into `SubchartForest` so a malformed
+    payload fails as a statement about the response rather than as a `TypeError`.
     """
     response = session.client.get(SUBCHART)
     assert response.status_code == 200, (
-        f"{session.name} could not read {SUBCHART}: "
-        f"{response.status_code} {response.text[:300]}"
+        f"{session.name} could not read {SUBCHART}: {response.status_code} {response.text[:300]}"
     )
     return response.parse(SubchartForest)
 
 
 def test_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
     """Same url the gateway sweep refuses anonymously; a session is the only
-    difference.
-
-    Populated from the seeded org chart, so it also rules out the boring
-    explanation for that 401 — that the route had nothing behind it.
+    difference — and the roots rule out "there was nothing there".
     """
     assert _forest(lead_session).roots, "the authenticated subchart carried no roots"
 

@@ -12,28 +12,17 @@ Two halves, and a reader should be able to tell which one they are in:
   subchart parameter `{personId}` where the service serves `{person_id}`, omits
   both persons-sync operations, and lists only `200` for all 18 operations.
   Generating from it would record every one of those errors as fact.
-* `analytics.py` — GENERATED from `docs/components/backend/analytics/openapi.json`.
-  That document is itself generated from the handlers' own types
-  (`cargo run -p analytics -- openapi`) and drift-gated in CI by
-  `.github/workflows/openapi-specs.yml`, which fails the build when the
-  committed copy goes stale. So its response schemas describe the very structs
-  that serialize the wire — generating models from it introduces no second
-  source of truth, and its 70 schemas are not a hand-copying job.
+* `analytics.py`, `authenticator.py` — GENERATED from documents the services
+  emit themselves (`cargo run -p <service> -- openapi`) and CI drift-gates in
+  `.github/workflows/openapi-specs.yml`, so the models describe the very structs
+  that serialize the wire. `authenticator.py` is currently just the error
+  envelope, because that document declares every `/auth/*` success body as a bare
+  `type: object`.
 
-* `authenticator.py` — GENERATED the same way, from
-  `docs/components/backend/authenticator/openapi.json` (same provenance: emitted
-  offline by the service, drift-gated in the same workflow). Currently just the
-  error envelope, because that document declares every `/auth/*` success body as
-  a bare `type: object` — those handlers answer untyped JSON. It exists so a
-  handler that gains a typed response lands here on the next regeneration rather
-  than being noticed by someone.
-
-  **Bodies from the spec; status codes never.** The same document's per-operation
-  status-code lists are stamped uniformly by `.standard_errors` and do not
-  describe what any route actually returns (#1669) — the identity contract shows
-  the same failure in its own way, listing only `200` everywhere. So the models
-  come from the spec and every status code stays asserted per test, from
-  observed behaviour.
+  **Bodies from the spec; status codes never.** The per-operation status-code
+  lists are stamped uniformly by `.standard_errors` and describe nothing (#1669)
+  — the identity contract fails the same way by listing only `200` — so every
+  status code stays asserted per test, from observed behaviour.
 
 That asymmetry is a real difference in what the models mean. The generated ones
 are a **contract test** — a mismatch says the service and its published contract

@@ -117,12 +117,10 @@ def test_metric_results_403_for_a_person_out_of_scope(
 ) -> None:
     """The visibility gate, reached with a well-formed key.
 
-    This case used to assert the opposite thing: before the identity cutover
-    the endpoint keyed on EMAIL, so a canonical UUID matched nobody in the
-    caller's visible set and the gate denied it. The uuid is the right key now,
-    so the refusal has to come from the person rather than from the spelling —
-    `sales_ic` is outside a development lead's subtree, the same pair
-    `test_subchart.py` uses for its out-of-scope 404.
+        The uuid is the right key since the identity cutover, so the refusal has to
+    come from the person rather than from the spelling — `sales_ic` is outside
+    a development lead's subtree, the same pair `test_subchart.py` uses for its
+    out-of-scope 404.
 
     Still the only case in this module that reaches the gate: the request is
     the 200's, differing solely in whose id it names.
@@ -187,12 +185,7 @@ def _body(api: ApiClient, manifest: Manifest) -> dict[str, JsonValue]:
 
 
 def test_an_empty_metrics_list_is_400(api: ApiClient, stand_manifest: Manifest) -> None:
-    """Nothing asked for is a malformed request, not an empty answer.
-
-    A 200 with no metrics would be indistinguishable from a metric that
-    genuinely has no data, which is the confusion the whole endpoint exists to
-    avoid.
-    """
+    """Nothing asked for is a malformed request, not an empty answer."""
     body = _body(api, stand_manifest)
     body["metrics"] = []
 
@@ -225,9 +218,7 @@ def test_a_period_that_cannot_be_honoured_is_400(
     )
 
 
-def test_an_unknown_metric_key_is_400_not_404(
-    api: ApiClient, stand_manifest: Manifest
-) -> None:
+def test_an_unknown_metric_key_is_400_not_404(api: ApiClient, stand_manifest: Manifest) -> None:
     """This endpoint has no not-found path, and the spec declares none.
 
     A metric_key that resolves to nothing is `unavailable` — a statement about

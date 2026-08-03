@@ -1,8 +1,7 @@
 """The two views that belong to nobody in particular: `/metrics` and `/whats-new`.
 
-Together in one module because each exposes a single locator, and journeys use
-them only as navigation targets — somewhere to go that is not a person's view.
-Splitting a one-locator class per file would be filing, not structure.
+Together in one module: each exposes a single locator, and journeys use them
+only as navigation targets — somewhere to go that is not a person's view.
 """
 
 from __future__ import annotations

@@ -11,9 +11,6 @@ property for `lib/api_coverage.py`. The tables differ on 403 (see `coverage.py`'
 docstring for why it is required here rather than excluded); the reason for
 testing the gate does not.
 
-Deliberately under `stand/` but needing nothing from it: no fixture here touches
-the manifest, a session or a URL, so these run in a plain checkout with no stand
-up. That is the same reasoning that keeps the gate itself stdlib-only.
 """
 
 from __future__ import annotations
@@ -58,9 +55,7 @@ def _passing_catalogue() -> coverage.CatalogueReport:
 
 
 def _catalogue_report(rows: dict[tuple[str, str], list[int]]) -> coverage.CatalogueReport:
-    return coverage.CatalogueReport(
-        catalogue=CATALOGUE, observed=coverage.by_label(_ledger(rows))
-    )
+    return coverage.CatalogueReport(catalogue=CATALOGUE, observed=coverage.by_label(_ledger(rows)))
 
 
 def test_an_operation_only_the_sweep_touched_is_not_covered() -> None:
@@ -88,15 +83,7 @@ def test_an_operation_only_the_sweep_touched_is_not_covered() -> None:
 
 
 def test_a_real_id_counts_against_the_operation_it_belongs_to() -> None:
-    """A concrete url folds onto its catalogued template.
-
-    The catalogue names one stand-in id; a test that updates a real row records
-    a different one. Comparing literal paths puts them in separate buckets, so
-    the only call left against the catalogued url is the anonymous sweep's and
-    the gate reports SWEPT ONLY for an operation a passing test just exercised.
-    That is what it said about both admin-threshold writes on the first run
-    that got this far.
-    """
+    """A concrete url folds onto its catalogued template — see `fold_onto_catalogue`."""
     catalogued = coverage.Operation(
         method="PUT",
         path="/api/analytics/v1/admin/metric-thresholds/01900000-0000-7000-8000-000000000000",
@@ -152,12 +139,7 @@ def test_a_fully_exercised_catalogue_passes() -> None:
 
 
 def test_the_verdict_and_the_violations_cannot_disagree() -> None:
-    """PASS is `no violations`, not a second opinion about them.
-
-    The one invariant that makes every other test here worth having: a report
-    that renders ✅ while listing a blocking finding is the failure mode a gate
-    must never have.
-    """
+    """PASS is `no violations`, not a second opinion about them."""
     failing = _catalogue_report({(SUBCHART.method, SUBCHART.path): [401]})
     rendered = coverage.render(failing, None)
     assert "❌ FAIL" in rendered and "✅ PASS" not in rendered
@@ -225,10 +207,7 @@ def test_401_and_403_are_required_where_a_handler_can_answer_them() -> None:
 
     `POST /v1/metric-results` is the one analytics operation whose 403 comes
     from a visibility check rather than a role stub, so it is deliberately NOT
-    in BLOCKED. This suite crosses a real gateway with a real session, which
-    makes it the only one able to prove either code; dropping them into
-    UNIVERSAL_BOILERPLATE would stop requiring the authorization behaviour the
-    whole suite exists for.
+    in BLOCKED. in BLOCKED.
     """
     op = "POST /v1/metric-results"
     spec_ops = coverage.spec_operations(
@@ -244,19 +223,12 @@ def test_401_and_403_are_required_where_a_handler_can_answer_them() -> None:
 
 
 def test_403_is_subtracted_only_where_no_handler_can_produce_it() -> None:
-    """The other half, and the one that makes the table above honest.
+    """403 stays a per-route judgement, never universal.
 
-    25 of analytics' 30 operations reach no authorization check at all — the
-    admin surface's `is_tenant_admin` is a stub returning true, and nothing in
-    the metrics, saved-query, catalogue or drilldown handlers gates on anything.
-    The five that can refuse are the three admin-threshold WRITES (a broader
-    scope's lock, plus a cross-tenant row on the two taking an id) and
-    `POST /v1/metric-results` (person visibility).
-    The spec declares 403 on all 29 regardless (`.standard_errors`, #1669), so
-    requiring it everywhere demands a response the service has no code to send.
-
-    Per-route and sourced, never universal: `GET /v1/metrics` cannot refuse,
-    `POST /v1/metric-results` can, and the difference is which handlers exist.
+    `.standard_errors` stamps 403 on nearly every analytics route (#1669), so
+    requiring it everywhere would demand a response the service has no code to
+    send. Which routes can actually refuse, and why, is sourced at
+    `_NO_AUTHORIZATION_PATH` in `coverage.py`.
     """
     assert 403 not in coverage.UNIVERSAL_BOILERPLATE, "must stay a per-route judgement"
     assert 403 in coverage.BLOCKED["GET /v1/metrics"], "no gate on the metrics listing"
@@ -301,9 +273,9 @@ def test_an_exclusion_the_document_outgrew_is_reported() -> None:
     assert any(
         "stale BLOCKED" in note and "declares" in note for note in coverage.advisories(report)
     )
-    assert not any("stale BLOCKED" in v for v in coverage.violations(_passing_catalogue(), report)), (
-        "hygiene is reported, never blocking — a corrected document must not fail the gate"
-    )
+    assert not any(
+        "stale BLOCKED" in v for v in coverage.violations(_passing_catalogue(), report)
+    ), "hygiene is reported, never blocking — a corrected document must not fail the gate"
 
 
 def test_409_is_subtracted_everywhere_because_nothing_can_conflict() -> None:
@@ -341,13 +313,7 @@ def test_an_undeclared_code_the_suite_proved_is_reported() -> None:
 
 
 def test_the_session_ledger_survives_these_tests() -> None:
-    """The hazard this directory's conftest exists for, pinned from inside it.
-
-    Everything below calls `reset()`, which clears the ledger the whole suite is
-    recording into. Under the autouse isolation the caller's entries come back;
-    without it they are gone, the gate grades the run on whatever happened after
-    this module, and reports a suite-wide catastrophe that never occurred.
-    """
+    """The hazard `meta/conftest.py` exists for, pinned from inside it."""
     coverage.record("GET", "/api/analytics/v1/from-an-earlier-test", 200)
 
     with coverage.isolated():
@@ -363,12 +329,7 @@ def test_the_session_ledger_survives_these_tests() -> None:
 
 
 def test_the_ledger_merges_rather_than_overwrites(tmp_path: Any) -> None:
-    """Two partial runs against one stand add up.
-
-    A developer runs `-k` slices; a plain overwrite would report the last one as
-    if it were the whole run, which is the difference between "we cover this"
-    and "the last thing I ran covered this".
-    """
+    """Two partial runs against one stand add up — see `dump()`."""
     target = tmp_path / "ledger.json"
 
     coverage.reset()

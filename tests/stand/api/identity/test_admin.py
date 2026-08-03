@@ -15,10 +15,7 @@ mysterious drift in an unrelated test.
 
 The 401 half is in `test_gateway.py`, swept over every operation at once.
 
-Only the read side is asserted so far. The create/delete round trips — and the
-assertion that a visibility grant CHANGES what `/v1/subchart` returns for the
-grantee — are the next step; see
-`out/endpoint-coverage-implementation.md`.
+
 """
 
 from __future__ import annotations
@@ -52,6 +49,7 @@ ADMIN_LISTINGS_WITH_MODELS = (
     ("/v1/persons-sync", OperationList),
 )
 
+
 def _roles(client: ApiClient) -> RoleList:
     response = client.get(identity_path("/v1/roles"))
     assert response.status_code == 200, f"roles: {response.status_code} {response.text[:300]}"
@@ -80,7 +78,9 @@ def _forest(session: PersonaSession) -> SubchartForest:
 
 
 @pytest.mark.requires_seed("admin_operator")
-@pytest.mark.parametrize(("path", "model"), ADMIN_LISTINGS_WITH_MODELS, ids=lambda v: getattr(v, "__name__", v))
+@pytest.mark.parametrize(
+    ("path", "model"), ADMIN_LISTINGS_WITH_MODELS, ids=lambda v: getattr(v, "__name__", v)
+)
 def test_admin_listing_is_200_for_the_operator(
     admin_operator_session: PersonaSession, path: str, model: type[BaseModel]
 ) -> None:
@@ -140,9 +140,7 @@ def test_an_unknown_journal_entry_is_404_for_the_operator(
     nothing but the anonymous sweep, which proves the EDGE refuses a stranger
     and nothing whatever about the route behind it.
     """
-    response = admin_operator_session.client.get(
-        identity_path(f"{journal}/{scratch.UNKNOWN_ID}")
-    )
+    response = admin_operator_session.client.get(identity_path(f"{journal}/{scratch.UNKNOWN_ID}"))
     assert response.status_code == 404, (
         f"{journal}/<unknown> answered {response.status_code} to the admin operator: "
         f"{response.text[:300]}"
@@ -223,9 +221,7 @@ def test_role_create_list_delete_round_trip(admin_operator_session: PersonaSessi
     name = scratch.scratch_name("role")
 
     created = client.post(identity_path("/v1/roles"), json_body={"name": name})
-    assert created.status_code == 201, (
-        f"create role: {created.status_code} {created.text[:300]}"
-    )
+    assert created.status_code == 201, f"create role: {created.status_code} {created.text[:300]}"
     role = created.parse(Role)
     assert role.name == name
 
@@ -268,9 +264,7 @@ def test_person_role_grant_and_revoke_round_trip(
         identity_path("/v1/person-roles"),
         json_body={"person_id": subject.uuid, "role_id": role_id, "reason": "stand round trip"},
     )
-    assert created.status_code == 201, (
-        f"grant role: {created.status_code} {created.text[:300]}"
-    )
+    assert created.status_code == 201, f"grant role: {created.status_code} {created.text[:300]}"
     assignment = created.parse(PersonRole)
     assert str(assignment.person_id) == subject.uuid
     assert assignment.in_force, f"a fresh assignment is already revoked: {assignment}"
@@ -286,15 +280,10 @@ def test_person_role_grant_and_revoke_round_trip(
     revoked = client.delete(identity_path(f"/v1/person-roles/{assignment_id}"))
     assert revoked.status_code == 204, f"revoke: {revoked.status_code} {revoked.text[:300]}"
 
-    # A revoke, NOT a removal: the row keeps its place in the journal and gains
-    # a `valid_to`. Asserting that rather than absence is the difference between
-    # describing the API and describing what a reader assumed it does.
     journal = client.get(identity_path("/v1/person-roles")).parse(PersonRoleList)
     after = [item for item in journal.items if str(item.person_role_id) == assignment_id]
     assert len(after) == 1, f"the revoked assignment vanished from the journal: {after}"
-    assert not after[0].in_force, (
-        f"the assignment is still in force after a 204 revoke: {after[0]}"
-    )
+    assert not after[0].in_force, f"the assignment is still in force after a 204 revoke: {after[0]}"
 
 
 @pytest.mark.requires_seed("admin_operator", "dev_lead")
@@ -334,9 +323,7 @@ def test_a_visibility_grant_changes_what_the_grantee_can_see(
             "reason": "stand round trip",
         },
     )
-    assert created.status_code == 201, (
-        f"create grant: {created.status_code} {created.text[:300]}"
-    )
+    assert created.status_code == 201, f"create grant: {created.status_code} {created.text[:300]}"
     grant = created.parse(Visibility)
     assert str(grant.viewer_person_id) == admin_operator_session.person.uuid
     assert grant.in_force, f"a fresh grant is already revoked: {grant}"

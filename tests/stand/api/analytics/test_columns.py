@@ -46,7 +46,10 @@ def test_columns_listing_carries_every_catalogued_column(
     response = api.get(COLUMNS)
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
 
-    served = {(item.clickhouse_table, item.field_name) for item in response.parse(ColumnListResponse).items}
+    served = {
+        (item.clickhouse_table, item.field_name)
+        for item in response.parse(ColumnListResponse).items
+    }
     expected = {(row.table, row.field) for row in stand_manifest.catalogue.table_columns}
     assert expected <= served, (
         f"the catalogue is missing rows the seed wrote: {sorted(expected - served)} "
@@ -55,15 +58,8 @@ def test_columns_listing_carries_every_catalogued_column(
 
 
 @pytest.mark.requires_catalogue("table_columns")
-def test_columns_for_a_table_are_filtered_to_it(
-    api: ApiClient, stand_manifest: Manifest
-) -> None:
-    """Asking for one catalogued table does not return the other's columns.
-
-    This is the assertion the empty universe made impossible: a handler that
-    ignored `{table}` entirely would answer both routes identically and pass
-    every other test in this module.
-    """
+def test_columns_for_a_table_are_filtered_to_it(api: ApiClient, stand_manifest: Manifest) -> None:
+    """Asking for one catalogued table does not return the other's columns."""
     catalogued = stand_manifest.catalogue.table_columns
     assert len(catalogued) >= 2, (
         "the filter needs two catalogued tables to be provable; the manifest names "
@@ -75,7 +71,9 @@ def test_columns_for_a_table_are_filtered_to_it(
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
 
     served = {item.field_name for item in response.parse(ColumnListResponse).items}
-    assert first.field in served, f"{first.table} did not serve its own column {first.field!r}: {served}"
+    assert first.field in served, (
+        f"{first.table} did not serve its own column {first.field!r}: {served}"
+    )
     assert second.field not in served, (
         f"asking for {first.table} returned {second.table}'s column {second.field!r} — "
         f"the per-table filter is not applied: {served}"

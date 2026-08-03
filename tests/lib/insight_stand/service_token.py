@@ -160,9 +160,8 @@ def default_identity_url(environ: Mapping[str, str] | None = None) -> str:
     is exactly what the gateway path should produce. Same route, two addresses,
     each proving the thing it is able to prove.
 
-    Resolved like `default_token_url`: an explicit override first (the container
-    runner shares the gateway's network namespace, where `localhost` is not this
-    service), else the published host port from the stand's own env file.
+    Resolved like `default_token_url`: an explicit override first, else the
+    published host port from the stand's own env file.
     """
     import os
 
@@ -294,7 +293,9 @@ class ServiceTokenSession:
         body: Any = response.json()
         token = body.get("access_token") if isinstance(body, dict) else None
         if not isinstance(token, str) or not token:
-            raise PersonaError(f"{endpoint} answered 200 with no access_token: {response.text[:300]}")
+            raise PersonaError(
+                f"{endpoint} answered 200 with no access_token: {response.text[:300]}"
+            )
 
         self._token = token
         self._acquired_at = time.monotonic()

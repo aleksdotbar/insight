@@ -155,9 +155,7 @@ def pytest_configure(config: pytest.Config) -> None:
     `base_url` fixture, the `baseurl:` line in the run header, and
     `--verify-base-url`.
 
-    One resolved address, reached one way. The browser and the API clients
-    cannot end up pointed at different stands, because there is no second value
-    for them to disagree about.
+
     """
     global _ENDPOINT, _MANIFEST_PATH
 
@@ -204,9 +202,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     coverage.dump(artifact_dir(_REPO_ROOT / ARTIFACT_DIR) / LEDGER_NAME)
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Validate data requirements before a single test runs.
 
     Two different resolutions, on purpose:
@@ -285,8 +281,7 @@ def pytest_collection_modifyitems(
                 # stand. Left unchecked it would skip every test carrying the
                 # marker with a reason that reads perfectly plausibly.
                 raise pytest.UsageError(
-                    f"CAPABILITY_MARKERS maps {marker_name!r} to an unknown "
-                    f"capability: {exc}"
+                    f"CAPABILITY_MARKERS maps {marker_name!r} to an unknown capability: {exc}"
                 ) from exc
             if satisfied:
                 continue
@@ -352,14 +347,10 @@ def api_client(stand_base_url: str) -> ApiClient:
 
 
 @pytest.fixture(scope="session")
-def session_for(
-    stand_manifest: Manifest, stand_base_url: str
-) -> Callable[[str], PersonaSession]:
+def session_for(stand_manifest: Manifest, stand_base_url: str) -> Callable[[str], PersonaSession]:
     """`session_for("dev_lead")` → that persona's real, verified session.
 
-    A factory, not an action: it hands back a `PersonaSession` — the person,
-    their login and a client already carrying it — and caches one per persona
-    for the run.
+
 
     The argument is a key in the manifest's `fixtures{}` catalog, never an
     email and never a UUID, so a roster reshuffle moves the person without
@@ -395,7 +386,7 @@ def realm_admin_session(
     point is a senior person's view of the organisation; use
     `admin_operator_session` where the point is administrative authority.
 
-    Calling this `admin_session` was how the two got confused.
+    Not `admin_session` — that name is what confuses it with the fixture below.
     """
     return session_for(resolve_by_realm_role(stand_manifest, ADMIN_ROLE))
 
@@ -447,9 +438,7 @@ def service_client(service_session: ServiceTokenSession) -> ApiClient:
     service-only routes should use it. The human-refusal half of that contract
     stays at `/api/identity/...`, where it belongs.
     """
-    return ApiClient(
-        base_url=default_identity_url(), session=service_session, edge_fronted=False
-    )
+    return ApiClient(base_url=default_identity_url(), session=service_session, edge_fronted=False)
 
 
 @pytest.fixture(scope="session")

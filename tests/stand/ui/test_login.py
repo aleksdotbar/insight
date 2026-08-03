@@ -5,7 +5,7 @@ does: a real browser, the published SPA image, the real Keycloak form, and the
 same session cookie a real login produces. Everything below the browser is the
 deployed stack — nothing is stubbed and no token is minted.
 
-The remaining three journeys are phase 8's.
+
 """
 
 from __future__ import annotations

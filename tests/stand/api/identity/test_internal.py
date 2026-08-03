@@ -44,13 +44,8 @@ def test_internal_lookup_serves_a_service_principal(
 ) -> None:
     """The S2S route answers a caller the authenticator actually issued a token to.
 
-    `/internal/persons/by-email/{email}` is how the authenticator resolves a
-    person during login, and it is the only route in this suite reached by
-    something other than a logged-in human. The credential is not minted: an
-    RFC 7523 assertion signed with the stand's `testclient` key is exchanged at
-    the authenticator's token endpoint for a gateway JWT whose `sub_type` is
-    `service`. So a pass means the whole issuance path works, not merely that
-    identity compares a claim.
+    A pass means the whole issuance path works, not merely that identity
+    compares a claim.
     """
     person = stand_manifest.fixture("dev_lead")
     response = service_client.get(f"/internal/persons/by-email/{person.email}")

@@ -10,15 +10,12 @@ JWT verification — which that rig already covers — and skip the login entire
 There IS now a second implementation, and so an interface: `ServiceTokenSession`
 (`service_token.py`) is a service principal, obtained by exchanging an RFC 7523
 assertion at the authenticator's own token endpoint. `api.StandSession` is the
-protocol both answer. That is a reversal of what this docstring used to say, and
-the reason is specific rather than general: `/internal/*` is reachable only to a
-service, so the alternative was leaving a deployed surface untested. An interface
-with two real implementations earns its keep; one with a hypothetical second did
-not.
+protocol both answer. `/internal/*` is reachable only to a
+service, so without a second implementation that deployed surface would go
+untested.
 
-What has NOT changed is anonymity. There is still no anonymous implementation —
-an unauthenticated client is an `ApiClient` with no session at all. `None` cannot
-accidentally carry a stale token, and an `AnonymousSession` returning `{}` could.
+There is still no anonymous implementation — an unauthenticated client is an
+`ApiClient` with no session at all; `api.StandSession` says why.
 """
 
 from __future__ import annotations
@@ -142,8 +139,7 @@ class LoginSession:
             cookie = client.cookies.get(self.session_cookie_name)
             if not cookie:
                 raise LoginNotCompletedError(
-                    f"the callback did not set {self.session_cookie_name!r} for "
-                    f"{self.email!r}",
+                    f"the callback did not set {self.session_cookie_name!r} for {self.email!r}",
                     stopped_at=redirected_to,
                 )
             self._session_cookie = cookie

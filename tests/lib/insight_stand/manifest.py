@@ -13,9 +13,8 @@ defaulted manifest turns "this stand was never seeded" into a green suite.
 
 The field shape mirrored here comes from the phase-3 schema document
 (`out/manifest-schema.md`) field for field — nothing is invented, guessed or
-renamed. Parsing is strict: a missing or mistyped field raises `ManifestError`
-rather than defaulting, because a silently-defaulted manifest turns "this stand
-was never seeded" into a green test run.
+renamed. Parsing is strict for the same reason: a missing or
+mistyped field raises `ManifestError` rather than defaulting.
 
 Two similarly-named things are deliberately kept apart:
 
@@ -62,6 +61,7 @@ def default_manifest_path(environ: Mapping[str, str] | None = None) -> Path:
     override = (env.get(MANIFEST_PATH_ENV) or "").strip()
     return Path(override) if override else MANIFEST_PATH
 
+
 # The schema revision this model was written against. A stand emitting a
 # different version is a hard error, not something to parse optimistically.
 SUPPORTED_MANIFEST_VERSION: Final[int] = 1
@@ -77,9 +77,7 @@ def _require(doc: Mapping[str, Any], key: str, kind: type | tuple[type, ...], wh
     value = doc[key]
     if not isinstance(value, kind):
         names = kind.__name__ if isinstance(kind, type) else "/".join(k.__name__ for k in kind)
-        raise ManifestError(
-            f"{where}: field {key!r} must be {names}, got {type(value).__name__}"
-        )
+        raise ManifestError(f"{where}: field {key!r} must be {names}, got {type(value).__name__}")
     return value
 
 
@@ -425,7 +423,9 @@ class Manifest:
             # Optional, like `catalogue`: a manifest written before the second
             # tenant existed still parses, and reports `other` as absent.
             tenants=Tenants.parse(
-                _as_mapping(doc.get("tenants") or {}, f"{where}.tenants"), tenant, f"{where}.tenants"
+                _as_mapping(doc.get("tenants") or {}, f"{where}.tenants"),
+                tenant,
+                f"{where}.tenants",
             ),
             realm=Realm.parse(_as_mapping(_require(doc, "realm", dict, where), f"{where}.realm")),
             personas=personas,

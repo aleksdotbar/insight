@@ -112,17 +112,15 @@ def test_the_team_view_lists_every_report_the_roster_declares(
     query, a broken key — passes a spot check and fails a person looking for
     their own team.
 
-    Each member is located by their TABLE ROW rather than by a link bearing
-    their name: the sidebar carries every person in the org scope on every view,
-    so a name-based locator would be satisfied by the sidebar even if the team
-    table were empty. `TeamView.member_row` explains the measurement.
+    Each member is located by their TABLE ROW rather than by a link bearing their
+    name: the sidebar carries every person in the org scope on every view, so a
+    name-based locator would pass against an empty team table. `TeamView.member_row`
+    has the measurement.
     """
     persona = session_for("dev_lead")
     lead = persona.person
     reports = sorted(
-        p.display_name
-        for p in stand_manifest.personas
-        if p.team == lead.team and p.role == "ic"
+        p.display_name for p in stand_manifest.personas if p.team == lead.team and p.role == "ic"
     )
     assert reports, (
         f"the manifest places nobody under {lead.display_name} on team {lead.team!r}, "

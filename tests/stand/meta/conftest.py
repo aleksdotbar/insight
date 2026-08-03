@@ -7,9 +7,7 @@ so without this every request made before `tests/stand/meta/` ran would be
 discarded and the gate would grade the run on the handful of calls that came
 after.
 
-Autouse rather than opt-in: a future meta-test that touches the ledger should
-be safe by default, not safe only if its author remembered the hazard. The one
-that did not remember was the first one written.
+Autouse, so a future meta-test that touches the ledger is safe by default.
 """
 
 from __future__ import annotations

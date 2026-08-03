@@ -92,10 +92,9 @@ def test_metric_definitions_resolve_the_tenant_label(
 def test_person_by_id_200(api: ApiClient, stand_manifest: Manifest) -> None:
     """A seeded person resolves, and resolves to the person the manifest names.
 
-    The path key is the canonical person UUID since the identity cutover
-    (#2098), and the answer carries the EMAIL — the reverse of what this test
-    asserted before. That direction is the useful one: an id read off a metric
-    result resolves to a profile with no second mapping in between.
+        The path key is the canonical person UUID since the identity cutover
+    (#2098), and the answer carries the EMAIL — the useful direction: an id read
+    off a metric result resolves to a profile with no second mapping in between.
     """
     expected = stand_manifest.fixture("dev_lead")
     response = api.get(analytics_path(f"/v1/persons/{expected.uuid}"))
@@ -165,8 +164,7 @@ def test_the_definitions_listing_is_sorted_and_each_key_appears_once(api: ApiCli
 
     assert keys == sorted(keys), "the definitions listing is not sorted by metric_key"
     assert len(keys) == len(set(keys)), (
-        f"a metric_key appears more than once: "
-        f"{sorted({k for k in keys if keys.count(k) > 1})}"
+        f"a metric_key appears more than once: {sorted({k for k in keys if keys.count(k) > 1})}"
     )
 
 

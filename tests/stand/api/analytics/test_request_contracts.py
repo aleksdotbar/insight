@@ -97,9 +97,7 @@ def test_a_non_uuid_path_segment_is_400(api: ApiClient, method: str, suffix: str
 
 
 @pytest.mark.parametrize(("method", "suffix"), BODY_ROUTES, ids=_id)
-def test_a_body_with_the_wrong_media_type_is_415(
-    api: ApiClient, method: str, suffix: str
-) -> None:
+def test_a_body_with_the_wrong_media_type_is_415(api: ApiClient, method: str, suffix: str) -> None:
     """Refused on `Content-Type`, not parsed and then judged.
 
     The body is valid JSON, so anything but 415 means the extractor read it
@@ -150,8 +148,8 @@ OFF_SCHEMA_ROUTES: tuple[tuple[str, str, int], ...] = (
     ("POST", "/v1/metric-drilldown/export", LEGACY_422),
 )
 
-#: A JSON STRING where every one of these routes declares an object. Getting
-#: this right took two attempts and both failures were instructive:
+#: A JSON STRING where every one of these routes declares an object. Two
+#: nearby shapes do NOT work:
 #:
 #:   {"stand": …}  an unknown KEY is not off-schema for a type whose fields are
 #:                 all optional — serde ignores what it does not recognise, the

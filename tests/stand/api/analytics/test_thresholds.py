@@ -143,9 +143,8 @@ def test_admin_threshold_create_read_update_delete_round_trip(api: ApiClient) ->
     `good == warn` passes the sanity-bounds check whichever direction the metric
     is scored in, so the case does not depend on which catalogue row it borrowed.
 
-    The pre-clean is not optional. `(metric, tenant, scope)` is UNIQUE and a
-    stand keeps its database between runs, so a row left by an earlier run would
-    turn every later create into a 409.
+        The pre-clean is not optional: `(metric, tenant, scope)` is UNIQUE and the
+    stand's database outlives a run, so a leftover row turns the create into a 409.
     """
     metric_id = _catalog_metric_id(api)
     scoped = {"metric_id": metric_id, "scope": "tenant"}
@@ -205,7 +204,9 @@ def test_admin_threshold_403_across_tenants(
     threshold_id = scratch.track(ADMIN_THRESHOLDS, "id", created.parse(AdminMetricThresholdView).id)
 
     intruder = other_tenant_session.client
-    update = intruder.put(f"{ADMIN_THRESHOLDS}/{threshold_id}", json_body={"good": 9.0, "warn": 9.0})
+    update = intruder.put(
+        f"{ADMIN_THRESHOLDS}/{threshold_id}", json_body={"good": 9.0, "warn": 9.0}
+    )
     assert update.status_code == 403, (
         f"a caller from another tenant updated the row (status {update.status_code}): "
         f"{update.text[:300]}"

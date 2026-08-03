@@ -1413,11 +1413,9 @@ test_stand_frontend_image() {
 # The backend services the stand runs from published images rather than from
 # source, as "<compose env var>|<chart path>|<image name>".
 #
-# This is where the stand's wall-clock went: building these four meant compiling
-# the Rust workspace twice — once on the host for the bind-mounted binaries, then
-# again inside each service image — for ~26 minutes, per job. And never for code
-# under test: e2e-stand.yml's path filter excludes src/backend/**, so the
-# workflow only fires on changes that leave the backend identical to main's.
+# Building these four compiles the Rust workspace twice — once on the host for
+# the bind-mounted binaries, then again inside each service image — which is
+# where the stand's wall-clock went.
 TEST_STAND_PINNED_BACKENDS=(
   "ANALYTICS_IMAGE|src/backend/services/analytics/helm/Chart.yaml|analytics"
   "AUTHENTICATOR_IMAGE|src/backend/services/authenticator/helm/Chart.yaml|authenticator"
@@ -1427,9 +1425,8 @@ TEST_STAND_PINNED_BACKENDS=(
 
 # Pin and pull every backend image, or fail.
 #
-# Fails rather than falling back to a build on purpose. A silent fallback is how
-# a 26-minute compile comes back invisibly — and worse, a stand built from a
-# working tree while the report says it ran the published build.
+# Fails rather than falling back to a build on purpose: a silent fallback is how
+# a 26-minute compile comes back invisibly.
 test_stand_pull_backends() {
   local entry var chart name image
   echo "=== Pinning the backend to published images (skip with --build-backend) ==="
