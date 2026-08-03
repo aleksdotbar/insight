@@ -42,7 +42,15 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     _ARTIFACTS.mkdir(parents=True, exist_ok=True)
     (_ARTIFACTS / CATALOGUE_NAME).write_text(
-        json.dumps([{"method": op.method, "path": op.path} for op in ALL_OPERATIONS], indent=2)
+        json.dumps(
+            [
+                # Both forms: the gate groups observed calls by `template`, and
+                # `path` is what the sweep actually requested. See `Operation`.
+                {"method": op.method, "path": op.path, "template": op.template}
+                for op in ALL_OPERATIONS
+            ],
+            indent=2,
+        )
         + "\n",
         encoding="utf-8",
     )

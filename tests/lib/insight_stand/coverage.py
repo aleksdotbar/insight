@@ -269,14 +269,54 @@ def dump(path: str | Path) -> Path:
 
 @dataclass(frozen=True)
 class Operation:
-    """One catalogued operation, as the ledger will have seen it."""
+    """One catalogued operation, as the ledger will have seen it.
+
+    `template` is the parameterised form (`/v1/metrics/{id}`); `path` is the
+    concrete url the catalogue names, with a stand-in substituted. They differ
+    for every operation that takes a path parameter, and conflating them is
+    what this field exists to stop — see `fold_onto_catalogue`.
+    """
 
     method: str
     path: str
+    template: str | None = None
 
     @property
     def label(self) -> str:
         return f"{self.method} {self.path}"
+
+    @property
+    def key(self) -> str:
+        """How the operation is identified in a report: the template if it has
+        one, so `PUT /v1/metrics/{id}` is one row rather than one per id."""
+        return f"{self.method} {self.template or self.path}"
+
+
+def fold_onto_catalogue(
+    observed: Mapping[str, set[int]], catalogue: Sequence[Operation]
+) -> dict[str, set[int]]:
+    """Group observed calls by the catalogued operation they belong to.
+
+    Without this the catalogue half compares literal paths while the spec half
+    folds templates, and the two disagree about the same run. A test that
+    updates a real threshold records
+    `PUT /api/analytics/v1/admin/metric-thresholds/019fc6c8-…`, which matches
+    the catalogue's stand-in id nowhere — so the only call left against the
+    catalogued url is the anonymous sweep's, and the operation is reported
+    SWEPT ONLY while a passing test is exercising it.
+
+    Not hypothetical: it is what the gate said about both admin-threshold
+    writes on the run that first turned green, each of which had answered 200
+    and 403 to a real session moments earlier.
+    """
+    index = path_template_index(operation.key for operation in catalogue)
+    folded: dict[str, set[int]] = {}
+    for label, codes in observed.items():
+        method, _, path = label.partition(" ")
+        matched = match_path(method, path, index)
+        if matched is not None:
+            folded.setdefault(matched, set()).update(codes)
+    return folded
 
 
 @dataclass
@@ -295,14 +335,15 @@ class CatalogueReport:
     exercised: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        folded = fold_onto_catalogue(self.observed, self.catalogue)
         for operation in self.catalogue:
-            codes = self.observed.get(operation.label)
+            codes = folded.get(operation.key)
             if not codes:
-                self.unobserved.append(operation.label)
+                self.unobserved.append(operation.key)
             elif codes <= {401}:
-                self.swept_only.append(operation.label)
+                self.swept_only.append(operation.key)
             else:
-                self.exercised.append(operation.label)
+                self.exercised.append(operation.key)
 
     @property
     def passed(self) -> bool:
@@ -534,7 +575,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = load_ledger(ledger_path)
     catalogue = CatalogueReport(
         catalogue=[
-            Operation(method=entry["method"], path=entry["path"])
+            Operation(
+                method=entry["method"],
+                path=entry["path"],
+                # Absent in a ledger written by an older suite; falling back to
+                # the concrete path reproduces the pre-template behaviour rather
+                # than crashing on it.
+                template=entry.get("template"),
+            )
             for entry in json.loads(Path(args.catalogue).read_text(encoding="utf-8"))
         ],
         observed=by_label(rows),
@@ -560,6 +608,7 @@ __all__: Sequence[str] = (
     "advisories",
     "by_label",
     "dump",
+    "fold_onto_catalogue",
     "isolated",
     "match_against_spec",
     "match_path",

@@ -27,10 +27,40 @@ from typing import Final
 
 from insight_stand import analytics_path, identity_path
 
+# Concrete stand-ins for path parameters. The 401 sweep runs before any
+# authentication, so the gateway never reaches a handler and these are never
+# resolved — they only have to be well-formed enough to route.
+SOME_ID: Final[str] = "01900000-0000-7000-8000-000000000000"
+SOME_TABLE: Final[str] = "gold_metric_values"
+SOME_EMAIL: Final[str] = "nobody@example.com"
+
+#: Stand-in -> the parameter it stands in for. These values are synthetic and
+#: chosen for this purpose, so a path segment equal to one of them IS the
+#: parameter — which is what lets the template be derived rather than declared
+#: twice per row.
+_PARAMETERS: Final[dict[str, str]] = {
+    SOME_ID: "{id}",
+    SOME_TABLE: "{table}",
+    SOME_EMAIL: "{email}",
+}
+
+
+def _templated(path: str) -> str:
+    """`/v1/metrics/01900000-…` -> `/v1/metrics/{id}`."""
+    return "/".join(_PARAMETERS.get(segment, segment) for segment in path.split("/"))
+
 
 @dataclass(frozen=True)
 class Operation:
-    """One (method, path) the gateway routes, with its url already built."""
+    """One (method, path) the gateway routes, with its url already built.
+
+    Carries BOTH forms. `path` is the concrete url the sweep calls; `template`
+    is what the operation is, and it is what the coverage gate groups by. A
+    test updating a real threshold records a url containing that threshold's
+    id, which matches the stand-in nowhere — so without the template the gate
+    sees only the sweep's call against the catalogued url and reports an
+    exercised operation as swept-only.
+    """
 
     method: str
     path: str
@@ -42,6 +72,10 @@ class Operation:
         """`GET /api/analytics/v1/metrics`, for a readable parametrize id."""
         return f"{self.method} {self.path}"
 
+    @property
+    def template(self) -> str:
+        return _templated(self.path)
+
 
 def _a(method: str, suffix: str) -> Operation:
     return Operation(method=method, path=analytics_path(suffix), service="analytics")
@@ -49,14 +83,6 @@ def _a(method: str, suffix: str) -> Operation:
 
 def _i(method: str, suffix: str) -> Operation:
     return Operation(method=method, path=identity_path(suffix), service="identity")
-
-
-# Concrete stand-ins for path parameters. The 401 sweep runs before any
-# authentication, so the gateway never reaches a handler and these are never
-# resolved — they only have to be well-formed enough to route.
-SOME_ID: Final[str] = "01900000-0000-7000-8000-000000000000"
-SOME_TABLE: Final[str] = "gold_metric_values"
-SOME_EMAIL: Final[str] = "nobody@example.com"
 
 #: analytics — 30 operations.
 ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (

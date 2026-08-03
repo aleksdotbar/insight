@@ -77,6 +77,45 @@ def test_an_operation_only_the_sweep_touched_is_not_covered() -> None:
     assert any("SWEPT ONLY" in v and SUBCHART.path in v for v in violations), violations
 
 
+def test_a_real_id_counts_against_the_operation_it_belongs_to() -> None:
+    """A concrete url folds onto its catalogued template.
+
+    The catalogue names one stand-in id; a test that updates a real row records
+    a different one. Comparing literal paths puts them in separate buckets, so
+    the only call left against the catalogued url is the anonymous sweep's and
+    the gate reports SWEPT ONLY for an operation a passing test just exercised.
+    That is what it said about both admin-threshold writes on the first run
+    that got this far.
+    """
+    catalogued = coverage.Operation(
+        method="PUT",
+        path="/api/analytics/v1/admin/metric-thresholds/01900000-0000-7000-8000-000000000000",
+        template="/api/analytics/v1/admin/metric-thresholds/{id}",
+    )
+    report = coverage.CatalogueReport(
+        catalogue=[catalogued],
+        observed=coverage.by_label(
+            _ledger(
+                {
+                    ("PUT", catalogued.path): [401],  # the sweep
+                    ("PUT", "/api/analytics/v1/admin/metric-thresholds/019fc6c8-020f"): [200],
+                }
+            )
+        ),
+    )
+
+    assert report.exercised == [catalogued.key]
+    assert not report.swept_only
+    assert report.passed
+
+
+def test_a_catalogue_entry_without_a_template_still_matches_itself() -> None:
+    """A ledger from a suite that predates templates must not crash the gate."""
+    report = _catalogue_report({(METRICS.method, METRICS.path): [200]})
+    assert METRICS.key == METRICS.label
+    assert report.exercised == [METRICS.label]
+
+
 def test_a_catalogued_operation_nobody_called_fails() -> None:
     """`operations.py` naming a route no test reaches is a gate failure.
 
