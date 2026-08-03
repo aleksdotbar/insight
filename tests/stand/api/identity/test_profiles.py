@@ -1,6 +1,6 @@
 """`POST /v1/profiles` — resolve a person by email or source-native id.
 
-    POST /v1/profiles   200 · 400 bad value_type
+    POST /v1/profiles   200 by email · 200 by person_id · 400 bad value_type
                         404 unknown email · out of scope · another tenant
                         400 value_type=id without a source
 
@@ -133,5 +133,54 @@ def test_an_email_in_another_tenant_is_404(
     )
     assert response.status_code == 404, (
         f"resolving {other.email}, who belongs to another tenant, answered "
+        f"{response.status_code}: {response.text[:300]}"
+    )
+
+
+@pytest.mark.requires_seed("dev_lead")
+def test_person_id_and_email_are_two_spellings_of_one_identity(
+    lead_session: PersonaSession, stand_manifest: Manifest
+) -> None:
+    """`value_type="person_id"` resolves the same profile the email does.
+
+    The key the metrics runtime and the SPA use since the identity cutover
+    (#2098). Asserting the two answers are EQUAL, rather than that each is a
+    200, is what makes it a statement about identity rather than about two
+    endpoints that both happen to work: a person is one record reachable by
+    either spelling, not two records that agree today.
+    """
+    person = stand_manifest.fixture("dev_lead")
+
+    by_id = lead_session.client.post(
+        PROFILES, json_body={"value_type": "person_id", "value": person.uuid}
+    )
+    assert by_id.status_code == 200, f"by person_id: {by_id.status_code} {by_id.text[:300]}"
+
+    by_email = lead_session.client.post(
+        PROFILES, json_body={"value_type": "email", "value": person.email}
+    )
+    assert by_email.status_code == 200, f"by email: {by_email.status_code} {by_email.text[:300]}"
+
+    assert by_id.json() == by_email.json(), (
+        "the same person resolved through two keys returned two different profiles"
+    )
+
+
+@pytest.mark.requires_seed("dev_lead", "sales_ic")
+def test_a_person_id_outside_the_callers_scope_is_404(
+    lead_session: PersonaSession, stand_manifest: Manifest
+) -> None:
+    """Visibility gates the new key exactly as it gates the old one.
+
+    Worth its own case rather than trusting the email version: a key added
+    after the gate was written is precisely the kind of thing that reaches the
+    lookup by a path the gate does not cover.
+    """
+    outsider = stand_manifest.fixture("sales_ic")
+    response = lead_session.client.post(
+        PROFILES, json_body={"value_type": "person_id", "value": outsider.uuid}
+    )
+    assert response.status_code == 404, (
+        f"resolving {outsider.email} by person_id from outside their scope answered "
         f"{response.status_code}: {response.text[:300]}"
     )

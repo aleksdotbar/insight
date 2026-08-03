@@ -24,6 +24,7 @@ subtracted in `coverage.py`: the handler has no gate to produce one.
 
 from __future__ import annotations
 
+import pytest
 from insight_stand import ApiClient, analytics_path
 from insight_stand.api import JsonValue
 
@@ -65,3 +66,33 @@ def test_drilldown_export_400_empty_entity_id(api: ApiClient) -> None:
 
     response = api.post(DRILLDOWN_EXPORT, json_body=request)
     assert response.status_code == 400, f"status={response.status_code} {response.text[:300]}"
+
+
+@pytest.mark.parametrize(
+    ("label", "entity_id"),
+    [
+        ("pre-cutover email", "somebody@example.com"),
+        ("nil uuid", "00000000-0000-0000-0000-000000000000"),
+    ],
+)
+@pytest.mark.parametrize("path", [DRILLDOWN, DRILLDOWN_EXPORT], ids=["drilldown", "export"])
+def test_drilldown_400_for_a_key_that_is_not_a_person_id(
+    api: ApiClient, path: str, label: str, entity_id: str
+) -> None:
+    """`entity.id` is a canonical person UUID since the identity cutover (#2098).
+
+    Both spellings that used to work, or nearly, are now loud 400s — on the
+    export route as well as the plain one, because a caller who has not
+    migrated will hit whichever they were already using and a CSV of nothing is
+    the least debuggable possible answer.
+    """
+    request = dict(_request())
+    request["entity"] = {"type": "person", "id": entity_id}
+    if path == DRILLDOWN_EXPORT:
+        request["format"] = "csv"
+        del request["limit"]
+
+    response = api.post(path, json_body=request)
+    assert response.status_code == 400, (
+        f"{path} answered {response.status_code} to a {label}: {response.text[:300]}"
+    )

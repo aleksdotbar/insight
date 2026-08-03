@@ -1,6 +1,7 @@
 """`POST /v1/metric-results` — the endpoint the dashboard actually calls.
 
-    POST /v1/metric-results   200 · 400 (empty metrics, bad period, unknown key)
+    POST /v1/metric-results   200 · 400 (empty metrics, bad period, unknown key,
+                                        a key that is not a person id)
                               403 outside the visible set · 422 off-schema
 
 The widest single request in the API: an entity, a period and a list of metrics
@@ -83,9 +84,9 @@ def _values(response: ApiResponse, metric_key: str) -> list[tuple[str, float | N
 def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
     """One person, the seeded window, one metric — and a REAL number back.
 
-    The entity id is the person's EMAIL, which is what this endpoint keys on.
-    That is not obvious, and getting it wrong is refused rather than answered:
-    see `test_metric_results_403_by_uuid` below.
+    The entity id is the person's canonical UUID — since the identity cutover
+    (#2098) that is what every person-keyed route takes, and an email is
+    refused rather than answered emptily (below).
 
     The period comes from the manifest's own `data_window`, so the request asks
     for the range the stand was actually seeded over rather than a guess.
@@ -98,12 +99,12 @@ def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
     person = stand_manifest.fixture("dev_lead")
     metric_key = _a_metric_key(api)
 
-    response = _ask(api, stand_manifest, person.email, metric_key)
+    response = _ask(api, stand_manifest, person.uuid, metric_key)
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
 
     values = _values(response, metric_key)
     assert values, f"the response carried no values at all: {response.text[:300]}"
-    assert [entity for entity, _ in values] == [person.email]
+    assert [entity for entity, _ in values] == [person.uuid]
     assert all(value is not None for _, value in values), (
         f"{metric_key} came back null for {person.email} over the seeded window "
         f"{stand_manifest.data_window} — the request reached the service but no "
@@ -111,33 +112,53 @@ def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
     )
 
 
-def test_metric_results_403_by_uuid(api: ApiClient, stand_manifest: Manifest) -> None:
-    """Asking by canonical person UUID is refused, not answered emptily.
+def test_metric_results_403_for_a_person_out_of_scope(
+    api: ApiClient, stand_manifest: Manifest
+) -> None:
+    """The visibility gate, reached with a well-formed key.
 
-    The manifest, the org chart, `/v1/subchart` and `/v1/profiles` all identify a
-    person by UUID; this endpoint alone keys on email. That mismatch used to be
-    silent — a UUID produced a well-formed 200 with `value: null`, which a
-    dashboard cannot tell apart from "this person genuinely has no activity".
+    This case used to assert the opposite thing: before the identity cutover
+    the endpoint keyed on EMAIL, so a canonical UUID matched nobody in the
+    caller's visible set and the gate denied it. The uuid is the right key now,
+    so the refusal has to come from the person rather than from the spelling —
+    `sales_ic` is outside a development lead's subtree, the same pair
+    `test_subchart.py` uses for its out-of-scope 404.
 
-    It is a refusal now, and by an indirect route worth knowing: every id in the
-    request is checked against the caller's visible set, which identity resolves
-    BY EMAIL. A UUID matches nobody there, so the gate reports it unmatched and
-    denies the whole request. Recorded for the same reason the null was — the
-    hazard is gone, but a caller holding the canonical identifier still cannot
-    use it here, and nothing else in the suite would say so.
-
-    It is also the only case in this module that reaches the visibility gate: the
-    request is the 200's, differing solely in the id.
+    Still the only case in this module that reaches the gate: the request is
+    the 200's, differing solely in whose id it names.
     """
-    person = stand_manifest.fixture("dev_lead")
+    outsider = stand_manifest.fixture("sales_ic")
     metric_key = _a_metric_key(api)
 
-    response = _ask(api, stand_manifest, person.uuid, metric_key)
+    response = _ask(api, stand_manifest, outsider.uuid, metric_key)
     assert response.status_code == 403, (
-        f"asking for {person.email} by UUID answered {response.status_code}, expected the "
-        f"visibility gate's refusal: {response.text[:300]}"
+        f"asking about {outsider.email}, who is outside the lead's scope, answered "
+        f"{response.status_code}: {response.text[:300]}"
     )
     assert response.parse(ProblemDocument).status == 403
+
+
+@pytest.mark.parametrize(
+    ("label", "entity_id"),
+    [
+        ("pre-cutover email", "somebody@example.com"),
+        ("nil uuid", "00000000-0000-0000-0000-000000000000"),
+    ],
+)
+def test_metric_results_400_for_a_key_that_is_not_a_person_id(
+    api: ApiClient, stand_manifest: Manifest, label: str, entity_id: str
+) -> None:
+    """Never a silent empty result.
+
+    An email is what this endpoint took before the cutover, so an unmigrated
+    caller sends one in earnest — and a 200 with `value: null` would be
+    indistinguishable from a person who genuinely has no activity. That
+    ambiguity is the exact failure the cutover removed; this keeps it removed.
+    """
+    response = _ask(api, stand_manifest, entity_id, _a_metric_key(api))
+    assert response.status_code == 400, (
+        f"a {label} answered {response.status_code} rather than 400: {response.text[:300]}"
+    )
 
 
 def test_metric_results_422_off_schema(api: ApiClient) -> None:
@@ -159,7 +180,7 @@ def test_metric_results_422_off_schema(api: ApiClient) -> None:
 def _body(api: ApiClient, manifest: Manifest) -> dict[str, JsonValue]:
     start, _, end = manifest.data_window.partition("..")
     return {
-        "entity": {"type": "person", "ids": [manifest.fixture("dev_lead").email]},
+        "entity": {"type": "person", "ids": [manifest.fixture("dev_lead").uuid]},
         "period": {"from": start, "to": end},
         "metrics": [{"metric_key": _a_metric_key(api), "views": [{"view": "period"}]}],
     }
@@ -244,8 +265,8 @@ def test_one_hidden_person_refuses_the_whole_request(
     body["entity"] = {
         "type": "person",
         "ids": [
-            stand_manifest.fixture("dev_lead").email,
-            stand_manifest.fixture("sales_ic").email,
+            stand_manifest.fixture("dev_lead").uuid,
+            stand_manifest.fixture("sales_ic").uuid,
         ],
     }
 

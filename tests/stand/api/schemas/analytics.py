@@ -437,7 +437,7 @@ class MetricResultsEntity(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    ids: list[str]
+    ids: list[str] = Field(..., description='Canonical person UUIDs (since the identity cutover; the\npre-cutover email shape is rejected with a 400).')
     type: str
 
 
@@ -445,7 +445,7 @@ class MetricResultsEntityDto(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    ids: list[str]
+    ids: list[str] = Field(..., description='Canonical person UUIDs (since the identity cutover; the\npre-cutover email shape is rejected with a 400).')
     type: str
 
 

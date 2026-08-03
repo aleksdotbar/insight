@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 from insight_stand import ApiClient, Manifest, analytics_path
 
+from .. import scratch
 from ..schemas import (
     EXTRACTOR_REJECTION_CONTENT_TYPE,
     CatalogResponse,
@@ -88,29 +89,54 @@ def test_metric_definitions_resolve_the_tenant_label(
     )
 
 
-def test_person_by_email_200(api: ApiClient, stand_manifest: Manifest) -> None:
+def test_person_by_id_200(api: ApiClient, stand_manifest: Manifest) -> None:
     """A seeded person resolves, and resolves to the person the manifest names.
 
-    The lookup key is an email and the answer carries a `person_id`, so this is
-    the identity chain asserted from the analytics side: the same UUID the
-    manifest recorded comes back for the address the seed used.
+    The path key is the canonical person UUID since the identity cutover
+    (#2098), and the answer carries the EMAIL — the reverse of what this test
+    asserted before. That direction is the useful one: an id read off a metric
+    result resolves to a profile with no second mapping in between.
     """
     expected = stand_manifest.fixture("dev_lead")
-    response = api.get(analytics_path(f"/v1/persons/{expected.email}"))
+    response = api.get(analytics_path(f"/v1/persons/{expected.uuid}"))
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
     person = response.parse(Person)
     assert person.email == expected.email
     assert person.display_name == expected.display_name
 
 
-def test_person_by_email_404_unknown(api: ApiClient) -> None:
-    """An address nobody holds is a 404 that says so."""
-    response = api.get(analytics_path("/v1/persons/nobody@example.com"))
+def test_person_by_id_404_unknown(api: ApiClient) -> None:
+    """An id nobody holds is a 404 that says so."""
+    response = api.get(analytics_path(f"/v1/persons/{scratch.UNKNOWN_ID}"))
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
     assert response.parse(ProblemDocument).status == 404
 
 
-def test_person_by_email_400_undecodable(api: ApiClient) -> None:
+@pytest.mark.parametrize(
+    ("label", "key"),
+    [
+        ("pre-cutover email", "somebody@example.com"),
+        ("nil uuid", "00000000-0000-0000-0000-000000000000"),
+    ],
+)
+def test_person_by_a_key_that_is_not_a_person_id_is_400(
+    api: ApiClient, label: str, key: str
+) -> None:
+    """Both refused loudly, and 404 would be the wrong kind of quiet.
+
+    An EMAIL is what this route took before the cutover, so a caller that has
+    not migrated sends one in earnest; answering 404 would read as "no such
+    person" and send them looking for the person rather than the mistake. The
+    NIL uuid parses and is never anybody, so it must not reach the identity hop
+    either.
+    """
+    response = api.get(analytics_path(f"/v1/persons/{key}"))
+    assert response.status_code == 400, (
+        f"a {label} answered {response.status_code} rather than 400: {response.text[:300]}"
+    )
+
+
+def test_person_by_undecodable_key_400(api: ApiClient) -> None:
     """`%FF` is not valid UTF-8, so `{email}` never reaches the handler.
 
     A different refusal from the 404 above, and the distinction is the point: an

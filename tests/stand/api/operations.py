@@ -32,6 +32,9 @@ from insight_stand import analytics_path, identity_path
 # resolved — they only have to be well-formed enough to route.
 SOME_ID: Final[str] = "01900000-0000-7000-8000-000000000000"
 SOME_TABLE: Final[str] = "gold_metric_values"
+#: Still used by identity's `/internal/persons/by-email/{email}`, which is a
+#: LOOKUP by email rather than a person-keyed route and so was untouched by the
+#: identity cutover (#2098).
 SOME_EMAIL: Final[str] = "nobody@example.com"
 
 #: Stand-in -> the parameter it stands in for. These values are synthetic and
@@ -119,7 +122,7 @@ ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
     # before content negotiation happens, which is exactly what the sweep
     # asserts about every other one.
     _a("POST", "/v1/metric-drilldown/export"),
-    _a("GET", f"/v1/persons/{SOME_EMAIL}"),
+    _a("GET", f"/v1/persons/{SOME_ID}"),
 )
 
 #: identity-resolution — 18 operations. `/health` and `/healthz` are the host

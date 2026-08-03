@@ -50,6 +50,9 @@ NON_UUID_ROUTES: tuple[tuple[str, str], ...] = (
     ("PUT", f"/v1/queries/{scratch.NON_UUID}"),
     ("DELETE", f"/v1/queries/{scratch.NON_UUID}"),
     ("POST", f"/v1/queries/{scratch.NON_UUID}/run"),
+    # Person-keyed since the identity cutover (#2098) — it took an email
+    # before, so this row is new coverage rather than a moved one.
+    ("GET", f"/v1/persons/{scratch.NON_UUID}"),
 )
 
 #: Every route that reads a body. Ids are well-formed-but-unknown on purpose:
