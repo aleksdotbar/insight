@@ -1,0 +1,49 @@
+# One preview experiment = one release of this chart. Provision by hand
+# (`helm upgrade --install preview-<name> deploy/preview --set experiment=<name> ...`);
+# `helm uninstall preview-<name>` removes exactly this experiment's path. See README.md.
+
+# REQUIRED. The experiment slug. Forms the URL segment (/exp/<experiment>) and
+# the resource name (preview-<experiment>), so it MUST be a DNS-1123 label:
+# lowercase alphanumerics and '-', starting/ending alphanumeric. Templates fail
+# fast otherwise.
+experiment: ""
+
+replicaCount: 1
+
+podAnnotations: {}
+
+# The FE image. Only the FE varies per experiment; the backend never does.
+image:
+  repository: ghcr.io/constructorfabric/insight-front
+  tag: "" # REQUIRED per experiment (an image digest or build tag). No `:latest` default.
+  pullPolicy: IfNotPresent
+
+# Pull secrets for private registries, e.g. [{ name: ghcr-pull }].
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  className: nginx
+  # The single preview host. One host serves every experiment (one Entra
+  # redirect URI, same-origin session cookie); only the path varies.
+  host: ""
+  # Path prefix experiments live under. `/exp/<experiment>` is prefix-stripped
+  # to `/` before reaching the FE pod, so the image serves under any prefix.
+  basePath: /exp
+  # Extra annotations merged onto the per-experiment route object.
+  annotations: {}
+
+# No auth values: preview login is the gateway+authenticator's job, not FE-side
+# OIDC. The authenticated return path for /exp/<name> arrives with #1972; the
+# synthetic-data pin is #1973.
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
