@@ -17,7 +17,13 @@ from typing import Any, NamedTuple
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams import CheckpointMixin, Stream
 
-from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient, RepositoryCatalog, RepositoryRef
+from source_bitbucket_cloud.client import (
+    DENIED_STATUSES,
+    BitbucketApiError,
+    BitbucketClient,
+    RepositoryCatalog,
+    RepositoryRef,
+)
 
 logger = logging.getLogger("airbyte")
 
@@ -29,10 +35,6 @@ MAX_TEXT_BYTES = 2_048
 # Bumped from 2 when entity and state keys moved back to workspace/slug: a
 # version-2 state is keyed by repository uuid and no longer addresses anything.
 STATE_VERSION = 3
-# Statuses that mean "this token will never read this repository": no retry
-# helps, so the repository is skipped instead of failing the sync. 404 is here
-# too — a repository listed at the start of a sync can be deleted mid-run.
-DENIED_STATUSES = frozenset({403, 404})
 # Records a worker may run ahead of the consumer, per repository. Bounded so a
 # repository with a long history cannot buffer itself into memory.
 RECORD_BUFFER = 500
@@ -45,6 +47,18 @@ _READ_DONE = object()
 class _PendingRead(NamedTuple):
     repo: RepositoryRef
     records: queue.Queue[Any]
+
+
+class _StagedState(NamedTuple):
+    """State a worker produced, travelling behind that worker's records.
+
+    A checkpoint may be taken between any two records the consumer emits, so
+    state must only claim a repository once its records have actually left —
+    otherwise a crash in that window loses them and the idle gate skips the
+    repository on the next sync.
+    """
+
+    entries: Mapping[str, Mapping[str, Any]]
 
 
 def now_iso() -> str:
@@ -275,6 +289,9 @@ class BitbucketStream(Stream, ABC):
                 if item is _READ_DONE:
                     pending.remove(read)
                     break
+                if isinstance(item, _StagedState):
+                    self.apply_staged_state(item.entries)
+                    continue
                 if isinstance(item, BaseException):
                     self.handle_repository_error(read.repo, item)
                     continue
@@ -291,6 +308,8 @@ class BitbucketStream(Stream, ABC):
             return
         if item is _READ_DONE:
             pending.remove(oldest)
+        elif isinstance(item, _StagedState):
+            self.apply_staged_state(item.entries)
         elif isinstance(item, BaseException):
             self.handle_repository_error(oldest.repo, item)
         else:
@@ -306,6 +325,7 @@ class BitbucketStream(Stream, ABC):
     def _collect(
         self, repo: RepositoryRef, bucket_id: int, records: queue.Queue[Any], stop: threading.Event
     ) -> None:
+        staged = self.stage_state()
         try:
             for record in self.repository_records(repo, bucket_id):
                 if not self._offer(records, record, stop):
@@ -313,7 +333,20 @@ class BitbucketStream(Stream, ABC):
         except BaseException as error:  # noqa: BLE001 - re-raised in the consumer
             self._offer(records, error, stop)
         finally:
+            self.stop_staging()
+            if staged:
+                self._offer(records, _StagedState(staged), stop)
             self._offer(records, _READ_DONE, stop)
+
+    def stage_state(self) -> MutableMapping[str, Mapping[str, Any]]:
+        """Redirect this worker's state commits into a buffer it owns."""
+        return {}
+
+    def stop_staging(self) -> None:
+        return
+
+    def apply_staged_state(self, entries: Mapping[str, Mapping[str, Any]]) -> None:
+        del entries
 
     @staticmethod
     def _offer(records: queue.Queue[Any], item: Any, stop: threading.Event) -> bool:
@@ -498,6 +531,7 @@ class BitbucketIncrementalStream(BitbucketStream, CheckpointMixin, ABC):
         # pre-rewrite state and gets reshaped into something addressing nothing.
         self._state: MutableMapping[str, Any] = self._empty_state()
         self._state_lock = threading.Lock()
+        self._staging = threading.local()
 
     @property
     def state(self) -> MutableMapping[str, Any]:
@@ -540,8 +574,23 @@ class BitbucketIncrementalStream(BitbucketStream, CheckpointMixin, ABC):
             return dict(repositories.get(repo_state_key(repo)) or {})
 
     def commit_repository_state(self, repo: RepositoryRef, value: Mapping[str, Any]) -> None:
+        staged = getattr(self._staging, "entries", None)
+        if staged is not None:
+            staged[repo_state_key(repo)] = dict(value)
+            return
         with self._state_lock:
             self._state.setdefault("repositories", {})[repo_state_key(repo)] = dict(value)
+
+    def stage_state(self) -> MutableMapping[str, Mapping[str, Any]]:
+        self._staging.entries = {}
+        return self._staging.entries
+
+    def stop_staging(self) -> None:
+        self._staging.entries = None
+
+    def apply_staged_state(self, entries: Mapping[str, Mapping[str, Any]]) -> None:
+        with self._state_lock:
+            self._state.setdefault("repositories", {}).update(entries)
 
     def prune_bucket_state(self, bucket_id: int, repositories: Sequence[RepositoryRef]) -> None:
         current = {repo_state_key(repo) for repo in repositories}

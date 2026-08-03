@@ -264,3 +264,52 @@ class TestAbandoningTheReadTerminates:
         reader.join(timeout=30)
 
         assert finished.is_set(), "closing the read must not hang on parked workers"
+
+
+class TestStateFollowsTheRecords:
+    """A checkpoint can be taken between any two records the consumer emits, so
+    state that claims a repository before its records have left would lose them
+    to a crash in that window — and the idle gate would skip it next sync."""
+
+    def test_state_is_not_published_while_records_are_still_queued(self):
+        repos = fleet_in_one_bucket(1)
+        repo = repos[0]
+
+        class ThreeCommits(FleetClient):
+            def commits_between(self, repo, include, exclude):
+                return iter([{"hash": f"c{index}", "date": DATE} for index in range(3)])
+
+        stream = build(repos, ThreeCommits(repos), 4)
+        records = stream.read_records(None, stream_slice={"bucket_id": 0})
+
+        next(records)
+        assert stream.state["repositories"] == {}, (
+            "the worker finished fetching, but its records have not been emitted yet"
+        )
+
+        assert len(list(records)) == 2
+        assert repo_state_key(repo) in stream.state["repositories"], "and state lands once they have"
+
+    def test_every_repository_still_checkpoints_by_the_end(self):
+        repos = fleet()
+        client = FleetClient(repos)
+        stream = build(repos, client, 4)
+
+        read_all_buckets(stream)
+
+        assert set(stream.state["repositories"]) == {repo_state_key(repo) for repo in repos}
+
+    def test_an_abandoned_read_publishes_no_state(self):
+        repos = fleet_in_one_bucket(2)
+        overflow = RECORD_BUFFER * 2
+
+        class WideClient(FleetClient):
+            def commits_between(self, repo, include, exclude):
+                return iter([{"hash": f"{repo.slug}-{index}", "date": DATE} for index in range(overflow)])
+
+        stream = build(repos, WideClient(repos), 2)
+        records = stream.read_records(None, stream_slice={"bucket_id": 0})
+        next(records)
+        records.close()
+
+        assert stream.state["repositories"] == {}, "nothing drained, nothing claimed"
