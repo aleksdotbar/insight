@@ -68,7 +68,7 @@ SUPPORTED_MANIFEST_VERSION: Final[int] = 1
 
 # Capability fields that answer yes/no, and so can back a `requires_*` marker.
 # `idp` is excluded on purpose: it carries a value, not a yes/no.
-BOOLEAN_CAPABILITIES: Final[frozenset[str]] = frozenset({"ingestion"})
+BOOLEAN_CAPABILITIES: Final[frozenset[str]] = frozenset({"ingestion", "service_principals"})
 
 
 def _require(doc: Mapping[str, Any], key: str, kind: type | tuple[type, ...], where: str) -> Any:
@@ -153,6 +153,7 @@ class Capabilities:
     """
 
     ingestion: bool
+    service_principals: bool
     idp: str
 
     @classmethod
@@ -160,6 +161,9 @@ class Capabilities:
         where = "manifest.capabilities"
         return cls(
             ingestion=_require(doc, "ingestion", bool, where),
+            # Optional: a manifest written before this field existed reports
+            # False, which skips the S2S tests rather than failing to parse.
+            service_principals=bool(doc.get("service_principals", False)),
             idp=_require(doc, "idp", str, where),
         )
 

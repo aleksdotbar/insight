@@ -51,6 +51,16 @@ SERVICE_URLS: dict[str, str] = {
     "identity": "http://identity:8082",
     "analytics": "http://analytics:8081",
     "authenticator": "http://authenticator:8083",
+    # The authenticator's SECOND listener, carrying service-to-service issuance
+    # only, on its own port so it never shares the browser surface. A caller
+    # inside the network uses this; a host-side one uses the published
+    # AUTHENTICATOR_TOKEN_PORT.
+    #
+    # Named `_s2s` rather than `_token` deliberately: `assert_no_credentials`
+    # rejects any key containing "token", and it is right to — a manifest is not
+    # allowed to carry one. This value is an address, and the guard should not
+    # have to distinguish.
+    "authenticator_s2s": "http://authenticator:8093",
     "insight_front": "http://insight-front",
     "clickhouse": "http://clickhouse:8123",
     "mariadb": "mariadb:3306",
@@ -299,6 +309,11 @@ def build_manifest(
             # Compose seeds silver/gold directly; no connector ever runs, so
             # the ingestion path is not exercised on this stand.
             "ingestion": False,
+            # The authenticator's token listener is published on compose, so a
+            # runner can exchange an RFC 7523 assertion for a service principal
+            # there. A stand that keeps it in-cluster (no ingress) sets this
+            # False and the S2S tests skip with a reason instead of failing.
+            "service_principals": True,
             "idp": idp,
         },
         "seed_revision": seed_revision(),

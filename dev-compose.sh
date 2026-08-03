@@ -1683,6 +1683,19 @@ test_stand_test_in_image() {
   [[ -f "$realm" ]] && run_args+=(-v "$PWD/${realm}:/${realm}:ro")
   [[ -n "${INSIGHT_STAND_PERSONA_PASSWORD:-}" ]] && run_args+=(-e INSIGHT_STAND_PERSONA_PASSWORD)
 
+  # Service-principal tests need the `testclient` private key to sign their
+  # assertion with, and the token listener's IN-NETWORK address: this runner
+  # shares the gateway's network namespace, so `localhost` is the gateway's and
+  # the published AUTHENTICATOR_TOKEN_PORT is not reachable from in here.
+  # Without the key the suite skips those tests with a reason rather than
+  # failing, so the mount is conditional on the key existing.
+  local service_key="deploy/compose/authenticator-dev-keys/testclient.key.pem"
+  if [[ -f "$service_key" ]]; then
+    run_args+=(-v "$PWD/${service_key}:/${service_key}:ro")
+    run_args+=(-e "INSIGHT_STAND_SERVICE_KEY=/${service_key}")
+    run_args+=(-e "INSIGHT_STAND_TOKEN_URL=http://authenticator:8093")
+  fi
+
   echo "=== running the suite in ${image} (namespace: ${TEST_STAND_GATEWAY_CONTAINER}) ==="
   docker run "${run_args[@]}" "$image" "$@"
 }

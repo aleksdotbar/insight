@@ -17,7 +17,7 @@ builder that writes `manifest.json`, so the two cannot disagree.
 | realm | `insight` |
 | anchor_date | `2026-06-30` |
 | data_window | `2026-05-02..2026-06-30` |
-| seed_revision | `b45ee1486b4a981b` |
+| seed_revision | `423dcbc45c0595b6` |
 | manifest_version | 1 |
 
 `anchor_date` is the last day carrying seeded activity. It is resolved
@@ -127,9 +127,16 @@ criteria an entry must meet before it is added.
 |---|---|
 | `idp` | fakeidp |
 | `ingestion` | no |
+| `service_principals` | yes |
 
 `ingestion: no` — compose seeds the silver and gold layers directly; no
 connector runs, so the ingestion path is not exercised on this stand.
+
+`service_principals: yes` — the authenticator's token listener is published,
+so a runner can exchange an RFC 7523 assertion for a service principal and
+exercise the `/internal/*` routes only a service may call. A stand that
+keeps that listener in-cluster reports `no`, and those tests skip with a
+reason rather than failing.
 
 `idp` reflects the environment the seed was run with. This page is
 rendered against a canonical environment, so it shows the default rather

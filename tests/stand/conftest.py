@@ -47,9 +47,11 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
     Manifest,
     ManifestError,
     PersonaSession,
+    ServiceTokenSession,
     StandConnectionError,
     StandEndpoint,
     default_manifest_path,
+    open_service_session,
     open_session,
     resolve_by_realm_role,
     resolve_endpoint,
@@ -60,6 +62,7 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
 # and never silently dropped. Add a row to extend; nothing else changes.
 CAPABILITY_MARKERS: dict[str, str] = {
     "requires_ingestion": "ingestion",
+    "requires_service_principal": "service_principals",
 }
 
 # `requires_catalogue(<part>)` -> is that part present? Separate from the
@@ -385,6 +388,32 @@ def admin_operator_session(
     person rather than a grant bolted onto the CEO.
     """
     return session_for(ADMIN_OPERATOR_FIXTURE)
+
+
+@pytest.fixture(scope="session")
+def service_session(stand_manifest: Manifest) -> ServiceTokenSession:
+    """A service principal, obtained at the authenticator's token endpoint.
+
+    Not minted. The suite signs an RFC 7523 assertion with the `testclient` key
+    the stand generated and exchanges it for a real gateway JWT — so what a test
+    carries is a credential the product issued, and the issuance path is
+    exercised rather than assumed.
+
+    Session-scoped and self-renewing: the issued token outlives most suites, and
+    `headers()` re-exchanges before it expires.
+    """
+    return open_service_session(stand_manifest.tenant)
+
+
+@pytest.fixture
+def service_client(stand_base_url: str, service_session: ServiceTokenSession) -> ApiClient:
+    """The same gateway-fronted client every test uses, carrying that principal.
+
+    The CREDENTIAL comes from outside the gateway (its listener is not fronted);
+    what it is used on does not. `/internal/*` is reached at `/api/identity/...`
+    like any other identity route.
+    """
+    return ApiClient(base_url=stand_base_url, session=service_session)
 
 
 @pytest.fixture(scope="session")

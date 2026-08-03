@@ -26,12 +26,28 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-from .session import LoginSession
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from pydantic import BaseModel
+
+
+class StandSession(Protocol):
+    """Anything that can authenticate a request.
+
+    Two implementations, and the interface exists only because there are two:
+    `LoginSession` (a person, via the real IdP login) and `ServiceTokenSession`
+    (a service principal, exchanged at the authenticator's token endpoint).
+    Every product surface can be called by both, so the client must not care
+    which it holds.
+
+    Anonymity is deliberately NOT a third implementation. `session is None`
+    means no header is attached at all, which is what makes the 401 sweep in
+    `stand/api/test_gateway.py` mean something — an `AnonymousSession` returning
+    `{}` could one day return a stale token instead, and `None` cannot.
+    """
+
+    def headers(self) -> Mapping[str, str]: ...
 
 #: Anything `json.loads` can return. Recursive, so a caller indexing into a
 #: decoded body keeps a real type instead of falling off into `Any`.
@@ -128,12 +144,12 @@ class ApiClient:
 
     `session is None` means genuinely unauthenticated — no header is attached
     at all — so a 401 assertion is testing the stand rather than a mistake in
-    the test. The session is re-read on every request, so a `LoginSession` that
+    the test. The session is re-read on every request, so a session that
     re-acquires mid-run is picked up without rebuilding the client.
     """
 
     base_url: str
-    session: LoginSession | None = None
+    session: StandSession | None = None
     timeout_s: float = 30.0
 
     def __post_init__(self) -> None:
@@ -141,7 +157,7 @@ class ApiClient:
 
     # -- construction ------------------------------------------------------
 
-    def with_session(self, session: LoginSession) -> ApiClient:
+    def with_session(self, session: StandSession) -> ApiClient:
         """A sibling client at the same stand, authenticated as that session."""
         return ApiClient(base_url=self.base_url, session=session, timeout_s=self.timeout_s)
 
@@ -271,6 +287,7 @@ __all__: Sequence[str] = (
     "IDENTITY_PREFIX",
     "ApiClient",
     "ApiResponse",
+    "StandSession",
     "analytics_path",
     "identity_path",
 )

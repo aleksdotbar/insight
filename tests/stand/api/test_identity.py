@@ -20,10 +20,13 @@ The capability itself is not gone: **analytics** serves `/v1/persons/{email}`
 and returns 200, so it belongs in an analytics module when one grows to
 cover it.
 
-Every session below was won by driving the deployed OIDC chain against
-Keycloak. No token is minted anywhere in this suite: a minted bearer would
-prove the service verifies a JWT, which the in-process rig already covers, and
-would say nothing about whether a person can log in to the deployed product.
+Every PERSON below was logged in by driving the deployed OIDC chain against
+Keycloak. Still no token is minted anywhere in this suite: the one non-person
+caller, the service principal exercising `/internal/*`, gets its credential by
+exchanging an RFC 7523 assertion at the authenticator's own token endpoint — the
+issuance path a real service uses. A minted bearer would prove the service
+verifies a JWT, which the in-process rig already covers, and would say nothing
+about whether such a caller can be issued one here.
 """
 
 from __future__ import annotations
@@ -35,12 +38,13 @@ from insight_stand import (
     ADMIN_ROLE,
     LEAD_ROLE,
     MEMBER_ROLE,
+    ApiClient,
     Manifest,
     PersonaSession,
     identity_path,
 )
 
-from .schemas import ProblemDocument, Subchart, SubchartForest
+from .schemas import ProblemDocument, Profile, Subchart, SubchartForest
 from .scratch import UNKNOWN_ID
 
 #: Caller-derived org subchart — takes no person argument, so what comes back
@@ -235,3 +239,52 @@ def test_subchart_of_an_unknown_person_is_404(lead_session: PersonaSession) -> N
     response = lead_session.client.get(f"{SUBCHART_OF}/{UNKNOWN_ID}")
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
     assert response.parse(ProblemDocument).status == 404
+
+
+# ---------------------------------------------------------------------------
+# /internal/* — service principals only
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.requires_service_principal
+@pytest.mark.requires_seed("dev_lead")
+def test_internal_lookup_serves_a_service_principal(
+    service_client: ApiClient, stand_manifest: Manifest
+) -> None:
+    """The S2S route answers a caller the authenticator actually issued a token to.
+
+    `/internal/persons/by-email/{email}` is how the authenticator resolves a
+    person during login, and it is the only route in this suite reached by
+    something other than a logged-in human. The credential is not minted: an
+    RFC 7523 assertion signed with the stand's `testclient` key is exchanged at
+    the authenticator's token endpoint for a gateway JWT whose `sub_type` is
+    `service`. So a pass means the whole issuance path works, not merely that
+    identity compares a claim.
+    """
+    person = stand_manifest.fixture("dev_lead")
+    response = service_client.get(identity_path(f"/internal/persons/by-email/{person.email}"))
+    assert response.status_code == 200, (
+        f"the service principal was refused {person.email}: "
+        f"{response.status_code} {response.text[:300]}"
+    )
+    assert str(response.parse(Profile).person_id) == person.uuid
+
+
+@pytest.mark.requires_service_principal
+@pytest.mark.requires_seed("dev_lead")
+def test_internal_lookup_refuses_a_person(
+    lead_session: PersonaSession, stand_manifest: Manifest
+) -> None:
+    """A logged-in human is refused the same route.
+
+    The half that makes the test above mean something: without it, a 200 for
+    the service principal would be equally consistent with the route being open
+    to anybody authenticated. Same url, same tenant, same seeded person —
+    differing only in what kind of principal is asking.
+    """
+    person = stand_manifest.fixture("dev_lead")
+    response = lead_session.client.get(identity_path(f"/internal/persons/by-email/{person.email}"))
+    assert response.status_code == 403, (
+        f"a person reached the service-only route (status {response.status_code}) — "
+        f"/internal/* is restricted to sub_type=service: {response.text[:300]}"
+    )

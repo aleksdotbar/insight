@@ -7,11 +7,18 @@ token is the in-process rig's path
 (`src/ingestion/tests/e2e/lib/gateway_jwt.py`); doing it here would exercise
 JWT verification — which that rig already covers — and skip the login entirely.
 
-There is deliberately no `Credentials` interface and no anonymous
-implementation. An interface with one implementation, whose only stated purpose
-was to accommodate a second implementation this suite forbids, is abstraction
-with nothing behind it. An unauthenticated client is an `ApiClient` with no
-session at all.
+There IS now a second implementation, and so an interface: `ServiceTokenSession`
+(`service_token.py`) is a service principal, obtained by exchanging an RFC 7523
+assertion at the authenticator's own token endpoint. `api.StandSession` is the
+protocol both answer. That is a reversal of what this docstring used to say, and
+the reason is specific rather than general: `/internal/*` is reachable only to a
+service, so the alternative was leaving a deployed surface untested. An interface
+with two real implementations earns its keep; one with a hypothetical second did
+not.
+
+What has NOT changed is anonymity. There is still no anonymous implementation —
+an unauthenticated client is an `ApiClient` with no session at all. `None` cannot
+accidentally carry a stale token, and an `AnonymousSession` returning `{}` could.
 """
 
 from __future__ import annotations
