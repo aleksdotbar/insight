@@ -5,40 +5,74 @@
     tags=['gold']
 ) }}
 
+-- Canonical cohort membership: one row per (tenant, person, cohort_key).
+--
+-- `entity_id` IS the canonical person id, matching the observation relations,
+-- so the peer compiler joins one key and needs no collapsing of its own. HR
+-- rows whose email identity cannot resolve are absent — with entity_id being
+-- the person id there is no identity to serve them under, and a peer pool is
+-- exactly where a guessed identity would do damage.
+--
+-- CONTESTED MEMBERSHIP: two HR emails of one person can name different org
+-- units. Such a person is EXCLUDED (`uniqExact(cohort_id) = 1`) rather than
+-- tie-broken — an arbitrary winner would silently compare them against the
+-- wrong team's percentiles. The guard lives here, at the grain it applies to,
+-- not in every query that reads this view.
+--
+-- A view: the resolution join runs per peer request, which is fine while the
+-- identity log is thousands of rows; materialize if that ever changes.
+
+-- `resolved_cohort_id`, NOT `cohort_id`: an aggregate alias that shadows the
+-- source column makes ClickHouse read it as an aggregate inside an aggregate
+-- (ILLEGAL_AGGREGATION, code 184). Renamed back one level out.
 SELECT
-    assumeNotNull(tenant_id) AS tenant_id,
-    'person' AS entity_type,
-    assumeNotNull(entity_id) AS entity_id,
-    -- Canonical person for the cohort member (resolve_person_id macro);
-    -- NULL = identity doesn't know the HR email. NOTE: this is a VIEW, so
-    -- unlike the observation tables the join runs at query time (every peer
-    -- request) — fine while the identity log is thousands of rows;
-    -- materialize if that ever changes.
-    {{ resolved_person_id_column() }},
-    'org_unit' AS cohort_key,
-    cohort_id
+    tenant_id,
+    entity_type,
+    entity_id,
+    cohort_key,
+    resolved_cohort_id AS cohort_id
 FROM (
     SELECT
-        workspace_id AS tenant_id,
-        lower(assumeNotNull(email)) AS entity_id,
-        coalesce(
-            nullIf(toString(org_unit_id), ''),
-            nullIf(department_name, '')
-        ) AS cohort_id
-    FROM {{ ref('class_people') }}
-    WHERE email IS NOT NULL
-      AND email != ''
-      AND workspace_id IS NOT NULL
-      AND workspace_id != ''
-    ORDER BY
         tenant_id,
+        entity_type,
         entity_id,
-        coalesce(parseDateTimeBestEffortOrNull(toString(valid_from)), toDateTime('1970-01-01')) DESC,
-        unique_key DESC
-    LIMIT 1 BY tenant_id, entity_id
-) AS people
-{{ resolved_person_id_join('people') }}
-WHERE tenant_id IS NOT NULL
-  AND tenant_id != ''
-  AND entity_id IS NOT NULL
-  AND entity_id != ''
+        cohort_key,
+        any(cohort_id) AS resolved_cohort_id
+    FROM (
+    SELECT
+        assumeNotNull(people.tenant_id) AS tenant_id,
+        'person' AS entity_type,
+        {{ canonical_entity_id() }},
+        'org_unit' AS cohort_key,
+        people.cohort_id AS cohort_id
+    FROM (
+        SELECT
+            workspace_id AS tenant_id,
+            lower(assumeNotNull(email)) AS entity_id,
+            coalesce(
+                nullIf(toString(org_unit_id), ''),
+                nullIf(department_name, '')
+            ) AS cohort_id
+        FROM {{ ref('class_people') }}
+        WHERE email IS NOT NULL
+          AND email != ''
+          AND workspace_id IS NOT NULL
+          AND workspace_id != ''
+        ORDER BY
+            tenant_id,
+            entity_id,
+            coalesce(parseDateTimeBestEffortOrNull(toString(valid_from)), toDateTime('1970-01-01')) DESC,
+            unique_key DESC
+        LIMIT 1 BY tenant_id, entity_id
+    ) AS people
+    {{ resolved_person_id_join('people') }}
+    WHERE people.tenant_id IS NOT NULL
+      AND people.tenant_id != ''
+      AND people.entity_id IS NOT NULL
+      AND people.entity_id != ''
+      AND people.cohort_id IS NOT NULL
+      AND {{ resolved_only() }}
+    ) AS resolved
+    GROUP BY tenant_id, entity_type, entity_id, cohort_key
+    HAVING uniqExact(cohort_id) = 1
+)

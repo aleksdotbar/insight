@@ -312,14 +312,14 @@ pub(crate) fn peer_aliases(item_index: usize) -> PeerAliases {
 
 #[derive(Debug, Deserialize)]
 pub struct PeriodWideRow {
-    pub person_id: String,
+    pub entity_id: String,
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PeerWideRow {
-    pub person_id: String,
+    pub entity_id: String,
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
@@ -332,7 +332,7 @@ pub fn demux_period_rows(
     for row in rows {
         for (item_index, item_rows) in per_item.iter_mut().enumerate() {
             let value = wide_field(&row.extra, &period_alias(item_index))?;
-            let narrow = json!({ "person_id": row.person_id, "value": value });
+            let narrow = json!({ "entity_id": row.entity_id, "value": value });
             item_rows.push(decode_narrow_row(narrow)?);
         }
     }
@@ -352,7 +352,7 @@ pub fn demux_peer_rows(
             // (output_format_json_quote_64bit_integers), so `n` arrives as a
             // string and needs the optional_u64 path.
             let narrow = json!({
-                "person_id": row.person_id,
+                "entity_id": row.entity_id,
                 "target_value": wide_field(&row.extra, &aliases.target)?,
                 "p25": wide_field(&row.extra, &aliases.p25)?,
                 "median": wide_field(&row.extra, &aliases.median)?,
@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn demux_period_maps_aliases_and_preserves_null() {
         let rows = vec![PeriodWideRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             extra: [
                 ("m0".to_owned(), json!(1.5)),
                 ("m1".to_owned(), json!(null)),
@@ -604,7 +604,7 @@ mod tests {
         assert!(
             per_item
                 .iter()
-                .all(|rows| rows[0].person_id == "00000000-0000-0000-0000-00000000000a")
+                .all(|rows| rows[0].entity_id == "00000000-0000-0000-0000-00000000000a")
         );
     }
 
@@ -613,7 +613,7 @@ mod tests {
         // ClickHouse quotes UInt64 in JSONEachRow output by default; the
         // demuxed row must decode "7" through PeerQueryRow's optional_u64.
         let rows = vec![PeerWideRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             extra: [
                 ("m0_target".to_owned(), json!(3.0)),
                 ("m0_p25".to_owned(), json!(null)),
@@ -638,13 +638,13 @@ mod tests {
     #[test]
     fn demux_missing_alias_is_internal_error() {
         let period_rows = vec![PeriodWideRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             extra: HashMap::new(),
         }];
         assert!(demux_period_rows(&items(1), period_rows).is_err());
 
         let peer_rows = vec![PeerWideRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             extra: [("m0_target".to_owned(), json!(1.0))].into_iter().collect(),
         }];
         assert!(demux_peer_rows(&items(1), peer_rows).is_err());

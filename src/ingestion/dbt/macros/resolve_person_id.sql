@@ -78,3 +78,39 @@
         CAST(NULL AS Nullable(UUID))
     ) AS person_id
 {% endmacro %}
+
+{#-
+  The canonical serving shape: `entity_type + entity_id` identifies the
+  measured entity, and for `person` that identity IS the canonical person id.
+  So gold projects the resolved UUID INTO entity_id rather than carrying a
+  second identity column beside the source-native email.
+
+      SELECT
+          ...,
+          {{ canonical_entity_id() }},
+          ...
+      FROM value_measures
+      {{ resolved_person_id_join('value_measures') }}
+      WHERE {{ resolved_only() }}
+      GROUP BY ..., identity_map.person_id, ...
+
+  Grouped on `identity_map.person_id`, never on the `entity_id` alias: an alias
+  that shadows a source column makes ClickHouse substitute it into the outer
+  scope (ILLEGAL_AGGREGATION, code 184).
+
+  Text, not UUID: `entity_id` is a String across every entity type, and the
+  contract is polymorphic — a UUID column would make the shape person-only.
+-#}
+{% macro canonical_entity_id() %}
+    toString(assumeNotNull(identity_map.person_id)) AS entity_id
+{% endmacro %}
+
+{#-
+  Keeps unresolved source rows OUT of the canonical relations: with entity_id
+  BEING the person id, a row identity cannot resolve has no identity to serve
+  under. Nothing is hidden — the pre-resolution evidence relations keep every
+  source row, and identity_resolution_coverage measures the gap from there.
+-#}
+{% macro resolved_only() %}
+    identity_map.email != ''
+{% endmacro %}

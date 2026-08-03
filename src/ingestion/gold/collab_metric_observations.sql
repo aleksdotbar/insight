@@ -17,10 +17,11 @@ SELECT
     tenant_id,
     source_key,
     entity_type,
-    entity_id,
-    -- Canonical person from the identity log; NULL = unknown email (see
-    -- macros/resolve_person_id.sql). entity_id stays the runtime key.
-    {{ resolved_person_id_column() }},
+    -- entity_id IS the canonical person id: `entity_type + entity_id`
+    -- identifies the measured entity, so the resolved UUID goes in it rather
+    -- than beside it. The source-native email stays in the evidence relations,
+    -- which identity_resolution_coverage measures the resolution gap from.
+    {{ canonical_entity_id() }},
     metric_date,
     observed_at,
     measure_key,
@@ -29,3 +30,4 @@ SELECT
     dimensions
 FROM {{ ref('collab_metric_evidence') }}
 {{ resolved_person_id_join("collab_metric_evidence") }}
+WHERE {{ resolved_only() }}

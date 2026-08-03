@@ -122,18 +122,16 @@ models:
               arguments:
                 values: ['person']
       - name: entity_id
-        description: "Normalized entity identifier (lowercased email for person)"
+        description: >
+          Canonical person id — `entity_type + entity_id` identifies the
+          measured entity, and for a person that identity IS the person id
+          resolved from the identity log (resolve_person_id macro). Source
+          rows whose email identity cannot resolve are absent: with entity_id
+          being the person id there is nothing to serve them under, and
+          identity_resolution_coverage measures that gap from the evidence
+          relations, which keep every source row keyed by its email.
         tests:
           - not_null
-      - name: person_id
-        description: >
-          Canonical person from the identity log (resolve_person_id macro),
-          resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. THE runtime key since the
-          identity cutover: every metric query filters and groups by it,
-          NULL rows are excluded from results, and the analytics
-          validator's OBSERVATION_COLUMNS require the column. entity_id
-          stays the source-native email key of the table.
       - name: metric_date
         description: "Observation date"
         tests:
@@ -208,21 +206,15 @@ models:
                 values: ['person']
       - name: entity_id
         description: >
-          Normalized entity identifier: lowercased email from the commit
-          author or the pull-request identity resolution tiers (direct
-          email, PR-commit dominant email, name bridge). Rows that resolve
-          to no email are excluded upstream.
+          Canonical person id — `entity_type + entity_id` identifies the
+          measured entity, and for a person that identity IS the person id
+          resolved from the identity log (resolve_person_id macro). Source
+          rows whose email identity cannot resolve are absent: with entity_id
+          being the person id there is nothing to serve them under, and
+          identity_resolution_coverage measures that gap from the evidence
+          relations, which keep every source row keyed by its email.
         tests:
           - not_null
-      - name: person_id
-        description: >
-          Canonical person from the identity log (resolve_person_id macro),
-          resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. THE runtime key since the
-          identity cutover: every metric query filters and groups by it,
-          NULL rows are excluded from results, and the analytics
-          validator's OBSERVATION_COLUMNS require the column. entity_id
-          stays the source-native email key of the table.
       - name: metric_date
         description: >
           Observation date: commit date for commit-derived measures,
@@ -302,20 +294,15 @@ models:
                 values: ['person']
       - name: entity_id
         description: >
-          Normalized entity identifier: the class person_key (lowercased
-          email, falling back to lowercased user id where a source has no
-          email). Rows with an empty person_key are excluded upstream.
+          Canonical person id — `entity_type + entity_id` identifies the
+          measured entity, and for a person that identity IS the person id
+          resolved from the identity log (resolve_person_id macro). Source
+          rows whose email identity cannot resolve are absent: with entity_id
+          being the person id there is nothing to serve them under, and
+          identity_resolution_coverage measures that gap from the evidence
+          relations, which keep every source row keyed by its email.
         tests:
           - not_null
-      - name: person_id
-        description: >
-          Canonical person from the identity log (resolve_person_id macro),
-          resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. THE runtime key since the
-          identity cutover: every metric query filters and groups by it,
-          NULL rows are excluded from results, and the analytics
-          validator's OBSERVATION_COLUMNS require the column. entity_id
-          stays the source-native email key of the table.
       - name: metric_date
         description: "Observation date (activity date per source)."
         tests:
@@ -405,20 +392,15 @@ models:
                 values: ['person']
       - name: entity_id
         description: >
-          Normalized entity identifier: the assignee's (or worklog author's)
-          lowercased email, resolved through class_task_users. Accounts that do
-          not resolve to an email are excluded upstream.
+          Canonical person id — `entity_type + entity_id` identifies the
+          measured entity, and for a person that identity IS the person id
+          resolved from the identity log (resolve_person_id macro). Source
+          rows whose email identity cannot resolve are absent: with entity_id
+          being the person id there is nothing to serve them under, and
+          identity_resolution_coverage measures that gap from the evidence
+          relations, which keep every source row keyed by its email.
         tests:
           - not_null
-      - name: person_id
-        description: >
-          Canonical person from the identity log (resolve_person_id macro),
-          resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. THE runtime key since the
-          identity cutover: every metric query filters and groups by it,
-          NULL rows are excluded from results, and the analytics
-          validator's OBSERVATION_COLUMNS require the column. entity_id
-          stays the source-native email key of the table.
       - name: metric_date
         description: >
           Observation date: close date for closed-issue measures, transition
@@ -536,20 +518,15 @@ models:
                 values: ['person']
       - name: entity_id
         description: >
-          Normalized entity identifier: the author's lowercased email as
-          resolved in the wiki staging models. Accounts that do not resolve
-          to an email are excluded upstream.
+          Canonical person id — `entity_type + entity_id` identifies the
+          measured entity, and for a person that identity IS the person id
+          resolved from the identity log (resolve_person_id macro). Source
+          rows whose email identity cannot resolve are absent: with entity_id
+          being the person id there is nothing to serve them under, and
+          identity_resolution_coverage measures that gap from the evidence
+          relations, which keep every source row keyed by its email.
         tests:
           - not_null
-      - name: person_id
-        description: >
-          Canonical person from the identity log (resolve_person_id macro),
-          resolved at build time; NULL when identity does not know the email
-          — honest absence, never a guess. THE runtime key since the
-          identity cutover: every metric query filters and groups by it,
-          NULL rows are excluded from results, and the analytics
-          validator's OBSERVATION_COLUMNS require the column. entity_id
-          stays the source-native email key of the table.
       - name: metric_date
         description: >
           Observation date: page creation date for pages_created, edit day
@@ -585,14 +562,14 @@ models:
 
   - name: metric_entity_cohorts_current
     description: >
-      Current cohort membership per entity for peer comparison. One row per
+      Current cohort membership per person for peer comparison. One row per
       (tenant, entity_type, entity_id, cohort_key) — uniqueness is asserted by
-      tests/gold/assert_metric_entity_cohorts_unique.sql. That uniqueness is per
-      EMAIL, which does not imply uniqueness per person: since the identity
-      cutover the peer view joins on person_id and collapses to person grain
-      itself, because two emails can resolve to one person. The column set is a
-      published contract probed by the analytics service schema validator
-      (`COHORT_COLUMNS`).
+      tests/gold/assert_metric_entity_cohorts_unique.sql, and since entity_id is
+      the canonical person id that uniqueness is per PERSON: the model collapses
+      a person's several HR emails itself and EXCLUDES anyone whose emails claim
+      different org units, so the peer query reads it straight instead of
+      repairing the grain per request. The column set is a published contract
+      probed by the analytics service schema validator (`COHORT_COLUMNS`).
     columns:
       - name: tenant_id
         description: "Tenant isolation field"
@@ -606,17 +583,16 @@ models:
               arguments:
                 values: ['person']
       - name: entity_id
-        description: "Normalized entity identifier (lowercased email for person)"
+        description: >
+          Canonical person id — `entity_type + entity_id` identifies the
+          measured entity, and for a person that identity IS the person id
+          resolved from the identity log (resolve_person_id macro). Source
+          rows whose email identity cannot resolve are absent: with entity_id
+          being the person id there is nothing to serve them under, and
+          identity_resolution_coverage measures that gap from the evidence
+          relations, which keep every source row keyed by its email.
         tests:
           - not_null
-      - name: person_id
-        description: >
-          Canonical person from the identity log (resolve_person_id macro),
-          resolved at build time; NULL when identity does not know the HR email
-          — usually a seeding gap on the identity side. THE peer join key
-          since the identity cutover (COHORT_COLUMNS require it); NULL rows
-          never enter peer pools, and a person whose emails claim different
-          cohorts is excluded from peer comparison rather than tie-broken.
       - name: cohort_key
         description: "Cohort basis identifier"
         tests:
@@ -648,8 +624,8 @@ models:
       - name: observation_rows
         description: "Total observation rows for the source"
       - name: unresolved_rows
-        description: "Rows whose person_id is NULL (identity does not know the email)"
+        description: "Source rows whose email identity cannot resolve"
       - name: unresolved_people
         description: "Distinct entity_id (emails) behind the unresolved rows"
       - name: match_rate_pct
-        description: "Share of rows with a resolved person_id, percent (1 decimal)"
+        description: "Share of source rows that resolve to a person, percent (1 decimal)"

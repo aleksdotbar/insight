@@ -51,7 +51,7 @@ pub fn build_period_view(
 ) -> MetricResultViewDto {
     let values_by_person: HashMap<String, Option<f64>> = rows
         .into_iter()
-        .map(|row| (row.person_id, row.value))
+        .map(|row| (row.entity_id, row.value))
         .collect();
     // Wire seam: the response field keeps its pre-cutover name `entity_id`
     // but carries the person UUID (canonical string form) since the identity
@@ -97,7 +97,7 @@ pub fn build_timeseries_view(
             row_dimensions(&row.extra, dimensions)?
         };
         let data = by_series
-            .entry((row.person_id, remainder, dims))
+            .entry((row.entity_id, remainder, dims))
             .or_insert_with(|| SeriesData::new(row.rank, remainder, row.group_label.clone()));
         if row.is_total != 0 {
             data.total = row.value;
@@ -169,7 +169,7 @@ pub fn build_peer_view(rows: Vec<PeerQueryRow>) -> MetricResultViewDto {
         values: rows
             .into_iter()
             .map(|row| PeerValueDto {
-                entity_id: row.person_id,
+                entity_id: row.entity_id,
                 target_value: row.target_value,
                 p25: row.p25,
                 median: row.median,
@@ -190,7 +190,7 @@ pub fn build_breakdown_view(
         .into_iter()
         .map(|row| {
             Ok(BreakdownValueDto {
-                entity_id: row.person_id,
+                entity_id: row.entity_id,
                 dimensions: row_dimensions(&row.extra, dimensions)?
                     .into_iter()
                     .map(|(key, value, label)| MetricDimensionDto { key, value, label })
@@ -222,7 +222,7 @@ pub fn build_histogram_view(
 
     let mut by_person: HashMap<String, EntityBins> = HashMap::new();
     for row in rows {
-        let entry = by_person.entry(row.person_id).or_insert(EntityBins {
+        let entry = by_person.entry(row.entity_id).or_insert(EntityBins {
             lo: row.entity_lo,
             hi: row.entity_hi,
             counts: HashMap::new(),
@@ -439,14 +439,14 @@ mod tests {
     }
 
     fn histogram_row(
-        person_id: &str,
+        entity_id: &str,
         bin_idx: u32,
         lo: f64,
         hi: f64,
         count: u64,
     ) -> HistogramQueryRow {
         HistogramQueryRow {
-            person_id: person_id.to_owned(),
+            entity_id: entity_id.to_owned(),
             bin_idx,
             entity_lo: lo,
             entity_hi: hi,
@@ -489,7 +489,7 @@ mod tests {
             "2026-01-31",
         );
         let rows = vec![PeriodQueryRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             value: Some(5.0),
         }];
         let MetricResultViewDto::Period { values } = build_period_view(&sum_metric(), &req, rows)
@@ -618,7 +618,7 @@ mod tests {
             "2026-01-03",
         );
         let rows = vec![TimeseriesQueryRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             bucket_start: "2026-01-02".to_owned(),
             value: Some(3.0),
             is_total: 0,
@@ -675,7 +675,7 @@ mod tests {
         extra.insert("dim_0_value".to_owned(), json!("cursor"));
         extra.insert("dim_0_label".to_owned(), json!("Cursor"));
         let rows = vec![TimeseriesQueryRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             bucket_start: "2026-01-01".to_owned(),
             value: Some(2.0),
             is_total: 0,
@@ -709,7 +709,7 @@ mod tests {
         dimensions.insert("dim_0_label".to_owned(), json!("Cursor"));
         let rows = vec![
             TimeseriesQueryRow {
-                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+                entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: "2026-01-01".to_owned(),
                 value: Some(2.0),
                 is_total: 0,
@@ -719,7 +719,7 @@ mod tests {
                 extra: dimensions.clone(),
             },
             TimeseriesQueryRow {
-                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+                entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: String::new(),
                 value: Some(3.0),
                 is_total: 1,
@@ -729,7 +729,7 @@ mod tests {
                 extra: dimensions,
             },
             TimeseriesQueryRow {
-                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+                entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: "2026-01-01".to_owned(),
                 value: Some(4.0),
                 is_total: 0,
@@ -739,7 +739,7 @@ mod tests {
                 extra: HashMap::new(),
             },
             TimeseriesQueryRow {
-                person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+                entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
                 bucket_start: String::new(),
                 value: Some(5.0),
                 is_total: 1,
@@ -802,7 +802,7 @@ mod tests {
             "2026-01-02",
         );
         let rows = vec![TimeseriesQueryRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             bucket_start: "2026-01-01".to_owned(),
             value: Some(2.0),
             is_total: 0,
@@ -823,7 +823,7 @@ mod tests {
         extra.insert("dim_0_value".to_owned(), serde_json::Value::Null);
         extra.insert("dim_0_label".to_owned(), serde_json::Value::Null);
         let rows = vec![BreakdownQueryRow {
-            person_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
+            entity_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             value: Some(1.0),
             extra,
         }];

@@ -31,7 +31,6 @@ tenant_id String,
 source_key String,
 entity_type String,
 entity_id String,
-person_id Nullable(UUID),
 metric_date Date,
 observed_at Nullable(DateTime64(3)),
 measure_key String,
@@ -45,18 +44,22 @@ Rules:
 - Observations belong to source measures, not final metrics.
 - `source_key` identifies the logical source.
 - `measure_key` identifies the source measure.
-- `entity_type` and `entity_id` identify the measured entity.
-- `person_id` is the canonical person resolved from the identity log at
-  build time (`resolve_person_id` dbt macro; NULL = identity does not know
-  the email). Since the identity cutover it is THE runtime key: every
-  metric query filters, groups and reports by it, unresolved rows
-  (NULL `person_id`) are excluded from every result rather than guessed,
-  and the schema validator's `OBSERVATION_COLUMNS` / `COHORT_COLUMNS`
-  require the column. `entity_id` remains the source-native email key of
-  the tables and the wire FIELD NAME in responses (carrying the person
-  UUID). The cohort view carries `person_id` under the same rules; a
-  person whose emails claim different cohorts is excluded from peer
-  comparison (contested membership is never tie-broken).
+- `entity_type` and `entity_id` identify the measured entity — one
+  polymorphic pair, on the wire and in the relations alike.
+- For `entity_type = 'person'` that identity IS the canonical person id,
+  resolved from the identity log at build time (`resolve_person_id` dbt
+  macro). Gold therefore serves canonical grain: one row per person, with a
+  person's several source emails already summed together. A source row whose
+  email identity cannot resolve is ABSENT rather than guessed — with
+  `entity_id` being the person id there is nothing to serve it under.
+  Unresolved work is not lost from view: the evidence relations keep every
+  source row keyed by its source-native email, and
+  `insight.identity_resolution_coverage` reports the gap per source from
+  there.
+- The cohort relation is canonical-grained under the same rule, and a person
+  whose HR emails claim different org units is EXCLUDED from peer comparison
+  (contested membership is never tie-broken). The peer query reads that grain
+  straight; it does not repair it per request.
 - `observed_at` is reserved for future point-in-time semantics.
 - `subject_key` carries the counted subject for distinct-count measures (a
   date, a tool) and is NULL on every other measure's rows.

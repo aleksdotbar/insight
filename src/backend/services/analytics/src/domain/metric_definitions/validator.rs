@@ -609,17 +609,15 @@ impl MetricDefinitionValidator {
     }
 }
 
-// The columns the RUNTIME actually reads. `person_id` joined both lists in
-// the same change that switched the compiler to person_id filtering (the
-// identity cutover) — a table without it would fail every query at SQL time
-// with a 500, so the schema probe now catches it upfront and marks the
-// source unavailable instead.
+// The columns the RUNTIME actually reads. `entity_id` carries the canonical
+// person id since the identity cutover — same column, canonical content — so
+// the list is unchanged by it: a second identity column would have made the
+// duplication part of this published contract.
 const OBSERVATION_COLUMNS: &[&str] = &[
     "tenant_id",
     "source_key",
     "entity_type",
     "entity_id",
-    "person_id",
     "metric_date",
     "observed_at",
     "measure_key",
@@ -653,7 +651,6 @@ const COHORT_COLUMNS: &[&str] = &[
     "tenant_id",
     "entity_type",
     "entity_id",
-    "person_id",
     "cohort_key",
     "cohort_id",
 ];
