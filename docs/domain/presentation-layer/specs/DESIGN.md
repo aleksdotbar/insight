@@ -57,7 +57,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-contract-version-stamp` | Engineering stamps `silver.contract_version` (single-row constant view, ledgerless CH migration); analytics pins `PINNED_CONTRACT_VERSION` and verifies the stamp in a periodic post-boot sweep, logging a mismatch or missing stamp without gating boot. Shipped (#1969) |
 | `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart. Shipped (#1970) |
 | `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only synthetic backend, FE-only variation. Per-experiment bundle (`Deployment` + `Service` + one prefix-strip `Ingress`) shipped as the `insight-preview` chart at `deploy/preview/`, applied by hand (#1971); pinning the shared backend to synthetic data (#1973) stays open |
-| `cpt-presentation-fr-preview-auth` | Single fixed callback with a Redis-backed opaque `state` return path, validated at store time |
+| `cpt-presentation-fr-preview-auth` | Single fixed callback with a Redis-backed opaque `state` return path (already stashing `state -> { return_to, pkce_verifier, nonce }`, delete-on-read), extended so `return_to` is validated at store time against a configurable `/exp/` prefix. Shipped (#1972) |
 
 #### NFR Allocation
 
@@ -379,8 +379,8 @@ Serves many experimental FE builds under one host against one shared read-only s
 ##### Responsibility scope
 
 - Path-based addressing `preview.insight…/exp/<name>/`: one host, one Entra redirect URI, same-origin session cookie. FE built with a relative asset base and a runtime router basepath so one image serves under any prefix; `/api/...` stays the shared absolute path.
-- Auth return path: login-initiation writes Redis `state → { return_to, pkce_verifier, nonce }` with a short TTL; Entra echoes the random `state` to the single fixed callback; the BFF looks it up (miss/expired ⇒ reject; delete-on-read), exchanges the code, sets the cookie, and `302`s to `return_to`. `return_to` is validated at store time (same-origin, `/exp/` allowlist).
-- Deployment: one route object per experiment applied by hand (`Deployment` + `Service` + one routing object with prefix-strip rewrite). The controller merges same-host route objects, so `apply` adds a path and `delete` removes it; no central config is rewritten. Portable by intent (Gateway API `HTTPRoute` after the Envoy move), but nginx-specific today: the route uses `pathType: ImplementationSpecific` with `nginx.ingress.kubernetes.io/{use-regex,rewrite-target}`. Shipped (#1971) as the `insight-preview` Helm chart at `deploy/preview/`: each experiment is one release named `preview-<name>`, the `Ingress` prefix-strips `/exp/<name>` (`rewrite-target: /$2`), and the experiment slug is validated as a DNS-1123 label of at most 55 characters at template time. Render-contract tests plus a `.github/workflows/preview-helm.yml` lane guard it. The auth return path above (#1972) and the synthetic-data pin (#1973) remain open, so this component stays unchecked.
+- Auth return path (shipped #1972): the authenticator's login-initiation already writes Redis `state → { return_to, pkce_verifier, nonce }` with a short TTL; Entra echoes the random `state` to the single fixed callback; the authenticator looks it up (miss/expired ⇒ reject; delete-on-read), exchanges the code, sets the cookie, and `302`s to `return_to`. #1972 adds the store-time `/exp/` prefix check: `sanitize_return_to` takes a configurable `return_to_prefix` (authenticator config) — empty keeps the permissive main-app posture; a preview-host deployment sets `/exp/` so a login can only return to an `/exp/<name>` path (same-origin already enforced by the site-relative check; `..`-traversal rejected), otherwise the configured default. The FE preview chart (`deploy/preview/`) still carries no auth env; the prefix is set on the preview-host authenticator deployment (gitops), which owns the single fixed Entra redirect URI.
+- Deployment: one route object per experiment applied by hand (`Deployment` + `Service` + one routing object with prefix-strip rewrite). The controller merges same-host route objects, so `apply` adds a path and `delete` removes it; no central config is rewritten. Portable by intent (Gateway API `HTTPRoute` after the Envoy move), but nginx-specific today: the route uses `pathType: ImplementationSpecific` with `nginx.ingress.kubernetes.io/{use-regex,rewrite-target}`. Shipped (#1971) as the `insight-preview` Helm chart at `deploy/preview/`: each experiment is one release named `preview-<name>`, the `Ingress` prefix-strips `/exp/<name>` (`rewrite-target: /$2`), and the experiment slug is validated as a DNS-1123 label of at most 55 characters at template time. Render-contract tests plus a `.github/workflows/preview-helm.yml` lane guard it. The auth return path above shipped (#1972); the synthetic-data pin (#1973) remains open, so this component stays unchecked.
 
 ##### Responsibility boundaries
 
@@ -513,7 +513,7 @@ sequenceDiagram
     BFF -->> Dev: 302 return_to (session cookie set)
 ```
 
-**Description**: Nothing tamperable rides in the URL; `return_to` is validated at store time (same-origin, `/exp/` allowlist); a `state` miss or expiry is rejected.
+**Description**: `return_to` is caller-supplied on `/auth/login`; it is sanitized and validated at store time (same-origin, `/exp/` prefix) before it enters the Redis login state, and never forwarded through the callback — only the opaque `state` rides the callback URL. A `state` miss or expiry is rejected.
 
 ### 3.7 Database Schemas & Tables
 
