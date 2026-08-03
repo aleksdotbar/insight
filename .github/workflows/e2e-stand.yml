@@ -211,10 +211,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Pulled, never built. build-images.yml publishes it; building it here
-      # would mean testing an image no developer will ever pull.
+      # Pulled, never built — building it here would mean testing an image no
+      # developer will ever pull. The one exception is the bootstrap: `:latest`
+      # is tagged only on a main push, so before this workflow's first merge the
+      # tag does not exist and the pull is guaranteed to fail. The fallback
+      # builds from the same Dockerfile build-images.yml uses, so the debut run
+      # exercises the real journeys instead of dying on a missing tag. Once main
+      # has published the image the fallback is dead code — if it ever fires
+      # again, the publish pipeline is broken and that is worth the notice.
       - name: Pull the ui-tests image
-        run: docker pull "$UI_TESTS_IMAGE"
+        run: |
+          docker pull "$UI_TESTS_IMAGE" || {
+            echo "::notice::$UI_TESTS_IMAGE absent from ghcr — building it locally from deploy/compose/ui-tests.Dockerfile (expected only before this workflow's first merge to main)"
+            docker build -f deploy/compose/ui-tests.Dockerfile -t "$UI_TESTS_IMAGE" .
+          }
 
       - name: Bring the stand up
         run: ./dev-compose.sh test-stand up
