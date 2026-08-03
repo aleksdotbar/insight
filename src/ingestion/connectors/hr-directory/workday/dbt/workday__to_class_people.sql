@@ -32,8 +32,12 @@ SELECT
     Business_Title                                           AS job_title,
     -- Workday has no freeform department; the supervisory organization is the
     -- standard org unit every tenant is guaranteed to have.
+    -- `department_name` is the org cohort key for this class. There is no
+    -- org-unit UUID anywhere in the system (no `org_units` table exists), so
+    -- the former always-NULL `org_unit_id Nullable(UUID)` column was dropped.
+    -- Downstream `org_unit_id` (insight.people, gold views, the frontend) is a
+    -- department NAME string derived from this field.
     Supervisory_Organization                                 AS department_name,
-    CAST(NULL AS Nullable(UUID))                             AS org_unit_id,
     Manager_Employee_ID                                      AS manager_person_id,
     multiIf(
         Worker_Status = 'Terminated', 'terminated',

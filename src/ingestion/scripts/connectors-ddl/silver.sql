@@ -642,7 +642,6 @@ CREATE TABLE IF NOT EXISTS silver.class_people
     `email` Nullable(String),
     `job_title` Nullable(String),
     `department_name` Nullable(String),
-    `org_unit_id` Nullable(UUID),
     `manager_person_id` Nullable(String),
     `status` String,
     `employment_type` String,
