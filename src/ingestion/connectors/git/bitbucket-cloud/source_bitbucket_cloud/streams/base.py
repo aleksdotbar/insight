@@ -479,22 +479,37 @@ class BitbucketStream(Stream, ABC):
 
 
 class BitbucketIncrementalStream(BitbucketStream, CheckpointMixin, ABC):
+    # Emit state mid-bucket too: a bucket spans a large share of the fleet, and
+    # a pod that dies between bucket boundaries would otherwise re-read hours
+    # of finished repositories. The interval is coarse because each message
+    # carries the whole repositories map.
+    state_checkpoint_interval = 25_000
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         # Versioned from the start: state emitted without one reads back as
         # pre-rewrite state and gets reshaped into something addressing nothing.
         self._state: MutableMapping[str, Any] = self._empty_state()
+        self._state_lock = threading.Lock()
 
     @property
     def state(self) -> MutableMapping[str, Any]:
-        return self._state
+        # A snapshot, not the live dict: the platform serialises this while
+        # workers commit repositories. Only finished repositories are ever in
+        # the map (each is committed whole), so any snapshot is a valid resume
+        # point.
+        with self._state_lock:
+            return {**self._state, "repositories": dict(self._state.get("repositories") or {})}
 
     @state.setter
     def state(self, value: MutableMapping[str, Any]) -> None:
         if not value:
             self._state = self._empty_state()
-        elif value.get("version") == STATE_VERSION and value.get("bucket_count") == BUCKET_COUNT:
-            self._state = value
+        elif value.get("version") == STATE_VERSION:
+            # bucket_count is not part of the address: keys are repository
+            # scoped and the bucket is derived by hash at read time, so state
+            # written under any bucket count resumes under any other.
+            self._state = {**value, "bucket_count": BUCKET_COUNT}
         elif "version" not in value:
             # Pre-rewrite state: a flat partition -> cursor map. Reshape it so
             # the sync resumes from those checkpoints (see migrate_legacy_state).
@@ -513,18 +528,22 @@ class BitbucketIncrementalStream(BitbucketStream, CheckpointMixin, ABC):
         return {"version": STATE_VERSION, "bucket_count": BUCKET_COUNT, "repositories": {}}
 
     def repository_state(self, repo: RepositoryRef) -> MutableMapping[str, Any]:
-        repositories = self._state.setdefault("repositories", {})
-        return dict(repositories.get(repo_state_key(repo)) or {})
+        with self._state_lock:
+            repositories = self._state.setdefault("repositories", {})
+            return dict(repositories.get(repo_state_key(repo)) or {})
 
     def commit_repository_state(self, repo: RepositoryRef, value: Mapping[str, Any]) -> None:
-        self._state.setdefault("repositories", {})[repo_state_key(repo)] = dict(value)
+        with self._state_lock:
+            self._state.setdefault("repositories", {})[repo_state_key(repo)] = dict(value)
 
     def prune_bucket_state(self, bucket_id: int, repositories: Sequence[RepositoryRef]) -> None:
         current = {repo_state_key(repo) for repo in repositories}
-        state_repositories = self._state.setdefault("repositories", {})
-        stale = [key for key in state_repositories if repository_bucket(key) == bucket_id and key not in current]
-        for key in stale:
-            del state_repositories[key]
+
+        with self._state_lock:
+            state_repositories = self._state.setdefault("repositories", {})
+            stale = [key for key in state_repositories if repository_bucket(key) == bucket_id and key not in current]
+            for key in stale:
+                del state_repositories[key]
 
     def finish_bucket(self, bucket_id: int, repositories: Sequence[RepositoryRef]) -> None:
         self.prune_bucket_state(bucket_id, repositories)
@@ -532,9 +551,10 @@ class BitbucketIncrementalStream(BitbucketStream, CheckpointMixin, ABC):
         super().finish_bucket(bucket_id, repositories)
 
     def log_state_size(self) -> None:
-        encoded = json.dumps(self._state, separators=(",", ":")).encode("utf-8")
+        snapshot = self.state
+        encoded = json.dumps(snapshot, separators=(",", ":")).encode("utf-8")
         logger.info(
-            f"{self.name}: state_repositories={len(self._state.get('repositories', {}))} state_bytes={len(encoded)}"
+            f"{self.name}: state_repositories={len(snapshot.get('repositories', {}))} state_bytes={len(encoded)}"
         )
 
 

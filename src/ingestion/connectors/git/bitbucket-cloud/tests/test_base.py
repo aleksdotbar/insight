@@ -97,3 +97,38 @@ def test_client_pagination_follows_next_and_detects_loops():
     pages["second"] = Response({"next": "first"}, url="second")
     with pytest.raises(RuntimeError, match="pagination loop"):
         list(client.paginate("first"))
+
+
+def test_state_survives_a_bucket_count_change(commits_stream):
+    """Keys are repository-scoped and the bucket is derived by hash at read
+    time, so state written under any bucket count must resume under any other —
+    discarding it would force the full resync the connector promises to avoid."""
+    stored = {
+        "version": 3,
+        "bucket_count": 4,
+        "repositories": {"ws/repo": {"head_shas": ["a"], "repo_updated_on": "d1"}},
+    }
+
+    commits_stream.state = stored
+
+    assert commits_stream.state["repositories"] == stored["repositories"]
+    assert commits_stream.state["bucket_count"] == BUCKET_COUNT
+
+
+def test_state_snapshot_is_isolated_from_later_commits(commits_stream):
+    """The platform serialises the state property while workers commit; the
+    snapshot it took must not change under its feet."""
+    first = repository(slug="one")
+    commits_stream.state = {}
+    commits_stream.commit_repository_state(first, {"head_shas": ["a"]})
+
+    snapshot = commits_stream.state
+    commits_stream.commit_repository_state(repository(slug="two", uuid="{r-2}"), {"head_shas": ["b"]})
+
+    assert list(snapshot["repositories"]) == [repo_state_key(first)]
+
+
+def test_incremental_streams_checkpoint_mid_bucket(commits_stream):
+    assert commits_stream.state_checkpoint_interval, (
+        "without an interval, state is only emitted per bucket and a crash re-reads hours of work"
+    )
