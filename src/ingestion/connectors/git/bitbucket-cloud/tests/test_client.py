@@ -4,7 +4,7 @@ from email.utils import formatdate
 
 import pytest
 
-from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient
+from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient, BranchRef
 
 BASE = "https://api.bitbucket.org/2.0/"
 
@@ -175,3 +175,13 @@ class TestFieldMapping:
         assert branches[0].is_default is True
         assert branches[0].head_sha == "a1"
         assert branches[1].is_default is False
+
+
+class TestBranchRefStaysSlim:
+    """The catalog holds every branch of every repository for a whole sync."""
+
+    def test_only_the_fields_the_streams_read_are_kept(self):
+        ref = BranchRef(name="main", head_sha="a1", target_date=None, is_default=True)
+
+        assert BranchRef.__slots__ == ("name", "head_sha", "target_date", "is_default")
+        assert not hasattr(ref, "__dict__"), "a per-instance dict would dwarf the four fields"

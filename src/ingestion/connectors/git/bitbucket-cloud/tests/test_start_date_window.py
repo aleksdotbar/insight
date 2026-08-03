@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from source_bitbucket_cloud.client import BranchRef
 from source_bitbucket_cloud.streams.base import BUCKET_COUNT, repo_state_key
 from source_bitbucket_cloud.streams.branches import BranchesStream
 from source_bitbucket_cloud.streams.commit_branch_reachability import CommitBranchReachabilityStream
@@ -87,9 +88,8 @@ class TestRepositoriesOutsideTheWindow:
         assert client.branch_calls > 0
 
 
-def dated_branch(name: str, sha: str, target_date: str):
-    ref = branch(name, sha)
-    return type(ref)(name=name, head_sha=sha, target_date=target_date, is_default=ref.is_default, raw=ref.raw)
+def dated_branch(name: str, sha: str, target_date: str | None):
+    return BranchRef(name=name, head_sha=sha, target_date=target_date, is_default=name == "main")
 
 
 class TestColdRepositoriesSkipStaleBranches:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import threading
 import time
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -64,13 +65,14 @@ class RepositoryRef:
     raw: Mapping[str, Any]
 
 
-@dataclass(frozen=True)
+# Held for every branch of every repository for the length of a sync, so it
+# carries the four fields the streams read and not the API object.
+@dataclass(frozen=True, slots=True)
 class BranchRef:
     name: str
     head_sha: str
     target_date: str | None
     is_default: bool
-    raw: Mapping[str, Any]
 
 
 class RepositoryCatalog:
@@ -81,6 +83,10 @@ class RepositoryCatalog:
         self._repositories: list[RepositoryRef] | None = None
         self._branches: dict[str, list[BranchRef]] = {}
         self._inaccessible: set[str] = set()
+        # Repositories are read concurrently, so the memoised fills are guarded;
+        # the selection caches below are keyed per repository and only ever
+        # written by the worker that owns that repository.
+        self._lock = threading.Lock()
         # Shared per-sync selection caches (see streams/pr_base.py). Keyed by
         # (repository, watermark) and holding SLIM projections only — a handful
         # of scalar fields per entity, never the raw API objects. The raw list
@@ -98,24 +104,41 @@ class RepositoryCatalog:
         permissions. The catalog is shared by every stream, so the first stream
         to discover it saves the others from rediscovering it repo by repo.
         """
-        self._inaccessible.add(repo.uuid)
+        with self._lock:
+            self._inaccessible.add(repo.uuid)
 
     def is_inaccessible(self, repo: RepositoryRef) -> bool:
-        return repo.uuid in self._inaccessible
+        with self._lock:
+            return repo.uuid in self._inaccessible
 
     @property
     def inaccessible_count(self) -> int:
-        return len(self._inaccessible)
+        with self._lock:
+            return len(self._inaccessible)
+
+    @property
+    def branch_cache_size(self) -> tuple[int, int]:
+        with self._lock:
+            return len(self._branches), sum(len(branches) for branches in self._branches.values())
 
     def repositories(self) -> list[RepositoryRef]:
-        if self._repositories is None:
-            self._repositories = self._client.repositories(self._workspaces, self._skip_forks)
-        return self._repositories
+        with self._lock:
+            if self._repositories is not None:
+                return self._repositories
+        fetched = self._client.repositories(self._workspaces, self._skip_forks)
+        with self._lock:
+            if self._repositories is None:
+                self._repositories = fetched
+            return self._repositories
 
     def branches(self, repo: RepositoryRef) -> list[BranchRef]:
-        if repo.uuid not in self._branches:
-            self._branches[repo.uuid] = self._client.branches(repo)
-        return self._branches[repo.uuid]
+        with self._lock:
+            cached = self._branches.get(repo.uuid)
+        if cached is not None:
+            return cached
+        fetched = self._client.branches(repo)
+        with self._lock:
+            return self._branches.setdefault(repo.uuid, fetched)
 
 
 class BitbucketClient:
@@ -303,7 +326,6 @@ class BitbucketClient:
                         head_sha=head,
                         target_date=target.get("date"),
                         is_default=name == repo.mainbranch_name,
-                        raw=raw,
                     )
                 )
         return branches

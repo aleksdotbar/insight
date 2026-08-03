@@ -271,6 +271,11 @@ class BitbucketStream(Stream, ABC):
 
     def finish_bucket(self, bucket_id: int, repositories: Sequence[RepositoryRef]) -> None:
         del repositories
+        if bucket_id == BUCKET_COUNT - 1:
+            cached_repositories, cached_branches = self._catalog.branch_cache_size
+            logger.info(
+                f"{self.name}: branch_cache repositories={cached_repositories} branches={cached_branches}"
+            )
         if bucket_id == BUCKET_COUNT - 1 and self._skipped_repositories:
             logger.info(
                 f"{self.name}: skipped {len(self._skipped_repositories)} inaccessible "
