@@ -1,10 +1,15 @@
 """In-process Identity stub for the bronze-to-api e2e rig (#1691).
 
-A minimal loopback HTTP backend the analytics `get_person` handler resolves
-against (`POST {identity_url}/v1/profiles` with `{value_type:"email", value:<email>}`):
-a canned profile for one seeded email (→ 200) and 404 for every other. Lets the
-persons endpoint exercise its real 200/404 contract, which is otherwise a
-no-backend 500.
+A minimal loopback HTTP backend the analytics identity fan-outs resolve against:
+
+- `POST {identity_url}/v1/profiles` with `{value_type:"email", value:<email>}` —
+  a canned profile for a seeded email (→ 200) and 404 for every other, so the
+  persons endpoint exercises its real 200/404 contract.
+- `POST {identity_url}/v1/visible-persons` — the emails the caller may see,
+  which the metric-results authorization gate compares against the requested
+  entity ids. The reply is the intersection of the request with the fixture
+  personas, so the metric suite's requests resolve as authorized and anyone
+  else is refused.
 
 Resolves purely by the request `value` and ignores headers on purpose. Analytics
 forwards the caller's gateway JWT (Authorization) on this hop (NGINX_BFF G1), but
@@ -45,24 +50,52 @@ SEEDED_PERSON: dict[str, Any] = {
 # An email the stub never resolves — the 404 (not-found) probe.
 UNKNOWN_EMAIL = "nobody@example.com"
 
+# The metric fixtures' personas — the set the stub reports as visible, so
+# `POST /v1/metric-results` authorizes requests for them; an email outside this
+# set is refused by the gate.
+VISIBLE_EMAILS: tuple[str, ...] = (
+    SEEDED_EMAIL,
+    "alice@example.com",
+    "bob@example.com",
+    "carol@example.com",
+    "erin@example.com",
+    "frank@example.com",
+    "grace@example.com",
+)
+
 _PROFILES_PATH = "/v1/profiles"
+_VISIBLE_PERSONS_PATH = "/v1/visible-persons"
 
 
 class _Handler(BaseHTTPRequestHandler):
-    """Serves POST /v1/profiles; the seeded map lives on `self.server`."""
+    """Serves the two POST routes analytics calls; state lives on `self.server`."""
 
-    def do_POST(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler API
+    def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path != _PROFILES_PATH:
+        if path not in (_PROFILES_PATH, _VISIBLE_PERSONS_PATH):
             self._send(404, {"error": "not found", "path": path})
             return
+
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length else b""
         try:
-            email = json.loads(raw).get("value", "")
+            body = json.loads(raw) if raw else {}
         except json.JSONDecodeError:
             self._send(400, {"error": "invalid json body"})
             return
+
+        if path == _VISIBLE_PERSONS_PATH:
+            self._send_visible(body)
+        else:
+            self._send_profile(body)
+
+    def _send_visible(self, body: dict[str, Any]) -> None:
+        requested = body.get("emails") or []
+        visible = {email.lower() for email in self.server.visible}  # type: ignore[attr-defined]
+        self._send(200, {"visible": [e for e in requested if isinstance(e, str) and e.lower() in visible]})
+
+    def _send_profile(self, body: dict[str, Any]) -> None:
+        email = body.get("value", "")
         person = self.server.people.get(email)  # type: ignore[attr-defined]
         if person is None:
             self._send(404, {"error": "person not found", "value": email})
@@ -88,8 +121,13 @@ class IdentityStub:
     config as `identity_url`, so the persons handler resolves against it.
     """
 
-    def __init__(self, people: dict[str, dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        people: dict[str, dict[str, Any]] | None = None,
+        visible: tuple[str, ...] = VISIBLE_EMAILS,
+    ) -> None:
         self._people = dict(people) if people is not None else {SEEDED_EMAIL: SEEDED_PERSON}
+        self._visible = visible
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -98,6 +136,7 @@ class IdentityStub:
         # bound socket (no find-free-port race).
         server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         server.people = self._people  # type: ignore[attr-defined]
+        server.visible = self._visible  # type: ignore[attr-defined]
         self._server = server
         self._thread = threading.Thread(target=server.serve_forever, name="identity-stub", daemon=True)
         self._thread.start()

@@ -42,9 +42,7 @@ pub async fn get_person(
 
     // Forward the caller's gateway JWT to identity (G1): this is a user-context
     // fan-out, so it propagates the incoming Authorization header verbatim.
-    let authorization = headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok());
+    let authorization = super::forwarded_authorization(&headers);
 
     let person = state
         .identity
@@ -261,8 +259,7 @@ async fn execute_metric_query(
 
     // 4. Build ClickHouse query from structured metric fields.
     //
-    // The engine always controls FROM and WHERE — insight_tenant_id is
-    // always injected for tenant isolation. Admins never control WHERE.
+    // The engine always controls FROM and WHERE; admins never control WHERE.
     //
     // Person ID resolution: if identity_url is configured, person_ids from
     // $filter would be resolved to source aliases via the Identity API.
@@ -295,8 +292,11 @@ async fn execute_metric_query(
         _ => select_expr,
     };
 
-    // MVP: single tenant — skip tenant isolation filter.
-    // TODO: re-enable for multi-tenant: WHERE insight_tenant_id = ?
+    // This legacy path runs arbitrary DB-stored `query_ref` FROM shapes
+    // (subqueries, bare bronze tables), not the uniform observation contract, so
+    // a flat `tenant_id = ?` cannot be injected safely here. Tenant isolation for
+    // the structured read path lives in one place — the metric_results compiler's
+    // shared WHERE.
     let mut params: Vec<String> = vec![];
 
     // If the FROM clause is a subquery, we inject the metric_date range INSIDE the

@@ -1,6 +1,6 @@
 """Contract: POST /v1/metric-results — the unified-metric compute endpoint.
 
-  POST /v1/metric-results   200 compute · 400 (empty/bad-period/unknown-key) · 415 wrong-ct
+  POST /v1/metric-results   200 compute · 400 (empty/bad-period/unknown-key) · 403 not-visible · 415 wrong-ct
 
 Added when the `feat/unified-metrics` merge (#1656) introduced this operation to
 the committed spec. It computes builtin metrics over unified observation models.
@@ -18,10 +18,13 @@ builtin metric; this module retains the endpoint contract error cases.
 from __future__ import annotations
 
 import pytest
+from lib.identity_stub import UNKNOWN_EMAIL, VISIBLE_EMAILS
 
 from api.endpoint_helpers import text_body_request
 
 pytestmark = pytest.mark.api
+
+_BUILTIN_METRIC = [{"metric_key": "ai.active_days", "views": [{"view": "period"}]}]
 
 
 def _request(*, metrics, entity_ids=("e2e-nobody@example.com",), period=("2026-01-01", "2026-01-31")):
@@ -67,6 +70,22 @@ def test_metric_results_400_unknown_metric_key(api) -> None:
     )
     r = api.post("/v1/metric-results", json=body)
     assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+
+
+def test_metric_results_403_person_outside_the_callers_visible_set(api) -> None:
+    """A person the caller cannot see is refused before any ClickHouse access:
+    the gate flattens the caller's subchart and the requested id is not in it."""
+    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(UNKNOWN_EMAIL,))
+    r = api.post("/v1/metric-results", json=body)
+    assert r.status_code == 403, f"status={r.status_code} body={r.text}"
+
+
+def test_metric_results_403_rejects_the_whole_request_on_one_hidden_person(api) -> None:
+    """Mixing a visible person with a hidden one refuses the request as a whole,
+    rather than silently dropping the unauthorized entity from the response."""
+    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(VISIBLE_EMAILS[1], UNKNOWN_EMAIL))
+    r = api.post("/v1/metric-results", json=body)
+    assert r.status_code == 403, f"status={r.status_code} body={r.text}"
 
 
 def test_metric_results_415_wrong_content_type(api) -> None:

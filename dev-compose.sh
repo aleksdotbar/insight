@@ -94,7 +94,7 @@ cmd_up_help() {
   cat <<'EOF'
 usage: dev-compose.sh up [options]
 
-Bring the stack up: build host-side artefacts (Rust + .NET + optional
+Bring the stack up: build host-side artefacts (Rust + optional
 frontend dist), generate a per-run compose override that flips selected
 services to ghcr images, then `docker compose up -d`.
 
@@ -358,14 +358,13 @@ cmd_up() {
   # ── Resolve which services go to ghcr ────────────────────────────
   # The legacy Rust api-gateway is gone; the nginx `gateway` is the sole :8080
   # entry doing full auth via the authenticator (NGINX_BFF #1583 step 09).
-  local all_backend="analytics identity identity-resolution"
+  local all_backend="analytics identity-resolution"
   local watchable_services="analytics"
   local ghcr_list=""
   local watch_list=""
   local build_list=""
 
   [[ -n "${ANALYTICS_IMAGE:-}" ]] && ghcr_list=$(add "$ghcr_list" analytics)
-  [[ -n "${IDENTITY_IMAGE:-}"      ]] && ghcr_list=$(add "$ghcr_list" identity)
   [[ -n "${IDENTITY_RESOLUTION_IMAGE:-}" ]] && ghcr_list=$(add "$ghcr_list" identity-resolution)
 
   if [[ -n "$from_ghcr_csv" ]]; then
@@ -410,7 +409,6 @@ cmd_up() {
   done
 
   contains "$ghcr_list" analytics && [[ -z "${ANALYTICS_IMAGE:-}" ]] && export ANALYTICS_IMAGE="ghcr.io/constructorfabric/insight-analytics:${ANALYTICS_GHCR_TAG:-latest}"
-  contains "$ghcr_list" identity      && [[ -z "${IDENTITY_IMAGE:-}"      ]] && export IDENTITY_IMAGE="ghcr.io/constructorfabric/insight-identity:${IDENTITY_GHCR_TAG:-latest}"
   contains "$ghcr_list" identity-resolution && [[ -z "${IDENTITY_RESOLUTION_IMAGE:-}" ]] && export IDENTITY_RESOLUTION_IMAGE="ghcr.io/constructorfabric/insight-identity-resolution:${IDENTITY_RESOLUTION_GHCR_TAG:-latest}"
   true
 
@@ -573,10 +571,6 @@ YML
           fi
         "
     fi
-    if ! contains "$ghcr_list" identity; then
-      echo "--- .NET: identity"
-      "${compose_cmd[@]}" --profile build run --rm build-dotnet
-    fi
     if [[ "$no_frontend" != "true" && "$FRONTEND_MODE" == "built" ]]; then
       echo "--- Frontend: pnpm build"
       "${compose_cmd[@]}" --profile build run --rm build-frontend
@@ -660,7 +654,7 @@ report_service_urls() {
   fi
   printf '  %-18s %s\n' "Gateway"         "http://$h:${GATEWAY_PORT:-8080}"
   printf '  %-18s %s\n' "Analytics API"   "http://$h:${ANALYTICS_PORT:-8081}"
-  printf '  %-18s %s\n' "Identity API"    "http://$h:${IDENTITY_PORT:-8082}"
+  printf '  %-18s %s\n' "Identity API"    "http://$h:${IDENTITY_RESOLUTION_PORT:-8086}"
   printf '  %-18s %s\n' "Authenticator"   "http://$h:${AUTHENTICATOR_PORT:-8083}"
   if [[ "$auth_mode" == keycloak ]]; then
     printf '  %-18s %s\n' "Keycloak" \
@@ -784,10 +778,9 @@ Targets:
   analytics            Rust analytics binary only.
   authenticator        Rust authenticator binary only.
   identity-resolution  Rust identity-resolution binary only.
-  identity             .NET 9 publish output.
   frontend             pnpm build → dist/.
   rust                 All Rust services.
-  all                  Everything (Rust + .NET + frontend).
+  all                  Everything (Rust + frontend).
 EOF
 }
 
@@ -828,25 +821,23 @@ cmd_build() {
     "
   }
 
-  # Accept MULTIPLE targets, e.g. `build authenticator identity`. Rust bins are
-  # batched into one build; dotnet/frontend run once if requested.
-  local rust_bins="" want_dotnet=false want_frontend=false t
+  # Accept MULTIPLE targets, e.g. `build authenticator identity-resolution`.
+  # Rust bins are batched into one build; frontend runs once if requested.
+  local rust_bins="" want_frontend=false t
   for t in "$@"; do
     case "$t" in
       analytics)           rust_bins="$rust_bins analytics" ;;
       authenticator)       rust_bins="$rust_bins authenticator" ;;
       identity-resolution) rust_bins="$rust_bins identity-resolution" ;;
       rust)                rust_bins="$rust_bins analytics authenticator identity-resolution" ;;
-      identity)            want_dotnet=true ;;
       frontend)            want_frontend=true ;;
-      all)                 rust_bins="$rust_bins analytics authenticator identity-resolution"; want_dotnet=true; want_frontend=true ;;
+      all)                 rust_bins="$rust_bins analytics authenticator identity-resolution"; want_frontend=true ;;
       *) echo "ERROR: unknown target: $t" >&2; cmd_build_help; return 2 ;;
     esac
   done
   rust_bins="$(trim "$rust_bins")"
   # shellcheck disable=SC2086 # word-split the bin list intentionally
   [[ -n "$rust_bins" ]] && build_rust_bins $rust_bins
-  [[ "$want_dotnet"   == true ]] && "${compose_cmd[@]}" run --rm build-dotnet
   [[ "$want_frontend" == true ]] && "${compose_cmd[@]}" run --rm build-frontend
   echo "Done. If a runtime container has ENABLE_AUTO_RELOAD=true it will restart automatically."
 }

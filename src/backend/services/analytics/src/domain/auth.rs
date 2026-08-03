@@ -11,8 +11,7 @@
 //!
 //! ## Single-tenant fallback (`cpt-metric-cat-constraint-tenant-default`)
 //!
-//! Mirrors the identity service's `ConfigTenantContext`
-//! (`src/backend/services/identity/src/Insight.Identity.Api/Auth/ConfigTenantContext.cs`):
+//! Mirrors the identity service's config-default tenant fallback:
 //! when the request arrives without a session-bound tenant, the configured
 //! `metric_catalog.tenant_default_id` (env
 //! `ANALYTICS__metric_catalog__tenant_default_id`) is used; multi-tenant

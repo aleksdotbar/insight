@@ -4,7 +4,7 @@ Insight is tested **shift-left**: contributors run the majority of checks locall
 two axes — **levels** (what a test proves) and **environments** (where it runs). Several tests can share a level.
 
 Entry points: `src/ingestion/tests/e2e/e2e.sh` (data-path suite), `scripts/ci/*` (coverage + spec gates), and the
-standard per-language tools (`cargo`, `dotnet`, `pytest`).
+standard per-language tools (`cargo`, `pytest`).
 
 ---
 
@@ -12,7 +12,7 @@ standard per-language tools (`cargo`, `dotnet`, `pytest`).
 
 | Level | Scope | Tooling | Runs in |
 |---|---|---|---|
-| **Unit** | One function / module in isolation | `cargo test`, `dotnet test`, `pytest`, `vitest` | CI (every PR) |
+| **Unit** | One function / module in isolation | `cargo test`, `pytest`, `vitest` | CI (every PR) |
 | **Integration** | Components against real stores; the API contract | Testcontainers · dbt tests · OpenAPI-drift + metric-coverage · API & metric rig | CI (every PR) |
 | **E2E** | The whole system through its real surfaces | ingestion (Airbyte → Argo) · chart install + smoke · UI (Playwright + axe) | CI (smoke) · Test (full) · Beta (shallow) |
 | **Performance** | It stays fast under load | latency p50/95/99 · load · stress · soak | Test · Beta |
@@ -22,8 +22,7 @@ lower ones can't cover.
 
 ```sh
 # fast local loop
-cd src/backend && cargo test                        # Rust unit + integration
-cd src/backend/services/identity && dotnet test     # .NET
+cd src/backend && cargo test                        # Rust unit + integration (all services, incl. identity-resolution)
 cd src/ingestion/tests/e2e && ./e2e.sh build && ./e2e.sh test   # API & metric suite
 ```
 
@@ -65,8 +64,7 @@ A build is **promoted up** (CI → Test → Beta); a proven check is **gated dow
 - Pure logic **must not** reach for a DB or the network — that belongs in Integration.
 
 ```sh
-cd src/backend && cargo test                                 # Rust
-cd src/backend/services/identity && dotnet test              # .NET
+cd src/backend && cargo test                                 # Rust (use `cargo test -p identity-resolution` to scope)
 cd src/ingestion/connectors/<domain>/<name> && pytest        # Python connector
 cargo fmt --check && cargo clippy --all-targets              # lint
 ```
@@ -79,7 +77,10 @@ cargo fmt --check && cargo clippy --all-targets              # lint
 
 Components against a real store, and the API contract:
 
-- **Testcontainers** — .NET Identity against a real MariaDB.
+- **Testcontainers** — identity-resolution (Rust) against a real MariaDB.
+- **Identity contract suite** — the e2e identity contract tests run against the Rust identity-resolution service
+  (`E2E_IDENTITY_IMPLEMENTATION=rust` is the default and only value; the CI dotnet lane and the .NET openapi-drift job
+  were removed with the retired .NET identity service).
 - **dbt data tests** — bronze → silver → gold model assertions.
 - **Contract** — OpenAPI-drift + metric-coverage gates (every served `metric_key` is value-asserted or skip-listed).
 - **API & metric tests** — the `bronze-to-api` rig: seed bronze → dbt → CH gold-view → analytics-api HTTP == expected value.
@@ -118,7 +119,7 @@ PR's images and assert `/health` + a few golden metrics.
 
 ## 8. Before you open a PR
 
-- [ ] `cargo test` / `dotnet test` / `pytest` green for touched components
+- [ ] `cargo test` / `pytest` green for touched components
 - [ ] `cargo fmt --check` + `cargo clippy --all-targets` clean
 - [ ] `./e2e.sh test` green if you touched a metric, gold-view, or the API
 - [ ] new / changed code stays **≥ 80 %** covered

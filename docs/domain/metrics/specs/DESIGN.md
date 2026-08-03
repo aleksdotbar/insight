@@ -31,6 +31,7 @@ tenant_id String,
 source_key String,
 entity_type String,
 entity_id String,
+person_id Nullable(UUID),
 metric_date Date,
 observed_at Nullable(DateTime64(3)),
 measure_key String,
@@ -45,6 +46,14 @@ Rules:
 - `source_key` identifies the logical source.
 - `measure_key` identifies the source measure.
 - `entity_type` and `entity_id` identify the measured entity.
+- `person_id` is the canonical person resolved from the identity log at
+  build time (`resolve_person_id` dbt macro; NULL = identity does not know
+  the email). ADDITIVE, not yet consumed: the runtime still keys on
+  `entity_id`, and the schema validator's `OBSERVATION_COLUMNS` /
+  `COHORT_COLUMNS` deliberately exclude it until the person_id API cutover
+  — probing for a column nothing reads would gate metric availability on
+  the next dbt rebuild after a deploy, for no reader's benefit. The cohort
+  view carries the same column under the same rule.
 - `observed_at` is reserved for future point-in-time semantics.
 - `subject_key` carries the counted subject for distinct-count measures (a
   date, a tool) and is NULL on every other measure's rows.
@@ -59,7 +68,8 @@ Rules:
 ## Managed Source Ownership
 
 Managed observation sources and the cohort view are dbt gold models
-(`src/ingestion/gold/`), materialized as views in the `insight` database:
+(`src/ingestion/gold/`), materialized as views or MergeTree serving tables in
+the `insight` database:
 
 - `insight.ai_metric_observations`
 - `insight.metric_entity_cohorts_current`
@@ -81,7 +91,7 @@ contract; a source that needs different columns is a different source kind.
 
 Gold models are built at deploy time by the ClickHouse migrate hook
 (`dbt run --select tag:gold`, final step of
-`src/ingestion/scripts/apply-ch-migrations.sh`), so the views exist before
+`src/ingestion/scripts/apply-ch-migrations.sh`), so the relations exist before
 any connector sync — bronze/silver placeholders guarantee the DDL
 type-checks on a fresh cluster. Per-connector scoped dbt runs keep them
 current afterwards.
@@ -89,6 +99,98 @@ current afterwards.
 The cohort view is unique per `(tenant_id, entity_type, entity_id,
 cohort_key)`. The peer query relies on this; a dbt build-integrity test
 asserts it.
+
+## Metric Evidence Contract
+
+Each managed source may expose `<family>_metric_evidence` in the `insight`
+database:
+
+```sql
+tenant_id String,
+source_key String,
+entity_type String,
+entity_id String,
+metric_date Date,
+observed_at Nullable(DateTime64(3)),
+measure_key String,
+record_id String,
+record_kind String,
+granularity String,
+record_label String,
+contribution Nullable(Float64),
+subject_key Nullable(String),
+dimensions Array(Tuple(key String, value String, label Nullable(String))),
+details Map(String, String)
+```
+
+Evidence relations are MergeTree serving tables built from silver. Their
+ordering follows the evidence key access pattern, avoiding repeated silver
+reconstruction on read. Observation models derive their values from these
+evidence tables. Each source exposes one evidence relation and each measure
+has one granularity:
+
+- `event`: one source event, such as a commit.
+- `source_summary`: the finest summary preserved by silver.
+- `derived_population`: a source entity participating in a derived metric.
+
+Definitions do not declare a separate drilldown strategy. The runtime resolves
+the definition's existing input roles and source measures, requires every input
+to use the same evidence relation, and compiles the evidence selection from
+that metadata. A new metric over existing evidence-backed measures therefore
+inherits drilldown without metric-specific SQL, backend branches, or frontend
+configuration.
+
+The schema validator probes every standard column. Drilldown capability is
+absent until the probe is definitively healthy and every metric input has
+granularity metadata. Missing, unchecked, or invalid evidence fails closed.
+`POST /v1/metric-results` and `GET /v1/metric-definitions` expose that
+capability; consumers omit evidence actions when it is absent.
+
+The evidence runtime owns presentation. It projects the internal contract into
+typed human-facing columns rather than exposing `record_kind`, input role,
+dimensions, or other storage fields directly:
+
+- source-summary and derived-population measures default to date plus value.
+- event measures declare reusable detail keys by `(source_key, measure_key)`,
+  such as ref, title, repository, author, or issue type.
+- selected chart dimensions are added from the typed `dimensions` array.
+- ratio metrics return daily columns named after their numerator and
+  denominator measures instead of an ambiguous value column.
+- unknown detail keys are humanized and treated as strings; fields requiring
+  another label or type are added to the centralized presentation registry.
+
+Presentation is source-measure metadata in runtime code today. It is declared
+once per reusable measure shape, never once per metric and never in frontend
+configuration.
+
+`POST /v1/metric-drilldown` accepts one metric, one person entity, a period,
+declared dimension filters, and an encoded continuation cursor. It returns the
+canonical selection, typed server-owned columns, projected evidence rows, and
+a next cursor. Ordering is ascending over the complete evidence key. The
+cursor is versioned and bound to the normalized selection and request tenant.
+It is not an authorization token and modifying its ordering key cannot widen
+the server-owned relation or selection.
+
+The evidence contract has these limitations:
+
+- Summary-grain silver cannot produce event-grain evidence. AI and
+  collaboration currently expose source summaries or derived populations.
+  Git exposes commit and pull-request events, task duration metrics expose
+  issue events, and wiki page creation exposes page events; their remaining
+  measures use the finest summary grain preserved by silver.
+- Metric results and evidence are not transactionally snapshot-isolated from
+  each other during a dbt rebuild. They reconcile after the complete gold
+  build because observations derive from evidence.
+- Pagination is bound to the evidence table UUID. A rebuild during the
+  operation fails with `EVIDENCE_SNAPSHOT_EXPIRED`; the client must restart
+  the selection rather than mix rows from two builds. Previous table
+  snapshots are not retained.
+- Drilldown preserves the existing metric entity and tenant behavior. This
+  does not add identity-tree authorization or warehouse tenant enforcement.
+- Source links are omitted. Hosted services commonly use custom domains, and
+  the current silver contract does not preserve a canonical web base URL. A
+  future source registry can add a non-secret `web_base_url` keyed by source
+  instance and combine it with provider-specific record identifiers.
 
 ## Computations
 
@@ -277,10 +379,20 @@ type MetricResult = {
   format: "integer" | "decimal" | "currency" | "percent"
   direction: "higher_is_better" | "lower_is_better" | "neutral"
   views: MetricResultView[]
+  selection: {
+    metric_key: string
+    entity: { type: string; ids: string[] }
+    period: { from: string; to: string }
+    filters: Array<{ dimension: string; values: string[] }>
+  }
+  drilldown?: {
+    granularity: Array<"event" | "source_summary" | "derived_population">
+  }
 } & (
   | { computation: "sum" }
   | { computation: "ratio"; scale: number }
   | { computation: "median" }
+  | { computation: "distinct_count" }
 )
 ```
 

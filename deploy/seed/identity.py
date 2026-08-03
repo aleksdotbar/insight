@@ -1,9 +1,9 @@
 """
 MariaDB identity seed: persons, org_chart, account_person_map.
 
-All UUIDs are stored as BINARY(16) in RFC 4122 big-endian, matching
-the .NET identity service's `Guid.ToByteArray(bigEndian: true)`
-convention.
+All UUIDs are stored as BINARY(16) in RFC 4122 big-endian — the
+convention the identity-resolution service's schema uses (inherited
+from the retired .NET service's `Guid.ToByteArray(bigEndian: true)`).
 """
 
 from __future__ import annotations
@@ -128,16 +128,18 @@ def seed_person_names(
         ):
             if not value:
                 continue
-            rows.append((
-                value_type,
-                DEV_SEED_SOURCE_TYPE,
-                _bin(DEV_SEED_SOURCE_ID),
-                _bin(tenant_uuid),
-                value,
-                _bin(p.uuid),
-                _bin(AUTHOR_PERSON_UUID),
-                "seed.py demo names",
-            ))
+            rows.append(
+                (
+                    value_type,
+                    DEV_SEED_SOURCE_TYPE,
+                    _bin(DEV_SEED_SOURCE_ID),
+                    _bin(tenant_uuid),
+                    value,
+                    _bin(p.uuid),
+                    _bin(AUTHOR_PERSON_UUID),
+                    "seed.py demo names",
+                )
+            )
     cur.executemany(sql, rows)
     return cur.rowcount
 
@@ -200,15 +202,17 @@ def seed_account_person_map(
         for source_type, weight in profile.weights.items():
             if weight <= 0:
                 continue
-            rows.append((
-                _bin(tenant_uuid),
-                source_type,
-                _bin(DEV_SEED_SOURCE_ID),
-                p.email,
-                _bin(p.uuid),
-                _bin(AUTHOR_PERSON_UUID),
-                "seed.py account-person map",
-            ))
+            rows.append(
+                (
+                    _bin(tenant_uuid),
+                    source_type,
+                    _bin(DEV_SEED_SOURCE_ID),
+                    p.email,
+                    _bin(p.uuid),
+                    _bin(AUTHOR_PERSON_UUID),
+                    "seed.py account-person map",
+                )
+            )
     cur.executemany(sql, rows)
     return cur.rowcount
 
@@ -219,14 +223,14 @@ def run() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    tenant = os.environ.get(
-        "TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953"
-    )
+    tenant = os.environ.get("TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953")
     dev_email = get_dev_user_email()
     roster = build_roster(dev_email)
     LOG.info(
         "seeding %d persons under tenant %s (dev lead = %s)",
-        len(roster), tenant, dev_email,
+        len(roster),
+        tenant,
+        dev_email,
     )
 
     with _connect() as conn:
@@ -237,9 +241,11 @@ def run() -> None:
         n_acct = seed_account_person_map(cur, tenant, roster)
 
     LOG.info(
-        "DONE: persons=%d (new), names=%d (new), org_chart=%d (new), "
-        "account_person_map=%d (new)",
-        n_persons, n_names, n_org, n_acct,
+        "DONE: persons=%d (new), names=%d (new), org_chart=%d (new), account_person_map=%d (new)",
+        n_persons,
+        n_names,
+        n_org,
+        n_acct,
     )
 
 
