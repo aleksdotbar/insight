@@ -37,10 +37,8 @@ use toolkit_security::SecurityContext;
 
 use crate::api::AppState;
 use crate::config::GearConfig;
-use crate::domain::catalog::{CatalogReader, ThresholdResolver};
 use crate::domain::metric_definitions::test_fixture::DrilldownFixture;
 use crate::domain::schema_validator::SchemaValidator;
-use crate::infra::cache::catalog_cache::{CatalogCache, NoopCatalogCache};
 use crate::infra::identity::IdentityClient;
 
 const ENV_VAR: &str = "INTEGRATION_TESTS_MARIADB_URL";
@@ -72,18 +70,15 @@ fn dead_ch() -> insight_clickhouse::Client {
     ))
 }
 
-/// Build a full `AppState` against the live DB. Cache is a no-op stub.
+/// Build a full `AppState` against the live DB.
 fn build_state(db: DatabaseConnection, identity: IdentityClient) -> AppState {
-    let cache: Arc<dyn CatalogCache> = Arc::new(NoopCatalogCache::default());
     let validator = SchemaValidator::new(db.clone(), dead_ch());
-    let catalog_reader = CatalogReader::new(cache, ThresholdResolver::new(db.clone()));
     AppState {
         db,
         ch: dead_ch(),
         identity,
         config: GearConfig::default(),
         validator,
-        catalog_reader,
     }
 }
 

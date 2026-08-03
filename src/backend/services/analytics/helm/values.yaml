@@ -23,7 +23,6 @@ resources:
 # (injected via envFrom; they override the mounted config ConfigMap):
 #   APP__gears__analytics__config__database_url
 #   APP__gears__analytics__config__clickhouse_url|_database|_user|_password
-#   APP__gears__analytics__config__redis_url
 #   APP__gears__analytics__config__identity_url
 #   APP__gears__analytics__config__metric_catalog__tenant_default_id (optional)
 #

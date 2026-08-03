@@ -209,7 +209,6 @@ stringData:
   APP__gears__analytics__config__clickhouse_user: "${CH_ANALYTICS_USER}"
   APP__gears__analytics__config__clickhouse_password: "${CH_ANALYTICS_PW}"
   APP__gears__analytics__config__identity_url: "${IDENTITY_URL}"
-  APP__gears__analytics__config__redis_url: "${REDIS_URL}"
 EOF
   # Metric Catalog single-tenant fallback. Mirrors the chart-side block
   # (charts/insight/templates/secrets.yaml) — emit only when set so

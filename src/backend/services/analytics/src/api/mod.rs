@@ -1,7 +1,5 @@
 //! HTTP API layer — routes and handlers.
 
-pub(crate) mod canonical_json;
-mod catalog;
 pub(crate) mod error;
 mod metric_definitions;
 mod metric_drilldown;
@@ -29,8 +27,6 @@ use utoipa::openapi::schema::{
 };
 
 use crate::config::GearConfig;
-use crate::domain::catalog::CatalogReader;
-use crate::domain::catalog::response as catalog_response;
 use crate::domain::metric_definitions::listing as metric_definitions_listing;
 use crate::domain::saved_query;
 use crate::domain::schema_validator::SchemaValidator;
@@ -49,9 +45,6 @@ pub struct AppState {
     /// clone.
     #[allow(dead_code)] // the startup sweep holds its own clone
     pub validator: SchemaValidator,
-    /// Catalog read pipeline (Refs #524) — cache + resolver wired together.
-    /// Cheap to clone (internally `Arc`s the cache + resolver).
-    pub catalog_reader: CatalogReader,
 }
 
 pub(crate) fn forwarded_authorization(headers: &axum::http::HeaderMap) -> Option<&str> {
@@ -276,29 +269,6 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         })
         .standard_errors(openapi)
         .handler(metric_drilldown::export_metric_drilldown)
-        .register(router, openapi);
-
-    // Metric catalog read (Refs #524) — DESIGN §3.3 "Catalog Read".
-    // POST chosen so request-context fields (role_slug, team_id) never
-    // appear in HTTP access logs / proxy captures, and so HTTP / CDN
-    // intermediaries cannot cache the response (server-side cache is the
-    // single canonical cache layer per `cpt-metric-cat-principle-server-cache`).
-    router = OperationBuilder::post("/v1/catalog/get_metrics")
-        .operation_id("analytics_api.catalog.get_metrics")
-        .summary("Read the metric catalog for the request context")
-        .authenticated()
-        .no_license_required()
-        .json_request::<catalog_response::GetMetricsRequest>(
-            openapi,
-            "Catalog read request context (role, team)",
-        )
-        .json_response_with_schema::<catalog_response::CatalogResponse>(
-            openapi,
-            StatusCode::OK,
-            "Resolved metric catalog",
-        )
-        .standard_errors(openapi)
-        .handler(catalog::get_metrics)
         .register(router, openapi);
 
     // Unified metric definitions listing — display fields only, tenant

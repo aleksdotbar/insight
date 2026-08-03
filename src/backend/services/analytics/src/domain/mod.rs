@@ -1,4 +1,3 @@
-pub mod catalog;
 pub mod contract_version;
 pub mod metric_definitions;
 pub mod metric_drilldown;

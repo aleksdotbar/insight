@@ -48,7 +48,6 @@ grpc_hub = { workspace = true }
 gear_orchestrator = { workspace = true }
 types_registry = { workspace = true }
 reqwest = { workspace = true }
-redis = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

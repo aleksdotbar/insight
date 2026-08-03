@@ -20,7 +20,6 @@
 #   APP__gears__analytics__config__clickhouse_user
 #   APP__gears__analytics__config__clickhouse_password
 #   APP__gears__analytics__config__identity_url
-#   APP__gears__analytics__config__redis_url
 #   APP__gears__analytics__config__metric_catalog__tenant_default_id
 # The oidc-authn-plugin's verification config is nested/list-shaped
 # (jwt.trusted_issuers, expected_audience, http_client.custom_ca_certificate_paths)
@@ -140,7 +139,6 @@ gears:
       clickhouse_database: "insight"
       # clickhouse_user / clickhouse_password: omit for no-auth ClickHouse.
       identity_url: ""
-      redis_url: ""
       metric_catalog:
         # Single-tenant fallback (optional UUID). Leave unset for multi-tenant.
         tenant_default_id: ~

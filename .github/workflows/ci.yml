@@ -208,7 +208,6 @@ jobs:
             -e MARIADB_USER=insight -e MARIADB_PASSWORD=insight \
             -e MARIADB_ROOT_PASSWORD=root \
             -p 3306:3306 mariadb:11.4
-          docker run -d --name insight-redis -p 6379:6379 redis:7-alpine
           for i in $(seq 1 60); do
             if docker exec insight-maria healthcheck.sh --connect --innodb_initialized 2>/dev/null; then
               echo "MariaDB ready"; break
@@ -239,13 +238,6 @@ jobs:
               cargo llvm-cov run --no-report --package "${{ matrix.entry.package }}" $feats -- \
                 -c "services/${{ matrix.entry.name }}/config/insight.yaml" migrate
             cargo llvm-cov --no-report --package "${{ matrix.entry.package }}" $feats -- --include-ignored
-            # Redis-backed cache live tests: opt-in via the env var and run
-            # serially — flush_all wipes the shared keyspace, so parallel
-            # cache tests race each other (the other live tests never see
-            # the env var and keep their parallel run above).
-            INTEGRATION_TESTS_REDIS_URL="redis://127.0.0.1:6379" \
-              cargo llvm-cov --no-report --package "${{ matrix.entry.package }}" $feats -- \
-                --include-ignored --test-threads=1 infra::cache::live_tests
           else
             cargo llvm-cov --no-report --package "${{ matrix.entry.package }}" $feats
           fi
