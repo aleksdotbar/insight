@@ -43,6 +43,15 @@ class BitbucketApiError(RuntimeError):
             return ""
         return str(error.get("message") or "")
 
+    @property
+    def missing_shas(self) -> frozenset[str]:
+        error = self._payload.get("error")
+        data = error.get("data") if isinstance(error, Mapping) else None
+        shas = data.get("shas") if isinstance(data, Mapping) else None
+        if not isinstance(shas, list):
+            return frozenset()
+        return frozenset(str(sha) for sha in shas if sha)
+
 
 @dataclass(frozen=True)
 class RepositoryRef:

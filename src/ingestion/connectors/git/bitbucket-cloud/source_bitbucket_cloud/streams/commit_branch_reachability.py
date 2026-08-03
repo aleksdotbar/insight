@@ -75,6 +75,10 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
         try:
             commits = list(self._client.commits_between(repo, [include], [exclude] if exclude else []))
         except BitbucketApiError as exc:
+            if exc.status_code == 404 and include in exc.missing_shas:
+                # The head this range starts from is gone: nothing is reachable
+                # from it, and no other branch of the repository is affected.
+                return
             if exc.status_code != 404 or not exclude:
                 raise
             if action == "added":
