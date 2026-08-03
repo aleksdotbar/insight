@@ -221,10 +221,26 @@ jobs:
       # again, the publish pipeline is broken and that is worth the notice.
       - name: Pull the ui-tests image
         run: |
-          docker pull "$UI_TESTS_IMAGE" || {
-            echo "::notice::$UI_TESTS_IMAGE absent from ghcr — building it locally from deploy/compose/ui-tests.Dockerfile (expected only before this workflow's first merge to main)"
-            docker build -f deploy/compose/ui-tests.Dockerfile -t "$UI_TESTS_IMAGE" .
-          }
+          set -uo pipefail
+          docker pull "$UI_TESTS_IMAGE" && exit 0
+
+          # A failed pull is not evidence of the bootstrap case. An auth failure,
+          # a rate limit, a deleted package and an unpublished tag all land here,
+          # and only the last one may be answered by building locally — the rest
+          # would silently swap the published runner for one built from this PR,
+          # which is the single thing this job must not do. So the tag's absence
+          # is established separately, and anything else fails loudly.
+          if error=$(docker manifest inspect "$UI_TESTS_IMAGE" 2>&1 >/dev/null); then
+            echo "::error::$UI_TESTS_IMAGE exists in ghcr but could not be pulled — not the bootstrap case. Refusing to build a local substitute."
+            exit 1
+          fi
+          if ! grep -qiE 'manifest unknown|not found|no such manifest' <<<"$error"; then
+            echo "::error::could not determine whether $UI_TESTS_IMAGE is published: $error"
+            exit 1
+          fi
+
+          echo "::notice::$UI_TESTS_IMAGE is not published — building it locally from deploy/compose/ui-tests.Dockerfile (expected only before this workflow's first merge to main)"
+          docker build -f deploy/compose/ui-tests.Dockerfile -t "$UI_TESTS_IMAGE" .
 
       - name: Bring the stand up
         run: ./dev-compose.sh test-stand up
@@ -252,12 +268,30 @@ jobs:
       # carries the `__Host-sid` cookie and every Authorization header, twice
       # over (raw headers and a parsed HAR `cookies` array). The script fails
       # closed — a trace it cannot rewrite and verify is deleted, not uploaded.
+      # The suite runs in a container that has no USER directive, so it writes as
+      # root: both the trace files and the per-test directories holding them land
+      # on the runner owned by root. Unlinking or replacing a file needs write
+      # permission on its DIRECTORY, so the redaction step — running as `runner` —
+      # could neither rewrite nor delete a trace. It would fail, and every step
+      # below is `always()`, so the untouched traces would be published anyway.
+      - name: Take ownership of the captured artifacts
+        if: always()
+        run: |
+          [ -d test-results ] || exit 0
+          sudo chown -R "$(id -u):$(id -g)" test-results
+
       - name: Strip credentials from traces
+        id: redact
         if: always()
         run: python3 .github/workflows/scripts/redact-playwright-trace.py test-results
 
       - name: Upload traces and screenshots
-        if: always()
+        # Gated on redaction having SUCCEEDED, not merely run. The script fails
+        # closed — a trace it cannot fully parse and rewrite is deleted and the
+        # exit code is non-zero — so a failure means at least one artifact was not
+        # proven clean. Uploading regardless is the exact outcome the ordering of
+        # these steps exists to prevent.
+        if: always() && steps.redact.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: ui-journeys-traces

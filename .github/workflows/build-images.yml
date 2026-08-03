@@ -906,7 +906,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-ui-tests,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=ui-tests-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=ui-tests-${{ matrix.arch }},ignore-error=true
+          cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=ui-tests-{0},ignore-error=true', matrix.arch) || '' }}
       - name: Export digest
         if: needs.changes.outputs.should_push == 'true'
         run: |
