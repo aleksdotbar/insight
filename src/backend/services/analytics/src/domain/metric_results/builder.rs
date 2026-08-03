@@ -49,23 +49,20 @@ pub fn build_period_view(
     req: &ValidatedMetricResultsRequest,
     rows: Vec<PeriodQueryRow>,
 ) -> MetricResultViewDto {
-    let values_by_person: HashMap<String, Option<f64>> = rows
+    let values_by_entity: HashMap<String, Option<f64>> = rows
         .into_iter()
         .map(|row| (row.entity_id, row.value))
         .collect();
-    // Wire seam: the response field keeps its pre-cutover name `entity_id`
-    // but carries the person UUID (canonical string form) since the identity
-    // cutover. One rule for every view builder in this module.
+    // `entity_id` IS the canonical contract on the wire and in the relations;
+    // the selection renders the ids in that form, one rule for every view
+    // builder in this module.
     let values = req
-        .person_ids
-        .iter()
-        .map(|person_id| {
-            let person_id = person_id.to_string();
-            let value = values_by_person.get(&person_id).copied().flatten();
-            PeriodValueDto {
-                entity_id: person_id,
-                value,
-            }
+        .entity
+        .entity_ids()
+        .into_iter()
+        .map(|entity_id| {
+            let value = values_by_entity.get(&entity_id).copied().flatten();
+            PeriodValueDto { entity_id, value }
         })
         .collect();
     MetricResultViewDto::Period { values }
@@ -82,9 +79,9 @@ pub fn build_timeseries_view(
     let mut by_series: BTreeMap<SeriesKey, SeriesData> = BTreeMap::new();
 
     if dimensions.is_empty() {
-        for person_id in &req.person_ids {
+        for entity_id in req.entity.entity_ids() {
             by_series
-                .entry((person_id.to_string(), false, Vec::new()))
+                .entry((entity_id, false, Vec::new()))
                 .or_insert_with(|| SeriesData::new(None, false, None));
         }
     }
@@ -220,9 +217,9 @@ pub fn build_histogram_view(
         counts: HashMap<u32, u64>,
     }
 
-    let mut by_person: HashMap<String, EntityBins> = HashMap::new();
+    let mut by_entity: HashMap<String, EntityBins> = HashMap::new();
     for row in rows {
-        let entry = by_person.entry(row.entity_id).or_insert(EntityBins {
+        let entry = by_entity.entry(row.entity_id).or_insert(EntityBins {
             lo: row.entity_lo,
             hi: row.entity_hi,
             counts: HashMap::new(),
@@ -233,11 +230,11 @@ pub fn build_histogram_view(
 
     let bin_total = u32::try_from(HISTOGRAM_BINS).unwrap_or(u32::MAX);
     let values = req
-        .person_ids
-        .iter()
+        .entity
+        .entity_ids()
+        .into_iter()
         .map(|person_id| {
-            let person_id = person_id.to_string();
-            let bins = match by_person.get(&person_id) {
+            let bins = match by_entity.get(&person_id) {
                 None => Vec::new(),
                 // Bounds satisfy hi >= lo by construction; a collapsed range
                 // (all values identical) renders as one [v, v] bin.
@@ -357,6 +354,7 @@ fn json_string(value: Option<&serde_json::Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::domain::metric_results::validation::ValidatedEntitySelection;
     use uuid::Uuid;
 
     use super::*;
@@ -457,14 +455,15 @@ mod tests {
     fn request(person_ids: Vec<&str>, from: &str, to: &str) -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
             tenant_id: uuid::Uuid::from_u128(0x1967),
-            entity_type: "person".to_owned(),
-            person_ids: person_ids
-                .into_iter()
-                .map(|id| match Uuid::parse_str(id) {
-                    Ok(person_id) => person_id,
-                    Err(error) => panic!("bad test person id {id}: {error}"),
-                })
-                .collect(),
+            entity: ValidatedEntitySelection::Person {
+                ids: person_ids
+                    .into_iter()
+                    .map(|id| match Uuid::parse_str(id) {
+                        Ok(person_id) => person_id,
+                        Err(error) => panic!("bad test person id {id}: {error}"),
+                    })
+                    .collect(),
+            },
             from: match NaiveDate::parse_from_str(from, "%Y-%m-%d") {
                 Ok(date) => date,
                 Err(error) => panic!("bad test date {from}: {error}"),

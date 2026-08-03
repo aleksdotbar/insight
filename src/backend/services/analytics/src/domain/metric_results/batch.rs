@@ -388,6 +388,7 @@ fn decode_narrow_row<T: serde::de::DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
+    use crate::domain::metric_results::validation::ValidatedEntitySelection;
     use std::collections::BTreeSet;
 
     use super::*;
@@ -431,8 +432,9 @@ mod tests {
     fn request(metrics: Vec<ValidatedMetricRequest>) -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
             tenant_id: uuid::Uuid::from_u128(0x1967),
-            entity_type: "person".to_owned(),
-            person_ids: vec![uuid::Uuid::from_u128(1)],
+            entity: ValidatedEntitySelection::Person {
+                ids: vec![uuid::Uuid::from_u128(1)],
+            },
             from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default(),
             to: NaiveDate::from_ymd_opt(2026, 1, 31).unwrap_or_default(),
             metrics,

@@ -22,7 +22,6 @@ use crate::domain::metric_results::{
 };
 use crate::domain::person_visibility::authorize_entity_ids;
 use toolkit_security::SecurityContext;
-use uuid::Uuid;
 
 const QUERY_CONCURRENCY: usize = 4;
 // Client-side bound on one view query, network stalls included. The
@@ -48,8 +47,8 @@ pub async fn query_metric_results(
         &state.identity,
         &ctx,
         super::forwarded_authorization(&headers),
-        &req.entity_type,
-        &req.person_ids,
+        req.entity.entity_type(),
+        req.entity.person_ids(),
     )
     .await?;
 
@@ -120,10 +119,8 @@ pub async fn query_metric_results(
         let selection = crate::domain::metric_results::MetricResultSelectionDto {
             metric_key: metric.def.key().to_owned(),
             entity: crate::domain::metric_results::MetricResultsEntityDto {
-                r#type: req.entity_type.clone(),
-                // Wire seam: `ids` echoes the request selection as person
-                // UUIDs (canonical string form) since the identity cutover.
-                ids: req.person_ids.iter().map(Uuid::to_string).collect(),
+                r#type: req.entity.entity_type().to_owned(),
+                ids: req.entity.entity_ids(),
             },
             period: crate::domain::metric_results::MetricResultsPeriodDto {
                 from: req.from.to_string(),

@@ -1,8 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write;
 
-use uuid::Uuid;
-
 use serde::Deserialize;
 
 use super::batch::ResolvedGroupLimit;
@@ -99,8 +97,8 @@ pub(crate) fn compile_period_batch_query(
     let mut params = Vec::new();
     let selects = item_value_selects(defs, &mut params, period_alias);
     let metric_scope = shared_observation_where(defs, req, filters, &mut params);
-    params.extend(req.person_ids.iter().map(Uuid::to_string));
-    let entity_id_params = placeholders(req.person_ids.len());
+    params.extend(req.entity.entity_ids());
+    let entity_id_params = placeholders(req.entity.len());
     let observation_table = batch_observation_table(defs);
     let limit = query_row_limit();
     let inner = format!(
@@ -131,8 +129,8 @@ pub(crate) fn compile_timeseries_query(
     }
     let mut params = metric_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.person_ids.iter().map(Uuid::to_string));
-    let entity_id_params = placeholders(req.person_ids.len());
+    params.extend(req.entity.entity_ids());
+    let entity_id_params = placeholders(req.entity.len());
     let bucket = bucket_expr(bucket);
     let (dim_select, dim_group) = dimension_select_group(dimensions);
     let bucket_group = if dim_group.is_empty() {
@@ -182,8 +180,8 @@ pub(crate) fn compile_group_ranking_query(
     let mut params = grouped_value_params(def);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.person_ids.iter().map(Uuid::to_string));
-    let entity_id_params = placeholders(req.person_ids.len());
+    params.extend(req.entity.entity_ids());
+    let entity_id_params = placeholders(req.entity.len());
     let (dim_select, dim_group, dim_order) = ranking_dimension_select_group(dimensions);
     let observation_table = observation_table(def.observation_relation());
     let value_expr = grouped_value_expr(def);
@@ -223,8 +221,8 @@ fn compile_capped_timeseries_query(
 ) -> CompiledQuery {
     let mut params = metric_where_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.person_ids.iter().map(Uuid::to_string));
-    let entity_id_params = placeholders(req.person_ids.len());
+    params.extend(req.entity.entity_ids());
+    let entity_id_params = placeholders(req.entity.len());
     let bucket = bucket_expr(bucket);
     let raw_dimensions = dimensions.iter().enumerate().fold(
         String::new(),
@@ -385,8 +383,8 @@ pub(crate) fn compile_breakdown_query(
 ) -> CompiledQuery {
     let mut params = metric_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.person_ids.iter().map(Uuid::to_string));
-    let entity_id_params = placeholders(req.person_ids.len());
+    params.extend(req.entity.entity_ids());
+    let entity_id_params = placeholders(req.entity.len());
     let (dim_select, dim_group) = dimension_select_group(dimensions);
     let group = if dim_group.is_empty() {
         "entity_id".to_owned()
@@ -448,8 +446,8 @@ pub(crate) fn compile_histogram_query(
 ) -> CompiledQuery {
     let mut params = metric_params(def, req);
     let filter_where = dimension_filter_where(filters, &mut params);
-    params.extend(req.person_ids.iter().map(Uuid::to_string));
-    let entity_id_params = placeholders(req.person_ids.len());
+    params.extend(req.entity.entity_ids());
+    let entity_id_params = placeholders(req.entity.len());
     let observation_table = observation_table(def.observation_relation());
     let bins = HISTOGRAM_BINS;
     let max_bin = HISTOGRAM_BINS - 1;
@@ -512,12 +510,12 @@ pub(crate) fn compile_peer_batch_query(
     // The targets and cohort CTEs each scope by tenant/entity_type/cohort_key;
     // the targets CTE additionally filters person ids, bound between them.
     push_cohort_scope(&mut params, req, cohort_key);
-    params.extend(req.person_ids.iter().map(Uuid::to_string));
+    params.extend(req.entity.entity_ids());
     push_cohort_scope(&mut params, req, cohort_key);
     let value_selects = item_value_selects(defs, &mut params, period_alias);
     let metric_scope = shared_observation_where(defs, req, filters, &mut params);
 
-    let entity_id_params = placeholders(req.person_ids.len());
+    let entity_id_params = placeholders(req.entity.len());
     let observation_table = batch_observation_table(defs);
     let cohort_table = cohort_table(CohortSource::MetricEntityCohortsCurrent);
     let limit = query_row_limit();
@@ -766,7 +764,7 @@ fn push_cohort_scope(
     cohort_key: &str,
 ) {
     params.push(req.tenant_id.to_string());
-    params.push(req.entity_type.clone());
+    params.push(req.entity.entity_type().to_owned());
     params.push(cohort_key.to_owned());
 }
 
@@ -777,7 +775,7 @@ fn shared_observation_where(
     params: &mut Vec<String>,
 ) -> String {
     params.push(req.tenant_id.to_string());
-    params.push(req.entity_type.clone());
+    params.push(req.entity.entity_type().to_owned());
     params.push(req.from.to_string());
     params.push(req.to.to_string());
     let pairs = measure_pairs(defs);
@@ -850,7 +848,7 @@ fn batch_observation_table(defs: &[&MetricDefinition]) -> String {
 // lockstep. When enforcement is off (the default until the ingest tenant is
 // aligned, #1829) the term is a tautology that still binds the same one
 // placeholder, so the param order is identical in both modes.
-fn tenant_predicate(enforce: bool) -> &'static str {
+pub(crate) fn tenant_predicate(enforce: bool) -> &'static str {
     if enforce {
         "tenant_id = ?"
     } else {
@@ -908,7 +906,7 @@ fn metric_where_params(def: &MetricDefinition, req: &ValidatedMetricResultsReque
         | ComputationSpec::DistinctCount { value } => vec![
             req.tenant_id.to_string(),
             value.source_key.clone(),
-            req.entity_type.clone(),
+            req.entity.entity_type().to_owned(),
             req.from.to_string(),
             req.to.to_string(),
             value.measure_key.clone(),
@@ -920,7 +918,7 @@ fn metric_where_params(def: &MetricDefinition, req: &ValidatedMetricResultsReque
         } => vec![
             req.tenant_id.to_string(),
             numerator.source_key.clone(),
-            req.entity_type.clone(),
+            req.entity.entity_type().to_owned(),
             req.from.to_string(),
             req.to.to_string(),
             numerator.measure_key.clone(),
@@ -1041,6 +1039,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+
+    use crate::domain::metric_results::validation::ValidatedEntitySelection;
     use crate::domain::metric_definitions::definition::ValueTransform;
     use crate::domain::metric_results::batch::{RankedDimension, RankedGroup};
     use chrono::NaiveDate;
@@ -1123,8 +1124,9 @@ mod tests {
     fn request() -> ValidatedMetricResultsRequest {
         ValidatedMetricResultsRequest {
             tenant_id: TEST_TENANT,
-            entity_type: "person".to_owned(),
-            person_ids: vec![Uuid::from_u128(0xa), Uuid::from_u128(0xb)],
+            entity: ValidatedEntitySelection::Person {
+                ids: vec![Uuid::from_u128(0xa), Uuid::from_u128(0xb)],
+            },
             from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default(),
             to: NaiveDate::from_ymd_opt(2026, 1, 31).unwrap_or_default(),
             metrics: Vec::new(),
