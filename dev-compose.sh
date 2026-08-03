@@ -299,50 +299,56 @@ ensure_fakeidp_issuer() {
 
 # The `volumes:` a ghcr'd service keeps, as a YAML block.
 #
-# The flip must drop exactly ONE mount — the host-built binary at
-# ./deploy/compose/build/<svc>/<svc>. A published image already carries it, and
-# leaving the mount in place shadows the image with a file this run never built
-# (or, with nothing built, with a directory compose invents and container init
-# rejects).
+# The flip must drop exactly ONE mount — the host-built binary under
+# deploy/compose/build/. A published image already carries it, and leaving the
+# mount shadows the image with a file this run never built (or, with nothing
+# built, with a directory compose invents and container init rejects).
 #
 # Every OTHER mount has to survive, which a blanket `volumes: !override []` did
 # not. They are the dev stack's own configuration and no image can carry them:
 # the *-fullauth.yaml that turns ON real gateway-JWT verification (over the
 # committed placeholder config the image bakes), the self-signed CA for the
 # authn-tls discovery front, the per-run authenticator signing key, and the
-# compose route table. Dropping them leaves a service running the placeholder
-# config — an auth-disabled stand, which is precisely what this stand exists to
+# compose route table. Dropping them leaves a service on the placeholder config
+# — an auth-disabled stand, which is precisely what this stand exists to
 # disprove, and it would have looked like a pass.
 #
-# Compose replaces the whole list, so the survivors are restated here rather
-# than subtracted. Keep in step with docker-compose.yml.
+# Compose replaces the whole list rather than subtracting from it, so the
+# survivors have to be restated. They are READ BACK from docker-compose.yml
+# rather than listed here: a hand-kept copy is a second source of truth, and it
+# was already wrong once — identity-resolution's /certs mount was missing from
+# it, so the service died on "failed to read custom CA certificate bundle" and
+# every login 500'd.
 ghcr_volumes_block() {
-  local svc="$1" mount
+  local svc="$1" mounts
+  mounts="$(ghcr_kept_mounts "$svc")" || return 1
   echo "    volumes: !override"
-  for mount in $(ghcr_kept_mounts "$svc"); do
-    echo "      - $mount"
-  done
+  [[ -n "$mounts" ]] && printf '      - %s\n' $mounts
+  return 0
 }
 
+# Every mount docker-compose.yml declares for `svc` except the host-built
+# binary, as `source:target[:mode]` relative to the repo root.
 ghcr_kept_mounts() {
-  case "$1" in
-    analytics)
-      echo "./deploy/compose/analytics-fullauth.yaml:/app/config/insight.yaml:ro"
-      echo "./deploy/compose/authn-tls-certs:/certs:ro"
-      ;;
-    identity-resolution)
-      echo "./deploy/compose/identity-resolution-fullauth.yaml:/app/config/insight.yaml:ro"
-      ;;
-    authenticator)
-      echo "./src/backend/services/authenticator/config:/app/config:ro"
-      echo "./deploy/compose/authenticator-fullauth.yaml:/app/config/insight.yaml:ro"
-      echo "./deploy/compose/authn-tls-certs:/certs:ro"
-      echo "./deploy/compose/authenticator-dev-keys:/app/keys:ro"
-      ;;
-    gateway)
-      echo "./deploy/compose/gateway/routes.yaml:/etc/gateway/routes.yaml:ro"
-      ;;
-  esac
+  local svc="$1" out
+  out="$(docker compose -f docker-compose.yml --profile auth-keycloak --profile auth-fakeidp \
+           config --format json 2>/dev/null |
+    SERVICE="$svc" python3 -c '
+import json, os, sys
+
+root = os.getcwd().rstrip("/") + "/"
+service = json.load(sys.stdin)["services"][os.environ["SERVICE"]]
+
+for volume in service.get("volumes") or []:
+    source = volume.get("source", "")
+    # The one mount the published image replaces.
+    if source.startswith(root + "deploy/compose/build/"):
+        continue
+    mode = ":ro" if volume.get("read_only") else ""
+    target = volume["target"]
+    print("./" + source[len(root):] + ":" + target + mode)
+')" || { echo "ERROR: cannot read $svc mounts from docker-compose.yml" >&2; return 1; }
+  printf '%s' "$out"
 }
 
 write_watch_override() {
@@ -591,7 +597,7 @@ YML
   identity-resolution-migrate:
     build: !reset null
     platform: linux/amd64
-$(ghcr_volumes_block identity-resolution)
+$(ghcr_volumes_block identity-resolution-migrate)
 YML
           fi
         elif contains "$watch_list" "$svc"; then
