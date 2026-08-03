@@ -460,7 +460,9 @@ class BitbucketStream(Stream, ABC):
 class BitbucketIncrementalStream(BitbucketStream, CheckpointMixin, ABC):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._state: MutableMapping[str, Any] = {}
+        # Versioned from the start: state emitted without one reads back as
+        # pre-rewrite state and gets reshaped into something addressing nothing.
+        self._state: MutableMapping[str, Any] = self._empty_state()
 
     @property
     def state(self) -> MutableMapping[str, Any]:
