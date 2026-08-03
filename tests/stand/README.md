@@ -132,3 +132,23 @@ design, above); no accessibility or contrast checking; cross-tenant
 isolation and the service-principal route are left to the in-process
 `bronze-to-api` rig; `/v1/columns` is asserted only against an empty
 universe (the seed does not populate `table_columns`).
+
+Three gaps worth naming separately, because none of them is "nobody got to
+it" — each follows from what a deployed stand is:
+
+- **Nothing measures this suite's own coverage.** There is no per-operation,
+  per-status-code gate here, so a route that gains a status code no test
+  exercises goes unreported. The rig has one
+  (`src/ingestion/tests/e2e/lib/api_coverage.py` — an httpx-hook ledger plus a
+  gate over the committed OpenAPI document); migrating it is a known
+  follow-up. Until it lands, `api/operations.py` is the only catalogue of the
+  surface and it is kept honest by hand.
+- **Cross-tenant refusal.** `deploy/seed` provisions a single tenant
+  (`TENANT_DEFAULT_ID`), so there is no second tenant's caller to be refused
+  with.
+- **JWT verification** — an expired token, a wrong audience, an untrusted
+  issuer, a signature from a key the JWKS never published. Minting tokens is
+  ruled out here by design (see `../lib/insight_stand/session.py`): this suite
+  proves the *session*, won by a real login, and the rig proves the token.
+  The refusal itself is covered — `api/test_gateway.py` sweeps 401 over every
+  operation.
