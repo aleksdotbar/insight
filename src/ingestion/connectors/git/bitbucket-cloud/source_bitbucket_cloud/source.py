@@ -11,6 +11,7 @@ from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.streams import Stream
 
 from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient, RepositoryCatalog
+from source_bitbucket_cloud.streams.base import DEFAULT_CONCURRENCY
 from source_bitbucket_cloud.streams.branches import BranchesStream
 from source_bitbucket_cloud.streams.commit_branch_reachability import CommitBranchReachabilityStream
 from source_bitbucket_cloud.streams.commits import CommitsStream
@@ -102,6 +103,7 @@ class SourceBitbucketCloud(AbstractSource):
             "workspaces": config["bitbucket_workspaces"],
             "skip_forks": config.get("bitbucket_skip_forks", True),
             "start_date": config.get("bitbucket_start_date"),
+            "concurrency": int(config.get("bitbucket_concurrency") or DEFAULT_CONCURRENCY),
             "client": client,
             "catalog": catalog,
         }
@@ -157,7 +159,8 @@ class SourceBitbucketCloud(AbstractSource):
         ]
         _logger.info(
             f"streams: wired {len(streams)} streams (workspaces={shared['workspaces']} "
-            f"start_date={shared['start_date']} skip_forks={shared['skip_forks']})"
+            f"start_date={shared['start_date']} skip_forks={shared['skip_forks']} "
+            f"concurrency={shared['concurrency']})"
         )
         return streams
 

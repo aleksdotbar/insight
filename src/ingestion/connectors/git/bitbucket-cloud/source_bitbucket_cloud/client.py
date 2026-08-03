@@ -145,11 +145,25 @@ class BitbucketClient:
     url_base = "https://api.bitbucket.org/2.0/"
 
     def __init__(self, token: str, username: str = "", base_url: str | None = None) -> None:
-        self._session = requests.Session()
-        self._session.headers.update(auth_headers(token, username))
-        self._session.headers.update({"Accept": "application/json"})
+        self._headers = {**auth_headers(token, username), "Accept": "application/json"}
+        self._local = threading.local()
         configured_url = base_url or os.environ.get("BITBUCKET_API_BASE_URL") or self.url_base
         self._base_url = configured_url.rstrip("/") + "/"
+
+    @property
+    def _session(self) -> requests.Session:
+        # requests.Session is not thread-safe; repositories are read in
+        # parallel, so each worker gets its own connection pool.
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = requests.Session()
+            session.headers.update(self._headers)
+            self._local.session = session
+        return session
+
+    @_session.setter
+    def _session(self, session: requests.Session) -> None:
+        self._local.session = session
 
     def request(
         self,

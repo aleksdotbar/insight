@@ -3,22 +3,21 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import queue
 import re
+import threading
 import uuid
 from abc import ABC
+from collections import deque
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams import CheckpointMixin, Stream
 
-from source_bitbucket_cloud.client import (
-    BitbucketApiError,
-    BitbucketClient,
-    RepositoryCatalog,
-    RepositoryRef,
-)
+from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient, RepositoryCatalog, RepositoryRef
 
 logger = logging.getLogger("airbyte")
 
@@ -31,6 +30,18 @@ STATE_VERSION = 3
 # helps, so the repository is skipped instead of failing the sync. 404 is here
 # too — a repository listed at the start of a sync can be deleted mid-run.
 DENIED_STATUSES = frozenset({403, 404})
+# Records a worker may run ahead of the consumer, per repository. Bounded so a
+# repository with a long history cannot buffer itself into memory.
+RECORD_BUFFER = 500
+QUEUE_POLL_SECONDS = 0.5
+DEFAULT_CONCURRENCY = 4
+MAX_CONCURRENCY = 16
+_READ_DONE = object()
+
+
+class _PendingRead(NamedTuple):
+    repo: RepositoryRef
+    records: queue.Queue[Any]
 
 
 def now_iso() -> str:
@@ -161,10 +172,12 @@ class BitbucketStream(Stream, ABC):
         username: str = "",
         skip_forks: bool = True,
         start_date: str | None = None,
+        concurrency: int = 1,
         client: BitbucketClient | None = None,
         catalog: RepositoryCatalog | None = None,
     ) -> None:
         self._client = client or BitbucketClient(token, username)
+        self._concurrency = max(1, min(MAX_CONCURRENCY, concurrency))
         self._tenant_id = tenant_id
         self._source_id = source_id
         self._workspaces = tuple(workspaces)
@@ -197,33 +210,122 @@ class BitbucketStream(Stream, ABC):
     ) -> Iterable[Mapping[str, Any]]:
         del sync_mode, cursor_field, stream_state
         bucket_id, repositories = self.bucket(stream_slice)
+        read = self._read_serially if self._concurrency <= 1 else self._read_concurrently
+        yield from read(bucket_id, repositories)
+        self.finish_bucket(bucket_id, repositories)
+
+    def _read_serially(
+        self, bucket_id: int, repositories: Sequence[RepositoryRef]
+    ) -> Iterable[Mapping[str, Any]]:
         for repo in repositories:
-            if self._catalog.is_inaccessible(repo):
-                # Discovered by an earlier stream; still counts toward THIS
-                # stream's end-of-sync skipped summary.
-                self._skipped_repositories.append(f"{repo.workspace}/{repo.slug}")
+            if self.already_denied(repo):
                 continue
             try:
                 yield from self.repository_records(repo, bucket_id)
-            except BitbucketApiError as error:
-                if error.status_code == 401:
-                    # Credential failure is global, not per-repository: every
-                    # remaining repo would fail identically, drowning the log in
-                    # quarantine noise before a generic end-of-sync error. Abort
-                    # now with the actionable cause instead.
-                    raise RuntimeError(
-                        "Bitbucket authentication failed mid-sync (HTTP 401): the token was "
-                        "rejected. If bitbucket_username is unset, Atlassian API tokens are "
-                        "sent as Bearer and refused — set the username, or the token has "
-                        "expired/been rotated."
-                    ) from error
-                if error.status_code in DENIED_STATUSES:
-                    self.skip_repository(repo, error.status_code)
-                else:
-                    self.record_failure(repo)
-            except Exception:
-                self.record_failure(repo)
-        self.finish_bucket(bucket_id, repositories)
+            except BaseException as error:  # noqa: BLE001 - classified below
+                self.handle_repository_error(repo, error)
+
+    def _read_concurrently(
+        self, bucket_id: int, repositories: Sequence[RepositoryRef]
+    ) -> Iterable[Mapping[str, Any]]:
+        """Read several repositories at once, emit them one repository at a time.
+
+        Fetching is the whole cost of a bucket and the per-repository reads are
+        independent, but the records still leave in submission order so a
+        failure is attributed to the repository that caused it and the state a
+        worker commits belongs to a repository that finished.
+        """
+        stop = threading.Event()
+        pending: deque[_PendingRead] = deque()
+        waiting = iter(repositories)
+        try:
+            with ThreadPoolExecutor(max_workers=self._concurrency) as pool:
+                while True:
+                    while len(pending) < self._concurrency:
+                        repo = next(waiting, None)
+                        if repo is None:
+                            break
+                        if self.already_denied(repo):
+                            continue
+                        pending.append(self._submit(pool, repo, bucket_id, stop))
+                    if not pending:
+                        return
+                    yield from self._consume(pending.popleft(), stop)
+        finally:
+            stop.set()
+
+    def _submit(
+        self, pool: ThreadPoolExecutor, repo: RepositoryRef, bucket_id: int, stop: threading.Event
+    ) -> _PendingRead:
+        records: queue.Queue[Any] = queue.Queue(maxsize=RECORD_BUFFER)
+        pool.submit(self._collect, repo, bucket_id, records, stop)
+        return _PendingRead(repo, records)
+
+    def _collect(
+        self, repo: RepositoryRef, bucket_id: int, records: queue.Queue[Any], stop: threading.Event
+    ) -> None:
+        try:
+            for record in self.repository_records(repo, bucket_id):
+                if not self._offer(records, record, stop):
+                    return
+        except BaseException as error:  # noqa: BLE001 - re-raised in the consumer
+            self._offer(records, error, stop)
+        finally:
+            self._offer(records, _READ_DONE, stop)
+
+    def _consume(self, pending: _PendingRead, stop: threading.Event) -> Iterable[Mapping[str, Any]]:
+        while True:
+            try:
+                item = pending.records.get(timeout=QUEUE_POLL_SECONDS)
+            except queue.Empty:
+                if stop.is_set():
+                    return
+                continue
+            if item is _READ_DONE:
+                return
+            if isinstance(item, BaseException):
+                self.handle_repository_error(pending.repo, item)
+                continue
+            yield item
+
+    @staticmethod
+    def _offer(records: queue.Queue[Any], item: Any, stop: threading.Event) -> bool:
+        """Park on a full buffer until the consumer catches up, or we abandon."""
+        while not stop.is_set():
+            try:
+                records.put(item, timeout=QUEUE_POLL_SECONDS)
+            except queue.Full:
+                continue
+            return True
+        return False
+
+    def already_denied(self, repo: RepositoryRef) -> bool:
+        # Discovered by an earlier stream; still counts toward THIS stream's
+        # end-of-sync skipped summary.
+        if not self._catalog.is_inaccessible(repo):
+            return False
+        self._skipped_repositories.append(f"{repo.workspace}/{repo.slug}")
+        return True
+
+    def handle_repository_error(self, repo: RepositoryRef, error: BaseException) -> None:
+        if isinstance(error, BitbucketApiError):
+            if error.status_code == 401:
+                # Credential failure is global, not per-repository: every
+                # remaining repo would fail identically, drowning the log in
+                # quarantine noise before a generic end-of-sync error. Abort
+                # now with the actionable cause instead.
+                raise RuntimeError(
+                    "Bitbucket authentication failed mid-sync (HTTP 401): the token was "
+                    "rejected. If bitbucket_username is unset, Atlassian API tokens are "
+                    "sent as Bearer and refused — set the username, or the token has "
+                    "expired/been rotated."
+                ) from error
+            if error.status_code in DENIED_STATUSES:
+                self.skip_repository(repo, error.status_code)
+                return
+        if not isinstance(error, Exception):
+            raise error
+        self.record_failure(repo, error)
 
     def repository_records(self, repo: RepositoryRef, bucket_id: int) -> Iterable[Mapping[str, Any]]:
         raise NotImplementedError
@@ -242,11 +344,14 @@ class BitbucketStream(Stream, ABC):
         bucket_id = int((stream_slice or {}).get("bucket_id", 0))
         return bucket_id, self.repositories_for_slice(stream_slice)
 
-    def record_failure(self, repo: RepositoryRef) -> None:
+    def record_failure(self, repo: RepositoryRef, error: BaseException | None = None) -> None:
         """A failure worth surfacing: transient, so retrying the sync may fix it."""
         name = f"{repo.workspace}/{repo.slug}"
         self._failed_repositories.append(name)
-        logger.exception(f"{self.name}: repository {name} failed; its state was not advanced, continuing")
+        logger.error(
+            f"{self.name}: repository {name} failed; its state was not advanced, continuing",
+            exc_info=error or True,
+        )
 
     def skip_repository(self, repo: RepositoryRef, status_code: int) -> None:
         """A repository the token cannot read: skip it without failing the sync.
