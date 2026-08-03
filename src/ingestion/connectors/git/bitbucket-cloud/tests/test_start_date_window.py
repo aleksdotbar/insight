@@ -190,11 +190,13 @@ class TestColdRepositoriesSkipStaleBranches:
 
 
 class TestTagsHonourTheWindow:
-    def tag(self, name: str, tagged_at: str | None):
-        target = {"hash": f"{name}-sha"}
+    def tag(self, name: str, tagged_at: str | None, commit_date: str = "2015-01-01T00:00:00+00:00"):
+        """An annotated tag carries its own date; `target` is the commit it
+        points at, which can be far older than the tag."""
+        record = {"name": name, "target": {"hash": f"{name}-sha", "date": commit_date}}
         if tagged_at:
-            target["date"] = tagged_at
-        return {"name": name, "target": target}
+            record["date"] = tagged_at
+        return record
 
     def read(self, tags):
         repo = repository(updated_on="2026-06-01T00:00:00+00:00")
@@ -219,3 +221,10 @@ class TestTagsHonourTheWindow:
         records = self.read([self.tag("v1", None)])
 
         assert [r["name"] for r in records if r["record_type"] == "item"] == ["v1"]
+
+    def test_a_new_tag_on_an_old_commit_is_kept(self):
+        """Judging a tag by its commit would drop every release cut against
+        history — the tag is the event, not the commit it names."""
+        records = self.read([self.tag("v9", "2026-06-01T00:00:00+00:00", commit_date="2015-01-01T00:00:00+00:00")])
+
+        assert [r["name"] for r in records if r["record_type"] == "item"] == ["v9"]

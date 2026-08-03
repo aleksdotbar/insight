@@ -87,7 +87,10 @@ class TagsStream(RepositorySnapshotStream):
     resource = "refs/tags"
 
     def include(self, record: Mapping[str, Any]) -> bool:
-        tagged_at = str((record.get("target") or {}).get("date") or "")
+        # The tag's own date, not `target`'s: target is the commit it points at,
+        # and a tag cut today can reference a years-old commit. A tag carrying
+        # no date of its own is kept rather than judged by its commit.
+        tagged_at = str(record.get("date") or "")
         if not self._start_date or not tagged_at:
             return True
         return tagged_at[:10] >= self._start_date
