@@ -27,6 +27,18 @@ def api(analytics: AnalyticsProcess):
 
 
 @pytest.fixture
+def anon_api(analytics: AnalyticsProcess):
+    """Recording client with NO Authorization header (401 cases)."""
+    import httpx
+    from lib import api_coverage
+
+    with httpx.Client(
+        base_url=analytics.base_url, timeout=30.0, event_hooks={"response": [api_coverage.record_response]}
+    ) as c:
+        yield c
+
+
+@pytest.fixture
 def other_tenant_headers(analytics) -> dict:
     """`Authorization` for a DIFFERENT tenant — overrides the client's default
     bearer to exercise cross-tenant 403s (the signed `tenant_id` is the tenant

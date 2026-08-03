@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use toolkit_canonical_errors::CanonicalError;
 use toolkit_security::SecurityContext;
 use uuid::Uuid;
@@ -24,16 +22,12 @@ impl GatedEntity {
     }
 }
 
-pub(crate) fn normalize_person_id(entity_id: &str) -> String {
-    entity_id.trim().to_ascii_lowercase()
-}
-
 pub(crate) async fn authorize_entity_ids(
     identity: &IdentityClient,
     ctx: &SecurityContext,
     authorization: Option<&str>,
     entity_type: &str,
-    entity_ids: &[String],
+    person_ids: &[Uuid],
 ) -> Result<(), CanonicalError> {
     if ctx.subject_type() == Some(SERVICE_SUBJECT_TYPE) {
         return Ok(());
@@ -41,7 +35,7 @@ pub(crate) async fn authorize_entity_ids(
 
     match GatedEntity::parse(entity_type) {
         GatedEntity::Person => {
-            authorize_person_ids(identity, ctx.subject_id(), authorization, entity_ids).await
+            authorize_person_ids(identity, ctx.subject_id(), authorization, person_ids).await
         }
         GatedEntity::Unsupported => Err(no_authorization_rule(entity_type)),
     }
@@ -51,7 +45,7 @@ async fn authorize_person_ids(
     identity: &IdentityClient,
     caller: Uuid,
     authorization: Option<&str>,
-    entity_ids: &[String],
+    person_ids: &[Uuid],
 ) -> Result<(), CanonicalError> {
     if !identity.is_configured() {
         tracing::error!("identity service is not configured; person metrics cannot be authorized");
@@ -63,33 +57,30 @@ async fn authorize_person_ids(
         return Err(unavailable());
     }
 
-    if authorization.is_none() {
+    let Some(authorization) = authorization else {
         tracing::error!(caller = %caller, "no Authorization header to forward to identity");
         return Err(unavailable());
-    }
+    };
 
     let visible = identity
-        .visible_emails(entity_ids, authorization)
+        .visible_person_ids(person_ids, Some(authorization))
         .await
         .map_err(|e| {
             tracing::error!(error = %e, caller = %caller, "visibility check failed");
             unavailable()
         })?;
 
-    let unmatched = unmatched_ids(&visible, entity_ids);
-    if unmatched.is_empty() {
+    // Only the count leaves this function: which ids were refused is not told
+    // to the caller (an id they may not see is not theirs to learn about).
+    let unmatched = person_ids
+        .iter()
+        .filter(|person_id| !visible.contains(*person_id))
+        .count();
+    if unmatched == 0 {
         return Ok(());
     }
 
-    Err(denied(caller, unmatched.len()))
-}
-
-fn unmatched_ids<'a>(visible: &HashSet<String>, entity_ids: &'a [String]) -> Vec<&'a str> {
-    entity_ids
-        .iter()
-        .map(String::as_str)
-        .filter(|entity_id| !visible.contains(*entity_id))
-        .collect()
+    Err(denied(caller, unmatched))
 }
 
 // INVARIANT: the gate's only 403 — identity answered "not visible". Anything
@@ -117,8 +108,13 @@ fn unavailable() -> CanonicalError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test setup panics on a broken fixture"
+)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use axum::Router;
@@ -130,35 +126,30 @@ mod tests {
 
     const CALLER: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0001);
     const TENANT: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0002);
-    const SELF_EMAIL: &str = "self@example.com";
-    const REPORT_EMAIL: &str = "report@example.com";
-    const STRANGER_EMAIL: &str = "stranger@example.com";
+    const SELF_PERSON: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0011);
+    const REPORT_PERSON: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0012);
+    const STRANGER_PERSON: Uuid = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_0013);
 
-    async fn spawn_identity(visible: &[&str]) -> IdentityClient {
-        let visible = Arc::new(
-            visible
-                .iter()
-                .map(|e| (*e).to_owned())
-                .collect::<HashSet<String>>(),
-        );
+    async fn spawn_identity(visible: &[Uuid]) -> IdentityClient {
+        let visible = Arc::new(visible.iter().copied().collect::<HashSet<Uuid>>());
 
         let app = Router::new().route(
             "/v1/visible-persons",
             post(move |axum::Json(req): axum::Json<serde_json::Value>| {
                 let visible = Arc::clone(&visible);
                 async move {
-                    let requested = req["emails"]
+                    let requested = req["person_ids"]
                         .as_array()
                         .map(|ids| {
                             ids.iter()
                                 .filter_map(|v| v.as_str())
-                                .map(str::to_owned)
+                                .filter_map(|v| Uuid::parse_str(v).ok())
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
                     let granted = requested
                         .into_iter()
-                        .filter(|email| visible.contains(email))
+                        .filter(|person_id| visible.contains(person_id))
                         .collect::<Vec<_>>();
                     axum::Json(serde_json::json!({"visible": granted}))
                 }
@@ -202,43 +193,78 @@ mod tests {
     async fn authorize(
         identity: &IdentityClient,
         ctx: &SecurityContext,
-        ids: &[&str],
+        person_ids: &[Uuid],
     ) -> StatusCode {
-        let entity_ids = ids.iter().map(|e| (*e).to_owned()).collect::<Vec<_>>();
         status_of(
-            authorize_entity_ids(identity, ctx, Some("Bearer tok"), "person", &entity_ids).await,
+            authorize_entity_ids(identity, ctx, Some("Bearer tok"), "person", person_ids).await,
         )
     }
 
     #[tokio::test]
+    async fn an_entity_type_with_no_authorization_rule_fails_closed() {
+        let identity = spawn_identity(&[SELF_PERSON]).await;
+        let ctx = ctx_for("user", CALLER);
+
+        // Ids are parsed as person UUIDs for every entity type, but only
+        // `person` has a rule here. A first non-person type must land its own
+        // rule rather than inherit person semantics silently.
+        assert_eq!(
+            status_of(
+                authorize_entity_ids(
+                    &identity,
+                    &ctx,
+                    Some("Bearer tok"),
+                    "org_unit",
+                    &[SELF_PERSON]
+                )
+                .await,
+            ),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+    }
+
+    #[tokio::test]
+    async fn a_service_principal_bypasses_the_gate_for_any_entity_type() {
+        let identity = spawn_identity(&[]).await;
+        let ctx = ctx_for(SERVICE_SUBJECT_TYPE, CALLER);
+
+        assert_eq!(
+            status_of(
+                authorize_entity_ids(&identity, &ctx, None, "org_unit", &[STRANGER_PERSON]).await,
+            ),
+            StatusCode::OK,
+        );
+    }
+
+    #[tokio::test]
     async fn ids_identity_reports_as_visible_are_admitted() {
-        let identity = spawn_identity(&[SELF_EMAIL, REPORT_EMAIL]).await;
+        let identity = spawn_identity(&[SELF_PERSON, REPORT_PERSON]).await;
         let ctx = ctx_for("user", CALLER);
 
         assert_eq!(
-            authorize(&identity, &ctx, &[SELF_EMAIL, REPORT_EMAIL]).await,
+            authorize(&identity, &ctx, &[SELF_PERSON, REPORT_PERSON]).await,
             StatusCode::OK,
         );
     }
 
     #[tokio::test]
     async fn person_outside_the_visible_set_is_forbidden() {
-        let identity = spawn_identity(&[SELF_EMAIL]).await;
+        let identity = spawn_identity(&[SELF_PERSON]).await;
         let ctx = ctx_for("user", CALLER);
 
         assert_eq!(
-            authorize(&identity, &ctx, &[STRANGER_EMAIL]).await,
+            authorize(&identity, &ctx, &[STRANGER_PERSON]).await,
             StatusCode::FORBIDDEN,
         );
     }
 
     #[tokio::test]
     async fn one_forbidden_id_rejects_the_whole_request() {
-        let identity = spawn_identity(&[SELF_EMAIL]).await;
+        let identity = spawn_identity(&[SELF_PERSON]).await;
         let ctx = ctx_for("user", CALLER);
 
         assert_eq!(
-            authorize(&identity, &ctx, &[SELF_EMAIL, STRANGER_EMAIL]).await,
+            authorize(&identity, &ctx, &[SELF_PERSON, STRANGER_PERSON]).await,
             StatusCode::FORBIDDEN,
         );
     }
@@ -249,7 +275,7 @@ mod tests {
         let ctx = ctx_for("user", CALLER);
 
         assert_eq!(
-            authorize(&identity, &ctx, &[SELF_EMAIL]).await,
+            authorize(&identity, &ctx, &[SELF_PERSON]).await,
             StatusCode::INTERNAL_SERVER_ERROR,
             "a dependency outage must not read as a denial",
         );
@@ -262,7 +288,7 @@ mod tests {
             let ctx = ctx_for("user", CALLER);
 
             assert_eq!(
-                authorize(&identity, &ctx, &[SELF_EMAIL]).await,
+                authorize(&identity, &ctx, &[SELF_PERSON]).await,
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "identity answering {status} must not read as a denial",
             );
@@ -275,7 +301,7 @@ mod tests {
         let ctx = ctx_for("user", CALLER);
 
         assert_eq!(
-            authorize(&identity, &ctx, &[SELF_EMAIL]).await,
+            authorize(&identity, &ctx, &[SELF_PERSON]).await,
             StatusCode::INTERNAL_SERVER_ERROR,
             "without an authorization backend the gate fails closed",
         );
@@ -287,18 +313,18 @@ mod tests {
         let ctx = ctx_for("service", CALLER);
 
         assert_eq!(
-            authorize(&identity, &ctx, &[STRANGER_EMAIL]).await,
+            authorize(&identity, &ctx, &[STRANGER_PERSON]).await,
             StatusCode::OK,
         );
     }
 
     #[tokio::test]
     async fn anonymous_caller_is_a_server_error_not_forbidden() {
-        let identity = spawn_identity(&[SELF_EMAIL]).await;
+        let identity = spawn_identity(&[SELF_PERSON]).await;
         let ctx = ctx_for("user", Uuid::nil());
 
         assert_eq!(
-            authorize(&identity, &ctx, &[SELF_EMAIL]).await,
+            authorize(&identity, &ctx, &[SELF_PERSON]).await,
             StatusCode::INTERNAL_SERVER_ERROR,
             "an unresolved caller is a broken authn path, not a denial"
         );
@@ -306,12 +332,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_request_without_a_bearer_to_forward_is_a_server_error_not_forbidden() {
-        let identity = spawn_identity(&[SELF_EMAIL]).await;
+        let identity = spawn_identity(&[SELF_PERSON]).await;
         let ctx = ctx_for("user", CALLER);
 
-        let status = status_of(
-            authorize_entity_ids(&identity, &ctx, None, "person", &[SELF_EMAIL.to_owned()]).await,
-        );
+        let status =
+            status_of(authorize_entity_ids(&identity, &ctx, None, "person", &[SELF_PERSON]).await);
         assert_eq!(
             status,
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -321,38 +346,16 @@ mod tests {
 
     #[tokio::test]
     async fn entity_type_without_an_authorization_rule_is_not_a_denial() {
-        let identity = spawn_identity(&[SELF_EMAIL]).await;
+        let identity = spawn_identity(&[SELF_PERSON]).await;
         let ctx = ctx_for("user", CALLER);
 
         let status = status_of(
-            authorize_entity_ids(
-                &identity,
-                &ctx,
-                Some("Bearer tok"),
-                "team",
-                &["team-1".to_owned()],
-            )
-            .await,
+            authorize_entity_ids(&identity, &ctx, Some("Bearer tok"), "team", &[SELF_PERSON]).await,
         );
         assert_eq!(
             status,
             StatusCode::INTERNAL_SERVER_ERROR,
             "an entity type with no authorization rule is a server-side gap"
         );
-    }
-
-    #[test]
-    fn person_ids_normalize_by_trimming_and_lowercasing() {
-        for (input, expected) in [
-            ("  Ada@Example.COM ", "ada@example.com"),
-            ("ada@example.com", "ada@example.com"),
-            ("   ", ""),
-        ] {
-            assert_eq!(
-                normalize_person_id(input),
-                expected,
-                "should normalize: {input:?}"
-            );
-        }
     }
 }

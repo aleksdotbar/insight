@@ -42,9 +42,11 @@ SERVER_FAULT_FLOOR = 500
 # uniform {400,401,403,404,409,429,500} on every route regardless of what the
 # handler can answer (spec-fidelity bug #1669). The gate subtracts the codes a
 # route provably cannot produce, or it would require statuses the API never
-# returns. UNIVERSAL_BOILERPLATE drops from every route: 401 (auth disabled at the
-# gateway) and 429 (no rate limiter).
-UNIVERSAL_BOILERPLATE = frozenset({401, 429})
+# returns. UNIVERSAL_BOILERPLATE drops from every route: 429 (no rate limiter).
+# 401 is REAL — the rig runs auth-ENABLED (the gears host's oidc-authn-plugin
+# verifies the gateway JWT), so every route answers 401 to an anonymous call
+# (api/test_unauthorized.py).
+UNIVERSAL_BOILERPLATE = frozenset({429})
 
 # Per-route declared codes the rig cannot observe, subtracted from `required` on
 # top of UNIVERSAL_BOILERPLATE — tagged per entry: `.standard_errors` boilerplate
@@ -72,12 +74,10 @@ BLOCKED: dict[str, frozenset[int]] = {
     "PUT /v1/metrics/{id}/thresholds/{tid}": frozenset({200, 403, 409}),  # 200=#1663
     "DELETE /v1/metrics/{id}/thresholds/{tid}": frozenset({204, 403, 409}),  # 204=#1663
     "POST /v1/admin/metric-thresholds": frozenset({404, 409}),  # 404 boilerplate; 409=#1664
-    # persons 200/404 covered via the in-process Identity stub (#1691); rest boilerplate
-    "GET /v1/persons/{email}": frozenset({400, 403, 409}),
-    # 404/409 boilerplate; 403 IS reachable (person outside the caller's visible set)
-    "POST /v1/metric-results": frozenset({404, 409}),
-    # saved-query CRUD + run (#1965): 403 (auth disabled, no role gate — cross-tenant
-    # is 404 by opacity) and 409 (no conflict path) are `.standard_errors` boilerplate.
+    # persons 200/404/400 covered via the in-process Identity stub (#1691)
+    "GET /v1/persons/{person_id}": frozenset({403, 409}),
+    # saved-query CRUD + run (#1965): 403 (no role gate — cross-tenant is 404 by
+    # opacity) and 409 (no conflict path) are `.standard_errors` boilerplate.
     "GET /v1/queries": frozenset({400, 403, 404, 409}),  # boilerplate: list, no input/lookup/conflict
     "POST /v1/queries": frozenset({403, 404, 409}),  # boilerplate (400 reachable: bad sql)
     "GET /v1/queries/{id}": frozenset({403, 409}),  # boilerplate

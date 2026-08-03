@@ -36,7 +36,7 @@ date: 2026-07-06
   - [4.6 Bootstrap Guardrails](#46-bootstrap-guardrails)
   - [4.7 Observability](#47-observability)
 - [5. Design Decisions](#5-design-decisions)
-  - [Carried over from the deleted API Gateway specs](#carried-over-from-the-deleted-api-gateway-specs)
+  - [Inherited decisions](#inherited-decisions)
   - [Superseded decisions](#superseded-decisions)
   - [DD-AUTH-01: JWT Minted at Login, Linked 1:1 to the Session](#dd-auth-01-jwt-minted-at-login-linked-11-to-the-session)
   - [DD-AUTH-02: Session Identity / Credential Split](#dd-auth-02-session-identity--credential-split)
@@ -58,7 +58,7 @@ date: 2026-07-06
 
 ### 1.1 Architectural Vision
 
-The authenticator is the BFF half of the deleted API Gateway spec, kept as a standalone service, minus proxying, plus the two things the deleted Router owned that are auth (not proxy) work: the cookie-to-JWT exchange and JWKS publication. nginx (see [Gateway DESIGN](../gateway/DESIGN.md)) does the routing; the authenticator answers its `auth_request` subrequests.
+The authenticator is a standalone BFF service: no proxying, plus the two routing-adjacent things that are auth (not proxy) work — the cookie-to-JWT exchange and JWKS publication. nginx (see [Gateway DESIGN](../gateway/DESIGN.md)) does the routing; the authenticator answers its `auth_request` subrequests.
 
 Three deliberate changes against the old BFF spec shape the design. First, the gateway JWT is **born at login together with the session** and stored linked 1:1 to it -- not minted lazily per request; the hot path serves a stored token and reissues it ahead of expiry. Second, the session's **identity is split from its credential**: a stable `session_id` (UUIDv7) keys everything server-side, while the cookie value is a rotating mapping to it -- rotation is one write plus one expiring key. Third, **IdP tokens are refreshed in the background**, so a session can never outlive the IdP's willingness to vouch for the user.
 
@@ -98,7 +98,7 @@ The authenticator is a plain HTTP service: no proxying, no K8s API access, no st
 | `cpt-insightspec-nfr-auth-rate-limit` | Layer-2 precise limits | Auth Controller | Redis token bucket by session/user + login-state cap | Flood test: 429 at cap, bounded Redis entries |
 | `cpt-insightspec-nfr-auth-fail-closed` | No auth without Redis | Session Manager | No local cache; readiness = Redis + keys loaded | Kill Redis; verify 401/503 + not-ready |
 
-**ADRs**: [`cpt-insightspec-adr-auth-0001-per-environment-idp-selection`](specs/ADR/0001-per-environment-idp-selection.md) -- which IdP backs the authenticator's OIDC client per environment (fakeidp for all dev environments -- CI, compose, and local k8s -- because it injects the `tenant_id` claim with zero extra infrastructure; Dex, heavy brokers, and a dev-login endpoint rejected; the production IdP/broker deferred), realising `cpt-insightspec-fr-auth-oidc-login` wiring without a code change. Remaining decisions are captured inline in [section 5](#5-design-decisions) until extracted alongside implementation, including the carried-over and superseded decisions from the deleted API Gateway spec tree.
+**ADRs**: [`cpt-insightspec-adr-auth-0001-per-environment-idp-selection`](specs/ADR/0001-per-environment-idp-selection.md) -- which IdP backs the authenticator's OIDC client per environment (fakeidp for all dev environments -- CI, compose, and local k8s -- because it injects the `tenant_id` claim with zero extra infrastructure; Dex, heavy brokers, and a dev-login endpoint rejected; the production IdP/broker deferred), realising `cpt-insightspec-fr-auth-oidc-login` wiring without a code change. Remaining decisions are captured inline in [section 5](#5-design-decisions) until extracted alongside implementation.
 
 ### 1.3 Architecture Layers
 
@@ -339,7 +339,7 @@ Does not call the OIDC provider. Does not authenticate requests by itself. Does 
 - [ ] `p2` - **ID**: `cpt-insightspec-component-auth-exchange`
 
 ##### Why this component exists
-The gateway's `auth_request` target -- replaces the deleted Router's in-process session check and JWT injection.
+The gateway's `auth_request` target -- the session check and JWT injection behind one subrequest.
 
 ##### Responsibility scope
 `GET /internal/authz`: resolve `asm:token:{token}` to `session_id`, load session, read the linked JWT; under the reissue age, return it as-is; past it, rebuild claims from the session record, sign, `SET asm:jwt:{session_id} NX EX` (parallel requests converge on one canonical JWT), return the winner. Emit `X-Gateway-Jwt` and the `Cache-Control` header (`max-age = min(authz_cache_max_age, jwt_exp - now - 60 s)` on 200, `no-store` otherwise).
@@ -444,7 +444,7 @@ Does not protect `/api/*` (gateway strips nothing relevant there; `SameSite=Stri
 Per-key Redis TTLs remove records, but the ZSET indexes and the refresh schedule still list dead members until trimmed.
 
 ##### Responsibility scope
-Leader-elected periodic pass: `ZREMRANGEBYSCORE` expired members from `asm:user_sessions:*` and orphans from `asm:idp_refresh_due`; emit backlog/removed metrics.
+Leader-elected periodic pass over single, well-known keys: `ZREMRANGEBYSCORE` expired members from `asm:login_state_live` and orphans from `asm:idp_refresh_due`; emit backlog/removed metrics. Per-user session indexes are trimmed inline by their writers and TTL-bounded, so the pass never scans the keyspace.
 
 ##### Responsibility boundaries
 Does not delete session records (TTL does). One leader per pass.
@@ -552,7 +552,7 @@ sequenceDiagram
     B-->>U: Set-Cookie __Host-sid=(session token) + 302 to SPA
 ```
 
-**Description**: The only moment IdP tokens are exchanged. The session-fixation guard (revoke any live session named by an incoming cookie, always generate the new token server-side) runs before session creation, exactly as in the deleted BFF spec. When `override_enabled` and the login carried `__override=<email>`, the effective person is swapped here — after IdP authentication and person resolution, before session creation (DD-AUTH-09).
+**Description**: The only moment IdP tokens are exchanged. The session-fixation guard (revoke any live session named by an incoming cookie, always generate the new token server-side) runs before session creation. When `override_enabled` and the login carried `__override=<email>`, the effective person is swapped here — after IdP authentication and person resolution, before session creation (DD-AUTH-09).
 
 #### Every API request -- cookie in, JWT out
 
@@ -583,7 +583,7 @@ sequenceDiagram
     end
 ```
 
-**Description**: Two Redis reads on the hot path -- the same work the deleted Router did in-process, behind one HTTP hop that the gateway's exchange cache absorbs.
+**Description**: Two Redis reads on the hot path, behind one HTTP hop that the gateway's exchange cache absorbs.
 
 #### Session refresh -- rotation without churn
 
@@ -610,7 +610,7 @@ sequenceDiagram
     end
 ```
 
-**Description**: A stale-but-in-grace cookie still resolves through the old mapping to the same `session_id` and is answered with the current state, no second rotation -- the deleted spec's grace semantics preserved by a TTL instead of a dedicated key family.
+**Description**: A stale-but-in-grace cookie still resolves through the old mapping to the same `session_id` and is answered with the current state, no second rotation -- grace semantics carried by a TTL instead of a dedicated key family.
 
 #### Background IdP refresh and the kill path
 
@@ -673,7 +673,7 @@ sequenceDiagram
     end
 ```
 
-**Description**: Salvaged from the deleted BFF spec, including the `jti` replay guard and the documented sub-only blast-radius fallback — resolved via the `asm:sub_index` written at login (Identity cannot resolve a bare `sub`, and the logout path must not depend on another service).
+**Description**: Includes the `jti` replay guard and the documented sub-only blast-radius fallback — resolved via the `asm:sub_index` written at login (Identity cannot resolve a bare `sub`, and the logout path must not depend on another service).
 
 #### Service token issuance
 
@@ -705,7 +705,7 @@ sequenceDiagram
 
 - [ ] `p3` - **ID**: `cpt-insightspec-db-auth-redis`
 
-This module's "database" is Redis. All keys carry the `asm:` prefix (authenticator session management) -- owner-prefixed keys on the shared Redis instance, one prefix per module, so operators can identify the owner from the key name (the deleted spec's DD-BFF-04 rationale, with a prefix named after the service that actually exists). Explicitly absent against the deleted spec: **no swap-key family (its `bff:swap:*`), no RENAME-based rotation, no separate JWT-cache prefix (its `router:jwt_cache:*`)** -- the linked JWT lives under `asm:jwt:*` with the same lifecycle as the session.
+This module's "database" is Redis. All keys carry the `asm:` prefix (authenticator session management) -- owner-prefixed keys on the shared Redis instance, one prefix per module, so operators can identify the owner from the key name. Explicitly absent: **no swap-key family, no RENAME-based rotation, no separate JWT-cache prefix** -- the linked JWT lives under `asm:jwt:*` with the same lifecycle as the session.
 
 ```mermaid
 graph LR
@@ -767,7 +767,7 @@ graph LR
 
 **Type**: Redis STRING. Value: the full signed gateway JWT.
 
-**Purpose**: The linked JWT -- created in the same pipeline as the session, replaced by the reissue-ahead path with `SET ... NX EX <reissue_after>` (stampede-safe: parallel exchanges converge on one canonical JWT; carried over from the deleted Router's DD-ROUTER-10), deleted in the same pipeline as the session on revoke.
+**Purpose**: The linked JWT -- created in the same pipeline as the session, replaced by the reissue-ahead path with `SET ... NX EX <reissue_after>` (stampede-safe: parallel exchanges converge on one canonical JWT; DD-ROUTER-10), deleted in the same pipeline as the session on revoke.
 
 **TTL**: `jwt_reissue_after_seconds` on NX fill; bounded overall by the session's lifecycle.
 
@@ -775,7 +775,11 @@ graph LR
 
 **Type**: Redis ZSET. Member: `session_id`. Score: `expires_at`.
 
-**Why ZSET, not SET** (carried over from the deleted BFF spec's DD-BFF-03): active sessions, expired entries, and janitor cleanup are each one `ZRANGEBYSCORE` / `ZREMRANGEBYSCORE`. Rotation never touches this index -- members are stable `session_id`s; only refresh updates the score.
+**Why ZSET, not SET** (DD-BFF-03): active sessions, expired entries, and inline cleanup are each one `ZRANGEBYSCORE` / `ZREMRANGEBYSCORE`. Rotation never touches this index -- members are stable `session_id`s; only refresh updates the score.
+
+**Cleanup**: session-create trims already-expired members in the same pipeline (same key, so the transaction stays single-slot on Redis Cluster), and the key carries an `EXPIREAT` at the longest member's absolute expiry, applied `NX` then `GT` so it only ever extends. Abandoned indexes self-expire; no keyspace `SCAN` is required anywhere (Redis Cluster has no cluster-wide cursor).
+
+**Upgrade from pre-TTL builds**: indexes written before this scheme carry no TTL, and writer-driven cleanup only reaches indexes a writer touches. Flush `asm:*` at upgrade (sessions are ephemeral; users re-login); otherwise pre-upgrade sessions live out their TTL with a possible listing/revocation blind spot.
 
 #### Key: `asm:sid_index:{iss}:{idp_sid}`
 
@@ -829,7 +833,7 @@ graph LR
 
 - [ ] `p2` - **ID**: `cpt-insightspec-design-auth-jwt-claim-spec`
 
-Technical specification of `cpt-insightspec-contract-auth-gateway-jwt` ([PRD section 7.2](./PRD.md#72-external-integration-contracts)). This schema **supersedes the deleted spec's DD-ROUTER-05** (identity-only JWT, all authorization downstream): the JWT is the signed, complete description of the request author.
+Technical specification of `cpt-insightspec-contract-auth-gateway-jwt` ([PRD section 7.2](./PRD.md#72-external-integration-contracts)). This schema **supersedes DD-ROUTER-05** (identity-only JWT, all authorization downstream): the JWT is the signed, complete description of the request author.
 
 **Header**: `alg: ES256` (see the algorithm decision in [section 5](#resolved-step-07-es256-for-the-gateway-jwt)), `typ: JWT`, `kid` from JWKS.
 
@@ -869,7 +873,7 @@ All tunable via Helm values; defaults chosen so everything holds without touchin
 | `authenticator.bootstrap_first_admin` | *(deferred)* | First-admin bootstrap is out of step-04 scope and not implemented — no such config exists in the shipped gear; unknown persons are denied (403). Retained here as design intent for the separate universe-admin initiative (see 4.6). |
 | `authenticator.authz_cache_max_age_seconds` | `30` | Upper bound for the gateway-side cookie-to-JWT exchange cache, emitted as `Cache-Control: max-age` on `/internal/authz` 200s (actual value = `min(this, jwt_exp - now - 60 s)`; non-200 = `no-store`). Bounds revocation staleness at the gateway. `0` = per-request checks, instant revocation. |
 
-Inherited from the deleted BFF spec unchanged: `authenticator.refresh_grace_ms` (default `250`) -- the TTL applied to the superseded token mapping on rotation; plus the OIDC client settings (`issuer_url`, `client_id`, `client_secret`).
+`authenticator.refresh_grace_ms` (default `250`) -- the TTL applied to the superseded token mapping on rotation; plus the OIDC client settings (`issuer_url`, `client_id`, `client_secret`).
 
 Step-10 additions (all defaulted; the config struct mirrors them 1:1):
 
@@ -950,15 +954,15 @@ The authenticator is an idiomatic gears-rust gear -- the same shape the analytic
 
 ### 4.1 Cookie Hardening
 
-Salvaged unchanged from the deleted BFF spec: a single helper sets every session cookie; attributes are hard-coded (`__Host-sid`, `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, no `Domain`), only `Max-Age` comes from config (`session_ttl_seconds`, or 0 for clears). A snapshot test asserts the exact `Set-Cookie` header; any other code path setting cookies fails review.
+A single helper sets every session cookie; attributes are hard-coded (`__Host-sid`, `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, no `Domain`), only `Max-Age` comes from config (`session_ttl_seconds`, or 0 for clears). A snapshot test asserts the exact `Set-Cookie` header; any other code path setting cookies fails review.
 
 ### 4.2 CSRF Defense
 
-Salvaged unchanged: `SameSite=Strict` primary; on state-changing `/auth/*` methods, `X-CSRF-Token` constant-time-compared against the session record, with `Origin`-allowlist fallback; both failing yields 403. The CSRF token is generated once per session at login and dies with the session. Empty `csrf_origins` (default) is fail-closed: token required. The SPA fetches the token via `GET /auth/csrf` (echoed by `/auth/me`).
+`SameSite=Strict` primary; on state-changing `/auth/*` methods, `X-CSRF-Token` constant-time-compared against the session record, with `Origin`-allowlist fallback; both failing yields 403. The CSRF token is generated once per session at login and dies with the session. Empty `csrf_origins` (default) is fail-closed: token required. The SPA fetches the token via `GET /auth/csrf` (echoed by `/auth/me`).
 
 ### 4.3 Janitor and Leader Election
 
-Background tasks (janitor, IdP refresher) run on every pod but elect one leader per pass via a Redis lock (TTL slightly longer than the interval) -- carried over from the deleted spec's DD-BFF-09: no extra K8s objects, Redis is already a hard dependency, a missed pass costs little. The janitor trims `asm:user_sessions:*` and `asm:idp_refresh_due`; backlog metrics alert if no pod runs a pass for twice the interval.
+Background tasks (janitor, IdP refresher) run on every pod but elect one leader per pass via a Redis lock (TTL slightly longer than the interval) -- DD-BFF-09: no extra K8s objects, Redis is already a hard dependency, a missed pass costs little. The janitor trims `asm:login_state_live` and `asm:idp_refresh_due` -- both single, well-known keys, so the pass issues no keyspace `SCAN` (Redis Cluster has no cluster-wide cursor). Per-user session indexes need no pass: writers trim them inline and a guarded `EXPIREAT` bounds abandoned keys. Backlog metrics alert if no pod runs a pass for twice the interval.
 
 ### 4.4 Rate Limiting
 
@@ -966,7 +970,7 @@ Two layers by design: the gateway carries the coarse per-IP flood guard (`limit_
 
 ### 4.5 Key Rotation
 
-JWT signing keys are a plain mounted secret (`current` + optional `previous`); rotation = update the secret and re-read (or roll pods). JWKS publishes both kids during the overlap; downstream JWKS caches refresh on unknown `kid`. The operator runbook keeps `previous` published for at least `jwt_ttl + downstream JWKS cache age` (about 65 minutes with the defaults) before removal -- the same overlap math as the deleted Router spec's runbook, minus the K8s watch machinery.
+JWT signing keys are a plain mounted secret (`current` + optional `previous`); rotation = update the secret and re-read (or roll pods). JWKS publishes both kids during the overlap; downstream JWKS caches refresh on unknown `kid`. The operator runbook keeps `previous` published for at least `jwt_ttl + downstream JWKS cache age` (about 65 minutes with the defaults) before removal.
 
 ### 4.6 Bootstrap Guardrails
 
@@ -994,13 +998,13 @@ Audit (via Audit Service): the full event list in `cpt-insightspec-nfr-auth-audi
 
 ## 5. Design Decisions
 
-### Carried over from the deleted API Gateway specs
+### Inherited decisions
 
-Recorded here so the decisions survive the deleted tree; rationale as originally written:
+Decisions that predate this spec, recorded here with their original IDs (code and earlier sections reference them):
 
 - **DD-BFF-01 -- Opaque session vs JWT cookie**: opaque server-side session, instant revocation, nothing portable in the browser. Unchanged.
 - **DD-BFF-02 -- Explicit session refresh, no sliding TTL**: only `POST /auth/refresh` extends the session; API traffic never does. Unchanged (TTL default now 600 s).
-- **DD-BFF-03 -- ZSET for the user-session index**: score = expiry makes listing and janitor cleanup O(log N). Unchanged; members are now stable `session_id`s, so rotation no longer touches the index at all.
+- **DD-BFF-03 -- ZSET for the user-session index**: score = expiry makes listing and inline cleanup O(log N). Unchanged; members are now stable `session_id`s, so rotation no longer touches the index at all.
 - **DD-BFF-09 -- Workers coordinate via Redis lock**: one leader per pass, no extra K8s objects. Unchanged; now also covers the IdP refresher.
 - **DD-ROUTER-03 -- Redis-backed JWT storage (not in-memory)**: multi-pod correctness and single-DEL invalidation. Unchanged in spirit; the key is now `asm:jwt:{session_id}` with a login-time fill instead of `router:jwt_cache:{sid}` with a lazy fill.
 - **DD-ROUTER-09 -- JWT storage size cap**: bounded by per-entry TTL plus Redis `allkeys-lru`; losing an entry only costs a re-sign. Unchanged.
@@ -1011,7 +1015,7 @@ Recorded here so the decisions survive the deleted tree; rationale as originally
 - **DD-ROUTER-05 (identity-only JWT, all authorization downstream) -- SUPERSEDED** by DD-AUTH-04: the JWT now carries a single `tenant_id` and `roles`; downstream services still make the final authorization decision, but from signed claims instead of per-request identity lookups and unsigned tenant headers.
 - **The BFF spec's "no IdP token refresh in v1" carve-out -- SUPERSEDED** by DD-AUTH-03: the authenticator stores and background-refreshes IdP tokens; sessions die on definitive IdP refusal.
 - **DD-BFF-10's swap-key rotation pipeline -- SUPERSEDED** in mechanism by DD-AUTH-02 (the grace *semantics* are preserved by the old mapping's TTL; the rotation, grace, and jitter *intent* of DD-BFF-10 carries over with the bigger jitter window).
-- **The single-binary gateway NFR (`nfr-gw-single-binary` in the deleted tree) -- deliberately violated and retired**: that NFR existed to avoid a hop between auth and routing; this architecture reintroduces the hop deliberately and absorbs it with the gateway-side exchange cache.
+- **The single-binary gateway NFR -- deliberately retired**: it existed to avoid a hop between auth and routing; this architecture reintroduces the hop deliberately and absorbs it with the gateway-side exchange cache.
 
 ### DD-AUTH-01: JWT Minted at Login, Linked 1:1 to the Session
 
@@ -1026,14 +1030,14 @@ Recorded here so the decisions survive the deleted tree; rationale as originally
 
 ### DD-AUTH-02: Session Identity / Credential Split
 
-**Decision**: Stable `session_id` (UUIDv7) as the universal server-side key and JWT `sid`; the cookie value is only an `asm:token:{token}` mapping. Rotation = write new mapping + let the old one expire after `grace_ms`. No `RENAME`, no ZSET member replacement, no sid-index churn, no dedicated swap/grace key family (the deleted spec's `bff:swap:*`).
+**Decision**: Stable `session_id` (UUIDv7) as the universal server-side key and JWT `sid`; the cookie value is only an `asm:token:{token}` mapping. Rotation = write new mapping + let the old one expire after `grace_ms`. No `RENAME`, no ZSET member replacement, no sid-index churn, no dedicated swap/grace key family.
 
 **Why**:
-- The deleted spec's conflation of cookie value = session id = Redis key = `sid` claim was the actual bug behind its stale-`sid` problem and its heavyweight rotation pipeline.
+- Conflating cookie value = session id = Redis key = `sid` claim was the actual bug behind the earlier design's stale-`sid` problem and heavyweight rotation pipeline.
 - The expiring old mapping *is* the grace window -- one fewer key family, one fewer failure mode.
 - Audit and tracing get one id from login to logout instead of a chain of rotated ones.
 
-**Consequences**: Token theft detection stays probabilistic exactly as in the deleted spec (rotation + jitter make reuse noisy); the grace path returns current state without re-rotating, so races cannot churn tokens.
+**Consequences**: Token theft detection stays probabilistic (rotation + jitter make reuse noisy); the grace path returns current state without re-rotating, so races cannot churn tokens.
 
 ### DD-AUTH-03: Background IdP Token Refresh
 
@@ -1119,5 +1123,5 @@ The authenticator's Key Store loads a mounted PKCS#8 **EC P-256** private key (`
 - **PRD**: [PRD.md](./PRD.md)
 - **Sibling**: [Gateway DESIGN](../gateway/DESIGN.md) -- the nginx edge: routing, exchange cache, subrequest contract consumer
 - **Parent**: [Backend PRD](../specs/PRD.md), [Backend DESIGN](../specs/DESIGN.md)
-- **ADRs**: [ADR/](./ADR/) -- to be authored alongside implementation; decisions captured inline in section 5 until then, including carried-over and superseded decisions from the deleted `api-gateway/` spec tree
+- **ADRs**: [ADR/](./ADR/) -- to be authored alongside implementation; decisions captured inline in section 5 until then
 - **Decision document**: the nginx + authorization analysis (workspace-level) that mandated this architecture

@@ -31,9 +31,9 @@
 //!   below `hash-max-listpack-entries` (default 128). A tenant with ≤ 128
 //!   distinct `(role, team)` combinations pays one allocation, not one per
 //!   entry.
-//! - `flush_all()` still uses `SCAN cat:v1:* + UNLINK`, but now enumerates
-//!   tenant hashes (a small number) rather than per-entry keys (potentially
-//!   thousands).
+//! - `flush_all()` walks the `cat:v1:tenants` registry set and `UNLINK`s
+//!   per key — no `SCAN` cursor and no multi-key commands, both invalid on
+//!   Redis Cluster.
 //!
 //! DESIGN §3.2's swap-ability OQ (§4 γ) explicitly allows changing the cache
 //! mechanism behind the trait — the public surface
@@ -63,6 +63,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use futures::StreamExt as _;
 use redis::AsyncCommands;
 use uuid::Uuid;
 
@@ -73,6 +74,14 @@ use crate::domain::catalog::response::CatalogResponse;
 /// DESIGN §3.2; this constant is the prefix the seed-migration flush and
 /// admin-write invalidations both walk.
 pub const CACHE_KEY_PREFIX: &str = "cat:v1:";
+
+/// Registry of live tenant hash keys — `flush_all` walks this instead of a
+/// keyspace `SCAN`. Stale members cost a no-op `UNLINK`; size is bounded by
+/// the number of tenants ever cached.
+const TENANT_REGISTRY_KEY: &str = "cat:v1:tenants";
+
+/// Concurrent `UNLINK`s in flight during `flush_all`.
+const FLUSH_UNLINK_CONCURRENCY: usize = 16;
 
 /// Default per-entry TTL — internal to this module. PRD §5.3
 /// `cpt-metric-cat-fr-cache` mandates 5 minutes; admin writes invalidate
@@ -316,39 +325,6 @@ impl RedisCatalogCache {
             skip_until: SkipUntilMap::default(),
         })
     }
-
-    /// `SCAN MATCH pattern + UNLINK` — used only by `flush_all`, which has
-    /// to enumerate tenant hashes. NEVER `KEYS`, NEVER `FLUSHDB`. `UNLINK`
-    /// is preferred over `DEL` because it is asynchronous on the server
-    /// side and won't block large purges.
-    ///
-    /// Per-tenant invalidation does NOT use this — it's a single
-    /// `UNLINK cat:v1:{tenant}` against the hash key (see `invalidate`).
-    async fn scan_and_unlink(&self, pattern: &str) -> anyhow::Result<()> {
-        let mut conn = self.conn.clone();
-        let mut cursor: u64 = 0;
-        loop {
-            let (next, batch): (u64, Vec<String>) = redis::cmd("SCAN")
-                .arg(cursor)
-                .arg("MATCH")
-                .arg(pattern)
-                .arg("COUNT")
-                .arg(100)
-                .query_async(&mut conn)
-                .await?;
-            if !batch.is_empty() {
-                let _: i64 = redis::cmd("UNLINK")
-                    .arg(&batch)
-                    .query_async(&mut conn)
-                    .await?;
-            }
-            cursor = next;
-            if cursor == 0 {
-                break;
-            }
-        }
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -415,6 +391,10 @@ impl CatalogCache for RedisCatalogCache {
         let field = cache_field(role_slug, team_id);
         let mut conn = self.conn.clone();
         let bytes = serde_json::to_vec(payload)?;
+        // INVARIANT: register before writing, so the registry is always a
+        // superset of live keys. Separate command — different slot on a
+        // cluster, so it can't join the pipeline below.
+        let _: i64 = conn.sadd(TENANT_REGISTRY_KEY, &hash_key).await?;
         // `HSET` has no TTL of its own. Refresh the per-hash TTL with
         // `EXPIRE` after every write so an actively-read tenant keeps its
         // cache warm; a quiet tenant lets its hash expire cleanly. Both
@@ -445,9 +425,29 @@ impl CatalogCache for RedisCatalogCache {
     }
 
     async fn flush_all(&self) -> anyhow::Result<()> {
-        // `cat:v1:*` — NEVER `FLUSHDB`. The Redis instance is shared with
-        // sibling namespaces and a global flush would clobber them.
-        self.scan_and_unlink(&format!("{CACHE_KEY_PREFIX}*")).await
+        // INVARIANT: NEVER `KEYS`, NEVER `FLUSHDB` — the instance is shared
+        // with sibling namespaces.
+        let mut conn = self.conn.clone();
+        let keys: Vec<String> = conn.smembers(TENANT_REGISTRY_KEY).await?;
+        if keys.is_empty() {
+            return Ok(());
+        }
+
+        // One key per UNLINK (a batch could span cluster slots), issued
+        // concurrently on the multiplexed connection, bounded in flight.
+        let mut unlinks = futures::stream::iter(keys.iter().cloned().map(|key| {
+            let mut conn = self.conn.clone();
+            async move { conn.unlink::<_, i64>(&key).await }
+        }))
+        .buffer_unordered(FLUSH_UNLINK_CONCURRENCY);
+        while let Some(res) = unlinks.next().await {
+            res?;
+        }
+
+        // INVARIANT: SREM only what we enumerated — a concurrent `put` may
+        // have just registered a key we must not drop.
+        let _: i64 = conn.srem(TENANT_REGISTRY_KEY, &keys).await?;
+        Ok(())
     }
 
     fn should_skip(&self, tenant_id: Uuid) -> bool {

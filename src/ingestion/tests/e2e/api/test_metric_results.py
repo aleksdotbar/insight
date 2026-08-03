@@ -18,7 +18,7 @@ builtin metric; this module retains the endpoint contract error cases.
 from __future__ import annotations
 
 import pytest
-from lib.identity_stub import UNKNOWN_EMAIL, VISIBLE_EMAILS
+from lib.identity_stub import UNKNOWN_EMAIL, VISIBLE_EMAILS, person_id_for
 
 from api.endpoint_helpers import text_body_request
 
@@ -27,13 +27,40 @@ pytestmark = pytest.mark.api
 _BUILTIN_METRIC = [{"metric_key": "ai.active_days", "views": [{"view": "period"}]}]
 
 
-def _request(*, metrics, entity_ids=("e2e-nobody@example.com",), period=("2026-01-01", "2026-01-31")):
-    """A well-formed metric-results body with overridable parts."""
+def _request(*, metrics, entity_ids=None, period=("2026-01-01", "2026-01-31")):
+    """A well-formed metric-results body with overridable parts.
+
+    entity ids are person UUIDs since the identity cutover; the default is a
+    visible persona's UUID with no seeded data, so validation and the
+    visibility gate pass and compute paths answer with honest emptiness."""
+    if entity_ids is None:
+        entity_ids = (person_id_for(VISIBLE_EMAILS[1]),)
     return {
         "entity": {"type": "person", "ids": list(entity_ids)},
         "period": {"from": period[0], "to": period[1]},
         "metrics": metrics,
     }
+
+
+def test_metric_results_400_non_uuid_person_ids(api) -> None:
+    """entity.ids must be person UUIDs since the identity cutover; the
+    pre-cutover email shape is a loud 400, never a silent empty result."""
+    body = _request(
+        metrics=[{"metric_key": "git.commits", "views": [{"view": "period"}]}], entity_ids=("somebody@example.com",)
+    )
+    r = api.post("/v1/metric-results", json=body)
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+
+
+def test_metric_results_400_nil_uuid_person_id(api) -> None:
+    """The nil UUID parses but is never a person; it must be a client error, not
+    an identity round trip the gate would report as a server fault."""
+    body = _request(
+        metrics=[{"metric_key": "git.commits", "views": [{"view": "period"}]}],
+        entity_ids=("00000000-0000-0000-0000-000000000000",),
+    )
+    r = api.post("/v1/metric-results", json=body)
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
 
 
 def test_metric_results_400_empty_metrics(api) -> None:
@@ -54,8 +81,7 @@ def test_metric_results_400_bad_period_date(api) -> None:
 def test_metric_results_400_reversed_period(api) -> None:
     """`period.from` after `period.to` is a 400 (before any bucket enumeration)."""
     body = _request(
-        metrics=[{"metric_key": "ai.x", "views": [{"view": "period"}]}],
-        period=("2026-02-01", "2026-01-01"),
+        metrics=[{"metric_key": "ai.x", "views": [{"view": "period"}]}], period=("2026-02-01", "2026-01-01")
     )
     r = api.post("/v1/metric-results", json=body)
     assert r.status_code == 400, f"status={r.status_code} body={r.text}"
@@ -64,10 +90,8 @@ def test_metric_results_400_reversed_period(api) -> None:
 def test_metric_results_400_unknown_metric_key(api) -> None:
     """An unknown `metric_key` is resolved against the catalog and rejected as a
     400 (`unavailable`) — NOT a 404. Pins that the compute endpoint has no
-    not-found path (the spec's declared 404 is `.standard_errors` boilerplate)."""
-    body = _request(
-        metrics=[{"metric_key": "e2e.definitely-not-a-real-metric", "views": [{"view": "period"}]}],
-    )
+    not-found path, which is why the spec declares no 404 for it."""
+    body = _request(metrics=[{"metric_key": "e2e.definitely-not-a-real-metric", "views": [{"view": "period"}]}])
     r = api.post("/v1/metric-results", json=body)
     assert r.status_code == 400, f"status={r.status_code} body={r.text}"
 
@@ -75,7 +99,7 @@ def test_metric_results_400_unknown_metric_key(api) -> None:
 def test_metric_results_403_person_outside_the_callers_visible_set(api) -> None:
     """A person the caller cannot see is refused before any ClickHouse access:
     the gate flattens the caller's subchart and the requested id is not in it."""
-    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(UNKNOWN_EMAIL,))
+    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(person_id_for(UNKNOWN_EMAIL),))
     r = api.post("/v1/metric-results", json=body)
     assert r.status_code == 403, f"status={r.status_code} body={r.text}"
 
@@ -83,7 +107,9 @@ def test_metric_results_403_person_outside_the_callers_visible_set(api) -> None:
 def test_metric_results_403_rejects_the_whole_request_on_one_hidden_person(api) -> None:
     """Mixing a visible person with a hidden one refuses the request as a whole,
     rather than silently dropping the unauthorized entity from the response."""
-    body = _request(metrics=_BUILTIN_METRIC, entity_ids=(VISIBLE_EMAILS[1], UNKNOWN_EMAIL))
+    body = _request(
+        metrics=_BUILTIN_METRIC, entity_ids=(person_id_for(VISIBLE_EMAILS[1]), person_id_for(UNKNOWN_EMAIL))
+    )
     r = api.post("/v1/metric-results", json=body)
     assert r.status_code == 403, f"status={r.status_code} body={r.text}"
 

@@ -6,6 +6,7 @@ mod catalog;
 pub(crate) mod error;
 mod handlers;
 mod metric_definitions;
+mod metric_drilldown;
 mod metric_results;
 mod saved_queries;
 
@@ -19,7 +20,15 @@ use axum::http::StatusCode;
 use axum::{Extension, Router};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use toolkit::api::{OpenApiInfo, OpenApiRegistry, OpenApiRegistryImpl, OperationBuilder};
+use toolkit::api::{
+    OpenApiInfo, OpenApiRegistry, OpenApiRegistryImpl, OperationBuilder, ResponseSpec,
+};
+use utoipa::openapi::RefOr;
+use utoipa::openapi::content::ContentBuilder;
+use utoipa::openapi::header::HeaderBuilder;
+use utoipa::openapi::schema::{
+    KnownFormat, ObjectBuilder, Schema, SchemaFormat, SchemaType, Type as OpenApiType,
+};
 
 use crate::config::GearConfig;
 use crate::domain::admin_threshold::AdminThresholdService;
@@ -234,7 +243,11 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric results",
         )
-        .standard_errors(openapi)
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_415(openapi)
+        .error_500(openapi)
         .handler(metric_results::query_metric_results)
         .register(router, openapi);
 
@@ -330,6 +343,48 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .handler(saved_queries::run_saved_query)
         .register(router, openapi);
 
+    router = OperationBuilder::post("/v1/metric-drilldown")
+        .operation_id("analytics_api.metric_drilldown.create")
+        .summary("List metric evidence")
+        .authenticated()
+        .no_license_required()
+        .json_request::<crate::domain::metric_drilldown::MetricDrilldownRequest>(
+            openapi,
+            "Metric evidence selection",
+        )
+        .json_response_with_schema::<crate::domain::metric_drilldown::MetricDrilldownResponse>(
+            openapi,
+            StatusCode::OK,
+            "Metric evidence",
+        )
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_404(openapi)
+        .error_415(openapi)
+        .error_429(openapi)
+        .error_500(openapi)
+        .handler(metric_drilldown::query_metric_drilldown)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/metric-drilldown/export")
+        .operation_id("analytics_api.metric_drilldown.export")
+        .summary("Export metric evidence")
+        .authenticated()
+        .no_license_required()
+        .json_request::<crate::domain::metric_drilldown::MetricDrilldownExportRequest>(
+            openapi,
+            "Metric evidence export selection",
+        )
+        .response(ResponseSpec {
+            status: StatusCode::OK.as_u16(),
+            content_type: "text/csv",
+            description: "Complete metric evidence export".to_owned(),
+            schema_name: None,
+        })
+        .standard_errors(openapi)
+        .handler(metric_drilldown::export_metric_drilldown)
+        .register(router, openapi);
+
     // Thresholds (legacy)
     router = OperationBuilder::get("/v1/metrics/{id}/thresholds")
         .operation_id("analytics_api.thresholds.list")
@@ -386,9 +441,9 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .register(router, openapi);
 
     // Person lookup (delegates to Identity service)
-    router = OperationBuilder::get("/v1/persons/{email}")
+    router = OperationBuilder::get("/v1/persons/{person_id}")
         .operation_id("analytics_api.persons.get")
-        .summary("Resolve a person by email")
+        .summary("Resolve a person by canonical person id")
         .authenticated()
         .no_license_required()
         .json_response_with_schema::<Person>(openapi, StatusCode::OK, "Person")
@@ -461,7 +516,8 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric definitions",
         )
-        .standard_errors(openapi)
+        .error_401(openapi)
+        .error_500(openapi)
         .handler(metric_definitions::list_metric_definitions)
         .register(router, openapi);
 
@@ -552,9 +608,44 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
 pub fn openapi_document() -> anyhow::Result<utoipa::openapi::OpenApi> {
     let openapi = OpenApiRegistryImpl::new();
     let _ = build_operations(Router::new(), &openapi);
-    openapi
+    let mut document = openapi
         .build_openapi(&openapi_info())
-        .map_err(|e| anyhow::anyhow!("failed to build analytics OpenAPI document: {e}"))
+        .map_err(|e| anyhow::anyhow!("failed to build analytics OpenAPI document: {e}"))?;
+    let response = document
+        .paths
+        .paths
+        .get_mut("/v1/metric-drilldown/export")
+        .and_then(|path| path.post.as_mut())
+        .and_then(|operation| operation.responses.responses.get_mut("200"))
+        .ok_or_else(|| anyhow::anyhow!("metric drilldown export response is missing"))?;
+    let RefOr::T(response) = response else {
+        return Err(anyhow::anyhow!(
+            "metric drilldown export response must be inline"
+        ));
+    };
+    let schema = Schema::Object(
+        ObjectBuilder::new()
+            .schema_type(SchemaType::Type(OpenApiType::String))
+            .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary)))
+            .build(),
+    );
+    for media_type in [
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ] {
+        response.content.insert(
+            media_type.to_owned(),
+            ContentBuilder::new().schema(Some(schema.clone())).build(),
+        );
+    }
+    response.headers.insert(
+        "Content-Disposition".to_owned(),
+        HeaderBuilder::new()
+            .schema(ObjectBuilder::new().schema_type(OpenApiType::String))
+            .description(Some("Attachment filename"))
+            .build(),
+    );
+    Ok(document)
 }
 
 #[cfg(test)]
@@ -570,5 +661,35 @@ mod tests {
     fn build_operations_registers_the_full_table_without_state() {
         let openapi = OpenApiRegistryImpl::new();
         let _router: Router = build_operations(Router::new(), &openapi);
+    }
+
+    #[test]
+    fn export_response_advertises_both_file_media_types_and_the_filename_header() {
+        let document =
+            openapi_document().unwrap_or_else(|error| panic!("document must build: {error}"));
+        let response = document
+            .paths
+            .paths
+            .get("/v1/metric-drilldown/export")
+            .and_then(|path| path.post.as_ref())
+            .and_then(|operation| operation.responses.responses.get("200"))
+            .unwrap_or_else(|| panic!("export 200 response must be registered"));
+        let RefOr::T(response) = response else {
+            panic!("export response must be inline, not a $ref");
+        };
+
+        for media_type in [
+            "text/csv",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ] {
+            assert!(
+                response.content.contains_key(media_type),
+                "export must advertise {media_type}"
+            );
+        }
+        assert!(
+            response.headers.contains_key("Content-Disposition"),
+            "export must advertise the attachment filename header"
+        );
     }
 }

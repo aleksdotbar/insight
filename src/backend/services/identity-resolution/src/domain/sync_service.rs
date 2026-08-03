@@ -77,12 +77,49 @@ pub struct SyncSummary {
 ///
 /// Propagates reader/writer failures; the writer contract guarantees the
 /// previous snapshot survives them.
+/// Why a sync did not publish: the guard refused, or the work failed.
+pub enum SyncError {
+    /// The log was empty and `--force` was not given. Operator-facing message.
+    EmptyLog(String),
+    Failed(anyhow::Error),
+}
+
+impl From<anyhow::Error> for SyncError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Failed(e)
+    }
+}
+
+/// The pure guard decision: refuse publishing an EMPTY log unless `force`.
+/// An empty read is far more often a misconfigured database / wiped stand than
+/// a real "no people", and publishing it atomically erases a populated mirror.
+fn empty_log_guard(log_rows: usize, force: bool) -> Result<(), String> {
+    if force || log_rows > 0 {
+        return Ok(());
+    }
+    Err(
+        "empty-log guard: the persons log has 0 rows — publishing would erase the \
+         ClickHouse snapshot (misconfigured database_url? wiped stand?); re-run with \
+         --force to publish the empty snapshot deliberately"
+            .to_owned(),
+    )
+}
+
 pub async fn run_sync(
     reader: &dyn PersonsLogReader,
     writer: &dyn IdentityPersonsWriter,
     now: DateTime,
-) -> anyhow::Result<SyncSummary> {
+    force: bool,
+) -> Result<SyncSummary, SyncError> {
     let rows = reader.read_all().await?;
+
+    // Guarded on the rows about to be PUBLISHED, not on an earlier count(): a
+    // seed running between the two (it holds a different lock) could empty the
+    // log after a non-zero count and slip the empty snapshot past the guard.
+    if let Err(msg) = empty_log_guard(rows.len(), force) {
+        return Err(SyncError::EmptyLog(msg));
+    }
+
     writer.replace(&rows, now).await?;
 
     Ok(SyncSummary {
@@ -148,6 +185,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_empty_log_is_refused_without_writing_anything() -> anyhow::Result<()> {
+        let writer = FakeWriter::default();
+
+        let result = run_sync(
+            &FakeReader(Vec::new()),
+            &writer,
+            parse("2026-07-29 12:00:00")?,
+            false,
+        )
+        .await;
+
+        let Err(SyncError::EmptyLog(msg)) = result else {
+            anyhow::bail!("an empty log must be refused");
+        };
+        assert!(msg.contains("--force"), "{msg}");
+        // The point of the guard: the populated snapshot survives untouched.
+        assert!(writer.written.lock().await.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn force_publishes_the_empty_snapshot() -> anyhow::Result<()> {
+        let writer = FakeWriter::default();
+
+        let summary = run_sync(
+            &FakeReader(Vec::new()),
+            &writer,
+            parse("2026-07-29 12:00:00")?,
+            true,
+        )
+        .await
+        .map_err(|e| match e {
+            SyncError::EmptyLog(msg) => anyhow::anyhow!(msg),
+            SyncError::Failed(e) => e,
+        })?;
+
+        assert_eq!(summary.rows, 0);
+        assert_eq!(summary.max_id, None);
+        assert_eq!(summary.max_created_at, None);
+        // The writer still runs — a deliberate empty snapshot clears the table.
+        assert_eq!(writer.written.lock().await.map(|(rows, _)| rows), Some(0));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn summarizes_rows_and_watermarks() -> anyhow::Result<()> {
         let reader = FakeReader(vec![
             row(7, "2026-07-01 10:00:00")?,
@@ -156,7 +238,12 @@ mod tests {
         let writer = FakeWriter::default();
         let now = parse("2026-07-29 12:00:00")?;
 
-        let summary = run_sync(&reader, &writer, now).await?;
+        let summary = run_sync(&reader, &writer, now, false)
+            .await
+            .map_err(|e| match e {
+                SyncError::EmptyLog(msg) => anyhow::anyhow!(msg),
+                SyncError::Failed(e) => e,
+            })?;
 
         assert_eq!(summary.rows, 2);
         assert_eq!(summary.max_id, Some(7));
@@ -171,22 +258,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_log_is_a_valid_snapshot() -> anyhow::Result<()> {
-        let reader = FakeReader(vec![]);
-        let writer = FakeWriter::default();
-        let now = parse("2026-07-29 12:00:00")?;
-
-        let summary = run_sync(&reader, &writer, now).await?;
-
-        assert_eq!(summary.rows, 0);
-        assert_eq!(summary.max_id, None);
-        assert_eq!(summary.max_created_at, None);
-        // The writer still ran — an empty snapshot must clear the table.
-        assert!(writer.written.lock().await.is_some());
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn writer_failure_propagates() -> anyhow::Result<()> {
         struct FailingWriter;
         #[async_trait]
@@ -196,7 +267,13 @@ mod tests {
             }
         }
         let reader = FakeReader(vec![row(1, "2026-07-01 10:00:00")?]);
-        let result = run_sync(&reader, &FailingWriter, parse("2026-07-29 12:00:00")?).await;
+        let result = run_sync(
+            &reader,
+            &FailingWriter,
+            parse("2026-07-29 12:00:00")?,
+            false,
+        )
+        .await;
         assert!(result.is_err());
         Ok(())
     }

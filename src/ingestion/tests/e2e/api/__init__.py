@@ -15,7 +15,7 @@ one test per (path, method, status-code) case:
   test_admin_thresholds.py   GET+POST /v1/admin/metric-thresholds
                              GET+PUT+DELETE /v1/admin/metric-thresholds/{id}
   test_columns.py            GET /v1/columns · GET /v1/columns/{table}
-  test_persons.py            GET /v1/persons/{email}
+  test_persons.py            GET /v1/persons/{person_id}
   test_metric_results.py     POST /v1/metric-results
 
 Resources come from fixtures (`api/conftest.py`): scratch metric / threshold /

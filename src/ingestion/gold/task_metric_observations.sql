@@ -17,10 +17,10 @@ SELECT
     tenant_id,
     source_key,
     entity_type,
+    -- entity_id arrives ALREADY canonical from evidence (resolved once per
+    -- build); '' marks a row identity could not resolve, which stays out of
+    -- every serving relation and is counted by identity_resolution_coverage.
     entity_id,
-    -- Canonical person from the identity log; NULL = unknown email (see
-    -- macros/resolve_person_id.sql). entity_id stays the runtime key.
-    {{ resolved_person_id_column() }},
     metric_date,
     CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
     measure_key,
@@ -28,9 +28,10 @@ SELECT
     CAST(NULL AS Nullable(String)) AS subject_key,
     dimensions
 FROM {{ ref('task_metric_evidence') }}
-{{ resolved_person_id_join("task_metric_evidence") }}
 WHERE measure_key NOT IN ('dev_time_hours', 'resolution_days', 'pickup_days')
-GROUP BY tenant_id, source_key, entity_type, entity_id, person_id, metric_date, measure_key, dimensions  -- person_id is functionally dependent on entity_id (one map row per email)
+  AND entity_id != ''
+-- One person's several source accounts collapse into one canonical row.
+GROUP BY tenant_id, source_key, entity_type, entity_id, metric_date, measure_key, dimensions
 
 UNION ALL
 
@@ -38,10 +39,10 @@ SELECT
     tenant_id,
     source_key,
     entity_type,
+    -- entity_id arrives ALREADY canonical from evidence (resolved once per
+    -- build); '' marks a row identity could not resolve, which stays out of
+    -- every serving relation and is counted by identity_resolution_coverage.
     entity_id,
-    -- Canonical person from the identity log; NULL = unknown email (see
-    -- macros/resolve_person_id.sql). entity_id stays the runtime key.
-    {{ resolved_person_id_column() }},
     metric_date,
     CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
     measure_key,
@@ -49,5 +50,5 @@ SELECT
     subject_key,
     dimensions
 FROM {{ ref('task_metric_evidence') }}
-{{ resolved_person_id_join("task_metric_evidence") }}
 WHERE measure_key IN ('dev_time_hours', 'resolution_days', 'pickup_days')
+  AND entity_id != ''

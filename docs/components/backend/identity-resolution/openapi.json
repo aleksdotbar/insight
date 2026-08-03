@@ -98,6 +98,12 @@
             "type": "string"
           },
           "value_type": {
+            "description": "Which key `value` carries: an email (tenant-wide), a source-native account id (needs both source fields), or the canonical person UUID.",
+            "enum": [
+              "email",
+              "id",
+              "person_id"
+            ],
             "nullable": true,
             "type": "string"
           }
@@ -125,15 +131,18 @@
       },
       "VisiblePersonsCommandModel": {
         "properties": {
-          "emails": {
+          "person_ids": {
             "items": {
+              "format": "uuid",
               "type": "string"
             },
+            "maxItems": 1000,
+            "minItems": 1,
             "type": "array"
           }
         },
         "required": [
-          "emails"
+          "person_ids"
         ],
         "type": "object"
       },
@@ -141,6 +150,7 @@
         "properties": {
           "visible": {
             "items": {
+              "format": "uuid",
               "type": "string"
             },
             "type": "array"

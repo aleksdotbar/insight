@@ -7,7 +7,6 @@ use uuid::Uuid;
 
 use crate::api::error::MetricError;
 use crate::domain::metric_definitions::{ComputationSpec, MetricDefinition, load_definitions};
-use crate::domain::person_visibility::normalize_person_id;
 use crate::domain::schema_validator::parse::parse_metric_key;
 
 use super::dto::{
@@ -17,7 +16,11 @@ use super::view::Bucket;
 
 const ROW_LIMIT: usize = 5000;
 const MAX_METRICS: usize = 50;
-const MAX_ENTITY_IDS: usize = 1000;
+// Identity's `POST /v1/visible-persons` caps its batch at the same number
+// (`api::visible_persons::MAX_PERSON_IDS`). Keep them equal: a request that
+// clears this cap is forwarded to that endpoint whole, so a smaller cap there
+// would turn a legal request into a 400 from a service the caller never named.
+const MAX_PERSON_IDS: usize = 1000;
 const MAX_PERIOD_DAYS: i64 = 400;
 const MAX_FILTERS: usize = 10;
 const MAX_FILTER_VALUES: usize = 100;
@@ -30,14 +33,55 @@ const MAX_GROUP_COUNT: usize = 50;
 /// the compiler's bounds CTE and can evolve without touching the wire.
 pub(crate) const HISTOGRAM_BINS: usize = 10;
 
+/// The validated entity selection. The specialization lives in the TYPE:
+/// `entity_type + entity_id` is the one polymorphic contract, and a person's
+/// ids are UUIDs — a variant carries its own id shape instead of a generic
+/// type string sitting next to person-only fields. A first non-person entity
+/// type adds a variant here AND its own authorization rule in the gate.
+#[derive(Debug, Clone)]
+pub enum ValidatedEntitySelection {
+    Person { ids: Vec<Uuid> },
+}
+
+impl ValidatedEntitySelection {
+    pub fn entity_type(&self) -> &'static str {
+        match self {
+            Self::Person { .. } => "person",
+        }
+    }
+
+    /// The ids as the compiler binds and the wire echoes them: canonical
+    /// `entity_id` strings.
+    pub fn entity_ids(&self) -> Vec<String> {
+        match self {
+            Self::Person { ids } => ids.iter().map(Uuid::to_string).collect(),
+        }
+    }
+
+    pub fn person_ids(&self) -> &[Uuid] {
+        match self {
+            Self::Person { ids } => ids,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Person { ids } => ids.len(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ValidatedMetricResultsRequest {
     pub tenant_id: Uuid,
-    pub entity_type: String,
-    pub entity_ids: Vec<String>,
+    pub entity: ValidatedEntitySelection,
     pub from: NaiveDate,
     pub to: NaiveDate,
     pub metrics: Vec<ValidatedMetricRequest>,
+    /// Whether the compiler injects the per-tenant observation filter (#1967).
+    /// Set from `metric_catalog.enforce_tenant_scope` by the handler; the
+    /// validator defaults it to `false` (see the config knob for why).
+    pub enforce_tenant_scope: bool,
 }
 
 #[derive(Debug)]
@@ -78,8 +122,7 @@ pub enum ValidatedMetricView {
 }
 
 struct RequestShape {
-    entity_type: String,
-    entity_ids: Vec<String>,
+    entity: ValidatedEntitySelection,
     from: NaiveDate,
     to: NaiveDate,
     metric_keys: Vec<String>,
@@ -92,8 +135,7 @@ pub async fn validate_request(
 ) -> Result<ValidatedMetricResultsRequest, CanonicalError> {
     let shape = validate_request_shape(&req)?;
     let RequestShape {
-        entity_type,
-        entity_ids,
+        entity,
         from,
         to,
         metric_keys,
@@ -129,7 +171,7 @@ pub async fn validate_request(
             tracing::error!(metric_key = %metric_key, "definition missing after successful load");
             CanonicalError::internal("metric definition lookup failed").create()
         })?;
-        if def.base.entity_type != entity_type {
+        if def.base.entity_type != entity.entity_type() {
             return invalid(
                 "entity.type",
                 format!(
@@ -174,11 +216,14 @@ pub async fn validate_request(
 
     let validated = ValidatedMetricResultsRequest {
         tenant_id,
-        entity_type,
-        entity_ids,
+        entity,
         from,
         to,
         metrics,
+        // Off unless the handler turns it on from config; the ingest tenant is
+        // not yet aligned to the JWT tenant (#1829), so enforcing here empties
+        // reads. See `MetricCatalogConfig::enforce_tenant_scope`.
+        enforce_tenant_scope: false,
     };
     validate_projected_view_limits(&validated)?;
     Ok(validated)
@@ -196,13 +241,22 @@ fn validate_request_shape(req: &MetricResultsRequest) -> Result<RequestShape, Ca
     }
 
     let entity_type = normalize_entity_type(&req.entity.r#type)?;
-    let entity_ids = normalize_entity_ids(&entity_type, &req.entity.ids)?;
-    if entity_ids.len() > MAX_ENTITY_IDS {
+    if entity_type != "person" {
+        return invalid("entity.type", "only person entities are supported");
+    }
+    // The cap counts SUBMITTED ids, and is checked before parsing them: the
+    // parsed count is smaller (blanks are skipped, duplicates collapse), so
+    // capping it would let a caller pad a request past the bound and pay for
+    // the parse of every entry first.
+    if req.entity.ids.len() > MAX_PERSON_IDS {
         return invalid(
             "entity.ids",
-            format!("at most {MAX_ENTITY_IDS} entity ids per request"),
+            format!("at most {MAX_PERSON_IDS} entity ids per request"),
         );
     }
+    let entity = ValidatedEntitySelection::Person {
+        ids: parse_person_ids(&req.entity.ids)?,
+    };
     let from = parse_date("period.from", &req.period.from)?;
     let to = parse_date("period.to", &req.period.to)?;
     if from > to {
@@ -232,8 +286,7 @@ fn validate_request_shape(req: &MetricResultsRequest) -> Result<RequestShape, Ca
     }
 
     Ok(RequestShape {
-        entity_type,
-        entity_ids,
+        entity,
         from,
         to,
         metric_keys,
@@ -506,19 +559,33 @@ pub(crate) fn normalize_entity_type(entity_type: &str) -> Result<String, Canonic
     normalize_key("entity.type", entity_type)
 }
 
-fn normalize_entity_ids(
-    entity_type: &str,
-    entity_ids: &[String],
-) -> Result<Vec<String>, CanonicalError> {
+// Person ids are UUIDs since the identity cutover (the pre-cutover key was
+// the lowercased email); `Uuid::parse_str` accepts any casing and hyphenless
+// forms, and re-rendering canonicalizes — no bespoke normalization left.
+//
+// INVARIANT: ids are parsed as person UUIDs for EVERY entity type, which holds
+// only while every registry entity type is `person`. The other half of the
+// invariant lives in the visibility gate, pinned by
+// `an_entity_type_with_no_authorization_rule_fails_closed`.
+fn parse_person_ids(ids: &[String]) -> Result<Vec<Uuid>, CanonicalError> {
     let mut seen = BTreeSet::new();
-    let mut out = Vec::with_capacity(entity_ids.len());
-    for entity_id in entity_ids {
-        let entity_id = normalize_entity_id(entity_type, entity_id);
-        if entity_id.is_empty() {
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
             continue;
         }
-        if seen.insert(entity_id.clone()) {
-            out.push(entity_id);
+        let Ok(person_id) = Uuid::parse_str(trimmed) else {
+            return invalid("entity.ids", "entity.ids must be person UUIDs");
+        };
+        // The nil UUID is never a person: identity rejects it with a 400, and
+        // the gate maps every identity non-success to a 500 — so letting it
+        // through here turns a client mistake into a server alert.
+        if person_id.is_nil() {
+            return invalid("entity.ids", "entity.ids must be person UUIDs");
+        }
+        if seen.insert(person_id) {
+            out.push(person_id);
         }
     }
     if out.is_empty() {
@@ -527,17 +594,7 @@ fn normalize_entity_ids(
     Ok(out)
 }
 
-// Id normalization is a property of the entity type: person ids are emails
-// and the observation sources emit them lowercased, so equality requires
-// lowercasing here too. Other entity types keep their casing.
-pub(crate) fn normalize_entity_id(entity_type: &str, entity_id: &str) -> String {
-    match entity_type {
-        "person" => normalize_person_id(entity_id),
-        _ => entity_id.trim().to_owned(),
-    }
-}
-
-fn normalize_key(field: &'static str, value: &str) -> Result<String, CanonicalError> {
+pub(crate) fn normalize_key(field: &'static str, value: &str) -> Result<String, CanonicalError> {
     let value = value.trim().to_ascii_lowercase();
     if value.is_empty() {
         return invalid(field, "value must not be empty");
@@ -572,9 +629,7 @@ fn validate_projected_view_limits(
     for (metric_index, metric) in req.metrics.iter().enumerate() {
         for (view_index, view) in metric.views.iter().enumerate() {
             let projected = match view {
-                ValidatedMetricView::Period | ValidatedMetricView::Peer { .. } => {
-                    req.entity_ids.len()
-                }
+                ValidatedMetricView::Period | ValidatedMetricView::Peer { .. } => req.entity.len(),
                 ValidatedMetricView::Timeseries {
                     bucket,
                     group_limit,
@@ -583,14 +638,12 @@ fn validate_projected_view_limits(
                     let groups = group_limit.as_ref().map_or(1, |limit| {
                         limit.count + usize::from(limit.include_remainder)
                     });
-                    req.entity_ids
+                    req.entity
                         .len()
                         .saturating_mul(groups)
                         .saturating_mul(enumerate_buckets(req.from, req.to, *bucket).len() + 1)
                 }
-                ValidatedMetricView::Histogram => {
-                    req.entity_ids.len().saturating_mul(HISTOGRAM_BINS)
-                }
+                ValidatedMetricView::Histogram => req.entity.len().saturating_mul(HISTOGRAM_BINS),
                 ValidatedMetricView::Breakdown { .. } => 0,
             };
             if projected > ROW_LIMIT {
@@ -645,7 +698,7 @@ mod tests {
     };
 
     fn shape_request(
-        entity_ids: Vec<&str>,
+        person_ids: Vec<&str>,
         from: &str,
         to: &str,
         metric_keys: Vec<&str>,
@@ -653,7 +706,7 @@ mod tests {
         MetricResultsRequest {
             entity: MetricResultsEntity {
                 r#type: "person".to_owned(),
-                ids: entity_ids.into_iter().map(str::to_owned).collect(),
+                ids: person_ids.into_iter().map(str::to_owned).collect(),
             },
             period: super::super::dto::MetricResultsPeriod {
                 from: from.to_owned(),
@@ -736,15 +789,18 @@ mod tests {
     #[test]
     fn shape_accepts_valid_request() {
         let Ok(shape) = validate_request_shape(&shape_request(
-            vec!["A@x.io "],
+            vec![" 019E27BC-DEC0-7626-81A9-C5524662A6A9 "],
             "2026-01-01",
             "2026-01-31",
             vec!["ai.x"],
         )) else {
             panic!("expected valid shape");
         };
-        assert_eq!(shape.entity_type, "person");
-        assert_eq!(shape.entity_ids, vec!["a@x.io".to_owned()]);
+        assert_eq!(shape.entity.entity_type(), "person");
+        assert_eq!(
+            shape.entity.person_ids(),
+            [Uuid::from_u128(0x019e_27bc_dec0_7626_81a9_c552_4662_a6a9)]
+        );
         assert_eq!(shape.metric_keys, vec!["ai.x".to_owned()]);
     }
 
@@ -752,7 +808,7 @@ mod tests {
     fn shape_rejects_too_many_metrics() {
         let keys: Vec<String> = (0..=MAX_METRICS).map(|i| format!("ai.m{i}")).collect();
         let req = shape_request(
-            vec!["a@x.io"],
+            vec!["019e27bc-dec0-7626-81a9-c5524662a6a9"],
             "2026-01-01",
             "2026-01-31",
             keys.iter().map(String::as_str).collect(),
@@ -761,8 +817,38 @@ mod tests {
     }
 
     #[test]
-    fn shape_rejects_too_many_entity_ids() {
-        let ids: Vec<String> = (0..=MAX_ENTITY_IDS).map(|i| format!("p{i}@x.io")).collect();
+    fn shape_rejects_too_many_person_ids() {
+        let ids: Vec<String> = (0..=MAX_PERSON_IDS)
+            .map(|i| Uuid::from_u128(i as u128 + 1).to_string())
+            .collect();
+        let req = shape_request(
+            ids.iter().map(String::as_str).collect(),
+            "2026-01-01",
+            "2026-01-31",
+            vec!["ai.x"],
+        );
+        assert!(validate_request_shape(&req).is_err());
+    }
+
+    #[test]
+    fn blank_ids_cannot_pad_a_request_past_the_id_cap() {
+        let mut ids: Vec<String> = (0..MAX_PERSON_IDS)
+            .map(|i| Uuid::from_u128(i as u128 + 1).to_string())
+            .collect();
+        ids.push("   ".to_owned());
+        let req = shape_request(
+            ids.iter().map(String::as_str).collect(),
+            "2026-01-01",
+            "2026-01-31",
+            vec!["ai.x"],
+        );
+        assert!(validate_request_shape(&req).is_err());
+    }
+
+    #[test]
+    fn duplicate_ids_cannot_pad_a_request_past_the_id_cap() {
+        let ids: Vec<String> =
+            std::iter::repeat_n(Uuid::from_u128(1).to_string(), MAX_PERSON_IDS + 1).collect();
         let req = shape_request(
             ids.iter().map(String::as_str).collect(),
             "2026-01-01",
@@ -774,20 +860,30 @@ mod tests {
 
     #[test]
     fn shape_rejects_oversized_period_before_enumeration() {
-        let req = shape_request(vec!["a@x.io"], "0001-01-01", "9999-12-31", vec!["ai.x"]);
+        let req = shape_request(
+            vec!["019e27bc-dec0-7626-81a9-c5524662a6a9"],
+            "0001-01-01",
+            "9999-12-31",
+            vec!["ai.x"],
+        );
         assert!(validate_request_shape(&req).is_err());
     }
 
     #[test]
     fn shape_rejects_reversed_period() {
-        let req = shape_request(vec!["a@x.io"], "2026-02-01", "2026-01-01", vec!["ai.x"]);
+        let req = shape_request(
+            vec!["019e27bc-dec0-7626-81a9-c5524662a6a9"],
+            "2026-02-01",
+            "2026-01-01",
+            vec!["ai.x"],
+        );
         assert!(validate_request_shape(&req).is_err());
     }
 
     #[test]
     fn shape_rejects_duplicate_metric_keys() {
         let req = shape_request(
-            vec!["a@x.io"],
+            vec!["019e27bc-dec0-7626-81a9-c5524662a6a9"],
             "2026-01-01",
             "2026-01-31",
             vec!["ai.x", "ai.x"],
@@ -796,25 +892,37 @@ mod tests {
     }
 
     #[test]
-    fn shape_rejects_all_blank_entity_ids() {
+    fn shape_rejects_all_blank_person_ids() {
         let req = shape_request(vec![" ", ""], "2026-01-01", "2026-01-31", vec!["ai.x"]);
         assert!(validate_request_shape(&req).is_err());
     }
 
     #[test]
-    fn person_entity_ids_are_lowercased() {
-        let Ok(ids) = normalize_entity_ids("person", &[" A@X.io ".to_owned()]) else {
-            panic!("expected normalized ids");
+    fn person_ids_parse_canonicalize_and_dedup() {
+        let Ok(ids) = parse_person_ids(&[
+            " 019E27BC-DEC0-7626-81A9-C5524662A6A9 ".to_owned(),
+            "019e27bc-dec0-7626-81a9-c5524662a6a9".to_owned(),
+        ]) else {
+            panic!("expected parsed ids");
         };
-        assert_eq!(ids, vec!["a@x.io".to_owned()]);
+        assert_eq!(
+            ids,
+            vec![Uuid::from_u128(0x019e_27bc_dec0_7626_81a9_c552_4662_a6a9)]
+        );
     }
 
     #[test]
-    fn non_person_entity_ids_keep_case() {
-        let Ok(ids) = normalize_entity_ids("repo", &[" Org/Repo-Name ".to_owned()]) else {
-            panic!("expected normalized ids");
-        };
-        assert_eq!(ids, vec!["Org/Repo-Name".to_owned()]);
+    fn person_ids_reject_the_nil_uuid() {
+        // Not a person; identity 400s on it and the gate would surface that
+        // as a 500, so it has to fail here as a client error.
+        assert!(parse_person_ids(&[Uuid::nil().to_string()]).is_err());
+    }
+
+    #[test]
+    fn person_ids_reject_non_uuid_values() {
+        // The pre-cutover key shape — an email — must now be a 400, loudly:
+        // a silent empty result would read as "person has no data".
+        assert!(parse_person_ids(&["a@x.io".to_owned()]).is_err());
     }
 
     #[test]
@@ -1125,8 +1233,9 @@ mod tests {
         let def = sum_definition(vec![]);
         let validated = ValidatedMetricResultsRequest {
             tenant_id: Uuid::nil(),
-            entity_type: "person".to_owned(),
-            entity_ids: (0..100).map(|i| format!("p{i}@x.io")).collect(),
+            entity: ValidatedEntitySelection::Person {
+                ids: (0..100).map(|i| Uuid::from_u128(i + 1)).collect(),
+            },
             from: day("2026-01-01"),
             to: day("2026-03-31"),
             metrics: vec![ValidatedMetricRequest {
@@ -1138,6 +1247,7 @@ mod tests {
                     group_limit: None,
                 }],
             }],
+            enforce_tenant_scope: false,
         };
         assert!(validate_projected_view_limits(&validated).is_err());
     }
@@ -1156,8 +1266,9 @@ mod tests {
         };
         let validated = ValidatedMetricResultsRequest {
             tenant_id: Uuid::nil(),
-            entity_type: "person".to_owned(),
-            entity_ids: vec!["a@x.io".to_owned()],
+            entity: ValidatedEntitySelection::Person {
+                ids: vec![Uuid::from_u128(1)],
+            },
             from: day("2025-07-21"),
             to: day("2026-07-20"),
             metrics: (0..4)
@@ -1167,18 +1278,19 @@ mod tests {
                     views: vec![view()],
                 })
                 .collect(),
+            enforce_tenant_scope: false,
         };
         assert!(validate_projected_view_limits(&validated).is_ok());
 
         let mut combined_over_limit = validated;
-        combined_over_limit.entity_ids = vec![
-            "a@x.io".to_owned(),
-            "b@x.io".to_owned(),
-            "c@x.io".to_owned(),
-        ];
+        combined_over_limit.entity = ValidatedEntitySelection::Person {
+            ids: vec![Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3)],
+        };
         assert!(validate_projected_view_limits(&combined_over_limit).is_ok());
 
-        combined_over_limit.entity_ids = (0..10).map(|i| format!("p{i}@x.io")).collect();
+        combined_over_limit.entity = ValidatedEntitySelection::Person {
+            ids: (0..10).map(|i| Uuid::from_u128(i + 1)).collect(),
+        };
         assert!(validate_projected_view_limits(&combined_over_limit).is_err());
     }
 
@@ -1187,8 +1299,9 @@ mod tests {
         // 501 entities × 10 bins > 5000 projected rows.
         let validated = ValidatedMetricResultsRequest {
             tenant_id: Uuid::nil(),
-            entity_type: "person".to_owned(),
-            entity_ids: (0..501).map(|i| format!("p{i}@x.io")).collect(),
+            entity: ValidatedEntitySelection::Person {
+                ids: (0..501).map(|i| Uuid::from_u128(i + 1)).collect(),
+            },
             from: day("2026-01-01"),
             to: day("2026-01-31"),
             metrics: vec![ValidatedMetricRequest {
@@ -1196,6 +1309,7 @@ mod tests {
                 filters: vec![],
                 views: vec![ValidatedMetricView::Histogram],
             }],
+            enforce_tenant_scope: false,
         };
         assert!(validate_projected_view_limits(&validated).is_err());
     }
@@ -1205,8 +1319,9 @@ mod tests {
         let def = sum_definition(vec![]);
         let validated = ValidatedMetricResultsRequest {
             tenant_id: Uuid::nil(),
-            entity_type: "person".to_owned(),
-            entity_ids: vec!["a@x.io".to_owned()],
+            entity: ValidatedEntitySelection::Person {
+                ids: vec![Uuid::from_u128(1)],
+            },
             from: day("2026-01-01"),
             to: day("2026-01-31"),
             metrics: vec![ValidatedMetricRequest {
@@ -1219,6 +1334,7 @@ mod tests {
                     },
                 ],
             }],
+            enforce_tenant_scope: false,
         };
         assert!(validate_projected_view_limits(&validated).is_ok());
     }

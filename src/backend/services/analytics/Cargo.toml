@@ -33,6 +33,7 @@ sea-orm-migration = { workspace = true }
 toolkit = { workspace = true, features = ["bootstrap"] }
 toolkit-security = { workspace = true }
 toolkit-canonical-errors = { workspace = true }
+toolkit-odata = { workspace = true }
 
 # System gears linked for the REST host + auth pipeline. Discovered at link time
 # via inventory; mirrors the api-gateway service's authenticated gear set.
@@ -65,6 +66,10 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+csv = { workspace = true }
+rust_xlsxwriter = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true }

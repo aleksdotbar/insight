@@ -218,7 +218,7 @@ def test_tenant_value_overrides_the_secret_via_env(default_docs, job: str) -> No
     docs = _subchart_docs("--set", f"{job}.tenantDefaultId={TENANT}")
     container = _job_container(_cronjob(docs, job))
     env = {e["name"]: e["value"] for e in container["env"]}
-    assert env == {"APP__gears__identity-resolution__config__tenant_default_id": TENANT}
+    assert env == {"APP__gears__identity_resolution__config__tenant_default_id": TENANT}
 
 
 @pytest.mark.parametrize("job", JOBS)
@@ -285,7 +285,7 @@ def test_umbrella_accepts_the_explicit_seed_tenant_alone(umbrella_deps) -> None:
     assert rc == 0, err
     container = _job_container(_cronjob(_docs(out), "seed"))
     env = {e["name"]: e["value"] for e in container.get("env", [])}
-    assert env.get("APP__gears__identity-resolution__config__tenant_default_id") == TENANT
+    assert env.get("APP__gears__identity_resolution__config__tenant_default_id") == TENANT
 
 
 def test_umbrella_disabled_seed_needs_no_tenant(umbrella_deps) -> None:

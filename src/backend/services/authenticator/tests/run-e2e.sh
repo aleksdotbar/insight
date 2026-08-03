@@ -153,6 +153,10 @@ echo "==> run the session-management loop (step 10.2)"
 AUTH_BASE="http://localhost:$AUTH_PORT" E2E_USER=dev@company.nonpresent \
   cargo test -p authenticator --test e2e_sessions -- --ignored --nocapture
 
+echo "==> run the 401 contract for the session-cookie surface"
+AUTH_BASE="http://localhost:$AUTH_PORT" \
+  cargo test -p authenticator --test e2e_unauthorized -- --ignored --nocapture
+
 echo "==> run the __override view-as loop (#1941)"
 AUTH_BASE="http://localhost:$AUTH_PORT" AUTH_BASE_DISABLED="http://localhost:$AUTH2_PORT" \
   E2E_USER=dev@company.nonpresent \

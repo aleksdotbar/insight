@@ -8,7 +8,7 @@
 //! [`persons_repo`]: super::persons_repo
 
 use async_trait::async_trait;
-use sea_orm::{DatabaseConnection, EntityTrait, PaginatorTrait, QueryOrder};
+use sea_orm::{DatabaseConnection, EntityTrait, QueryOrder};
 use uuid::Uuid;
 
 use super::entities::persons;
@@ -23,16 +23,6 @@ impl<'a> MariaDbPersonsLogReader<'a> {
     #[must_use]
     pub fn new(db: &'a DatabaseConnection) -> Self {
         Self { db }
-    }
-
-    /// Cheap row count for the sync runner's empty-log guard — avoids
-    /// materializing the whole log just to learn it is empty.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query fails.
-    pub async fn count(&self) -> anyhow::Result<u64> {
-        Ok(persons::Entity::find().count(self.db).await?)
     }
 }
 

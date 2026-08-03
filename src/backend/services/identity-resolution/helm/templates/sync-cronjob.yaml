@@ -82,7 +82,7 @@ spec:
               env:
                 # Explicit tenant for the JOURNAL row (the copy itself is
                 # tenant-agnostic). Same override semantics as the seed's.
-                - name: APP__gears__identity-resolution__config__tenant_default_id
+                - name: APP__gears__identity_resolution__config__tenant_default_id
                   value: {{ . | quote }}
               {{- end }}
               securityContext:
