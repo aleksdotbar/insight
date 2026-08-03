@@ -52,15 +52,18 @@ def test_check_connection_reports_transport_errors(client_type):
 TRANSFORMED_STREAMS = [
     "repositories",
     "branches",
-    "commits",
     "pull_requests",
     "pull_request_commits",
     "pull_request_comments",
     "pull_request_activity",
     "pull_request_diffstat",
+    "commits",
     "file_changes",
     "commit_branch_reachability",
 ]
+# Their first read of a repository pages whatever history it holds; everything
+# before them is bounded by a watermark.
+UNBOUNDED_STREAMS = ["commits", "file_changes", "commit_branch_reachability"]
 
 
 def test_streams_are_independent_and_share_client_and_catalog():
@@ -89,6 +92,15 @@ def test_streams_the_transform_layer_reads_come_first():
     names = [stream.name for stream in SourceBitbucketCloud().streams(CONFIG)]
 
     assert names[: len(TRANSFORMED_STREAMS)] == TRANSFORMED_STREAMS
+
+
+def test_watermark_bounded_streams_run_before_history_sized_ones():
+    """A stream that can page a whole history must not be able to starve the
+    streams that cannot."""
+    names = [stream.name for stream in SourceBitbucketCloud().streams(CONFIG)]
+    bounded = [name for name in TRANSFORMED_STREAMS if name not in UNBOUNDED_STREAMS]
+
+    assert max(names.index(name) for name in bounded) < min(names.index(name) for name in UNBOUNDED_STREAMS)
 
 
 def test_tenant_identity_and_spec():

@@ -130,19 +130,19 @@ class SourceBitbucketCloud(AbstractSource):
         pr_tasks = PRTasksStream(**shared)
 
         # Airbyte reads streams in catalog order, so a sync that is cut short
-        # keeps whatever the transform layer consumes. branches comes early
-        # because it is cheap and fills the branch cache the range streams
-        # share; file_changes trails the pull-request family because it is the
-        # heaviest read and the commits model joins it optionally.
+        # keeps whatever the transform layer consumes. Within that, the streams
+        # whose cost a watermark bounds run before the commit-range streams,
+        # whose first read of a repository is bounded only by its history: a run
+        # that ends early then still delivers the bounded half whole.
         streams = [
             repos,
             branches,
-            commits,
             prs,
             pr_commits,
             pr_comments,
             pr_activity,
             pr_diffstat,
+            commits,
             file_changes,
             commit_branch_reachability,
             # Below: no dbt model reads these yet.
