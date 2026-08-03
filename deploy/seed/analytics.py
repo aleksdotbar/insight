@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid as uuid_mod
-from collections.abc import Iterator
+from collections.abc import Container, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -101,6 +102,50 @@ def seed_table_columns(cur: pymysql.cursors.Cursor) -> list[dict[str, str]]:
     return rows
 
 
+#: Every table this module names. The clone is driven by `information_schema`,
+#: so the SQL it builds carries identifiers rather than only bound values —
+#: which means the identifiers need a source of truth that is not the query
+#: itself. This is it: a name absent from here never reaches a statement.
+_KNOWN_TABLES: frozenset[str] = frozenset({
+    "table_columns",
+    "metric_definitions",
+    "metric_definition_inputs",
+    "metric_definition_dimensions",
+})
+
+#: MySQL identifier shape. Deliberately narrower than what MySQL accepts: every
+#: column in this schema is snake_case ASCII, so anything else is either a
+#: schema nobody expected or an answer `information_schema` should not have
+#: given.
+_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
+
+
+def _quoted(identifier: str, *, allowed: Container[str]) -> str:
+    """Backtick-quote an identifier after checking it is one we asked for.
+
+    Values in this module are bound; identifiers cannot be, because a column
+    LIST is not a parameter. So they are validated instead — against the set
+    this module knows, and against the identifier shape — and the check runs at
+    the point of use rather than being asserted in a comment somewhere above it.
+
+    Not defence against a hostile database so much as against a silent one: an
+    `information_schema` answer this module did not expect should stop the seed
+    with a name in the message, not be pasted into a statement and produce a
+    syntax error three frames away.
+    """
+    if identifier not in allowed or not _IDENTIFIER.match(identifier):
+        raise ValueError(
+            f"refusing to build SQL around {identifier!r}: not an identifier this "
+            "module recognises. If the schema gained it, add it to the seed."
+        )
+    return f"`{identifier}`"
+
+
+def _column_list(columns: Sequence[str]) -> str:
+    """A backtick-quoted column list, every name checked as it goes in."""
+    return ", ".join(_quoted(c, allowed=set(columns)) for c in columns)
+
+
 def _writable_columns(cur: pymysql.cursors.Cursor, table: str) -> list[str]:
     """A table's column names, in order, minus the ones the engine computes.
 
@@ -135,8 +180,12 @@ def _clone_children(cur: pymysql.cursors.Cursor, table: str, src: bytes, dst: by
     if not cols:
         return 0
 
-    selected = ", ".join(f"`{c}`" for c in cols)
-    cur.execute(f"SELECT {selected} FROM `{table}` WHERE metric_definition_id = %s", (src,))
+    quoted_table = _quoted(table, allowed=_KNOWN_TABLES)
+    selected = _column_list(cols)
+    cur.execute(
+        f"SELECT {selected} FROM {quoted_table} WHERE metric_definition_id = %s",  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+        (src,),
+    )
     rows = cur.fetchall()
 
     placeholders = ", ".join(["%s"] * len(cols))
@@ -146,7 +195,7 @@ def _clone_children(cur: pymysql.cursors.Cursor, table: str, src: bytes, dst: by
         if "id" in values and isinstance(values["id"], bytes):
             values["id"] = _child_row_id(table, values["id"])
         cur.execute(
-            f"REPLACE INTO `{table}` ({selected}) VALUES ({placeholders})",
+            f"REPLACE INTO {quoted_table} ({selected}) VALUES ({placeholders})",  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
             tuple(values[c] for c in cols),
         )
     return len(rows)
@@ -173,10 +222,11 @@ def seed_definition_override(cur: pymysql.cursors.Cursor, tenant_uuid: str) -> d
     migrations have not run, which is the migrations' problem to report, not
     this seed's to fail on.
     """
+    definitions = _quoted("metric_definitions", allowed=_KNOWN_TABLES)
     columns = _writable_columns(cur, "metric_definitions")
-    selected = ", ".join(f"`{c}`" for c in columns)
+    selected = _column_list(columns)
     cur.execute(
-        f"SELECT {selected} FROM metric_definitions "
+        f"SELECT {selected} FROM {definitions} "  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
         "WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
     )
     row = cur.fetchone()
@@ -196,7 +246,7 @@ def seed_definition_override(cur: pymysql.cursors.Cursor, tenant_uuid: str) -> d
 
     placeholders = ", ".join(["%s"] * len(columns))
     cur.execute(
-        f"REPLACE INTO metric_definitions ({selected}) VALUES ({placeholders})",
+        f"REPLACE INTO {definitions} ({selected}) VALUES ({placeholders})",  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
         tuple(values[c] for c in columns),
     )
 

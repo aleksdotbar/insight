@@ -67,6 +67,29 @@ out = subprocess.run(['playwright', '--version'], capture_output=True, text=True
 assert '1.61.0' in out, f'playwright pip pin != image: {out!r}'; \
 print('playwright matches the image:', out)"
 
+# Drop root before anything runs. A browser rendering pages from the stand is
+# the least privileged thing in this repo and had the most privilege — and the
+# root-owned `.artifacts/` a failed run left behind was the visible half of
+# that: the invoking user could not delete its own trace files.
+#
+# `pwuser` is the base image's own non-root account, already owning
+# /ms-playwright, so the browser gains nothing here. Only what the run WRITES
+# changes hands: the venv the entrypoint executes from, and the artifact
+# directory pytest reports into.
+#
+# HOME is set to a world-writable path on purpose. `dev-compose.sh` runs this
+# image with `--user $(id -u):$(id -g)` so bind-mounted artifacts land owned by
+# the INVOKING user rather than by whatever uid the image declares — which
+# means the runtime uid is usually neither root nor pwuser, and has no home of
+# its own. uv needs somewhere to put a cache even with `--frozen`.
+ENV HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache
+RUN mkdir -p /tests/.artifacts \
+ && chown -R pwuser:pwuser /tests /opt/uv-python \
+ && chmod -R a+rX /tests /opt/uv-python \
+ && chmod 1777 /tests/.artifacts
+USER pwuser
+
 # Headless Chromium only. Firefox and WebKit ship in the base image but are
 # never launched by this suite.
 ENTRYPOINT ["uv", "run", "--frozen", "--no-dev", "pytest"]

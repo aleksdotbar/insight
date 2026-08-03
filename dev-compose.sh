@@ -1669,6 +1669,12 @@ test_stand_test_in_image() {
 
   local run_args=(
     --rm
+    # As the INVOKING user, not the image's declared one. The image drops root
+    # (ui-tests.Dockerfile), but a bind-mounted artifact directory takes its
+    # ownership from the host, so a container uid that does not match the host's
+    # cannot write into it — and the traces a failed journey uploads are the
+    # whole reason that mount exists.
+    --user "$(id -u):$(id -g)"
     --network "container:${TEST_STAND_GATEWAY_CONTAINER}"
     -e "INSIGHT_STAND_BASE_URL=http://localhost:${TEST_STAND_GATEWAY_CONTAINER_PORT}"
     -v "$PWD/${manifest}:/deploy/seed/manifest.json:ro"
