@@ -151,7 +151,13 @@ BLOCKED: dict[str, frozenset[int]] = {
     # subtract — the gate reported both as stale and they came out.
     # `/export` still carries the old boilerplate and the same absent gate.
     "POST /v1/metric-drilldown/export": _NO_AUTHZ_OR_CONFLICT,
-    "GET /v1/persons/{email}": _NO_AUTHZ_OR_CONFLICT,
+    # Person lookup: `handlers::get_person` parses the id, then delegates. Its
+    # own answers are 200/400/404, and an identity refusal does not pass
+    # through — the delegation's error arm maps EVERYTHING to `internal`, so a
+    # 403 upstream leaves this service as a 500. Keyed by `{person_id}`: the
+    # identity cutover (#2098) renamed the segment, and the gate caught the
+    # stale `{email}` key here on its first run afterwards.
+    "GET /v1/persons/{person_id}": _NO_AUTHZ_OR_CONFLICT,
     # 403 IS reachable on these three (see above), 409 is not.
     # `POST /v1/metric-results` needs no entry at all: #2134 already removed
     # 409 from its declaration, and this gate said so when it was added here.
