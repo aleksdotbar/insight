@@ -1,4 +1,4 @@
-"""`POST /v1/visible-persons` — filtering a list of emails to what the caller may see.
+"""`POST /v1/visible-persons` — filtering person ids to what the caller may see.
 
     POST /v1/visible-persons   200 · 415 wrong-ct
 
@@ -6,13 +6,18 @@ The one identity route that answers a question ABOUT visibility rather than
 being governed by it, which makes it the sharpest place to state the rule: the
 same caller, the same request, and membership decides each email separately.
 
-Two filters run, and the test covers both. Emails resolve to persons within the
+Two filters run, and the test covers both. Ids resolve to persons within the
 caller's TENANT, so somebody in another tenant is not a candidate at all; the
 survivors are then narrowed to what the caller can see in the org chart. A
 regression in either one leaks a different thing — the first would disclose that
-an address exists somewhere in the product, the second who reports to whom — so
-the assertion names both an out-of-tenant and an out-of-scope person rather than
+an id exists somewhere in the product, the second who reports to whom — so the
+assertion names both an out-of-tenant and an out-of-scope person rather than
 treating "not visible" as one bucket.
+
+The tenant half got sharper in #2098: a wildcard grant used to echo the request
+back, so a wildcard holder in tenant A could have tenant B's ids confirmed. It
+is intersected with the tenant's persons log now, which is exactly what the
+other-tenant case below asserts.
 
 The visible/out-of-scope pair is the same one `test_subchart.py` establishes
 (`development_ic` in, `sales_ic` out), so the two routes are held to one story
@@ -28,9 +33,10 @@ from ..schemas import VisiblePersons
 
 VISIBLE_PERSONS = identity_path("/v1/visible-persons")
 
-#: Nobody holds this. Present so the answer is shown to drop an address it
-#: cannot resolve, rather than echoing back whatever it was handed.
-UNKNOWN_EMAIL = "nobody@example.com"
+#: Nobody holds this. Present so the answer is shown to drop an id it cannot
+#: resolve, rather than echoing back whatever it was handed — which is what a
+#: wildcard grant did before #2098.
+UNKNOWN_PERSON_ID = "01900000-0000-7000-8000-000000000000"
 
 
 @pytest.mark.requires_seed("dev_lead", "development_ic", "sales_ic", "other_tenant_lead")
@@ -43,18 +49,20 @@ def test_only_the_people_the_caller_may_see_come_back(
     returned everything it was given, or nothing, would satisfy any one-sided
     check, and both are plausible failures for a filter.
     """
-    self_ = lead_session.email
-    report = stand_manifest.fixture("development_ic").email
-    outsider = stand_manifest.fixture("sales_ic").email
-    other_tenant = stand_manifest.fixture("other_tenant_lead").email
+    self_ = lead_session.person.uuid
+    report = stand_manifest.fixture("development_ic").uuid
+    outsider = stand_manifest.fixture("sales_ic").uuid
+    other_tenant = stand_manifest.fixture("other_tenant_lead").uuid
 
     response = lead_session.client.post(
         VISIBLE_PERSONS,
-        json_body={"emails": [self_, report, outsider, other_tenant, UNKNOWN_EMAIL]},
+        json_body={
+            "person_ids": [self_, report, outsider, other_tenant, UNKNOWN_PERSON_ID]
+        },
     )
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
 
-    visible = set(response.parse(VisiblePersons).visible)
+    visible = {str(person_id) for person_id in response.parse(VisiblePersons).visible}
     assert {self_, report} <= visible, (
         f"a lead cannot see themselves or their own report: {sorted(visible)}"
     )
@@ -63,12 +71,12 @@ def test_only_the_people_the_caller_may_see_come_back(
         f"{other_tenant} belongs to another tenant and is not even a candidate — "
         "returning them would cross the tenant boundary, not merely widen a scope"
     )
-    assert UNKNOWN_EMAIL not in visible, "an unresolvable address was echoed back"
+    assert UNKNOWN_PERSON_ID not in visible, "an unresolvable id was echoed back"
 
 
 def test_visible_persons_415_wrong_content_type(api: ApiClient) -> None:
     """A body refused on its media type, not parsed."""
     response = api.post(
-        VISIBLE_PERSONS, content='{"emails":[]}', headers={"Content-Type": "text/plain"}
+        VISIBLE_PERSONS, content='{"person_ids":[]}', headers={"Content-Type": "text/plain"}
     )
     assert response.status_code == 415, f"status={response.status_code} {response.text[:300]}"

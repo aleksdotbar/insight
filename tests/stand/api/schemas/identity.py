@@ -188,14 +188,17 @@ class Visibility(BaseModel):
 
 
 class VisiblePersons(BaseModel):
-    """`POST /v1/visible-persons` — the subset of the asked-about emails.
+    """`POST /v1/visible-persons` — the subset of the asked-about person ids.
 
-    A list of what survived, not a per-email verdict: an address the caller
-    may not see is absent rather than present-and-false, which is the same
+    A list of what survived, not a per-id verdict: a person the caller may not
+    see is absent rather than present-and-false, which is the same
     non-disclosure choice `/v1/subchart/{id}` makes by answering 404.
+
+    Person UUIDs since the identity cutover (#2098), like every other
+    person-keyed route.
     """
 
-    visible: list[str]
+    visible: list[UUID]
 
 
 # ---------------------------------------------------------------------------
