@@ -12,13 +12,40 @@ report.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
 from insight_stand import ADMIN_OPERATOR_FIXTURE, ApiClient, PersonaSession, analytics_path
 
 from . import scratch
+from .operations import ALL_OPERATIONS
 from .schemas import Metric, SavedQuery
+
+#: Written beside the coverage ledger at session end (see the root conftest for
+#: the ledger itself). The gate compares the two, so it needs no import from
+#: this suite at run time: it is a stdlib script over two JSON files, runnable
+#: on a machine with no stand, no uv and no browser.
+_ARTIFACTS = Path(__file__).resolve().parents[3] / ".artifacts"
+CATALOGUE_NAME = "stand_operations.json"
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Export the operation catalogue, whatever the run's verdict was.
+
+    Unconditionally, for the same reason the ledger is: a failing run's
+    catalogue is still the right denominator, and making the gate's input depend
+    on the suite's result is backwards.
+    """
+    del session, exitstatus
+
+    _ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    (_ARTIFACTS / CATALOGUE_NAME).write_text(
+        json.dumps([{"method": op.method, "path": op.path} for op in ALL_OPERATIONS], indent=2)
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture

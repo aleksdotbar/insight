@@ -50,6 +50,7 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
     ServiceTokenSession,
     StandConnectionError,
     StandEndpoint,
+    coverage,
     default_manifest_path,
     open_service_session,
     open_session,
@@ -64,6 +65,12 @@ CAPABILITY_MARKERS: dict[str, str] = {
     "requires_ingestion": "ingestion",
     "requires_service_principal": "service_principals",
 }
+
+#: Where the coverage ledger lands at session end. Read by the gate
+#: (`insight_stand/coverage.py`) and uploaded by CI; gitignored like every other
+#: run artefact.
+ARTIFACT_DIR = ".artifacts"
+LEDGER_NAME = "stand_observed_endpoints.json"
 
 # `requires_catalogue(<part>)` -> is that part present? Separate from the
 # capability markers above because a catalogue part is DATA the seed wrote, not
@@ -175,6 +182,24 @@ def pytest_configure(config: pytest.Config) -> None:
             # nothing to test.
             raise pytest.UsageError(str(exc)) from exc
     config.option.base_url = _ENDPOINT.base_url
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Write the coverage ledger, whatever the run's verdict was.
+
+    Unconditionally on purpose. A failing run's ledger is the more useful of the
+    two — it says which operations were reached before things went wrong — and
+    writing only on success would make the gate's input depend on the suite's
+    result, which is backwards.
+
+    Every client in the suite records here, browser journeys included — they
+    drive `ApiClient` for their setup — so this is the whole run's ledger, not
+    the api directory's. `api/conftest.py` writes the operation CATALOGUE beside
+    it, because that list is the api package's.
+    """
+    del session, exitstatus
+
+    coverage.dump(_REPO_ROOT / ARTIFACT_DIR / LEDGER_NAME)
 
 
 def pytest_collection_modifyitems(

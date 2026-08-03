@@ -28,6 +28,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from . import coverage
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from pydantic import BaseModel
 
@@ -185,7 +187,8 @@ class ApiClient:
 
         import httpx
 
-        url = f"{self.base_url}{self._checked_path(path)}"
+        checked_path = self._checked_path(path)
+        url = f"{self.base_url}{checked_path}"
         merged: dict[str, str] = dict(self.session.headers()) if self.session else {}
         if headers:
             merged.update(headers)
@@ -199,6 +202,11 @@ class ApiClient:
                 content=content,
                 headers=merged,
             )
+        # Every request the suite makes passes through here, which is what lets
+        # the coverage ledger be a byproduct of the tests rather than a list
+        # somebody maintains. Metadata only — never the body.
+        coverage.record(method, checked_path, response.status_code)
+
         return ApiResponse(
             status_code=response.status_code,
             headers={k.lower(): v for k, v in response.headers.items()},

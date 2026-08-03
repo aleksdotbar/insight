@@ -1,0 +1,230 @@
+"""Meta-tests for the coverage gate — no stand, no network.
+
+A gate that prints a blocking violation while exiting 0 is worse than no gate:
+it converts a real gap into a green run plus a wall of text nobody reads. These
+pin the mechanics that could do that — the verdict, the exit code and the
+rendered report all deriving from one predicate — and the two failure modes this
+gate exists for.
+
+Ported from the rig's `identity/test_meta_gate.py`, which pinned the same
+property for `lib/api_coverage.py`. The tables differ (see `coverage.py`'s
+docstring on why 401/403 are required here rather than excluded); the reason for
+testing the gate does not.
+
+Deliberately under `stand/` but needing nothing from it: no fixture here touches
+the manifest, a session or a URL, so these run in a plain checkout with no stand
+up. That is the same reasoning that keeps the gate itself stdlib-only.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from insight_stand import coverage
+
+# Two catalogued operations, standing in for the real 45.
+METRICS = coverage.Operation(method="GET", path="/api/analytics/v1/metrics")
+SUBCHART = coverage.Operation(method="GET", path="/api/identity/v1/subchart")
+CATALOGUE = [METRICS, SUBCHART]
+
+
+def _ledger(rows: dict[tuple[str, str], list[int]]) -> list[dict[str, Any]]:
+    return [
+        {"method": method, "path": path, "statuses": statuses}
+        for (method, path), statuses in rows.items()
+    ]
+
+
+def _spec(paths: dict[str, dict[str, list[int]]]) -> dict[str, Any]:
+    return {
+        "paths": {
+            path: {
+                method: {"responses": {str(code): {} for code in codes}}
+                for method, codes in methods.items()
+            }
+            for path, methods in paths.items()
+        }
+    }
+
+
+def _catalogue_report(rows: dict[tuple[str, str], list[int]]) -> coverage.CatalogueReport:
+    return coverage.CatalogueReport(
+        catalogue=CATALOGUE, observed=coverage.by_label(_ledger(rows))
+    )
+
+
+def test_an_operation_only_the_sweep_touched_is_not_covered() -> None:
+    """The failure this gate exists for.
+
+    `api/test_gateway.py` calls every catalogued operation anonymously, so every
+    one appears in the ledger whether or not a test ever used it. Treating
+    presence as coverage would report 100% for a suite that asserts nothing but
+    the edge's refusal — which is exactly the shape a naive port of the rig's
+    gate would have had.
+    """
+    report = _catalogue_report(
+        {
+            (METRICS.method, METRICS.path): [200, 401],
+            (SUBCHART.method, SUBCHART.path): [401],
+        }
+    )
+
+    assert report.exercised == [METRICS.label]
+    assert report.swept_only == [SUBCHART.label]
+    assert not report.passed
+
+    violations = coverage.violations(report, None)
+    assert any("SWEPT ONLY" in v and SUBCHART.path in v for v in violations), violations
+
+
+def test_a_catalogued_operation_nobody_called_fails() -> None:
+    """`operations.py` naming a route no test reaches is a gate failure.
+
+    Distinct from swept-only: this one is absent from the ledger entirely, which
+    means even the 401 sweep did not reach it — usually a typo'd path, which
+    would otherwise sit in the catalogue looking like coverage forever.
+    """
+    report = _catalogue_report({(METRICS.method, METRICS.path): [200]})
+
+    assert report.unobserved == [SUBCHART.label]
+    assert not report.passed
+    assert any("NEVER CALLED" in v for v in coverage.violations(report, None))
+
+
+def test_a_fully_exercised_catalogue_passes() -> None:
+    report = _catalogue_report(
+        {
+            (METRICS.method, METRICS.path): [200, 401],
+            (SUBCHART.method, SUBCHART.path): [200, 401],
+        }
+    )
+    assert report.passed
+    assert not coverage.violations(report, None)
+
+
+def test_the_verdict_and_the_violations_cannot_disagree() -> None:
+    """PASS is `no violations`, not a second opinion about them.
+
+    The one invariant that makes every other test here worth having: a report
+    that renders ✅ while listing a blocking finding is the failure mode a gate
+    must never have.
+    """
+    failing = _catalogue_report({(SUBCHART.method, SUBCHART.path): [401]})
+    rendered = coverage.render(failing, None)
+    assert "❌ FAIL" in rendered and "✅ PASS" not in rendered
+    assert coverage.violations(failing, None)
+
+    passing = _catalogue_report(
+        {
+            (METRICS.method, METRICS.path): [200],
+            (SUBCHART.method, SUBCHART.path): [200],
+        }
+    )
+    assert "✅ PASS" in coverage.render(passing, None)
+
+
+def test_gateway_prefixes_fold_onto_the_service_contract() -> None:
+    """`/api/analytics/v1/metrics` is the document's `/v1/metrics`.
+
+    The gateway strips the prefix before the service sees the request
+    (`routes.yaml`, `strip_prefix: true`), so the ledger's gateway paths and the
+    spec's service paths describe the same call. Getting this wrong would report
+    every operation as unmatched — a 0% that looks like a broken suite rather
+    than a broken matcher.
+    """
+    spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 404]}}))
+    validated, unmatched = coverage.match_against_spec(
+        _ledger({("GET", "/api/analytics/v1/metrics"): [200]}),
+        "/api/analytics",
+        spec_ops,
+    )
+
+    assert validated == {"GET /v1/metrics": {200}}
+    assert not unmatched
+
+
+def test_a_path_parameter_matches_its_template() -> None:
+    spec_ops = coverage.spec_operations(_spec({"/v1/metrics/{id}": {"get": [200]}}))
+    validated, _ = coverage.match_against_spec(
+        _ledger({("GET", "/api/analytics/v1/metrics/abc-123"): [200]}),
+        "/api/analytics",
+        spec_ops,
+    )
+    assert validated == {"GET /v1/metrics/{id}": {200}}
+
+
+def test_a_literal_path_wins_over_a_same_arity_template() -> None:
+    """`/v1/metrics/queries` is not a metric whose id is "queries".
+
+    Both templates have two segments, so ordering decides. Sorting by
+    `{param}` count is what makes the answer independent of the order the
+    document happened to list them in.
+    """
+    spec_ops = coverage.spec_operations(
+        _spec({"/v1/metrics/{id}": {"get": [200]}, "/v1/metrics/queries": {"get": [200]}})
+    )
+    validated, _ = coverage.match_against_spec(
+        _ledger({("GET", "/api/analytics/v1/metrics/queries"): [200]}),
+        "/api/analytics",
+        spec_ops,
+    )
+    assert validated == {"GET /v1/metrics/queries": {200}}
+
+
+def test_401_and_403_are_required_here_unlike_the_rig() -> None:
+    """The inverted table, pinned.
+
+    The rig excludes both as unreachable because it runs services with auth
+    open. This suite crosses a real gateway with a real session, so they are
+    reachable — and they are the codes it is uniquely able to prove. An
+    accidental copy of the rig's exclusions would silently stop requiring the
+    authorization behaviour this whole suite exists for.
+    """
+    spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 401, 403, 429, 500]}}))
+    report = coverage.SpecReport(spec_ops=spec_ops, validated={"GET /v1/metrics": {200}}, unmatched=[])
+
+    required = report.required["GET /v1/metrics"]
+    assert 401 in required and 403 in required
+    assert 429 not in required, "no rate limiter fronts this stand"
+    assert 500 not in required, "a server fault is not deterministically inducible"
+    assert report.uncovered["GET /v1/metrics"] == {401, 403}
+
+
+def test_an_undeclared_code_the_suite_proved_is_reported() -> None:
+    """The under-declaration half of #1669.
+
+    A code the route answers but the document omits has no column in the
+    matrix, so without this it would be invisible — the suite covers it, the
+    contract does not describe it, and only one of those is a problem.
+    """
+    spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200]}}))
+    report = coverage.SpecReport(
+        spec_ops=spec_ops, validated={"GET /v1/metrics": {200, 415}}, unmatched=[]
+    )
+
+    assert report.undeclared == {"GET /v1/metrics": {415}}
+    assert any("observed but undeclared" in note for note in coverage.advisories(report))
+
+
+def test_the_ledger_merges_rather_than_overwrites(tmp_path: Any) -> None:
+    """Two partial runs against one stand add up.
+
+    A developer runs `-k` slices; a plain overwrite would report the last one as
+    if it were the whole run, which is the difference between "we cover this"
+    and "the last thing I ran covered this".
+    """
+    target = tmp_path / "ledger.json"
+
+    coverage.reset()
+    coverage.record("GET", "/api/analytics/v1/metrics", 200)
+    coverage.dump(target)
+
+    coverage.reset()
+    coverage.record("GET", "/api/analytics/v1/metrics", 404)
+    coverage.record("GET", "/api/identity/v1/subchart", 200)
+    coverage.dump(target)
+    coverage.reset()
+
+    merged = coverage.by_label(coverage.load_ledger(target))
+    assert merged["GET /api/analytics/v1/metrics"] == {200, 404}
+    assert merged["GET /api/identity/v1/subchart"] == {200}

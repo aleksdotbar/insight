@@ -16,7 +16,8 @@ name: E2E — Compose stand
 # Two independently-reporting checks, split by what they need rather than by
 # what they cover:
 #
-#   api-smoke    tests/stand/api — 117 HTTP contract tests. No browser.
+#   api-smoke    tests/stand/api — 123 HTTP contract tests, plus the harness's
+#                own 10 (tests/stand/meta) and the coverage gate. No browser.
 #   ui-journeys  tests/stand/ui  — the browser journeys, run inside the
 #                published ui-tests image.
 #
@@ -114,7 +115,7 @@ jobs:
   # image. `--ignore` rather than a path argument: `test-stand test` always
   # passes `tests/stand` to pytest and forwards this on top, so naming a
   # subdirectory would ADD to the full collection instead of narrowing it.
-  # Measured: 117 collected here, 10 in ui-journeys, 127 for the whole suite.
+  # Measured: 133 collected here, 10 in ui-journeys, 143 for the whole suite.
   api-smoke:
     name: api-smoke
     needs: resolve-target
@@ -155,6 +156,44 @@ jobs:
 
       - name: Run the API suite
         run: ./dev-compose.sh test-stand test --ignore=tests/stand/ui
+
+      # `always()`: the ledger a FAILING run wrote is the more useful of the
+      # two — it says which operations were reached before things went wrong —
+      # and a gate that only ran after a green suite would never report on the
+      # runs where coverage actually slipped.
+      #
+      # Plain python3, no uv: the gate is stdlib-only over two JSON files by
+      # design, so it does not need the suite's environment and cannot be
+      # broken by it.
+      - name: API coverage gate
+        if: always()
+        run: |
+          set -uo pipefail
+          [ -f .artifacts/stand_observed_endpoints.json ] || {
+            echo "::warning::no coverage ledger — the suite did not reach pytest_sessionfinish"
+            exit 0; }
+          python3 tests/lib/insight_stand/coverage.py \
+            --observed .artifacts/stand_observed_endpoints.json \
+            --catalogue .artifacts/stand_operations.json \
+            --spec docs/components/backend/analytics/openapi.json | tee coverage.md
+          rc=${PIPESTATUS[0]}
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then cat coverage.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::API coverage gate failed — a catalogued operation was never called, was called only by the anonymous sweep, or a documented operation has no test"
+          fi
+          exit "$rc"
+
+      - name: Upload the coverage ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-smoke-coverage
+          path: |
+            .artifacts/stand_observed_endpoints.json
+            .artifacts/stand_operations.json
+            coverage.md
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Dump diagnostics on failure
         if: failure()

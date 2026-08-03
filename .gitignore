@@ -587,3 +587,9 @@ deploy/seed/manifest.json
 # pytest-playwright's artefact directory: traces, screenshots and video from a
 # stand run. Written by `./dev-compose.sh test-stand test`, uploaded by CI.
 /test-results/
+
+# Coverage ledger + operation catalogue the stand suite writes at
+# pytest_sessionfinish, and the gate's rendered report. Run state describing one
+# run, exactly like .env.compose.test-stand and the generated realm.
+.artifacts/
+coverage.md
