@@ -1,6 +1,7 @@
 """`POST /v1/metric-results` — the endpoint the dashboard actually calls.
 
-    POST /v1/metric-results   200 · 403 outside the visible set · 422 off-schema
+    POST /v1/metric-results   200 · 400 (empty metrics, bad period, unknown key)
+                              403 outside the visible set · 422 off-schema
 
 The widest single request in the API: an entity, a period and a list of metrics
 each with its own views. Worth a deployed-path test more than most, because it
@@ -17,7 +18,9 @@ The 401 half is in `test_gateway.py`, swept over every operation at once.
 
 from __future__ import annotations
 
+import pytest
 from insight_stand import ApiClient, ApiResponse, Manifest, analytics_path
+from insight_stand.api import JsonValue
 
 from ..schemas import (
     MetricDefinitionListResponse,
@@ -146,3 +149,108 @@ def test_metric_results_422_off_schema(api: ApiClient) -> None:
     """
     response = api.post(METRIC_RESULTS, json_body={"not": "a metric-results request"})
     assert response.status_code == 422, f"status={response.status_code} {response.text[:300]}"
+
+
+# ---------------------------------------------------------------------------
+# Request validation, all of it before ClickHouse is touched
+# ---------------------------------------------------------------------------
+
+
+def _body(api: ApiClient, manifest: Manifest) -> dict[str, JsonValue]:
+    start, _, end = manifest.data_window.partition("..")
+    return {
+        "entity": {"type": "person", "ids": [manifest.fixture("dev_lead").email]},
+        "period": {"from": start, "to": end},
+        "metrics": [{"metric_key": _a_metric_key(api), "views": [{"view": "period"}]}],
+    }
+
+
+def test_an_empty_metrics_list_is_400(api: ApiClient, stand_manifest: Manifest) -> None:
+    """Nothing asked for is a malformed request, not an empty answer.
+
+    A 200 with no metrics would be indistinguishable from a metric that
+    genuinely has no data, which is the confusion the whole endpoint exists to
+    avoid.
+    """
+    body = _body(api, stand_manifest)
+    body["metrics"] = []
+
+    response = api.post(METRIC_RESULTS, json_body=body)
+    assert response.status_code == 400, f"status={response.status_code} {response.text[:300]}"
+
+
+@pytest.mark.parametrize(
+    ("label", "period"),
+    [
+        ("unparseable", {"from": "not-a-date", "to": "2026-01-31"}),
+        ("reversed", {"from": "2026-02-01", "to": "2026-01-01"}),
+    ],
+)
+def test_a_period_that_cannot_be_honoured_is_400(
+    api: ApiClient, stand_manifest: Manifest, label: str, period: dict[str, str]
+) -> None:
+    """Both rejected up front, before any bucket enumeration.
+
+    The reversed case is the one worth having: it parses, so nothing forces the
+    service to notice, and an unnoticed reversed range answers 200 with no rows
+    — again indistinguishable from no data.
+    """
+    body = _body(api, stand_manifest)
+    body["period"] = dict(period)
+
+    response = api.post(METRIC_RESULTS, json_body=body)
+    assert response.status_code == 400, (
+        f"a {label} period answered {response.status_code}: {response.text[:300]}"
+    )
+
+
+def test_an_unknown_metric_key_is_400_not_404(
+    api: ApiClient, stand_manifest: Manifest
+) -> None:
+    """This endpoint has no not-found path, and the spec declares none.
+
+    A metric_key that resolves to nothing is `unavailable` — a statement about
+    the request, not about a missing resource. Pinning 400 specifically is what
+    keeps the contract and the handler from drifting apart, since 404 is the
+    intuitive answer and the wrong one.
+    """
+    body = _body(api, stand_manifest)
+    body["metrics"] = [
+        {"metric_key": "stand.definitely-not-a-real-metric", "views": [{"view": "period"}]}
+    ]
+
+    response = api.post(METRIC_RESULTS, json_body=body)
+    assert response.status_code == 400, (
+        f"an unknown metric_key answered {response.status_code}, expected 400 unavailable: "
+        f"{response.text[:300]}"
+    )
+
+
+@pytest.mark.requires_seed("dev_lead", "sales_ic")
+def test_one_hidden_person_refuses_the_whole_request(
+    api: ApiClient, stand_manifest: Manifest
+) -> None:
+    """Mixing a visible person with a hidden one is refused, not filtered.
+
+    The alternative — dropping the unauthorized entity and answering 200 for
+    the rest — is worse than it looks: the caller cannot tell a person they may
+    not see from a person with no activity, so a dashboard would render a
+    confident zero. Refusing the request keeps the distinction observable.
+
+    `sales_ic` is outside a development lead's subchart, the same pair
+    `test_subchart.py` uses for its out-of-scope 404.
+    """
+    body = _body(api, stand_manifest)
+    body["entity"] = {
+        "type": "person",
+        "ids": [
+            stand_manifest.fixture("dev_lead").email,
+            stand_manifest.fixture("sales_ic").email,
+        ],
+    }
+
+    response = api.post(METRIC_RESULTS, json_body=body)
+    assert response.status_code == 403, (
+        f"a request naming one hidden person answered {response.status_code} — if it "
+        f"succeeded, the hidden entity was silently dropped: {response.text[:300]}"
+    )

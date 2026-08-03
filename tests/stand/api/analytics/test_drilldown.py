@@ -1,7 +1,9 @@
 """`/v1/metric-drilldown` and its export — the rows behind a metric value.
 
-    POST /v1/metric-drilldown         400 empty-entity · 415 wrong-ct
-    POST /v1/metric-drilldown/export  400 empty-entity · 415 wrong-ct
+    POST /v1/metric-drilldown         400 empty-entity
+    POST /v1/metric-drilldown/export  400 empty-entity
+
+The 415 half is in `test_request_contracts.py`, swept over every body route.
 
 Error contracts only, deliberately. A 200 here needs a metric_key that resolves
 against seeded observations AND an entity the caller may see AND a period those
@@ -22,7 +24,6 @@ subtracted in `coverage.py`: the handler has no gate to produce one.
 
 from __future__ import annotations
 
-import pytest
 from insight_stand import ApiClient, analytics_path
 from insight_stand.api import JsonValue
 
@@ -44,18 +45,6 @@ def _request() -> dict[str, JsonValue]:
         "display_dimensions": [],
         "limit": 100,
     }
-
-
-@pytest.mark.parametrize("path", [DRILLDOWN, DRILLDOWN_EXPORT], ids=["drilldown", "export"])
-def test_drilldown_415_wrong_content_type(api: ApiClient, path: str) -> None:
-    """A body the service must refuse on its media type, not parse.
-
-    Worth asserting through the gateway specifically: a proxy that rewrote or
-    dropped `Content-Type` would turn this into a 422 or a 200, and the
-    in-process rig cannot see that happen.
-    """
-    response = api.post(path, content="{}", headers={"Content-Type": "text/plain"})
-    assert response.status_code == 415, f"status={response.status_code} {response.text[:300]}"
 
 
 def test_drilldown_400_empty_entity_id(api: ApiClient) -> None:

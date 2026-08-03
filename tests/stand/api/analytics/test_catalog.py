@@ -29,6 +29,15 @@ from ..schemas import (
     ProblemDocument,
 )
 
+METRIC_DEFINITIONS = analytics_path("/v1/metric-definitions")
+CATALOG_GET_METRICS = analytics_path("/v1/catalog/get_metrics")
+
+
+def _definitions(api: ApiClient) -> MetricDefinitionListResponse:
+    response = api.get(METRIC_DEFINITIONS)
+    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
+    return response.parse(MetricDefinitionListResponse)
+
 
 def test_catalog_get_metrics_200(api: ApiClient) -> None:
     """The catalogue is the metric-coverage gate's universe, and it is non-empty.
@@ -37,7 +46,7 @@ def test_catalog_get_metrics_200(api: ApiClient) -> None:
     run, so it is asserted rather than merely parsed — `CatalogResponse`
     validating tells you the shape was right, not that anything is in it.
     """
-    response = api.post(analytics_path("/v1/catalog/get_metrics"), json_body={})
+    response = api.post(CATALOG_GET_METRICS, json_body={})
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
     catalog = response.parse(CatalogResponse)
     assert catalog.metrics, "the metric catalogue is empty — was this stand seeded?"
@@ -45,10 +54,7 @@ def test_catalog_get_metrics_200(api: ApiClient) -> None:
 
 def test_metric_definitions_200(api: ApiClient) -> None:
     """Definitions are migration-seeded, so they exist on any stand that migrated."""
-    response = api.get(analytics_path("/v1/metric-definitions"))
-    assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
-    definitions = response.parse(MetricDefinitionListResponse)
-    assert definitions.metrics, "no metric definitions — did the migrations run?"
+    assert _definitions(api).metrics, "no metric definitions — did the migrations run?"
 
 
 @pytest.mark.requires_catalogue("definition_override")
@@ -116,5 +122,62 @@ def test_person_by_email_400_undecodable(api: ApiClient) -> None:
     assert response.status_code == 400, f"status={response.status_code} {response.text[:300]}"
     assert response.content_type == EXTRACTOR_REJECTION_CONTENT_TYPE, (
         f"expected the extractor's plain-text rejection, got {response.content_type!r}: "
+        f"{response.text[:300]}"
+    )
+
+
+def test_the_definitions_listing_is_sorted_and_each_key_appears_once(api: ApiClient) -> None:
+    """Ordering and uniqueness together, because the tenant override needs both.
+
+    A tenant row SHADOWS its product default rather than joining it, so a key
+    appearing twice would mean the override was added instead of collapsing —
+    and a consumer reading the first match would get whichever row the database
+    happened to return first.
+    """
+    metrics = _definitions(api).metrics
+    keys = [metric.metric_key for metric in metrics]
+
+    assert keys == sorted(keys), "the definitions listing is not sorted by metric_key"
+    assert len(keys) == len(set(keys)), (
+        f"a metric_key appears more than once: "
+        f"{sorted({k for k in keys if keys.count(k) > 1})}"
+    )
+
+
+def test_the_definitions_listing_carries_no_computation_internals(api: ApiClient) -> None:
+    """Consumers get the MEANING of a metric, never its implementation.
+
+    `inputs`, `computation` and `transform` describe how a number is produced
+    from which observation sources. Putting them on the wire would make the
+    listing a description of the warehouse, and every consumer a party to
+    changes in it.
+    """
+    response = api.get(METRIC_DEFINITIONS)
+    body = response.json()
+    assert isinstance(body, dict)
+    metrics = body.get("metrics")
+    assert isinstance(metrics, list) and metrics, "no definitions to inspect"
+
+    leaked = {
+        internal
+        for metric in metrics
+        if isinstance(metric, dict)
+        for internal in ("computation", "computation_type", "inputs", "transform", "scale")
+        if internal in metric
+    }
+    assert not leaked, f"the definitions listing exposes computation internals: {sorted(leaked)}"
+
+
+def test_catalog_get_metrics_400_unknown_field(api: ApiClient) -> None:
+    """The request body denies unknown fields, so a typo is refused not ignored.
+
+    The same guard the admin listing applies to query parameters, and for the
+    same reason: a field the service silently drops is one a caller believes
+    took effect. `tenant_idd` is the shape that matters most — near enough to a
+    real filter to be sent in earnest.
+    """
+    response = api.post(CATALOG_GET_METRICS, json_body={"tenant_idd": "oops"})
+    assert response.status_code == 400, (
+        f"an unknown request field answered {response.status_code} rather than 400: "
         f"{response.text[:300]}"
     )

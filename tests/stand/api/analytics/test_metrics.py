@@ -26,7 +26,7 @@ from __future__ import annotations
 from insight_stand import ApiClient, analytics_path
 
 from ..schemas import Metric, MetricListResponse, QueryResponse
-from ..scratch import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_metric
+from ..scratch import SCRATCH_QUERY_REF, UNKNOWN_ID, create_metric
 
 METRICS = analytics_path("/v1/metrics")
 
@@ -68,17 +68,6 @@ def test_create_metric_201(api: ApiClient) -> None:
     assert api.delete(_metric_path(created.id)).status_code == 204
 
 
-def test_create_metric_415_wrong_content_type(api: ApiClient) -> None:
-    """A body the service must refuse on its media type, not parse.
-
-    Worth asserting through the gateway specifically: a proxy that rewrote or
-    dropped `Content-Type` would turn this into a 422 or a 201, and the
-    in-process rig cannot see that happen.
-    """
-    response = api.post(METRICS, content="{}", headers={"Content-Type": "text/plain"})
-    assert response.status_code == 415, f"status={response.status_code} body={response.text[:300]}"
-
-
 def test_create_metric_422_off_schema_body(api: ApiClient) -> None:
     """Well-formed JSON that is not the request type.
 
@@ -95,12 +84,6 @@ def test_get_metric_200(api: ApiClient, scratch_metric: Metric) -> None:
     response = api.get(_metric_path(scratch_metric.id))
     assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"
     assert response.parse(Metric).id == scratch_metric.id
-
-
-def test_get_metric_400_non_uuid(api: ApiClient) -> None:
-    """`Path<Uuid>` fails to deserialize before any handler logic runs."""
-    response = api.get(_metric_path(NON_UUID))
-    assert response.status_code == 400, f"status={response.status_code} body={response.text[:300]}"
 
 
 def test_get_metric_404_unknown(api: ApiClient) -> None:

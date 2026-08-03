@@ -116,15 +116,20 @@ def create_metric(client: ApiClient, tag: str) -> Metric:
     return metric
 
 
-def create_saved_query(client: ApiClient, tag: str) -> SavedQuery:
-    """`POST /v1/queries` → 201, validated. The caller hard-deletes it."""
+def create_saved_query(client: ApiClient, tag: str, sql: str = SCRATCH_QUERY_REF) -> SavedQuery:
+    """`POST /v1/queries` → 201, validated. The caller hard-deletes it.
+
+    `sql` overridable for the parameter-binding cases, which need a statement
+    that REFERENCES a named parameter — the deterministic default has none, and
+    a query with no parameters cannot show which value was bound to one.
+    """
     name = scratch_name(tag)
     response = client.post(
         analytics_path("/v1/queries"),
         json_body={
             "name": name,
             "description": "stand endpoint-contract scratch saved query",
-            "sql": SCRATCH_QUERY_REF,
+            "sql": sql,
         },
     )
     assert response.status_code == 201, (
@@ -132,7 +137,7 @@ def create_saved_query(client: ApiClient, tag: str) -> SavedQuery:
     )
     query = response.parse(SavedQuery)
     assert query.name == name
-    assert query.sql == SCRATCH_QUERY_REF
+    assert query.sql == sql
     return query
 
 
