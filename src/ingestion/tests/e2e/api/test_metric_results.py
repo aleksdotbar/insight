@@ -88,7 +88,7 @@ def test_metric_results_400_reversed_period(api) -> None:
 def test_metric_results_400_unknown_metric_key(api) -> None:
     """An unknown `metric_key` is resolved against the catalog and rejected as a
     400 (`unavailable`) — NOT a 404. Pins that the compute endpoint has no
-    not-found path (the spec's declared 404 is `.standard_errors` boilerplate)."""
+    not-found path, which is why the spec declares no 404 for it."""
     body = _request(
         metrics=[{"metric_key": "e2e.definitely-not-a-real-metric", "views": [{"view": "period"}]}],
     )

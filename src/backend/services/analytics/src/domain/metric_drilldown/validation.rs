@@ -15,10 +15,11 @@ use super::cursor::{
     decode_cursor, evidence_snapshot_id, selection_fingerprint, verify_evidence_snapshot,
 };
 use super::dto::{
-    DEFAULT_PAGE_LIMIT, EvidenceInput, EvidencePlan, MAX_DISPLAY_DIMENSIONS,
+    DEFAULT_PAGE_LIMIT, EvidenceInput, EvidencePlan, MAX_DISPLAY_DIMENSIONS, MAX_EXPORT_ROWS,
     MAX_FILTER_VALUE_BYTES, MAX_FILTER_VALUES, MAX_FILTERS, MAX_PAGE_LIMIT, MAX_PERIOD_DAYS,
-    MetricDrilldownEntity, MetricDrilldownFilter, MetricDrilldownPeriod, MetricDrilldownRequest,
-    MetricDrilldownSelection, ValidatedMetricDrilldown,
+    MetricDrilldownEntity, MetricDrilldownExportRequest, MetricDrilldownFilter,
+    MetricDrilldownPeriod, MetricDrilldownRequest, MetricDrilldownSelection,
+    ValidatedMetricDrilldown,
 };
 
 struct CommonRequest {
@@ -56,6 +57,31 @@ pub async fn validate_request(
             limit: req.limit.unwrap_or(DEFAULT_PAGE_LIMIT),
             max_limit: MAX_PAGE_LIMIT,
             cursor: req.cursor,
+        },
+    )
+    .await
+}
+
+pub async fn validate_export_request(
+    db: &DatabaseConnection,
+    ch: &insight_clickhouse::Client,
+    tenant_id: Uuid,
+    req: &MetricDrilldownExportRequest,
+    limit: usize,
+) -> Result<ValidatedMetricDrilldown, CanonicalError> {
+    validate_common(
+        db,
+        ch,
+        tenant_id,
+        CommonRequest {
+            metric_key: req.metric_key.clone(),
+            entity: req.entity.clone(),
+            period: req.period.clone(),
+            filters: req.filters.clone(),
+            display_dimensions: req.display_dimensions.clone(),
+            limit,
+            max_limit: MAX_EXPORT_ROWS + 1,
+            cursor: None,
         },
     )
     .await

@@ -2,7 +2,10 @@ use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use axum::Json;
+use axum::body::Body;
 use axum::extract::Extension;
+use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
+use axum::http::{HeaderValue, Response};
 use tokio::sync::Semaphore;
 use toolkit_canonical_errors::CanonicalError;
 use toolkit_security::SecurityContext;
@@ -11,15 +14,23 @@ use super::AppState;
 use crate::api::error::MetricError;
 use crate::domain::metric_drilldown::{
     EVIDENCE_QUERY_MEMORY_BYTES, EVIDENCE_QUERY_READ_BYTES, EVIDENCE_QUERY_RESULT_BYTES,
-    EVIDENCE_QUERY_TIMEOUT_SECS, EvidenceQueryRow, MetricDrilldownRequest, MetricDrilldownResponse,
-    build_response, compile_query, decode_evidence_rows, evidence_unavailable, validate_request,
-    verify_evidence_snapshot,
+    EVIDENCE_QUERY_TIMEOUT_SECS, EvidenceQueryRow, MAX_EXPORT_BYTES, MAX_EXPORT_ROWS,
+    MetricDrilldownColumn, MetricDrilldownExportFormat, MetricDrilldownExportRequest,
+    MetricDrilldownRequest, MetricDrilldownResponse, MetricDrilldownRow, ValidatedMetricDrilldown,
+    build_export, build_response, compile_query, decode_evidence_rows, evidence_unavailable,
+    export_filename, export_internal, export_limit, presentation, validate_export_request,
+    validate_request, verify_evidence_snapshot,
 };
 use crate::domain::person_visibility::authorize_entity_ids;
 
 const QUERY_TIMEOUT: Duration = Duration::from_secs(EVIDENCE_QUERY_TIMEOUT_SECS);
+const EXPORT_TIMEOUT: Duration = Duration::from_mins(1);
+const EXPORT_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(2);
 const QUERY_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(2);
+const MAX_CONCURRENT_EXPORTS: usize = 2;
 const MAX_CONCURRENT_QUERIES: usize = 8;
+static EXPORT_SEMAPHORE: LazyLock<Semaphore> =
+    LazyLock::new(|| Semaphore::new(MAX_CONCURRENT_EXPORTS));
 static QUERY_SEMAPHORE: LazyLock<Semaphore> =
     LazyLock::new(|| Semaphore::new(MAX_CONCURRENT_QUERIES));
 
@@ -60,6 +71,139 @@ pub async fn query_metric_drilldown(
         "metric drilldown page completed"
     );
     Ok(Json(response))
+}
+
+pub async fn export_metric_drilldown(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    Json(req): Json<MetricDrilldownExportRequest>,
+) -> Result<Response<Body>, CanonicalError> {
+    let started = Instant::now();
+    let permit = acquire_export_permit().await?;
+    let deadline = tokio::time::Instant::now() + EXPORT_TIMEOUT;
+
+    let validated = validate_export_request(
+        &state.db,
+        &state.ch,
+        ctx.subject_tenant_id(),
+        &req,
+        MAX_EXPORT_ROWS + 1,
+    )
+    .await?;
+    let evidence = collect_export_rows(&state, &validated, deadline).await?;
+    let exported_rows = evidence.len();
+
+    let (columns, rows) = presentation(
+        &evidence,
+        &validated.plan,
+        &validated.selection.filters,
+        &validated.selection.display_dimensions,
+    )?;
+    drop(evidence);
+
+    let format = req.format;
+    let (body, content_type, extension) =
+        serialize_export(permit, format, columns, rows, deadline).await?;
+
+    tracing::info!(
+        duration_ms = started.elapsed().as_millis(),
+        rows = exported_rows,
+        bytes = body.len(),
+        format = format.as_str(),
+        row_limit = MAX_EXPORT_ROWS,
+        byte_limit = MAX_EXPORT_BYTES,
+        capacity = MAX_CONCURRENT_EXPORTS,
+        "metric drilldown export completed"
+    );
+
+    attachment_response(body, content_type, &export_name(&validated, extension))
+}
+
+async fn acquire_export_permit() -> Result<tokio::sync::SemaphorePermit<'static>, CanonicalError> {
+    // INVARIANT: the caller holds this permit across validation, fetch, and the
+    // blocking serialization — the hold is the MAX_CONCURRENT_EXPORTS cap.
+    tokio::time::timeout(EXPORT_ACQUIRE_TIMEOUT, EXPORT_SEMAPHORE.acquire())
+        .await
+        .map_err(|_| {
+            tracing::warn!(
+                capacity = MAX_CONCURRENT_EXPORTS,
+                available = EXPORT_SEMAPHORE.available_permits(),
+                "metric drilldown export capacity exhausted"
+            );
+            export_busy()
+        })?
+        .map_err(|_| export_busy())
+}
+
+async fn collect_export_rows(
+    state: &Arc<AppState>,
+    validated: &ValidatedMetricDrilldown,
+    deadline: tokio::time::Instant,
+) -> Result<Vec<EvidenceQueryRow>, CanonicalError> {
+    let log_comment = format!(
+        "metric-drilldown:export:{}",
+        validated.plan.definition.key()
+    );
+    let rows = tokio::time::timeout_at(deadline, fetch_rows(state, validated, &log_comment))
+        .await
+        .map_err(|_| export_limit("Export exceeded the execution time limit."))??;
+    verify_evidence_snapshot(&state.ch, &validated.plan.relation, &validated.snapshot_id).await?;
+
+    if rows.len() > MAX_EXPORT_ROWS {
+        return Err(export_limit(format!(
+            "Export exceeds the {MAX_EXPORT_ROWS} row limit."
+        )));
+    }
+    Ok(rows)
+}
+
+async fn serialize_export(
+    permit: tokio::sync::SemaphorePermit<'static>,
+    format: MetricDrilldownExportFormat,
+    columns: Vec<MetricDrilldownColumn>,
+    rows: Vec<MetricDrilldownRow>,
+    deadline: tokio::time::Instant,
+) -> Result<(Vec<u8>, &'static str, &'static str), CanonicalError> {
+    let blocking_deadline = deadline.into_std();
+    let export = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        build_export(format, &columns, &rows, blocking_deadline)
+    });
+    tokio::time::timeout_at(deadline, export)
+        .await
+        .map_err(|_| export_limit("Export exceeded the execution time limit."))?
+        .map_err(|_| export_internal())?
+}
+
+fn export_name(validated: &ValidatedMetricDrilldown, extension: &str) -> String {
+    export_filename(
+        &validated.plan.definition.base.label,
+        &validated.selection.metric_key,
+        &validated.selection.period.from,
+        &validated.selection.period.to,
+        validated
+            .selection
+            .filters
+            .iter()
+            .any(|filter| !filter.values.is_empty()),
+        extension,
+    )
+}
+
+fn attachment_response(
+    body: Vec<u8>,
+    content_type: &'static str,
+    filename: &str,
+) -> Result<Response<Body>, CanonicalError> {
+    Response::builder()
+        .header(CONTENT_TYPE, HeaderValue::from_static(content_type))
+        .header(
+            CONTENT_DISPOSITION,
+            HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+                .map_err(|_| export_internal())?,
+        )
+        .body(Body::from(body))
+        .map_err(|_| export_internal())
 }
 
 async fn fetch_rows(
@@ -138,6 +282,13 @@ fn is_clickhouse_resource_limit(message: &str) -> bool {
     ]
     .iter()
     .any(|marker| message.contains(marker))
+}
+
+fn export_busy() -> CanonicalError {
+    MetricError::resource_exhausted("Metric evidence export capacity is busy.")
+        .with_quota_violation("metric evidence exports", "concurrency limit reached")
+        .with_quota_violation_retry_after_seconds(EXPORT_ACQUIRE_TIMEOUT.as_secs())
+        .create()
 }
 
 fn query_busy() -> CanonicalError {

@@ -851,7 +851,20 @@ async fn metric_drilldown_validates_selection_before_clickhouse_error() -> TestR
             "limit": 100
         });
         let resp = app
+            .clone()
             .oneshot(json_req("POST", "/v1/metric-drilldown", &body)?)
+            .await?;
+        anyhow::ensure!(resp.status() == StatusCode::BAD_REQUEST);
+        let export = json!({
+            "metric_key": "git.commits",
+            "entity": {"type": "person", "id": "person@example.com"},
+            "period": {"from": "2026-07-01", "to": "2026-07-28"},
+            "filters": [],
+            "display_dimensions": [],
+            "format": "csv"
+        });
+        let resp = app
+            .oneshot(json_req("POST", "/v1/metric-drilldown/export", &export)?)
             .await?;
         anyhow::ensure!(resp.status() == StatusCode::BAD_REQUEST);
         Ok(())

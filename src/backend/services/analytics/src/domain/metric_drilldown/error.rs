@@ -36,3 +36,13 @@ pub(super) fn invalid_error(field: &str, description: impl Into<String>) -> Cano
         .with_field_violation(field, description.into(), "INVALID")
         .create()
 }
+
+pub(crate) fn export_limit(description: impl Into<String>) -> CanonicalError {
+    MetricError::resource_exhausted("Metric evidence export exceeded resource limits.")
+        .with_quota_violation("metric evidence export", description.into())
+        .create()
+}
+
+pub(crate) fn export_internal() -> CanonicalError {
+    CanonicalError::internal("failed to build metric evidence export").create()
+}
