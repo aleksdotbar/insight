@@ -273,6 +273,11 @@ class MetricDrilldownEntity(BaseModel):
     type: str
 
 
+class MetricDrilldownExportFormat(StrEnum):
+    csv = 'csv'
+    xlsx = 'xlsx'
+
+
 class MetricDrilldownFilter(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -1051,6 +1056,18 @@ class MetricDrilldownColumn(BaseModel):
     key: str
     label: str
     type: MetricDrilldownColumnType
+
+
+class MetricDrilldownExportRequest(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    display_dimensions: list[str] | None = None
+    entity: MetricDrilldownEntity
+    filters: list[MetricDrilldownFilter] | None = None
+    format: MetricDrilldownExportFormat
+    metric_key: str
+    period: MetricDrilldownPeriod
 
 
 class MetricDrilldownResponse(BaseModel):

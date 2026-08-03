@@ -58,7 +58,7 @@ SOME_ID: Final[str] = "01900000-0000-7000-8000-000000000000"
 SOME_TABLE: Final[str] = "gold_metric_values"
 SOME_EMAIL: Final[str] = "nobody@example.com"
 
-#: analytics — 29 operations.
+#: analytics — 30 operations.
 ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
     _a("GET", "/v1/metrics"),
     _a("POST", "/v1/metrics"),
@@ -88,6 +88,11 @@ ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
     _a("GET", "/v1/metric-definitions"),
     _a("POST", "/v1/metric-results"),
     _a("POST", "/v1/metric-drilldown"),
+    # The only operation here that does not answer JSON — it serves CSV or
+    # XLSX. It is catalogued all the same: the edge refuses an anonymous caller
+    # before content negotiation happens, which is exactly what the sweep
+    # asserts about every other one.
+    _a("POST", "/v1/metric-drilldown/export"),
     _a("GET", f"/v1/persons/{SOME_EMAIL}"),
 )
 
