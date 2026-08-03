@@ -1,9 +1,11 @@
 """The edge: every operation is refused without a session, actionably.
 
-This is the assertion the in-process rig cannot make. It runs the services with
-auth disabled, so 401 and 403 are permanently unreachable there and sit in its
-BLOCKED list. Here they are the point — the runtime proof that a deployed stand
-requires a real login, and that `authDisabled: true` was never switched on.
+The rig sweeps 401 over its own 29 analytics operations, and its host verifies
+the gateway JWT to answer them. What it still cannot make is the 403 half of
+this assertion: with no role gate in front of an in-process service, a refusal
+by identity has no way to happen, so 403 sits in its BLOCKED list per route.
+Here both are the point — the runtime proof that a deployed stand requires a
+real login, and that `authDisabled: true` was never switched on.
 
 Swept over the whole catalogue rather than written per service, because the
 property is the gateway's and it is uniform: it terminates the session at the

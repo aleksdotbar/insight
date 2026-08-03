@@ -15,6 +15,15 @@ principal is equally consistent with the route being open to anybody
 authenticated; a 403 for a person is equally consistent with the route being
 broken. Together they say the gate is on the KIND of principal.
 
+They also use two different ADDRESSES, and that is the product, not a
+workaround. The gateway is a browser BFF: it delegates authz to the
+authenticator, which looks for a session cookie and answers `401 no_session` to
+a bearer-carrying request, so a service principal has no edge address at all.
+The service therefore calls identity-resolution directly, exactly as the
+authenticator does during login, while the human's refusal is asserted at
+`/api/identity/...` where a human's request actually arrives. See
+`service_token.default_identity_url`.
+
 Skipped, with a reason, on a stand whose token listener this runner cannot
 reach — a k8s stand keeps it in-cluster with no ingress. That is what
 `requires_service_principal` reads.
@@ -44,7 +53,7 @@ def test_internal_lookup_serves_a_service_principal(
     identity compares a claim.
     """
     person = stand_manifest.fixture("dev_lead")
-    response = service_client.get(identity_path(f"/internal/persons/by-email/{person.email}"))
+    response = service_client.get(f"/internal/persons/by-email/{person.email}")
     assert response.status_code == 200, (
         f"the service principal was refused {person.email}: "
         f"{response.status_code} {response.text[:300]}"

@@ -1684,9 +1684,12 @@ test_stand_test_in_image() {
   [[ -n "${INSIGHT_STAND_PERSONA_PASSWORD:-}" ]] && run_args+=(-e INSIGHT_STAND_PERSONA_PASSWORD)
 
   # Service-principal tests need the `testclient` private key to sign their
-  # assertion with, and the token listener's IN-NETWORK address: this runner
-  # shares the gateway's network namespace, so `localhost` is the gateway's and
-  # the published AUTHENTICATOR_TOKEN_PORT is not reachable from in here.
+  # assertion with, and two IN-NETWORK addresses: this runner shares the
+  # gateway's network namespace, so `localhost` is the gateway's and the
+  # published AUTHENTICATOR_TOKEN_PORT / IDENTITY_RESOLUTION_PORT are not
+  # reachable from in here. Both are service listeners the gateway does not
+  # front — the token exchange, and identity's `/internal/*`, which a service
+  # principal reaches directly because the edge refuses a bearer-only caller.
   # Without the key the suite skips those tests with a reason rather than
   # failing, so the mount is conditional on the key existing.
   local service_key="deploy/compose/authenticator-dev-keys/testclient.key.pem"
@@ -1694,6 +1697,7 @@ test_stand_test_in_image() {
     run_args+=(-v "$PWD/${service_key}:/${service_key}:ro")
     run_args+=(-e "INSIGHT_STAND_SERVICE_KEY=/${service_key}")
     run_args+=(-e "INSIGHT_STAND_TOKEN_URL=http://authenticator:8093")
+    run_args+=(-e "INSIGHT_STAND_IDENTITY_URL=http://identity-resolution:8082")
   fi
 
   echo "=== running the suite in ${image} (namespace: ${TEST_STAND_GATEWAY_CONTAINER}) ==="

@@ -154,6 +154,14 @@ class ApiClient:
     session: StandSession | None = None
     timeout_s: float = 30.0
 
+    #: False only for a client addressing a service's own listener rather than
+    #: the edge. The gateway is a browser BFF and refuses a bearer-carrying
+    #: caller, so a SERVICE principal has no edge address to use — see
+    #: `service_token.default_identity_url`. Off by default: reaching a backend
+    #: port is the mistake `_checked_path` exists to catch, and a test that
+    #: wants to must say so.
+    edge_fronted: bool = True
+
     def __post_init__(self) -> None:
         self.base_url = self.base_url.rstrip("/")
 
@@ -161,7 +169,12 @@ class ApiClient:
 
     def with_session(self, session: StandSession) -> ApiClient:
         """A sibling client at the same stand, authenticated as that session."""
-        return ApiClient(base_url=self.base_url, session=session, timeout_s=self.timeout_s)
+        return ApiClient(
+            base_url=self.base_url,
+            session=session,
+            timeout_s=self.timeout_s,
+            edge_fronted=self.edge_fronted,
+        )
 
     # -- requests ----------------------------------------------------------
 
@@ -266,16 +279,20 @@ class ApiClient:
 
     # -- guards ------------------------------------------------------------
 
-    @staticmethod
-    def _checked_path(path: str) -> str:
+    def _checked_path(self, path: str) -> str:
         """Reject anything the gateway does not front.
 
         A bare service path such as `/v1/metrics` is the classic way to end up
         addressing a backend port directly; catching it here turns that into an
         immediate, explanatory error instead of a puzzling 404.
+
+        Skipped for a client that declared itself off the edge, which addresses
+        a service directly and therefore uses the service's own paths.
         """
         if not path.startswith("/"):
             raise ValueError(f"path must be absolute, got {path!r}")
+        if not self.edge_fronted:
+            return path
         if path == "/" or path.startswith(EDGE_PATH_PREFIXES):
             return path
         if path.startswith(GATEWAY_API_PREFIXES):

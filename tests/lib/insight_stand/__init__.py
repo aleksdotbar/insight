@@ -77,11 +77,13 @@ from .personas import (
 )
 from .service_token import (
     ASSERTION_TYPE,
+    IDENTITY_URL_ENV,
     KEY_PATH_ENV,
     SERVICE_NAME,
     TOKEN_URL_ENV,
     ServiceTokenSession,
     default_audience,
+    default_identity_url,
     default_token_url,
     open_service_session,
 )
@@ -104,6 +106,7 @@ __all__: Sequence[str] = (
     "CALLBACK_PATH",
     "GATEWAY_API_PREFIXES",
     "IDENTITY_PREFIX",
+    "IDENTITY_URL_ENV",
     "KEY_PATH_ENV",
     "LEAD_ROLE",
     "LOGIN_PATH",
@@ -144,6 +147,7 @@ __all__: Sequence[str] = (
     "Tenants",
     "analytics_path",
     "default_audience",
+    "default_identity_url",
     "default_manifest_path",
     "default_token_url",
     "expected_realm_roles",

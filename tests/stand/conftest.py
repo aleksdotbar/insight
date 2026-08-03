@@ -51,6 +51,7 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
     StandConnectionError,
     StandEndpoint,
     coverage,
+    default_identity_url,
     default_manifest_path,
     open_service_session,
     open_session,
@@ -431,14 +432,23 @@ def service_session(stand_manifest: Manifest) -> ServiceTokenSession:
 
 
 @pytest.fixture
-def service_client(stand_base_url: str, service_session: ServiceTokenSession) -> ApiClient:
-    """The same gateway-fronted client every test uses, carrying that principal.
+def service_client(service_session: ServiceTokenSession) -> ApiClient:
+    """A client addressing identity-resolution DIRECTLY, carrying that principal.
 
-    The CREDENTIAL comes from outside the gateway (its listener is not fronted);
-    what it is used on does not. `/internal/*` is reached at `/api/identity/...`
-    like any other identity route.
+    The one client in this suite that does not go through the gateway, and the
+    product is why: the edge is a browser BFF that delegates authz to the
+    authenticator, which looks for a session cookie and refuses a bearer-only
+    request with `401 no_session`. A service principal therefore has no edge
+    address — real callers reach `/internal/*` in-network, and so does this.
+
+    Narrow on purpose. It carries `edge_fronted=False`, so `_checked_path` stops
+    catching backend-port mistakes for requests made with it; nothing but the
+    service-only routes should use it. The human-refusal half of that contract
+    stays at `/api/identity/...`, where it belongs.
     """
-    return ApiClient(base_url=stand_base_url, session=service_session)
+    return ApiClient(
+        base_url=default_identity_url(), session=service_session, edge_fronted=False
+    )
 
 
 @pytest.fixture(scope="session")

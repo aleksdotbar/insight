@@ -101,6 +101,57 @@ def seed_table_columns(cur: pymysql.cursors.Cursor) -> list[dict[str, str]]:
     return rows
 
 
+def _writable_columns(cur: pymysql.cursors.Cursor, table: str) -> list[str]:
+    """A table's column names, in order, minus the ones the engine computes.
+
+    Read from `information_schema` rather than written down here. A hardcoded
+    column list tracks whatever the schema looked like the day it was typed and
+    silently stops matching after the next migration — the clone below has to
+    copy EVERY column, so it cannot be the thing that knows what they are.
+    """
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = DATABASE() AND table_name = %s "
+        "AND (extra IS NULL OR extra NOT LIKE '%%GENERATED%%') "
+        "ORDER BY ordinal_position",
+        (table,),
+    )
+    return [str(r[0]) for r in cur.fetchall()]
+
+
+def _child_row_id(table: str, source_id: bytes) -> bytes:
+    """A deterministic id for a cloned child row.
+
+    Derived from the override's own id so re-seeding an un-torn-down stand
+    replaces the same rows rather than accumulating a fresh set every run —
+    the same reason the parent id is a constant.
+    """
+    return uuid_mod.uuid5(uuid_mod.UUID(DEFINITION_ROW_ID), f"{table}:{source_id.hex()}").bytes
+
+
+def _clone_children(cur: pymysql.cursors.Cursor, table: str, src: bytes, dst: bytes) -> int:
+    """Re-key one child table's rows onto the cloned definition."""
+    cols = _writable_columns(cur, table)
+    if not cols:
+        return 0
+
+    selected = ", ".join(f"`{c}`" for c in cols)
+    cur.execute(f"SELECT {selected} FROM `{table}` WHERE metric_definition_id = %s", (src,))
+    rows = cur.fetchall()
+
+    placeholders = ", ".join(["%s"] * len(cols))
+    for row in rows:
+        values = dict(zip(cols, row))  # noqa: B905 — 3.9-compatible, lengths are equal by construction
+        values["metric_definition_id"] = dst
+        if "id" in values and isinstance(values["id"], bytes):
+            values["id"] = _child_row_id(table, values["id"])
+        cur.execute(
+            f"REPLACE INTO `{table}` ({selected}) VALUES ({placeholders})",
+            tuple(values[c] for c in cols),
+        )
+    return len(rows)
+
+
 def seed_definition_override(cur: pymysql.cursors.Cursor, tenant_uuid: str) -> dict[str, str] | None:
     """Override one product definition's label for this tenant.
 
@@ -110,37 +161,57 @@ def seed_definition_override(cur: pymysql.cursors.Cursor, tenant_uuid: str) -> d
     given the same migrations, and the choice is recorded in the manifest so the
     test reads it instead of guessing.
 
+    A FAITHFUL clone — every column, plus the input and dimension rows that hang
+    off the definition. A tenant row SHADOWS the product default rather than
+    decorating it, so a partial copy does not produce a definition that is
+    mostly right: it produces one the resolver rejects outright (`missing Value
+    input for …`), and every metric-results call touching that key answers 500.
+    The override is meant to change the LABEL and nothing else, so everything
+    else has to come across.
+
     Returns None when the product has no definitions at all — a stand whose
     migrations have not run, which is the migrations' problem to report, not
     this seed's to fail on.
     """
+    columns = _writable_columns(cur, "metric_definitions")
+    selected = ", ".join(f"`{c}`" for c in columns)
     cur.execute(
-        "SELECT metric_key, format, direction, entity_type, computation_type "
-        "FROM metric_definitions WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
+        f"SELECT {selected} FROM metric_definitions "
+        "WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
     )
     row = cur.fetchone()
     if row is None:
         LOG.warning("  metric_definitions: no product definitions to override — skipped")
         return None
 
-    metric_key, fmt, direction, entity_type, computation_type = row
+    values = dict(zip(columns, row))  # noqa: B905 — 3.9-compatible, lengths are equal by construction
+    source_id = values["id"]
+    metric_key = str(values["metric_key"])
+
+    values["id"] = _bin(DEFINITION_ROW_ID)
+    values["tenant_id"] = _bin(tenant_uuid)
+    values["label"] = OVERRIDE_LABEL
+    if "origin" in values:
+        values["origin"] = "custom"
+
+    placeholders = ", ".join(["%s"] * len(columns))
     cur.execute(
-        "REPLACE INTO metric_definitions "
-        "(id, tenant_id, metric_key, label, format, direction, entity_type, computation_type, origin) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'custom')",
-        (
-            _bin(DEFINITION_ROW_ID),
-            _bin(tenant_uuid),
-            metric_key,
-            OVERRIDE_LABEL,
-            fmt,
-            direction,
-            entity_type,
-            computation_type,
-        ),
+        f"REPLACE INTO metric_definitions ({selected}) VALUES ({placeholders})",
+        tuple(values[c] for c in columns),
     )
-    LOG.info("  metric_definitions\n    %s → %r", metric_key, OVERRIDE_LABEL)
-    return {"metric_key": str(metric_key), "label": OVERRIDE_LABEL}
+
+    cloned = {
+        table: _clone_children(cur, table, source_id, values["id"])
+        for table in ("metric_definition_inputs", "metric_definition_dimensions")
+    }
+
+    LOG.info(
+        "  metric_definitions\n    %s → %r (%s)",
+        metric_key,
+        OVERRIDE_LABEL,
+        ", ".join(f"{n} {t.removeprefix('metric_definition_')}" for t, n in cloned.items()),
+    )
+    return {"metric_key": metric_key, "label": OVERRIDE_LABEL}
 
 
 def run() -> dict[str, Any]:

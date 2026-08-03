@@ -66,6 +66,11 @@ PRIVATE_KEY_PATH: Final[Path] = (
 KEY_PATH_ENV: Final[str] = "INSIGHT_STAND_SERVICE_KEY"
 TOKEN_URL_ENV: Final[str] = "INSIGHT_STAND_TOKEN_URL"
 AUDIENCE_ENV: Final[str] = "INSIGHT_STAND_TOKEN_AUDIENCE"
+IDENTITY_URL_ENV: Final[str] = "INSIGHT_STAND_IDENTITY_URL"
+
+#: identity-resolution's own listener, where a SERVICE reaches `/internal/*`.
+IDENTITY_PORT_KEY: Final[str] = "IDENTITY_RESOLUTION_PORT"
+DEFAULT_IDENTITY_PORT: Final[str] = "8086"
 
 #: Where the authenticator's second listener is published, and what it compares
 #: `aud` against. Both mirror docker-compose.yml's defaults.
@@ -138,6 +143,39 @@ def default_audience(environ: Mapping[str, str] | None = None) -> str:
         if configured:
             return configured
     return DEFAULT_AUDIENCE
+
+
+def default_identity_url(environ: Mapping[str, str] | None = None) -> str:
+    """identity-resolution's own base url — NOT the gateway's.
+
+    A service principal cannot reach `/internal/*` through the edge, and that is
+    the product behaving correctly rather than a gap to work around. The gateway
+    is a browser BFF: it delegates authz to the authenticator, which looks for a
+    session cookie and answers `401 no_session` to a request carrying a bearer
+    token instead. Real callers — the authenticator resolving a person during
+    login — address the service in-network, so this suite does too.
+
+    The negative half stays at the edge on purpose: `test_internal_lookup_
+    refuses_a_person` goes through `/api/identity/...` because a human's refusal
+    is exactly what the gateway path should produce. Same route, two addresses,
+    each proving the thing it is able to prove.
+
+    Resolved like `default_token_url`: an explicit override first (the container
+    runner shares the gateway's network namespace, where `localhost` is not this
+    service), else the published host port from the stand's own env file.
+    """
+    import os
+
+    env = os.environ if environ is None else environ
+    explicit = (env.get(IDENTITY_URL_ENV) or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+
+    port = DEFAULT_IDENTITY_PORT
+    found = _env_file()
+    if found is not None:
+        port = parse_env_file(found).get(IDENTITY_PORT_KEY, "").strip() or DEFAULT_IDENTITY_PORT
+    return f"http://{PUBLISHED_HOST}:{port}"
 
 
 def read_private_key(path: Path | None = None) -> str:
@@ -286,12 +324,14 @@ def open_service_session(
 __all__: Sequence[str] = (
     "ASSERTION_TYPE",
     "AUDIENCE_ENV",
+    "IDENTITY_URL_ENV",
     "KEY_PATH_ENV",
     "PRIVATE_KEY_PATH",
     "SERVICE_NAME",
     "TOKEN_URL_ENV",
     "ServiceTokenSession",
     "default_audience",
+    "default_identity_url",
     "default_token_url",
     "open_service_session",
     "read_private_key",

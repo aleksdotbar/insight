@@ -7,8 +7,8 @@ rendered report all deriving from one predicate — and the two failure modes th
 gate exists for.
 
 Ported from the rig's `identity/test_meta_gate.py`, which pinned the same
-property for `lib/api_coverage.py`. The tables differ (see `coverage.py`'s
-docstring on why 401/403 are required here rather than excluded); the reason for
+property for `lib/api_coverage.py`. The tables differ on 403 (see `coverage.py`'s
+docstring for why it is required here rather than excluded); the reason for
 testing the gate does not.
 
 Deliberately under `stand/` but needing nothing from it: no fixture here touches
@@ -171,13 +171,13 @@ def test_a_literal_path_wins_over_a_same_arity_template() -> None:
     assert validated == {"GET /v1/metrics/queries": {200}}
 
 
-def test_401_and_403_are_required_here_unlike_the_rig() -> None:
-    """The inverted table, pinned.
+def test_401_and_403_are_required_rather_than_boilerplate() -> None:
+    """The authorization codes stay required, pinned.
 
-    The rig excludes both as unreachable because it runs services with auth
-    open. This suite crosses a real gateway with a real session, so they are
-    reachable — and they are the codes it is uniquely able to prove. An
-    accidental copy of the rig's exclusions would silently stop requiring the
+    This suite crosses a real gateway with a real session, so both are reachable
+    — and they are the codes it is uniquely able to prove. The rig requires 401
+    too now, but still blocks 403 per-route as boilerplate it has no role gate
+    to produce; copying that exclusion across would silently stop requiring the
     authorization behaviour this whole suite exists for.
     """
     spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 401, 403, 429, 500]}}))
@@ -204,6 +204,28 @@ def test_an_undeclared_code_the_suite_proved_is_reported() -> None:
 
     assert report.undeclared == {"GET /v1/metrics": {415}}
     assert any("observed but undeclared" in note for note in coverage.advisories(report))
+
+
+def test_the_session_ledger_survives_these_tests() -> None:
+    """The hazard this directory's conftest exists for, pinned from inside it.
+
+    Everything below calls `reset()`, which clears the ledger the whole suite is
+    recording into. Under the autouse isolation the caller's entries come back;
+    without it they are gone, the gate grades the run on whatever happened after
+    this module, and reports a suite-wide catastrophe that never occurred.
+    """
+    coverage.record("GET", "/api/analytics/v1/from-an-earlier-test", 200)
+
+    with coverage.isolated():
+        coverage.reset()
+        coverage.record("GET", "/api/analytics/v1/only-inside", 500)
+        assert coverage.by_label(coverage.observed_rows()) == {
+            "GET /api/analytics/v1/only-inside": {500}
+        }
+
+    surviving = coverage.by_label(coverage.observed_rows())
+    assert surviving["GET /api/analytics/v1/from-an-earlier-test"] == {200}
+    assert "GET /api/analytics/v1/only-inside" not in surviving
 
 
 def test_the_ledger_merges_rather_than_overwrites(tmp_path: Any) -> None:

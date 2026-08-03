@@ -24,12 +24,16 @@ would demand codes that cannot exist and miss everything real. Identity is held
 to (1) instead, which needs no trustworthy document. Same judgement, and for the
 same reason, as `Untrusted` in `tests/generate_schemas.py`.
 
-This is a port of `src/ingestion/tests/e2e/lib/api_coverage.py`, and one table
-is inverted on purpose. The rig runs services in-process with auth effectively
-open, so 401 and 403 sit in its universal-boilerplate list as unreachable. Here
-they are the opposite: every request crosses a real gateway carrying a real
-session, so both are reachable and REQUIRED. A gate that inherited the rig's
-exclusions would be blind to the authorization behaviour this suite exists for.
+This is a port of `src/ingestion/tests/e2e/lib/api_coverage.py`. The universal
+table agrees with it — the rig dropped 401 from its own exclusions once its host
+began verifying the gateway JWT, so 429 is all either one drops.
+
+403 is where they still part. The rig blocks it per-route as `.standard_errors`
+boilerplate: with no role gate in front of an in-process service, a refusal it
+cannot produce cannot be required of it. Here every request crosses a real
+gateway carrying a real session, so 403 is reachable and REQUIRED. A gate that
+inherited the rig's per-route exclusions would be blind to the authorization
+behaviour this suite exists for.
 """
 
 from __future__ import annotations
@@ -37,7 +41,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,9 +55,10 @@ SERVER_FAULT_FLOOR = 500
 
 #: Excluded on every analytics route. 429 only — nothing rate-limits this stand.
 #:
-#: NOT 401 and NOT 403, unlike the rig. See the module docstring: they are the
-#: two codes a deployed stand is uniquely able to prove, so excluding them here
-#: would discard the reason this suite exists.
+#: NOT 401 and NOT 403. See the module docstring: they are the two codes a
+#: deployed stand is uniquely able to prove, so excluding them here would
+#: discard the reason this suite exists. The rig now agrees on 401 and still
+#: blocks 403 per-route.
 UNIVERSAL_BOILERPLATE = frozenset({429})
 
 #: Per-operation declared codes this suite cannot reach, with the reason. The
@@ -132,6 +138,31 @@ def record(method: str, path: str, status_code: int) -> None:
 
 def reset() -> None:
     _OBSERVED.clear()
+
+
+@contextmanager
+def isolated() -> Iterator[None]:
+    """Record into a private ledger, restoring the caller's on exit.
+
+    The suite records into the module global above and `tests/stand/conftest.py`
+    dumps it once, at session end. So anything that calls `reset()` part-way
+    through a session does not start a new measurement — it DELETES the run's,
+    and the gate then reports on whatever happened afterwards.
+
+    Not hypothetical, and not a small error either: the first CI run of this
+    gate reported 6 of 47 operations exercised and 41 never called, against a
+    suite that had just passed 129 tests. The six were the leak sweep's, made
+    after `tests/stand/meta/` had exercised `reset()` and wiped everything
+    before them. A gate that reads a wiped ledger reports a catastrophe in the
+    suite rather than a bug in itself, which is the most expensive way to be
+    wrong.
+    """
+    saved = {key: set(codes) for key, codes in _OBSERVED.items()}
+    try:
+        yield
+    finally:
+        _OBSERVED.clear()
+        _OBSERVED.update(saved)
 
 
 def observed_rows() -> list[dict[str, Any]]:
@@ -465,6 +496,7 @@ __all__: Sequence[str] = (
     "advisories",
     "by_label",
     "dump",
+    "isolated",
     "match_against_spec",
     "match_path",
     "observed_rows",
