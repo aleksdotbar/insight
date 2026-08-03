@@ -5,22 +5,16 @@ Together these modules exercise EVERY operation in the committed OpenAPI spec
 so the endpoint-coverage gate needs no SKIP_LIST. One module per path group,
 one test per (path, method, status-code) case:
 
-  test_catalog.py            POST /v1/catalog/get_metrics
-  test_metrics.py            GET+POST /v1/metrics · GET+PUT+DELETE /v1/metrics/{id}
-                             POST /v1/metrics/{id}/query · POST /v1/metrics/queries
-  test_queries.py            GET+POST /v1/queries · GET+PUT+DELETE /v1/queries/{id}
-                             POST /v1/queries/{id}/run
-  test_metric_thresholds.py  GET+POST /v1/metrics/{id}/thresholds
-                             PUT+DELETE /v1/metrics/{id}/thresholds/{tid}
-  test_admin_thresholds.py   GET+POST /v1/admin/metric-thresholds
-                             GET+PUT+DELETE /v1/admin/metric-thresholds/{id}
-  test_columns.py            GET /v1/columns · GET /v1/columns/{table}
-  test_persons.py            GET /v1/persons/{person_id}
-  test_metric_results.py     POST /v1/metric-results
+  test_queries.py              GET+POST /v1/queries · GET+PUT+DELETE /v1/queries/{id}
+                               POST /v1/queries/{id}/run
+  test_metric_definitions.py   GET /v1/metric-definitions
+  test_metric_results.py       POST /v1/metric-results
+  test_metric_drilldown.py     POST /v1/metric-drilldown · POST /v1/metric-drilldown/export
 
-Resources come from fixtures (`api/conftest.py`): scratch metric / threshold /
-admin-threshold rows created and deleted per test, so the catalog (the
-metric-coverage gate's universe) is never touched. Per-op status-code coverage
-and the BLOCKED exclusions (auth-disabled 401/403, no-rate-limit 429, and the
-#1663/#1664 xfalled bugs) live in lib/api_coverage.py.
+Resources come from fixtures (`api/conftest.py`): a scratch saved query created
+and deleted per test, and a tenant-scoped metric-definition override inserted
+straight into MariaDB, so the catalog (the metric-coverage gate's universe) is
+never touched. Per-op status-code coverage and the BLOCKED exclusions
+(no-rate-limit 429 and `.standard_errors` boilerplate) live in
+lib/api_coverage.py.
 """

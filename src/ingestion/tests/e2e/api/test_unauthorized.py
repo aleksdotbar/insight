@@ -16,29 +16,9 @@ pytestmark = pytest.mark.api
 PLACEHOLDER_ID = "00000000-0000-7000-8000-000000000000"
 
 OPERATIONS = [
-    ("GET", "/v1/admin/metric-thresholds"),
-    ("POST", "/v1/admin/metric-thresholds"),
-    ("GET", f"/v1/admin/metric-thresholds/{PLACEHOLDER_ID}"),
-    ("PUT", f"/v1/admin/metric-thresholds/{PLACEHOLDER_ID}"),
-    ("DELETE", f"/v1/admin/metric-thresholds/{PLACEHOLDER_ID}"),
-    ("POST", "/v1/catalog/get_metrics"),
-    ("GET", "/v1/columns"),
-    ("GET", "/v1/columns/anon_probe_table"),
     ("GET", "/v1/metric-definitions"),
     ("POST", "/v1/metric-drilldown"),
     ("POST", "/v1/metric-results"),
-    ("GET", "/v1/metrics"),
-    ("POST", "/v1/metrics"),
-    ("POST", "/v1/metrics/queries"),
-    ("GET", f"/v1/metrics/{PLACEHOLDER_ID}"),
-    ("PUT", f"/v1/metrics/{PLACEHOLDER_ID}"),
-    ("DELETE", f"/v1/metrics/{PLACEHOLDER_ID}"),
-    ("POST", f"/v1/metrics/{PLACEHOLDER_ID}/query"),
-    ("GET", f"/v1/metrics/{PLACEHOLDER_ID}/thresholds"),
-    ("POST", f"/v1/metrics/{PLACEHOLDER_ID}/thresholds"),
-    ("PUT", f"/v1/metrics/{PLACEHOLDER_ID}/thresholds/{PLACEHOLDER_ID}"),
-    ("DELETE", f"/v1/metrics/{PLACEHOLDER_ID}/thresholds/{PLACEHOLDER_ID}"),
-    ("GET", "/v1/persons/anon@example.com"),
     ("GET", "/v1/queries"),
     ("POST", "/v1/queries"),
     ("GET", f"/v1/queries/{PLACEHOLDER_ID}"),
@@ -55,5 +35,5 @@ def test_anonymous_call_is_rejected_401(anon_api, method: str, path: str) -> Non
 
 
 def test_garbage_bearer_is_rejected_401(anon_api) -> None:
-    r = anon_api.get("/v1/metrics", headers={"Authorization": "Bearer not-a-jwt"})
+    r = anon_api.get("/v1/metric-definitions", headers={"Authorization": "Bearer not-a-jwt"})
     assert r.status_code == 401, f"status={r.status_code} body={r.text}"
