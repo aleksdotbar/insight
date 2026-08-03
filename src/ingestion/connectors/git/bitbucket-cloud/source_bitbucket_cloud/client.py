@@ -16,6 +16,11 @@ import requests
 from source_bitbucket_cloud.auth import auth_headers
 
 
+# Statuses that mean "this token will never read this resource": no retry helps,
+# so the repository is skipped instead of failing the sync. 404 is here too — a
+# repository listed at the start of a sync can be deleted mid-run.
+DENIED_STATUSES = frozenset({403, 404})
+
 # Bitbucket answers 400 for a pull request whose source and destination share
 # no ancestry: the diff is undefined rather than empty, and no retry or later
 # sync can make it computable.
@@ -265,6 +270,11 @@ class BitbucketClient:
         try:
             return self.request("GET", str(next_value))
         except BitbucketApiError as error:
+            if error.status_code not in DENIED_STATUSES:
+                # 401 in particular has to reach the sync untouched: it aborts
+                # the whole read with the cause instead of quarantining every
+                # remaining repository one at a time.
+                raise
             raise RuntimeError(
                 f"Bitbucket refused a continuation page after the collection had started: {next_value}"
             ) from error

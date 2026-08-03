@@ -202,3 +202,19 @@ class TestBranchRefStaysSlim:
 
         assert BranchRef.__slots__ == ("name", "head_sha", "target_date", "is_default")
         assert not hasattr(ref, "__dict__"), "a per-instance dict would dwarf the four fields"
+
+
+def test_a_credential_failure_on_a_later_page_is_not_wrapped():
+    """401 has to reach the sync as itself: it aborts the whole read with the
+    cause instead of quarantining every remaining repository one at a time."""
+    client = make_client(
+        [
+            Response(body={"values": [{"n": 1}], "next": BASE + "x?page=2"}),
+            Response(401),
+        ]
+    )
+    _, records = client.paginate_optional("repositories/ws/pipelines")
+
+    with pytest.raises(BitbucketApiError) as raised:
+        list(records)
+    assert raised.value.status_code == 401
