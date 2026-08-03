@@ -1,6 +1,7 @@
 """`POST /v1/profiles` — resolve a person by email or source-native id.
 
-    POST /v1/profiles   200 · 404 unknown email · 400 bad value_type
+    POST /v1/profiles   200 · 400 bad value_type
+                        404 unknown email · out of scope · another tenant
                         400 value_type=id without a source
 
 The only non-admin write on identity, and the second independent proof of the
@@ -14,6 +15,7 @@ The 401 half is in `test_gateway.py`, swept over every operation at once.
 
 from __future__ import annotations
 
+import pytest
 from insight_stand import Manifest, PersonaSession, identity_path
 
 from ..schemas import ProblemDocument, Profile
@@ -76,3 +78,60 @@ def test_resolve_by_id_400_without_a_source(
     )
     assert response.status_code == 400, f"status={response.status_code} {response.text[:300]}"
     assert response.parse(ProblemDocument).status == 400
+
+
+@pytest.mark.requires_seed("dev_lead", "sales_ic")
+def test_a_person_outside_the_callers_scope_is_404_not_403(
+    lead_session: PersonaSession, stand_manifest: Manifest
+) -> None:
+    """Roles are not visibility, and the refusal must not say which applied.
+
+    A lead resolving somebody outside their subtree gets the same answer as for
+    an address nobody holds. Anything else turns this endpoint into an oracle
+    for "does <email> belong to somebody here?" — answerable by any
+    authenticated caller, about anyone, without ever seeing a profile.
+
+    Asserted as a PAIR with the unknown-email case, because the 404 alone would
+    also pass if resolution had simply stopped working.
+    """
+    outsider = stand_manifest.fixture("sales_ic")
+
+    hidden = lead_session.client.post(
+        PROFILES, json_body={"value_type": "email", "value": outsider.email}
+    )
+    assert hidden.status_code == 404, (
+        f"resolving {outsider.email}, who is outside the lead's scope, answered "
+        f"{hidden.status_code} — anything but 404 discloses that they exist: "
+        f"{hidden.text[:300]}"
+    )
+
+    unknown = lead_session.client.post(
+        PROFILES, json_body={"value_type": "email", "value": "nobody@example.com"}
+    )
+    assert unknown.status_code == 404
+    assert hidden.parse(ProblemDocument).title == unknown.parse(ProblemDocument).title, (
+        "the out-of-scope and never-existed answers differ, so the difference is observable"
+    )
+
+
+@pytest.mark.requires_seed("dev_lead", "other_tenant_lead")
+def test_an_email_in_another_tenant_is_404(
+    lead_session: PersonaSession, stand_manifest: Manifest
+) -> None:
+    """A different boundary from the one above, and a harder one.
+
+    The person outside the caller's scope is at least in their tenant; this one
+    is not, so the lookup should not resolve them at all rather than resolving
+    them and then refusing. The distinction is invisible in the response — both
+    are 404 — which is exactly why it is worth a case of its own: a regression
+    that widened the search to every tenant would still answer 404 here for as
+    long as the visibility gate happened to hold.
+    """
+    other = stand_manifest.fixture("other_tenant_lead")
+    response = lead_session.client.post(
+        PROFILES, json_body={"value_type": "email", "value": other.email}
+    )
+    assert response.status_code == 404, (
+        f"resolving {other.email}, who belongs to another tenant, answered "
+        f"{response.status_code}: {response.text[:300]}"
+    )

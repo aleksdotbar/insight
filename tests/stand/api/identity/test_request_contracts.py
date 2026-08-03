@@ -167,6 +167,38 @@ def test_deleting_without_the_grant_is_403(
     )
 
 
+#: The admin WRITES, which the 403 cases below reach without a grant. Bodies
+#: are minimal and never valid — the gate answers before anything reads them,
+#: which is the property under test.
+ADMIN_WRITES: tuple[tuple[str, str], ...] = (
+    ("POST", "/v1/roles"),
+    ("POST", "/v1/person-roles"),
+    ("POST", "/v1/visibility"),
+)
+
+
+@pytest.mark.requires_seed("admin_operator", "ceo")
+@pytest.mark.parametrize(("method", "suffix"), ADMIN_WRITES, ids=_id)
+def test_creating_without_the_grant_is_403(
+    realm_admin_session: PersonaSession, method: str, suffix: str
+) -> None:
+    """The gate answers before the body is validated, on the writes too.
+
+    `test_admin_validation.py` proves these routes refuse a malformed body with
+    a 400; this proves the caller is checked first, so an ungranted caller
+    cannot use validation messages to learn what the API expects. The body sent
+    here is deliberately invalid — a 400 would mean the gate ran second.
+    """
+    response = realm_admin_session.client.request(
+        method, identity_path(suffix), json_body={"stand": "not a valid body"}
+    )
+    assert response.status_code == 403, (
+        f"{method} {suffix} answered {response.status_code} to a caller holding the "
+        f"realm role but no grant; 400 would mean the body was read first: "
+        f"{response.text[:300]}"
+    )
+
+
 @pytest.mark.requires_seed("admin_operator")
 def test_an_unknown_journal_id_is_404_on_both_journals(
     admin_operator_session: PersonaSession,

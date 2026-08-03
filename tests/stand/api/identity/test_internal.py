@@ -88,3 +88,20 @@ def test_internal_lookup_refuses_a_person(
         f"a person reached the service-only route (status {response.status_code}) — "
         f"/internal/* is restricted to sub_type=service: {response.text[:300]}"
     )
+
+
+@pytest.mark.requires_service_principal
+def test_internal_lookup_of_an_unknown_email_is_404(service_client: ApiClient) -> None:
+    """An address nobody holds, asked by the one caller entitled to ask.
+
+    The login-bootstrap path's other outcome: a person who has never been seen
+    must be reported as absent rather than as a refusal, because at login the
+    authenticator has to tell "this is not one of ours" apart from "you may not
+    ask". A 403 here would make a first-time login indistinguishable from a
+    misconfigured service credential.
+    """
+    response = service_client.get("/internal/persons/by-email/nobody@example.com")
+    assert response.status_code == 404, (
+        f"an unknown email answered {response.status_code} to a service principal: "
+        f"{response.text[:300]}"
+    )
