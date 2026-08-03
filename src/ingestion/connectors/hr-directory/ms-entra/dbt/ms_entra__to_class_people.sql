@@ -33,8 +33,12 @@ SELECT
     -- (common for guest/external users).
     coalesce(mail, userPrincipalName)               AS email,
     jobTitle                                        AS job_title,
+    -- `department_name` is the org cohort key for this class. There is no
+    -- org-unit UUID anywhere in the system (no `org_units` table exists), so
+    -- the former always-NULL `org_unit_id Nullable(UUID)` column was dropped.
+    -- Downstream `org_unit_id` (insight.people, gold views, the frontend) is a
+    -- department NAME string derived from this field.
     department                                      AS department_name,
-    CAST(NULL AS Nullable(UUID))                    AS org_unit_id,
     -- Manager relationships are not collected in v1 of the connector;
     -- a future iteration will add `$expand=manager` to populate this.
     CAST(NULL AS Nullable(String))                  AS manager_person_id,
