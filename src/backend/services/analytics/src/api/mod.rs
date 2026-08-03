@@ -243,7 +243,11 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric results",
         )
-        .standard_errors(openapi)
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_415(openapi)
+        .error_500(openapi)
         .handler(metric_results::query_metric_results)
         .register(router, openapi);
 
@@ -353,7 +357,12 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric evidence",
         )
-        .standard_errors(openapi)
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_404(openapi)
+        .error_415(openapi)
+        .error_429(openapi)
+        .error_500(openapi)
         .handler(metric_drilldown::query_metric_drilldown)
         .register(router, openapi);
 
@@ -507,7 +516,8 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric definitions",
         )
-        .standard_errors(openapi)
+        .error_401(openapi)
+        .error_500(openapi)
         .handler(metric_definitions::list_metric_definitions)
         .register(router, openapi);
 
