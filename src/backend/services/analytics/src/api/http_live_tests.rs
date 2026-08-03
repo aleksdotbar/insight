@@ -717,9 +717,6 @@ async fn run_unknown_saved_query_returns_404() -> TestResult {
 #[tokio::test]
 #[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
 async fn saved_query_is_tenant_scoped() -> TestResult {
-    // A query created under tenant A must be unreachable through every verb for
-    // tenant B — the handler resolves the row tenant-filtered before any read,
-    // write, or run.
     let Some(db) = connect_or_skip().await else {
         return Ok(());
     };
@@ -766,7 +763,6 @@ async fn saved_query_is_tenant_scoped() -> TestResult {
         );
     }
 
-    // The row survives untouched for its owner — B's PUT/DELETE changed nothing.
     let resp = app_a.oneshot(get(&format!("/v1/queries/{id}"))?).await?;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = body_json(resp).await?;
