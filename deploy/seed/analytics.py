@@ -229,6 +229,9 @@ def seed_definition_override(
     definitions = _quoted("metric_definitions", allowed=_KNOWN_TABLES)
     columns = _writable_columns(cur, "metric_definitions")
     selected = _column_list(columns)
+    # Two rules match this one, unlike its siblings: the statement is a single
+    # f-string, so `formatted-sql-query` fires alongside the sqlalchemy rule.
+    # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
     cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
         f"SELECT {selected} FROM {definitions} WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
     )
