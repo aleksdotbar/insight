@@ -4,11 +4,18 @@
     uv run --project tests --frozen python tests/generate_schemas.py --check
 
 One entry per backend service the stand talks to. A service is GENERATED only
-when its published document actually describes response bodies; the rest are
-declared here with the reason they cannot be, and `--check` verifies that reason
-still holds. So the day a service starts publishing bodies — the analytics
-document is proof that it happens — the check says "generate it" instead of the
-gap sitting unnoticed behind a comment.
+when its published document both describes response bodies and can be trusted to
+describe them correctly; the rest are declared here with the reason they cannot
+be, and `--check` re-derives that reason rather than trusting the prose. So the
+day a service becomes generatable — the analytics document is proof that it
+happens — the check says "generate it" instead of the gap sitting unnoticed
+behind a comment.
+
+The two reasons are not interchangeable and each has its own re-derivation.
+`Bodyless` is about SHAPE: there is nothing a generator could turn into a model,
+so publishing one body invalidates it. `Untrusted` is about PROVENANCE: the
+document describes bodies a service does not implement, and no amount of them
+makes generating from it right — only the real document arriving does.
 
 Generating is sound for analytics because its document is itself generated from
 the handlers' own types (`cargo run -p analytics -- openapi`) and drift-gated in
@@ -33,6 +40,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -134,7 +142,7 @@ class Generated:
 
 @dataclass(frozen=True)
 class Bodyless:
-    """A service whose document cannot be generated from — with the reason.
+    """A service whose document describes no body a generator could model.
 
     `--check` re-derives the reason instead of trusting it: the entry fails the
     moment the document starts describing a body, which is the signal to promote
@@ -146,7 +154,46 @@ class Bodyless:
     reason: str
 
 
-TARGETS: tuple[Generated | Bodyless, ...] = (
+@dataclass(frozen=True)
+class Untrusted:
+    """A service whose document describes bodies that must not be modelled anyway.
+
+    Provenance is the disqualifier, so body count says nothing about it: a
+    contract the service does not implement records its errors as fact whether it
+    describes one body or fifty. `still_the_wrong_document` is what `--check`
+    re-derives instead — a property of the committed file that stops holding when
+    the real document replaces it.
+    """
+
+    name: str
+    spec: Path
+    reason: str
+    still_the_wrong_document: Callable[[Path], str | None]
+
+
+def declares_only_200(spec_path: Path) -> str | None:
+    """None while every operation in the document declares nothing but `200`.
+
+    The retired .NET contract's signature, and a property no Rust service in this
+    repository can have: they register through `OperationBuilder`, whose
+    `.standard_errors(openapi)` stamps 400/401/403/404/409/429/500 onto every
+    route (that over-stamping is its own problem, #1669 — but it means a single
+    declared error code proves the document was emitted by the Rust service).
+    """
+    declared: set[str] = set()
+    spec: dict[str, Any] = json.loads(spec_path.read_text(encoding="utf-8"))
+
+    for operations in (spec.get("paths") or {}).values():
+        for operation in operations.values():
+            declared |= {status for status in (operation.get("responses") or {}) if status.isdigit()}
+
+    if declared <= {"200"}:
+        return None
+
+    return f"declares {sorted(declared - {'200'})}, which only the Rust service's own document does"
+
+
+TARGETS: tuple[Generated | Bodyless | Untrusted, ...] = (
     Generated(
         name="analytics",
         spec=_SPECS / "analytics" / "openapi.json",
@@ -178,14 +225,20 @@ TARGETS: tuple[Generated | Bodyless, ...] = (
     # `/v1/persons/{email}` (identity answers 404 — the path moved to
     # analytics), declares `POST /v1/persons-seed` (405), spells the subchart
     # parameter `{personId}` where the service serves `{person_id}`, omits both
-    # persons-sync operations, and lists only `200` for all 18 operations while
-    # declaring a body for none of them. `identity.py` is hand-written from the
-    # Rust DTOs until the service emits its own document (it has no `openapi`
-    # subcommand yet, unlike analytics and authenticator).
-    Bodyless(
+    # persons-sync operations, and lists only `200` for every operation.
+    # `identity.py` is hand-written from the Rust DTOs until the service emits
+    # its own document (it has no `openapi` subcommand yet, unlike analytics and
+    # authenticator).
+    #
+    # It was `Bodyless` until the document grew one body — `POST
+    # /v1/visible-persons`, a route the Rust service does serve. That said
+    # nothing about whether the REST of the document is true, which is what the
+    # decision actually turns on, so the check now re-derives provenance.
+    Untrusted(
         name="identity-resolution",
         spec=_SPECS / "identity-resolution" / "openapi.json",
-        reason="the committed document is the retired .NET contract, and declares no bodies",
+        reason="the committed document is the retired .NET contract",
+        still_the_wrong_document=declares_only_200,
     ),
 )
 
@@ -298,6 +351,24 @@ def check_bodyless(target: Bodyless) -> str | None:
     )
 
 
+def check_untrusted(target: Untrusted) -> str | None:
+    """None while the committed document is still the one that cannot be trusted."""
+    if not target.spec.is_file():
+        return f"{target.spec} is gone — drop the {target.name} entry from TARGETS."
+
+    changed = target.still_the_wrong_document(target.spec)
+    if changed is None:
+        print(f"{target.name}: nothing to generate — {target.reason}")
+        return None
+
+    return (
+        f"{target.name}'s document {changed} — the reason it is listed as "
+        f"Untrusted ({target.reason}) no longer holds.\n"
+        "Promote it to a Generated entry in TARGETS and retire the hand-written "
+        "stand/api/schemas/identity.py in the same change."
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -309,10 +380,12 @@ def main() -> int:
 
     problems: list[str] = []
     for target in TARGETS:
-        # A Bodyless claim is verified in BOTH modes: a document that started
-        # describing bodies is news whichever way the script was invoked.
+        # A not-generated claim is verified in BOTH modes: a document that
+        # outgrew its exemption is news whichever way the script was invoked.
         if isinstance(target, Bodyless):
             problem = check_bodyless(target)
+        elif isinstance(target, Untrusted):
+            problem = check_untrusted(target)
         elif args.check:
             problem = check(target)
         else:

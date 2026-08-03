@@ -29,7 +29,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from uuid import UUID
 from typing import Any
-from datetime import date
+from datetime import date as date_aliased
 
 
 class Status(StrEnum):
@@ -257,6 +257,67 @@ class MetricDrilldownCapability(BaseModel):
         extra='forbid',
     )
     granularity: list[EvidenceGranularity]
+
+
+class MetricDrilldownColumnType(StrEnum):
+    string = 'string'
+    date = 'date'
+    number = 'number'
+
+
+class MetricDrilldownEntity(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    id: str
+    type: str
+
+
+class MetricDrilldownFilter(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    dimension: str
+    values: list[str]
+
+
+class MetricDrilldownPeriod(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    from_: str = Field(..., alias='from')
+    to: str
+
+
+class MetricDrilldownRequest(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    cursor: str | None = None
+    display_dimensions: list[str] | None = None
+    entity: MetricDrilldownEntity
+    filters: list[MetricDrilldownFilter] | None = None
+    limit: int | None = Field(None, ge=0)
+    metric_key: str
+    period: MetricDrilldownPeriod
+
+
+class MetricDrilldownRow(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    values: dict[str, Any]
+
+
+class MetricDrilldownSelection(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    display_dimensions: list[str]
+    entity: MetricDrilldownEntity
+    filters: list[MetricDrilldownFilter]
+    metric_key: str
+    period: MetricDrilldownPeriod
 
 
 class MetricFormat(StrEnum):
@@ -975,12 +1036,31 @@ class MetricDefinitionView(BaseModel):
     format: MetricFormat
     is_enabled: bool
     label: str
-    last_observed_date: date | None = Field(None, description="Newest `metric_date` ever observed across the definition's input\nmeasures; absent when no observation has ever been seen. Freshness\nsignal, orthogonal to `schema_status`.")
+    last_observed_date: date_aliased | None = Field(None, description="Newest `metric_date` ever observed across the definition's input\nmeasures; absent when no observation has ever been seen. Freshness\nsignal, orthogonal to `schema_status`.")
     metric_key: str
     schema_error_code: MetricSchemaErrorCode | None = None
     schema_status: SchemaStatus
     short_label: str | None = Field(None, description='Compact label for dense surfaces; absent when the full label is\nalready compact enough.')
     unit: str | None = None
+
+
+class MetricDrilldownColumn(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    key: str
+    label: str
+    type: MetricDrilldownColumnType
+
+
+class MetricDrilldownResponse(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    columns: list[MetricDrilldownColumn]
+    next_cursor: str | None = None
+    rows: list[MetricDrilldownRow]
+    selection: MetricDrilldownSelection
 
 
 class MetricListResponse(BaseModel):
