@@ -127,27 +127,33 @@ class SourceBitbucketCloud(AbstractSource):
         issue_changes = IssueChangesStream(**shared)
         pr_tasks = PRTasksStream(**shared)
 
+        # Airbyte reads streams in catalog order, so a sync that is cut short
+        # keeps whatever the transform layer consumes. branches comes early
+        # because it is cheap and fills the branch cache the range streams
+        # share; file_changes trails the pull-request family because it is the
+        # heaviest read and the commits model joins it optionally.
         streams = [
             repos,
             branches,
+            commits,
             prs,
-            pr_diffstat,
-            pr_activity,
-            pr_tasks,
-            pr_comments,
             pr_commits,
+            pr_comments,
+            pr_activity,
+            pr_diffstat,
+            file_changes,
+            commit_branch_reachability,
+            # Below: no dbt model reads these yet.
+            tags,
+            deployments,
+            environments,
             pipelines,
             pipeline_steps,
             pipeline_step_test_reports,
-            deployments,
-            environments,
-            tags,
+            pr_tasks,
             issues,
             issue_comments,
             issue_changes,
-            commits,
-            commit_branch_reachability,
-            file_changes,
         ]
         _logger.info(
             f"streams: wired {len(streams)} streams (workspaces={shared['workspaces']} "
