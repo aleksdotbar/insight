@@ -140,9 +140,8 @@ evidence relation per source and one granularity per measure:
 - `derived_population`: a source entity participating in a derived metric.
 
 All managed evidence and observation tables use the shared
-`metric_serving_query_settings` dbt macro. Builds are limited to 1.5 GiB and
-two execution threads, use 32,768-row source and insert blocks, and spill
-aggregation, sorting, and joins after 256 MiB. These limits apply uniformly;
+`metric_serving_table` dbt macro. It owns their materialization, storage keys,
+partitioning, tags, and bounded query settings. These settings apply uniformly;
 model-specific query settings are retained only when required by model
 semantics.
 

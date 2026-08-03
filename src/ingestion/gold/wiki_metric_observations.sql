@@ -1,13 +1,4 @@
-{{ config(
-    materialized='table',
-    engine='MergeTree',
-    order_by=['tenant_id', 'source_key', 'entity_type', 'entity_id', 'measure_key', 'metric_date'],
-    partition_by='toYYYYMM(metric_date)',
-    schema='insight',
-    alias='wiki_metric_observations',
-    tags=['gold'],
-    query_settings=metric_serving_query_settings()
-) }}
+{{ metric_serving_table('observations') }}
 
 SELECT
     tenant_id,

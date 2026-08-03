@@ -1,13 +1,4 @@
-{{ config(
-    materialized='table',
-    engine='MergeTree',
-    order_by=['tenant_id', 'source_key', 'entity_type', 'entity_id', 'measure_key', 'metric_date', 'record_id'],
-    partition_by='toYYYYMM(metric_date)',
-    schema='insight',
-    alias='task_metric_evidence',
-    tags=['gold'],
-    query_settings=metric_serving_query_settings()
-) }}
+{{ metric_serving_table('evidence') }}
 
 -- Resolution happens HERE, once per gold build: evidence carries BOTH keys —
 -- `entity_id` is the canonical person id (or '' when identity does not know

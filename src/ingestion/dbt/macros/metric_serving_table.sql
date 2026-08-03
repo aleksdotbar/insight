@@ -17,3 +17,28 @@
     {% endif %}
     {{ return(settings) }}
 {% endmacro %}
+
+{% macro metric_serving_table(table_kind, join_use_nulls=none) %}
+    {% set order_by = [
+        'tenant_id',
+        'source_key',
+        'entity_type',
+        'entity_id',
+        'measure_key',
+        'metric_date'
+    ] %}
+    {% if table_kind == 'evidence' %}
+        {% do order_by.append('record_id') %}
+    {% elif table_kind != 'observations' %}
+        {{ exceptions.raise_compiler_error('Unsupported metric serving table kind: ' ~ table_kind) }}
+    {% endif %}
+    {{ config(
+        materialized='table',
+        engine='MergeTree',
+        order_by=order_by,
+        partition_by='toYYYYMM(metric_date)',
+        schema='insight',
+        tags=['gold'],
+        query_settings=metric_serving_query_settings(join_use_nulls=join_use_nulls)
+    ) }}
+{% endmacro %}
