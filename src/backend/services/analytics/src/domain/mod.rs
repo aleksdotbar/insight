@@ -5,6 +5,7 @@ pub mod contract_version;
 pub mod metric;
 pub mod metric_definitions;
 pub mod metric_drilldown;
+pub mod metric_filter;
 pub mod metric_results;
 pub(crate) mod person_visibility;
 pub mod query;
