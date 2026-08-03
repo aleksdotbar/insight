@@ -67,6 +67,7 @@ def test_ingress_prefix_strips_the_exp_path():
     ingress = _the(_render_ok(), "Ingress")
     anns = ingress["metadata"]["annotations"]
     assert anns["nginx.ingress.kubernetes.io/rewrite-target"] == "/$2"
+    assert anns["nginx.ingress.kubernetes.io/use-regex"] == "true"
 
     rule = ingress["spec"]["rules"][0]
     assert rule["host"] == "preview.example.com"

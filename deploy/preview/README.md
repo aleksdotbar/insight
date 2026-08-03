@@ -1,9 +1,9 @@
 # Preview environments (`insight-preview`)
 
-A path-based FE preview experiment for the presentation layer (epic #1803, sub-issue
-#1971). Each experiment is one release of this chart: a `Deployment` + `Service` +
-one prefix-strip `Ingress` route object, all named `preview-<experiment>` and served
-under `/exp/<experiment>` on a single shared host.
+A path-based FE preview experiment for the presentation layer (epic #1803,
+sub-issue #1971). Each experiment is one release of this chart: a `Deployment` +
+`Service` + one prefix-strip `Ingress` route object, all named
+`preview-<experiment>` and served under `/exp/<experiment>` on a single shared host.
 
 Provisioning is manual — no GitOps controller. Apply with `helm`, remove with
 `helm uninstall`. Only the FE image varies per experiment; the backend never does.
@@ -26,12 +26,12 @@ flows to the shared backend route.
 helm upgrade --install preview-<name> deploy/preview \
   --namespace <ns> \
   --set experiment=<name> \
-  --set image.tag=<fe-build-tag-or-digest> \
+  --set image.tag=<fe-build-tag> \
   --set ingress.host=<single-preview-host>
 ```
 
-`experiment` must be a DNS-1123 label (lowercase alphanumerics and `-`). Then open
-`https://<single-preview-host>/exp/<name>/`.
+`experiment` must be a DNS-1123 label (lowercase alphanumerics and `-`) of at most
+55 characters. Then open `https://<single-preview-host>/exp/<name>/`.
 
 ## Remove an experiment
 

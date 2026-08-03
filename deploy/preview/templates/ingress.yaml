@@ -4,10 +4,11 @@
 # nginx Ingress today, Gateway API HTTPRoute after the Envoy move.
 #
 # The FE image is built with a relative asset base and a runtime router
-# basepath, so we prefix-strip: the capture group `(.*)` after
-# `/exp/<name>(/|$)` is `$2`, and rewrite-target rewrites the request to `/$2`
-# before it reaches the FE pod. `/api/...` is an ABSOLUTE path the FE emits
-# unprefixed, so it is not matched here and flows to the shared backend route.
+# basepath, so we prefix-strip: `use-regex` makes the path a regex, the capture
+# group `(.*)` after `/exp/<name>(/|$)` is `$2`, and rewrite-target rewrites the
+# request to `/$2` before it reaches the FE pod. `/api/...` is an ABSOLUTE path
+# the FE emits unprefixed, so it is not matched here and flows to the shared
+# backend route.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -15,6 +16,7 @@ metadata:
   labels:
     {{- include "insight-preview.labels" . | nindent 4 }}
   annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /$2
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}

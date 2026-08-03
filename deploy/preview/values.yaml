@@ -4,8 +4,9 @@
 
 # REQUIRED. The experiment slug. Forms the URL segment (/exp/<experiment>) and
 # the resource name (preview-<experiment>), so it MUST be a DNS-1123 label:
-# lowercase alphanumerics and '-', starting/ending alphanumeric. Templates fail
-# fast otherwise.
+# lowercase alphanumerics and '-', starting/ending alphanumeric, at most 55
+# characters (so preview-<experiment> never truncates at the 63-char limit).
+# Templates fail fast otherwise.
 experiment: ""
 
 replicaCount: 1
@@ -15,7 +16,7 @@ podAnnotations: {}
 # The FE image. Only the FE varies per experiment; the backend never does.
 image:
   repository: ghcr.io/constructorfabric/insight-front
-  tag: "" # REQUIRED per experiment (an image digest or build tag). No `:latest` default.
+  tag: "" # REQUIRED per experiment (a build tag; rendered as repository:tag). No `:latest` default.
   pullPolicy: IfNotPresent
 
 # Pull secrets for private registries, e.g. [{ name: ghcr-pull }].
