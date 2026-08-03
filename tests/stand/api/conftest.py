@@ -17,7 +17,13 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from insight_stand import ADMIN_OPERATOR_FIXTURE, ApiClient, PersonaSession, analytics_path
+from insight_stand import (
+    ADMIN_OPERATOR_FIXTURE,
+    ApiClient,
+    PersonaSession,
+    analytics_path,
+    artifact_dir,
+)
 
 from . import scratch
 from .operations import ALL_OPERATIONS
@@ -27,7 +33,7 @@ from .schemas import Metric, SavedQuery
 #: the ledger itself). The gate compares the two, so it needs no import from
 #: this suite at run time: it is a stdlib script over two JSON files, runnable
 #: on a machine with no stand, no uv and no browser.
-_ARTIFACTS = Path(__file__).resolve().parents[3] / ".artifacts"
+_ARTIFACTS = artifact_dir(Path(__file__).resolve().parents[3] / ".artifacts")
 CATALOGUE_NAME = "stand_operations.json"
 
 

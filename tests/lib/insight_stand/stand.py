@@ -47,6 +47,26 @@ PUBLISHED_HOST: Final[str] = "localhost"
 
 GATEWAY_PORT_KEY: Final[str] = "GATEWAY_PORT"
 
+#: Where the run's artefacts land — the coverage ledger and the operation
+#: catalogue. Overridable because the two runners disagree about where the repo
+#: root is: from a checkout it is the directory holding `tests/`, while the
+#: ui-tests image places the suite at `/tests` with nothing above it, so the
+#: same walk-upwards lands on `/`.
+#:
+#: That used to be silent. The image ran as root, `/.artifacts` was created
+#: without complaint, and the ledger was written somewhere nothing collected it
+#: from — a wrong answer that looked like no answer. Dropping root turned it
+#: into a PermissionError, which is how it was found.
+ARTIFACT_DIR_ENV: Final[str] = "INSIGHT_STAND_ARTIFACT_DIR"
+
+
+def artifact_dir(fallback: Path) -> Path:
+    """`$INSIGHT_STAND_ARTIFACT_DIR`, else the caller's repo-relative guess."""
+    import os
+
+    override = (os.environ.get(ARTIFACT_DIR_ENV) or "").strip()
+    return Path(override) if override else fallback
+
 
 @dataclass(frozen=True)
 class StandEndpoint:

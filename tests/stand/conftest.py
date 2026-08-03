@@ -50,6 +50,7 @@ from insight_stand import (  # noqa: E402  (import follows the sys.path bootstra
     ServiceTokenSession,
     StandConnectionError,
     StandEndpoint,
+    artifact_dir,
     coverage,
     default_identity_url,
     default_manifest_path,
@@ -200,7 +201,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """
     del session, exitstatus
 
-    coverage.dump(_REPO_ROOT / ARTIFACT_DIR / LEDGER_NAME)
+    coverage.dump(artifact_dir(_REPO_ROOT / ARTIFACT_DIR) / LEDGER_NAME)
 
 
 def pytest_collection_modifyitems(

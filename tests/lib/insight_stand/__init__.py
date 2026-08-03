@@ -93,13 +93,21 @@ from .session import (
     SESSION_COOKIE_NAME,
     LoginSession,
 )
-from .stand import BASE_URL_ENV, StandEndpoint, resolve_base_url, resolve_endpoint
+from .stand import (
+    ARTIFACT_DIR_ENV,
+    BASE_URL_ENV,
+    StandEndpoint,
+    artifact_dir,
+    resolve_base_url,
+    resolve_endpoint,
+)
 from .wait import wait_for, wait_until
 
 __all__: Sequence[str] = (
     "ADMIN_OPERATOR_FIXTURE",
     "ADMIN_ROLE",
     "ANALYTICS_PREFIX",
+    "ARTIFACT_DIR_ENV",
     "ASSERTION_TYPE",
     "BASE_URL_ENV",
     "BOOLEAN_CAPABILITIES",
@@ -146,6 +154,7 @@ __all__: Sequence[str] = (
     "StandSession",
     "Tenants",
     "analytics_path",
+    "artifact_dir",
     "default_audience",
     "default_identity_url",
     "default_manifest_path",

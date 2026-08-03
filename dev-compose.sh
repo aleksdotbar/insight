@@ -1679,6 +1679,12 @@ test_stand_test_in_image() {
     -e "INSIGHT_STAND_BASE_URL=http://localhost:${TEST_STAND_GATEWAY_CONTAINER_PORT}"
     -v "$PWD/${manifest}:/deploy/seed/manifest.json:ro"
     -v "$PWD/${TEST_STAND_ARTIFACT_DIR}:/tests/${TEST_STAND_ARTIFACT_DIR}"
+    # Named, not inferred. The suite otherwise resolves this by walking up from
+    # its own file to the directory holding `tests/` — which is the repo root in
+    # a checkout and `/` in this image, where the suite lives at /tests with
+    # nothing above it. That wrote the ledger to /.artifacts, outside the mount,
+    # and only worked at all because the image used to run as root.
+    -e "INSIGHT_STAND_ARTIFACT_DIR=/tests/${TEST_STAND_ARTIFACT_DIR}"
   )
 
   # The persona password comes from the generated realm export when it is
