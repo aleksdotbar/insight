@@ -2,7 +2,7 @@
 
     POST /v1/catalog/get_metrics    200
     GET  /v1/metric-definitions     200
-    GET  /v1/persons/{email}        200 · 404 unknown
+    GET  /v1/persons/{email}        200 · 400 undecodable · 404 unknown
 
 Grouped because they answer the same kind of question — "what does this stand
 know about?" — and none of them writes anything, so none needs a scratch
@@ -20,7 +20,13 @@ from __future__ import annotations
 
 from insight_stand import ApiClient, Manifest, analytics_path
 
-from .schemas import CatalogResponse, MetricDefinitionListResponse, Person, ProblemDocument
+from .schemas import (
+    EXTRACTOR_REJECTION_CONTENT_TYPE,
+    CatalogResponse,
+    MetricDefinitionListResponse,
+    Person,
+    ProblemDocument,
+)
 
 
 def test_catalog_get_metrics_200(api: ApiClient) -> None:
@@ -64,3 +70,19 @@ def test_person_by_email_404_unknown(api: ApiClient) -> None:
     response = api.get(analytics_path("/v1/persons/nobody@example.com"))
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
     assert response.parse(ProblemDocument).status == 404
+
+
+def test_person_by_email_400_undecodable(api: ApiClient) -> None:
+    """`%FF` is not valid UTF-8, so `{email}` never reaches the handler.
+
+    A different refusal from the 404 above, and the distinction is the point: an
+    address nobody holds is a well-formed question with no answer, while this one
+    is not a question the route can read. They arrive differently too — the 404 is
+    a problem document, this is the extractor's plain text.
+    """
+    response = api.get(analytics_path("/v1/persons/%FF"))
+    assert response.status_code == 400, f"status={response.status_code} {response.text[:300]}"
+    assert response.content_type == EXTRACTOR_REJECTION_CONTENT_TYPE, (
+        f"expected the extractor's plain-text rejection, got {response.content_type!r}: "
+        f"{response.text[:300]}"
+    )

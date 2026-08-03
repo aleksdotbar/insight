@@ -58,7 +58,7 @@ SOME_ID: Final[str] = "01900000-0000-7000-8000-000000000000"
 SOME_TABLE: Final[str] = "gold_metric_values"
 SOME_EMAIL: Final[str] = "nobody@example.com"
 
-#: analytics — 28 operations.
+#: analytics — 29 operations.
 ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
     _a("GET", "/v1/metrics"),
     _a("POST", "/v1/metrics"),
@@ -87,10 +87,11 @@ ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
     _a("GET", f"/v1/columns/{SOME_TABLE}"),
     _a("GET", "/v1/metric-definitions"),
     _a("POST", "/v1/metric-results"),
+    _a("POST", "/v1/metric-drilldown"),
     _a("GET", f"/v1/persons/{SOME_EMAIL}"),
 )
 
-#: identity-resolution — 17 operations. `/health` and `/healthz` are the host
+#: identity-resolution — 18 operations. `/health` and `/healthz` are the host
 #: router's, not the product API, and are deliberately absent: the real probes
 #: address the pod directly rather than passing the gateway.
 IDENTITY_OPERATIONS: Final[tuple[Operation, ...]] = (
@@ -110,6 +111,9 @@ IDENTITY_OPERATIONS: Final[tuple[Operation, ...]] = (
     _i("GET", "/v1/visibility"),
     _i("POST", "/v1/visibility"),
     _i("DELETE", f"/v1/visibility/{SOME_ID}"),
+    # `.authenticated()`, not admin-gated — and the substring test below does not
+    # catch it, which is correct: `/visible-persons` is not `/visibility`.
+    _i("POST", "/v1/visible-persons"),
     _i("GET", f"/internal/persons/by-email/{SOME_EMAIL}"),
 )
 

@@ -1,7 +1,7 @@
 """`/v1/columns` — the drilldown column catalogue.
 
     GET /v1/columns           200
-    GET /v1/columns/{table}   200
+    GET /v1/columns/{table}   200 · 400 undecodable
 
 **Asserted against an empty universe on this stand, and that is a real gap.**
 `table_columns` has no write endpoint — it is operator- or migration-seeded in a
@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from insight_stand import ApiClient, analytics_path
 
-from .schemas import ColumnListResponse
+from .schemas import EXTRACTOR_REJECTION_CONTENT_TYPE, ColumnListResponse
 
 COLUMNS = analytics_path("/v1/columns")
 
@@ -45,3 +45,19 @@ def test_columns_for_a_table_is_200(api: ApiClient) -> None:
     response = api.get(f"{COLUMNS}/gold_metric_values")
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
     assert response.parse(ColumnListResponse).items == []
+
+
+def test_columns_for_an_undecodable_table_is_400(api: ApiClient) -> None:
+    """`%FF` is not valid UTF-8, so `{table}` never deserializes.
+
+    This route's only 400: an unknown table name is an empty 200 (above), so a
+    rejection can only come from the parameter failing to decode at all. Worth
+    having precisely because the 200 makes every other bad name indistinguishable
+    from a good one — this is the single input the route refuses.
+    """
+    response = api.get(f"{COLUMNS}/%FF")
+    assert response.status_code == 400, f"status={response.status_code} {response.text[:300]}"
+    assert response.content_type == EXTRACTOR_REJECTION_CONTENT_TYPE, (
+        f"expected the extractor's plain-text rejection, got {response.content_type!r}: "
+        f"{response.text[:300]}"
+    )

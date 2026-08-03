@@ -5,7 +5,7 @@
     GET    /v1/queries/{id}         200 · 400 non-uuid · 404 unknown
     PUT    /v1/queries/{id}         200 · 404 unknown
     DELETE /v1/queries/{id}         204 · 404 unknown
-    POST   /v1/queries/{id}/run     200 · 404 unknown
+    POST   /v1/queries/{id}/run     200 · 404 unknown · 415 wrong-ct
 
 `/run` is the one that earns its place here rather than in the rig. It goes
 gateway → analytics → ClickHouse in one request, so a green run means the whole
@@ -111,3 +111,24 @@ def test_delete_query_404_unknown(api: ApiClient) -> None:
 def test_run_query_404_unknown(api: ApiClient) -> None:
     response = api.post(_query_path(UNKNOWN_ID, "/run"), json_body={})
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
+
+
+def test_run_query_415_wrong_content_type(
+    api: ApiClient, scratch_saved_query: SavedQuery
+) -> None:
+    """`/run` takes an OPTIONAL body, and still refuses one it cannot read.
+
+    Optional is the reason to assert it separately from the create case above:
+    a route that may be called with no body at all is the one where "ignore what
+    I cannot parse" is a plausible implementation, and ignoring it would mean
+    running the query with silently discarded parameters.
+
+    An existing query on purpose — a 404 would satisfy a status-only assertion
+    for the wrong reason, since the media type is checked before the lookup.
+    """
+    response = api.post(
+        _query_path(scratch_saved_query.id, "/run"),
+        content="{}",
+        headers={"Content-Type": "text/plain"},
+    )
+    assert response.status_code == 415, f"status={response.status_code} {response.text[:300]}"

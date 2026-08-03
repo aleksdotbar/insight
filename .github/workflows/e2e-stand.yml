@@ -9,7 +9,7 @@ name: E2E — Compose stand
 # Two independently-reporting checks, split by what they need rather than by
 # what they cover:
 #
-#   api-smoke    tests/stand/api  — 112 HTTP contract tests. No browser.
+#   api-smoke    tests/stand/api  — 117 HTTP contract tests. No browser.
 #   ui-journeys  tests/stand/ui + tests/stand/metrics — the browser journeys,
 #                run inside the published ui-tests image.
 #
@@ -107,7 +107,7 @@ jobs:
   # image. `--ignore` rather than a path argument: `test-stand test` always
   # passes `tests/stand` to pytest and forwards these on top, so naming a
   # subdirectory would ADD to the full collection instead of narrowing it.
-  # Measured: 112 collected here, 12 in ui-journeys, 124 for the whole suite.
+  # Measured: 117 collected here, 12 in ui-journeys, 129 for the whole suite.
   api-smoke:
     name: api-smoke
     needs: resolve-target
