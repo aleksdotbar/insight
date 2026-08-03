@@ -218,11 +218,18 @@ jobs:
           fi
           exit "$rc"
 
+      # `include-hidden-files` is load-bearing, not boilerplate: `.artifacts/`
+      # is a dotted directory, and without it the action silently drops both
+      # JSON files and uploads the rendered table alone. That is the half of
+      # the artifact nobody can act on — re-running the gate over a past run's
+      # ledger, which is how you tell a coverage regression from a reshuffle,
+      # needs the inputs and not the summary.
       - name: Upload the coverage ledger
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: api-smoke-coverage
+          include-hidden-files: true
           path: |
             .artifacts/stand_observed_endpoints.json
             .artifacts/stand_operations.json
