@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import pytest
 from insight_stand import ApiClient, analytics_path
+from insight_stand.api import JsonValue
 
 from .. import scratch
 
@@ -146,6 +147,21 @@ OFF_SCHEMA_ROUTES: tuple[tuple[str, str, int], ...] = (
     ("POST", "/v1/metric-drilldown/export", LEGACY_422),
 )
 
+#: A JSON array where every one of these routes declares an object. Chosen
+#: because it is off-schema for ALL of them without this table needing to know
+#: a field name apiece — and because the obvious alternative is not off-schema
+#: at all. An unknown KEY (`{"stand": …}`) deserializes cleanly into any request
+#: type whose fields are optional: serde ignores what it does not recognise, the
+#: update is a valid all-None one, and the handler runs. Four routes here are
+#: exactly that shape, so the first version of this test asserted 422 and got
+#: 404 from the id lookup that followed.
+#:
+#: Which is worth stating on its own: the update types accept unknown fields
+#: silently, unlike `GetMetricsRequest` and the admin CRUD types, which are
+#: `deny_unknown_fields` and refuse them (`test_catalog.py`). Same product, two
+#: conventions.
+OFF_SCHEMA_BODY: JsonValue = []
+
 #: `POST /v1/queries/{id}/run` is deliberately absent. It binds
 #: `Option<Json<RunSavedQueryRequest>>`, so a rejected body is not simply a
 #: rejection — whether it becomes `None` or an error is the Option wrapper's
@@ -173,9 +189,7 @@ def test_an_off_schema_body_is_refused_with_the_code_the_extractor_chooses(
     twelve are a fixable inconsistency rather than a limitation. A route that
     changes extractor changes this table, and nothing else has to notice.
     """
-    response = api.request(
-        method, analytics_path(suffix), json_body={"stand": "not the request type"}
-    )
+    response = api.request(method, analytics_path(suffix), json_body=OFF_SCHEMA_BODY)
     assert response.status_code == expected, (
         f"{method} {suffix} answered {response.status_code} to an off-schema body, "
         f"expected {expected} "
