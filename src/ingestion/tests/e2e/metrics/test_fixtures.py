@@ -62,7 +62,16 @@ def _all_persona_emails(test_yaml: TestYaml) -> list[str]:
     return sorted(emails)
 
 
-def _seed_identity_persons(cfg: SessionConfig, emails: list[str]) -> None:
+def _person_ids_for(emails: list[str], aliases: dict[str, list[str]]) -> dict[str, str]:
+    """email -> person id, with `identity_aliases` bound to the canonical
+    persona's id so several source accounts resolve to ONE person."""
+    canonical_of = {
+        alias.strip().lower(): canonical for canonical, group in aliases.items() for alias in group
+    }
+    return {email: person_id_for(canonical_of.get(email.strip().lower(), email)) for email in emails}
+
+
+def _seed_identity_persons(cfg: SessionConfig, person_ids: dict[str, str]) -> None:
     """Replace identity.identity_persons with one email binding per persona.
 
     Runs BEFORE the gold dbt build so resolve_person_id() attributes every
@@ -89,13 +98,13 @@ def _seed_identity_persons(cfg: SessionConfig, emails: list[str]) -> None:
         """,
     )
     clickhouse.execute(cfg, "TRUNCATE TABLE identity.identity_persons")
-    if not emails:
+    if not person_ids:
         return
     rows = ", ".join(
         f"({index + 1}, 'email', 'e2e-rig', generateUUIDv4(), generateUUIDv4(), "
-        f"'{email}', '{email}', toUUID('{person_id_for(email)}'), "
+        f"'{email}', '{email}', toUUID('{person_id}'), "
         f"toUUID('00000000-0000-0000-0000-000000000000'), now64(6), now64(3))"
-        for index, email in enumerate(emails)
+        for index, (email, person_id) in enumerate(sorted(person_ids.items()))
     )
     clickhouse.execute(
         cfg,
@@ -203,12 +212,15 @@ def test_metric_smoke(
     #    gold build — the resolve macro joins them into person_id during the
     #    build (the rig plays the persons-sync role here).
     persona_emails = _all_persona_emails(test_yaml)
-    to_person_id = {email: person_id_for(email) for email in _requested_persona_emails(test_yaml)}
+    all_person_ids = _person_ids_for(persona_emails, test_yaml.identity_aliases)
+    to_person_id = {
+        email: all_person_ids[email] for email in _requested_persona_emails(test_yaml)
+    }
     # The visibility gate asks the stub about the ids this case requests, so
     # the stub's visible set is derived from the yaml — never a hand-kept list
     # a new persona could fall outside of (that reads as an authz bug).
     identity_stub.allow_visible(persona_emails)
-    _seed_identity_persons(ch_seeder.cfg, persona_emails)
+    _seed_identity_persons(ch_seeder.cfg, all_person_ids)
 
     if staging or silver_set or ran_enrich_steps:
         dbt_runner.run("tag:gold", worker_ctx=worker_ctx)
@@ -217,16 +229,28 @@ def test_metric_smoke(
     #    speaks emails (the persona key); the wire speaks person UUIDs since
     #    the identity cutover — translate on the way out and back so the 36
     #    case files stay human-readable.
+    canonical_of = {
+        alias.strip().lower(): canonical
+        for canonical, group in test_yaml.identity_aliases.items()
+        for alias in group
+    }
     to_email: dict[str, str] = {}
     for email, person_id in to_person_id.items():
-        # uuid5 is injective over distinct inputs, so a collision means two
-        # spellings of one email (case) — the reverse map would drop one
-        # silently and the expects would fail somewhere unrelated.
-        if person_id in to_email:
+        seen = to_email.get(person_id)
+        if seen is None:
+            to_email[person_id] = email
+            continue
+        # uuid5 is injective over distinct inputs, so an UNDECLARED collision
+        # means two spellings of one email (case) — the reverse map would drop
+        # one silently and the expects would fail somewhere unrelated. Declared
+        # aliases share an id on purpose; the canonical spelling wins, so the
+        # expects can name one person.
+        canonical = canonical_of.get(email.lower()) or canonical_of.get(seen.lower())
+        if canonical is None:
             raise AssertionError(
-                f"two requested spellings share a person id: {to_email[person_id]!r} and {email!r}"
+                f"two requested spellings share a person id: {seen!r} and {email!r}"
             )
-        to_email[person_id] = email
+        to_email[person_id] = canonical
     for case in test_yaml.cases:
         status, payload = analytics.call_request(_translate(case["request"], to_person_id))
         if status != 200:

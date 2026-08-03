@@ -114,3 +114,35 @@
 {% macro resolved_only() %}
     identity_map.email != ''
 {% endmacro %}
+
+{#-
+  Collapsing a person's several source aliases into their one canonical row.
+
+  Additive measures sum: two accounts' commits are that person's commits.
+  DAY FLAGS must not. A presence marker is `1` per (alias, day), so summing
+  says a person with two accounts had two active days in one day —
+  `max` keeps it one.
+
+  `meeting_free_day` is the INVERSE flag: the day is free only if EVERY alias
+  was free, so one alias with meetings makes it 0 — `min`, not `max`. Getting
+  that backwards would report the busiest people as the most protected.
+
+  Distinct-count measures need nothing here: the runtime counts
+  `uniqExact(subject_key)`, so two aliases naming the same subject collapse on
+  read. Event-grain rows are not aggregated at all.
+-#}
+{% macro collapsed_value(expr, max_keys=[], min_keys=[]) %}
+    {%- if not max_keys and not min_keys -%}
+    sum({{ expr }})
+    {%- else -%}
+    multiIf(
+        {%- if max_keys %}
+        measure_key IN ('{{ max_keys | join("', '") }}'), max({{ expr }}),
+        {%- endif %}
+        {%- if min_keys %}
+        measure_key IN ('{{ min_keys | join("', '") }}'), min({{ expr }}),
+        {%- endif %}
+        sum({{ expr }})
+    )
+    {%- endif -%}
+{% endmacro %}

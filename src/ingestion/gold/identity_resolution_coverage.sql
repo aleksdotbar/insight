@@ -1,5 +1,7 @@
 {{ config(
-    materialized='view',
+    materialized='table',
+    engine='MergeTree',
+    order_by=['source_key'],
     schema='insight',
     alias='identity_resolution_coverage',
     tags=['gold']
@@ -11,6 +13,12 @@
 -- reported" outcome of the identity epic and the prioritization signal for
 -- resolution-quality work — a source with a low rate is where identity is
 -- missing that source's emails.
+--
+-- Materialized with the gold build, not a view: the observation relations
+-- resolve identity at BUILD time, so a view reading the live identity map
+-- would call a row resolved while gold still has no canonical row for it. Both
+-- sides now answer for the same resolution snapshot, and "coverage" means what
+-- the served tables actually contain.
 --
 -- Read from the PRE-resolution relations, not from the observation tables:
 -- since entity_id became the canonical person id, an unresolved source row has

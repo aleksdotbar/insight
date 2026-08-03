@@ -25,7 +25,7 @@ SELECT
     metric_date,
     CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
     measure_key,
-    toNullable(sum(contribution)) AS value,
+    toNullable({{ collapsed_value('contribution', max_keys=['commit_day']) }}) AS value,
     CAST(NULL AS Nullable(String)) AS subject_key,
     dimensions
 FROM {{ ref('git_metric_evidence') }}

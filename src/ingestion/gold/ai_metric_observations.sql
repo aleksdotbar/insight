@@ -31,3 +31,26 @@ SELECT
 FROM {{ ref('ai_metric_evidence') }}
 {{ resolved_person_id_join("ai_metric_evidence") }}
 WHERE {{ resolved_only() }}
+  AND measure_key NOT IN ('active_day')
+
+UNION ALL
+
+-- Day flags collapse across a person's source aliases; every other measure
+-- above stays one row per source row (additive measures are summed by the
+-- runtime, which is correct across aliases).
+SELECT
+    tenant_id,
+    source_key,
+    entity_type,
+    {{ canonical_entity_id() }},
+    metric_date,
+    CAST(NULL AS Nullable(DateTime64(3))) AS observed_at,
+    measure_key,
+    toNullable({{ collapsed_value('contribution', max_keys=['active_day']) }}) AS value,
+    CAST(NULL AS Nullable(String)) AS subject_key,
+    dimensions
+FROM {{ ref('ai_metric_evidence') }}
+{{ resolved_person_id_join("ai_metric_evidence") }}
+WHERE {{ resolved_only() }}
+  AND measure_key IN ('active_day')
+GROUP BY tenant_id, source_key, entity_type, identity_map.person_id, metric_date, measure_key, dimensions
