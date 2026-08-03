@@ -71,8 +71,10 @@ UNIVERSAL_BOILERPLATE = frozenset({429})
 #: operation leaves the spec, and when the spec stops declaring the code it
 #: subtracts — the last of which is what every #1669 fidelity fix produces.
 #:
-#: Every entry here is 403, and all of them for one reason: analytics has three
-#: places that can produce one, and most of its operations reach none of them.
+#: Two codes are subtracted here, each for a reason read out of the service.
+#:
+#: 403 — analytics has three places that can produce one, and most of its
+#: operations reach none of them.
 #:
 #:   * `domain/person_visibility.rs`  — asking about somebody outside the
 #:     caller's visible set. Reached only by `POST /v1/metric-results`.
@@ -103,42 +105,59 @@ UNIVERSAL_BOILERPLATE = frozenset({429})
 #: authorization wiring lands, these become observable and the gate says so.
 _NO_AUTHORIZATION_PATH = frozenset({403})
 
+#: 409 is declared on every route and NO route can send one: `already_exists`,
+#: `aborted` and `conflict` appear nowhere in the service. The one place a
+#: conflict genuinely exists — a duplicate `(metric, tenant, scope)` admin
+#: threshold — violates `uq_metric_threshold_scope_target` and falls through to
+#: the internal-500 alarm instead (#1664), so it is excluded HERE too, tagged
+#: with the bug rather than the absence. When #1664 lands, two things say so
+#: independently: the strict xfail in `test_thresholds.py` starts XPASSing, and
+#: this gate's `blocked-now-observed` advisory names the entry.
+_NO_CONFLICT_PATH = frozenset({409})
+_NO_AUTHZ_OR_CONFLICT = _NO_AUTHORIZATION_PATH | _NO_CONFLICT_PATH
+
 BLOCKED: dict[str, frozenset[int]] = {
     # Metrics CRUD + query — no gate of any kind.
-    "GET /v1/metrics": _NO_AUTHORIZATION_PATH,
-    "POST /v1/metrics": _NO_AUTHORIZATION_PATH,
-    "GET /v1/metrics/{id}": _NO_AUTHORIZATION_PATH,
-    "PUT /v1/metrics/{id}": _NO_AUTHORIZATION_PATH,
-    "DELETE /v1/metrics/{id}": _NO_AUTHORIZATION_PATH,
-    "POST /v1/metrics/{id}/query": _NO_AUTHORIZATION_PATH,
-    "POST /v1/metrics/queries": _NO_AUTHORIZATION_PATH,
+    "GET /v1/metrics": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/metrics": _NO_AUTHZ_OR_CONFLICT,
+    "GET /v1/metrics/{id}": _NO_AUTHZ_OR_CONFLICT,
+    "PUT /v1/metrics/{id}": _NO_AUTHZ_OR_CONFLICT,
+    "DELETE /v1/metrics/{id}": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/metrics/{id}/query": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/metrics/queries": _NO_AUTHZ_OR_CONFLICT,
     # Legacy per-metric thresholds — the #1663 surface, also ungated.
-    "GET /v1/metrics/{id}/thresholds": _NO_AUTHORIZATION_PATH,
-    "POST /v1/metrics/{id}/thresholds": _NO_AUTHORIZATION_PATH,
-    "PUT /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHORIZATION_PATH,
-    "DELETE /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHORIZATION_PATH,
+    "GET /v1/metrics/{id}/thresholds": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/metrics/{id}/thresholds": _NO_AUTHZ_OR_CONFLICT,
+    "PUT /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHZ_OR_CONFLICT,
+    "DELETE /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHZ_OR_CONFLICT,
     # Admin thresholds: the three WRITES can refuse (a broader scope's lock,
     # and for the id-taking two, a cross-tenant row). Only the reads are left
     # with nothing but the stubbed role check.
-    "GET /v1/admin/metric-thresholds": _NO_AUTHORIZATION_PATH,
-    "GET /v1/admin/metric-thresholds/{id}": _NO_AUTHORIZATION_PATH,
+    "GET /v1/admin/metric-thresholds": _NO_AUTHZ_OR_CONFLICT,
+    "GET /v1/admin/metric-thresholds/{id}": _NO_AUTHZ_OR_CONFLICT,
     # Saved queries — no owner check and no role check; cross-tenant is 404.
-    "GET /v1/queries": _NO_AUTHORIZATION_PATH,
-    "POST /v1/queries": _NO_AUTHORIZATION_PATH,
-    "GET /v1/queries/{id}": _NO_AUTHORIZATION_PATH,
-    "PUT /v1/queries/{id}": _NO_AUTHORIZATION_PATH,
-    "DELETE /v1/queries/{id}": _NO_AUTHORIZATION_PATH,
-    "POST /v1/queries/{id}/run": _NO_AUTHORIZATION_PATH,
+    "GET /v1/queries": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/queries": _NO_AUTHZ_OR_CONFLICT,
+    "GET /v1/queries/{id}": _NO_AUTHZ_OR_CONFLICT,
+    "PUT /v1/queries/{id}": _NO_AUTHZ_OR_CONFLICT,
+    "DELETE /v1/queries/{id}": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/queries/{id}/run": _NO_AUTHZ_OR_CONFLICT,
     # Read-only catalogue + drilldown.
-    "GET /v1/columns": _NO_AUTHORIZATION_PATH,
-    "GET /v1/columns/{table}": _NO_AUTHORIZATION_PATH,
-    "POST /v1/catalog/get_metrics": _NO_AUTHORIZATION_PATH,
+    "GET /v1/columns": _NO_AUTHZ_OR_CONFLICT,
+    "GET /v1/columns/{table}": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/catalog/get_metrics": _NO_AUTHZ_OR_CONFLICT,
     # `POST /v1/metric-drilldown` and `GET /v1/metric-definitions` used to sit
     # here. #2134 corrected their declarations, so there is no longer a 403 to
     # subtract — the gate reported both as stale and they came out.
     # `/export` still carries the old boilerplate and the same absent gate.
-    "POST /v1/metric-drilldown/export": _NO_AUTHORIZATION_PATH,
-    "GET /v1/persons/{email}": _NO_AUTHORIZATION_PATH,
+    "POST /v1/metric-drilldown/export": _NO_AUTHZ_OR_CONFLICT,
+    "GET /v1/persons/{email}": _NO_AUTHZ_OR_CONFLICT,
+    # 403 IS reachable on these three (see above), 409 is not.
+    # `POST /v1/metric-results` needs no entry at all: #2134 already removed
+    # 409 from its declaration, and this gate said so when it was added here.
+    "POST /v1/admin/metric-thresholds": _NO_CONFLICT_PATH,  # 409 = #1664
+    "PUT /v1/admin/metric-thresholds/{id}": _NO_CONFLICT_PATH,
+    "DELETE /v1/admin/metric-thresholds/{id}": _NO_CONFLICT_PATH,
 }
 
 

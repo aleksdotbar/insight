@@ -259,19 +259,27 @@ def test_403_is_subtracted_only_where_no_handler_can_produce_it() -> None:
     `POST /v1/metric-results` can, and the difference is which handlers exist.
     """
     assert 403 not in coverage.UNIVERSAL_BOILERPLATE, "must stay a per-route judgement"
-    assert coverage.BLOCKED["GET /v1/metrics"] == frozenset({403})
+    assert 403 in coverage.BLOCKED["GET /v1/metrics"], "no gate on the metrics listing"
     assert "POST /v1/metric-results" not in coverage.BLOCKED
-    for write in ("POST /v1/admin/metric-thresholds",
-                  "PUT /v1/admin/metric-thresholds/{id}",
-                  "DELETE /v1/admin/metric-thresholds/{id}"):
-        assert write not in coverage.BLOCKED, f"{write} reaches the lock enforcer"
-    assert "GET /v1/admin/metric-thresholds" in coverage.BLOCKED, "reads cannot refuse"
+    # Presence of the KEY says nothing now that 409 is excluded too — these
+    # three are listed for their conflict, and must still be held to their 403.
+    for write in (
+        "POST /v1/admin/metric-thresholds",
+        "PUT /v1/admin/metric-thresholds/{id}",
+        "DELETE /v1/admin/metric-thresholds/{id}",
+    ):
+        assert 403 not in coverage.BLOCKED.get(write, frozenset()), (
+            f"{write} reaches the lock enforcer, so its 403 stays required"
+        )
+    assert 403 in coverage.BLOCKED["GET /v1/admin/metric-thresholds"], "reads cannot refuse"
 
-    spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 401, 403]}}))
+    spec_ops = coverage.spec_operations(_spec({"/v1/metrics": {"get": [200, 401, 403, 404]}}))
     report = coverage.SpecReport(
         spec_ops=spec_ops, validated={"GET /v1/metrics": {200}}, unmatched=[]
     )
-    assert report.required["GET /v1/metrics"] == {200, 401}, "403 subtracted, nothing else"
+    assert report.required["GET /v1/metrics"] == {200, 401, 404}, (
+        "403 subtracted; a code this list says nothing about is untouched"
+    )
 
 
 def test_an_exclusion_the_document_outgrew_is_reported() -> None:
@@ -295,6 +303,24 @@ def test_an_exclusion_the_document_outgrew_is_reported() -> None:
     )
     assert not any("stale BLOCKED" in v for v in coverage.violations(_passing_catalogue(), report)), (
         "hygiene is reported, never blocking — a corrected document must not fail the gate"
+    )
+
+
+def test_409_is_subtracted_everywhere_because_nothing_can_conflict() -> None:
+    """The second sourced exclusion, and the one entry that is a BUG not an absence.
+
+    `already_exists`, `aborted` and `conflict` appear nowhere in analytics, so
+    no route can answer 409 — the spec declares it on all of them anyway. The
+    admin-threshold create is the exception worth keeping straight: a duplicate
+    target genuinely IS a conflict, it just arrives as a 500 today (#1664). It
+    is excluded for that reason rather than for having no conflict to report,
+    which is why the strict xfail in `test_thresholds.py` exists alongside it.
+    """
+    conflicts = {op for op, codes in coverage.BLOCKED.items() if 409 in codes}
+    assert len(conflicts) > 20, "409 is boilerplate on nearly every route"
+    assert "POST /v1/admin/metric-thresholds" in conflicts, "#1664 — excluded as a bug"
+    assert "POST /v1/metric-results" not in conflicts, (
+        "#2134 already removed 409 from its declaration; an entry here would be stale"
     )
 
 

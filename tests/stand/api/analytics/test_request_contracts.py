@@ -109,3 +109,76 @@ def test_a_body_with_the_wrong_media_type_is_415(
         f"{method} {suffix} answered {response.status_code} to a text/plain body: "
         f"{response.text[:300]}"
     )
+
+
+#: Well-formed JSON that is not the request type, and the code each route
+#: answers. The split is the whole content of #1669's sibling bug #1670:
+#:
+#:   CanonicalJson  → canonical 400 with a Problem document, the intended
+#:                    contract and what the spec declares for every route
+#:   axum::Json     → Axum's own 422 with a plain-text envelope, which is the
+#:                    extractor's default and was never chosen
+#:
+#: Read off the handler signatures rather than guessed: `CanonicalJson(req):`
+#: in `api/admin/handlers.rs` and `api/catalog.rs`, plain `Json(req):`
+#: everywhere else. Asserted as it BEHAVES, with the intended contract named
+#: here — a strict xfail would say the same thing, but this way the suite keeps
+#: telling you what a caller actually receives today.
+CANONICAL_400 = 400
+LEGACY_422 = 422
+
+OFF_SCHEMA_ROUTES: tuple[tuple[str, str, int], ...] = (
+    # CanonicalJson — the contract as declared.
+    ("POST", "/v1/catalog/get_metrics", CANONICAL_400),
+    ("POST", "/v1/admin/metric-thresholds", CANONICAL_400),
+    ("PUT", f"/v1/admin/metric-thresholds/{scratch.UNKNOWN_ID}", CANONICAL_400),
+    # axum::Json — #1670.
+    ("POST", "/v1/metrics", LEGACY_422),
+    ("PUT", f"/v1/metrics/{scratch.UNKNOWN_ID}", LEGACY_422),
+    ("POST", f"/v1/metrics/{scratch.UNKNOWN_ID}/query", LEGACY_422),
+    ("POST", "/v1/metrics/queries", LEGACY_422),
+    ("POST", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds", LEGACY_422),
+    ("PUT", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds/{scratch.UNKNOWN_ID}", LEGACY_422),
+    ("POST", "/v1/queries", LEGACY_422),
+    ("PUT", f"/v1/queries/{scratch.UNKNOWN_ID}", LEGACY_422),
+    ("POST", "/v1/metric-results", LEGACY_422),
+    ("POST", "/v1/metric-drilldown", LEGACY_422),
+    ("POST", "/v1/metric-drilldown/export", LEGACY_422),
+)
+
+#: `POST /v1/queries/{id}/run` is deliberately absent. It binds
+#: `Option<Json<RunSavedQueryRequest>>`, so a rejected body is not simply a
+#: rejection — whether it becomes `None` or an error is the Option wrapper's
+#: business, and pinning either would be pinning axum's version rather than
+#: this product's contract. The rig leaves it out for the same reason.
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix", "expected"),
+    OFF_SCHEMA_ROUTES,
+    ids=[f"{m} {s}" for m, s, _ in OFF_SCHEMA_ROUTES],
+)
+def test_an_off_schema_body_is_refused_with_the_code_the_extractor_chooses(
+    api: ApiClient, method: str, suffix: str, expected: int
+) -> None:
+    """The same request shape, two answers, and the reason is which extractor ran.
+
+    A body that is valid JSON but not the declared request type. Every route
+    here DECLARES 400 — `.standard_errors` puts it on all of them — and twelve
+    of the fourteen answer 422 instead, because plain `axum::Json` rejects with
+    its own envelope before any of this product's error machinery runs.
+
+    Pinning the split rather than the intent is what makes it actionable: the
+    two canonical routes prove the intended contract is reachable, so the other
+    twelve are a fixable inconsistency rather than a limitation. A route that
+    changes extractor changes this table, and nothing else has to notice.
+    """
+    response = api.request(
+        method, analytics_path(suffix), json_body={"stand": "not the request type"}
+    )
+    assert response.status_code == expected, (
+        f"{method} {suffix} answered {response.status_code} to an off-schema body, "
+        f"expected {expected} "
+        f"({'CanonicalJson' if expected == CANONICAL_400 else 'axum::Json, #1670'}): "
+        f"{response.text[:300]}"
+    )
