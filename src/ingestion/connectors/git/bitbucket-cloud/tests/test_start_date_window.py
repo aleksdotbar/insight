@@ -13,7 +13,7 @@ from tests.conftest import SHARED, FakeCatalog, FakeClient, branch, repository
 
 START_DATE = "2026-01-01"
 WINDOWED = {**SHARED, "start_date": START_DATE}
-RANGE_STREAMS = [CommitsStream, FileChangesStream, CommitBranchReachabilityStream, BranchesStream]
+RANGE_STREAMS = [CommitsStream, FileChangesStream, CommitBranchReachabilityStream]
 
 
 class CountingClient(FakeClient):
@@ -86,6 +86,38 @@ class TestRepositoriesOutsideTheWindow:
         read_all_buckets(stream)
 
         assert client.branch_calls > 0
+
+
+class TestBranchesAreCurrentStateNotHistory:
+    """Branches exist now regardless of when they were last pushed to, so the
+    window must not empty a dormant repository's branch snapshot."""
+
+    def dormant(self):
+        repo = repository(updated_on="2019-05-01T00:00:00+00:00")
+        client = CountingClient()
+        client.branch_values[repo.uuid] = [branch("main", "old")]
+        return repo, client
+
+    def test_a_dormant_repository_still_reports_its_branches(self):
+        repo, client = self.dormant()
+
+        records = read_all_buckets(build(BranchesStream, client, repo))
+
+        assert [r["name"] for r in records if r["record_type"] == "item"] == ["main"]
+        marker = next(r for r in records if r["record_type"] == "snapshot_complete")
+        assert marker["snapshot_available"] is True
+        assert marker["snapshot_item_count"] == 1
+
+    def test_and_costs_one_listing_ever(self):
+        repo, client = self.dormant()
+        first = build(BranchesStream, client, repo)
+        read_all_buckets(first)
+
+        second = build(BranchesStream, client, repo)
+        second.state = first.state
+        read_all_buckets(second)
+
+        assert client.branch_calls == 1, "the idle gate, not start_date, is what keeps a dormant repository cheap"
 
 
 def dated_branch(name: str, sha: str, target_date: str | None):

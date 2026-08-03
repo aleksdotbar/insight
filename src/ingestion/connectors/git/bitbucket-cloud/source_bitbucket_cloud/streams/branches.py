@@ -13,13 +13,17 @@ class BranchesStream(BitbucketIncrementalStream):
     that is denied (403) or fails simply produces no marker this sync, so dbt
     keeps its previous branch generation, while every other repository updates
     independently. A bucket-scoped generation would freeze branch updates for a
-    whole bucket over one denied repository — and workspaces where unreadable
-    repositories are common (observed in production) would freeze every bucket.
+    whole bucket over one denied repository — and in a workspace where
+    unreadable repositories are common, every bucket would freeze.
 
     Incremental only in the cheapest sense: the per-repository state holds the
     repository's updated_on from the workspace listing, and a repository that
     has not been pushed to since the last pass is skipped without a request —
     its previous generation simply stays the newest complete one.
+
+    start_date does not apply here. Branches are current state, not dated
+    history, so a repository last pushed before the window still has branches
+    worth reporting; the idle gate already keeps it at one listing ever.
 
     Trade-off: a repository deleted from the workspace stops producing
     generations, so its last branch snapshot lingers in silver. That is bounded
@@ -30,8 +34,6 @@ class BranchesStream(BitbucketIncrementalStream):
     cursor_field = "updated_on"
 
     def repository_records(self, repo, bucket_id: int) -> Iterable[Mapping[str, Any]]:
-        if self.out_of_window(repo):
-            return
         prior = self.repository_state(repo)
         repo_updated_on = str(repo.raw.get("updated_on") or "")
         if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
