@@ -609,19 +609,21 @@ services:
     environment:
       CSP_REMOTE: ${CSP_REMOTE:-}
     volumes:
-      # Patch script — inserts `location /api/ → gateway:8080` into
-      # the FE image's nginx template at a known marker, then chains to
-      # the original entrypoint. Avoids maintaining a parallel template
-      # (drift surface): we describe just the diff we need. The
-      # published image has no /api proxy because k8s ingress routes
-      # /api → gateway directly; compose has no front-proxy so the
-      # hop has to land locally.
-      - ./deploy/compose/front-ghcr-patch-template.sh:/compose/front-ghcr-patch-template.sh:ro
-    entrypoint: ["/bin/sh", "/compose/front-ghcr-patch-template.sh"]
-    # Restate the image's baked CMD — compose's `entrypoint:` override
-    # implicitly clears it, which would leave the patch script chaining
-    # to `/docker-entrypoint.sh` with no args, exiting silently.
-    command: ["nginx", "-g", "daemon off;"]
+      # Patch script — inserts `location /api/ → gateway:8080` into the
+      # FE image's nginx config at a known marker. Avoids maintaining a
+      # parallel config (drift surface): we describe just the diff we
+      # need. The published image has no /api proxy because k8s ingress
+      # routes /api → gateway directly; compose has no front-proxy so
+      # the hop has to land locally.
+      - ./deploy/compose/front-ghcr-patch-conf.sh:/compose/front-ghcr-patch-conf.sh:ro
+    # The COMMAND, deliberately — the image's entrypoint stays in place and
+    # runs first. It copies the config into /etc/nginx/conf.d and execs this,
+    # which patches what it produced and then execs nginx. Overriding the
+    # entrypoint instead used to work, and stopped once the image began
+    # running as `nginx` (uid 101): the template directory it wrote to is
+    # root-owned, so the patch died with "Permission denied" and the whole
+    # container with it. See the script for the full account.
+    command: ["/bin/sh", "/compose/front-ghcr-patch-conf.sh", "nginx", "-g", "daemon off;"]
     ports:
       - "${FRONTEND_PORT:-3000}:80"
 
