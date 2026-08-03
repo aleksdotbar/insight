@@ -57,37 +57,14 @@ def test_the_landing_view_shows_the_persona_and_their_reports(
     # Present AND pointing at that person. Existence alone would pass if every
     # report's link resolved to the same view, or to the signed-in person's own
     # — a plausible regression, since the SPA builds these hrefs from a field it
-    # could pick wrongly (it uses the email; the person_id is right there beside
-    # it). The expected path is composed by the page object from the manifest's
-    # email, so nothing here hardcodes a URL.
+    # could pick wrongly. The key is the canonical person id since the identity
+    # cutover (#2098); the expected path is composed by the page object from the
+    # manifest's uuid, so nothing here hardcodes a URL.
     link = landing.person_link(report.display_name)
     expect(link).to_be_visible()
-    expect(link).to_have_attribute("href", PersonView.path(report.email))
+    expect(link).to_have_attribute("href", PersonView.path(report.uuid))
 
 
-#: The SPA pinned by `src/frontend/helm/Chart.yaml` is BUILD 2026.07.31, three
-#: days older than the metrics identity cutover (#2098) that landed on
-#: 2026-08-03. That cutover made every person-keyed analytics route take a
-#: canonical person UUID and refuse an email with a 400, and this build still
-#: sends emails: the failing run logged 140 `POST /v1/metric-results` 400s from
-#: HeadlessChrome, so the browser is doing it, not the suite.
-#:
-#: Nothing here is wrong and nothing here should be softened — this is the
-#: cross-repo break a deployed stand exists to find, and neither repo's own
-#: tests can see it. `strict=True` so the marker cannot outlive the skew: the
-#: first frontend release that speaks person ids makes these XPASS and fail the
-#: run, which is the signal to delete this.
-FRONTEND_PREDATES_THE_IDENTITY_CUTOVER = pytest.mark.xfail(
-    reason=(
-        "#2098: the pinned frontend build (2026.07.31) calls person-keyed routes "
-        "with emails, which the post-cutover backend refuses with 400 — a "
-        "frontend release is what fixes this, not a change here"
-    ),
-    strict=True,
-)
-
-
-@FRONTEND_PREDATES_THE_IDENTITY_CUTOVER
 @pytest.mark.requires_seed("dev_lead")
 def test_the_personal_view_renders_metric_tiles_for_the_persona(
     page: Page,
@@ -109,14 +86,13 @@ def test_the_personal_view_renders_metric_tiles_for_the_persona(
     sign_in(page, base_url, persona)
 
     view = PersonView(page)
-    view.go(persona.email)
+    view.go(persona.person.uuid)
     expect(view.person_heading(persona.person.display_name)).to_be_visible()
 
     for label in ("Tasks closed", "Pull requests merged", "AI-added lines"):
         expect(view.metric_tile(label)).to_be_visible()
 
 
-@FRONTEND_PREDATES_THE_IDENTITY_CUTOVER
 @pytest.mark.requires_seed("dev_lead")
 def test_the_team_view_lists_every_report_the_roster_declares(
     page: Page,

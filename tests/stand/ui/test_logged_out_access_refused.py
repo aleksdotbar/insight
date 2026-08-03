@@ -80,7 +80,7 @@ def test_an_anonymous_browser_cannot_deep_link_to_someone_elses_view(
     context = browser.new_context(base_url=base_url)
     try:
         page = context.new_page()
-        page.goto(PersonView.path(target.email), wait_until="domcontentloaded")
+        page.goto(PersonView.path(target.uuid), wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle")
 
         expect(KeycloakLoginPage(page).username_field()).to_be_visible()

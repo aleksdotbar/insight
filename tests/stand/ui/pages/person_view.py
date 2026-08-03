@@ -1,6 +1,7 @@
-"""One person's own view — `/ic/$person/personal`. Locators and navigation only.
+"""One person's own view — `/ic/$person_id/personal`. Locators and navigation only.
 
-`$person` is the person's EMAIL, not their UUID, and the SPA builds the link with
+`$person_id` is the person's canonical UUID since the identity cutover (#2098);
+it was the email before. The SPA builds the link with
 `encodeURIComponent`, so `@` arrives as `%40`. Encoding it here rather than in a
 test keeps the URL shape a property of the view.
 
@@ -21,11 +22,11 @@ class PersonView:
         self.page = page
 
     @staticmethod
-    def path(email: str) -> str:
-        return f"/ic/{quote(email, safe='')}/personal"
+    def path(person_id: str) -> str:
+        return f"/ic/{quote(person_id, safe='')}/personal"
 
-    def go(self, email: str) -> None:
-        self.page.goto(self.path(email), wait_until="domcontentloaded")
+    def go(self, person_id: str) -> None:
+        self.page.goto(self.path(person_id), wait_until="domcontentloaded")
 
     def person_heading(self, display_name: str) -> Locator:
         return self.page.get_by_role("heading", name=display_name)
