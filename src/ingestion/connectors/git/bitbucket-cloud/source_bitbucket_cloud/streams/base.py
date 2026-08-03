@@ -238,8 +238,11 @@ class BitbucketStream(Stream, ABC):
         stop = threading.Event()
         pending: deque[_PendingRead] = deque()
         waiting = iter(repositories)
-        try:
-            with ThreadPoolExecutor(max_workers=self._concurrency) as pool:
+        with ThreadPoolExecutor(max_workers=self._concurrency) as pool:
+            # Inside the pool: leaving the sync early (the consumer stops
+            # reading, or a worker raises) must release the workers parked on a
+            # full buffer before shutdown waits for them.
+            try:
                 while True:
                     while len(pending) < self._concurrency:
                         repo = next(waiting, None)
@@ -251,8 +254,8 @@ class BitbucketStream(Stream, ABC):
                     if not pending:
                         return
                     yield from self._consume(pending.popleft(), stop)
-        finally:
-            stop.set()
+            finally:
+                stop.set()
 
     def _submit(
         self, pool: ThreadPoolExecutor, repo: RepositoryRef, bucket_id: int, stop: threading.Event

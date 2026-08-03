@@ -5,7 +5,12 @@ import time
 
 import pytest
 from source_bitbucket_cloud.client import BitbucketApiError
-from source_bitbucket_cloud.streams.base import BUCKET_COUNT, RECORD_BUFFER, repo_state_key
+from source_bitbucket_cloud.streams.base import (
+    BUCKET_COUNT,
+    RECORD_BUFFER,
+    repo_state_key,
+    repository_bucket,
+)
 from source_bitbucket_cloud.streams.commits import CommitsStream
 from tests.conftest import SHARED, FakeCatalog, FakeClient, branch, repository
 
@@ -15,6 +20,18 @@ VOLATILE = {"collected_at", "generation_id", "unique_key"}
 
 def fleet(size: int = 12):
     return [repository(slug=f"repo{index:02d}", uuid=f"{{r-{index}}}") for index in range(size)]
+
+
+def fleet_in_one_bucket(size: int, bucket: int = 0):
+    """Repositories that all land in the same slice, so one read_records call
+    really does run several workers."""
+    repos, index = [], 0
+    while len(repos) < size:
+        repo = repository(slug=f"same{index:03d}", uuid=f"{{s-{index}}}")
+        if repository_bucket(repo_state_key(repo)) == bucket:
+            repos.append(repo)
+        index += 1
+    return repos
 
 
 class FleetClient(FakeClient):
@@ -180,3 +197,31 @@ class TestBackpressure:
         assert len(records) == overflow * len(repos), (
             "every record must survive the worker parking on a full buffer"
         )
+
+
+class TestAbandoningTheReadTerminates:
+    def test_closing_the_generator_releases_parked_workers(self):
+        """Airbyte can stop reading mid-bucket; workers blocked on a full
+        buffer must be released before the pool is joined."""
+        repos = fleet_in_one_bucket(6)
+        overflow = RECORD_BUFFER * 2
+
+        class WideClient(FleetClient):
+            def commits_between(self, repo, include, exclude):
+                return iter([{"hash": f"{repo.slug}-{n}", "date": DATE} for n in range(overflow)])
+
+        stream = build(repos, WideClient(repos), 4)
+        finished = threading.Event()
+
+        def read_a_little():
+            records = stream.read_records(None, stream_slice={"bucket_id": 0})
+            for _ in range(3):
+                next(records, None)
+            records.close()
+            finished.set()
+
+        reader = threading.Thread(target=read_a_little, daemon=True)
+        reader.start()
+        reader.join(timeout=30)
+
+        assert finished.is_set(), "closing the read must not hang on parked workers"
