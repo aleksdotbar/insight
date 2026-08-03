@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from insight_stand import ApiClient, analytics_path
 
+from .. import scratch
 from ..schemas import Metric, MetricListResponse, QueryResponse
 from ..scratch import SCRATCH_QUERY_REF, UNKNOWN_ID, create_metric
 
@@ -148,3 +149,48 @@ def test_batch_queries_200(api: ApiClient, scratch_metric: Metric) -> None:
         json_body={"queries": [{"metric_id": str(scratch_metric.id)}]},
     )
     assert response.status_code == 200, f"status={response.status_code} body={response.text[:300]}"
+
+
+def test_create_metric_400_query_ref_that_is_not_a_read(api: ApiClient) -> None:
+    """`query_ref` is validated on write, not first run.
+
+    Same gate as saved queries (`test_queries.py`) and the same reason it
+    matters: a metric's `query_ref` is SQL the service later executes with its
+    own ClickHouse credentials. `parse_query_ref` requires a `SELECT … FROM`
+    shape, which a bare `DROP` has neither half of.
+
+    Validating at write time is the part worth pinning. A metric that stores
+    now and fails later moves the error from the operator who typed it to
+    whoever next opens a dashboard.
+    """
+    response = api.post(
+        METRICS,
+        json_body={
+            "name": scratch.scratch_name("bad-query-ref"),
+            "description": "stand contract scratch",
+            "query_ref": "DROP TABLE metrics",
+        },
+    )
+    assert response.status_code == 400, (
+        f"a non-read query_ref was accepted ({response.status_code}): {response.text[:300]}"
+    )
+
+
+def test_batch_queries_400_malformed_json(api: ApiClient) -> None:
+    """Bytes that are not JSON at all, sent as `application/json`.
+
+    Distinct from the off-schema case in `test_request_contracts.py`: that one
+    is well-formed JSON of the wrong shape and is refused by the deserializer,
+    this one never parses. They arrive at the extractor through different
+    rejection variants, and only a syntax error can be a 400 on a route whose
+    schema mismatch is a 422 (#1670) — so the pair also shows the two are not
+    the same failure wearing different codes.
+    """
+    response = api.post(
+        analytics_path("/v1/metrics/queries"),
+        content="{not valid json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 400, (
+        f"unparseable JSON answered {response.status_code}: {response.text[:300]}"
+    )

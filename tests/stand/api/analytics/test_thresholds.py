@@ -371,3 +371,34 @@ def test_a_broader_locked_scope_refuses_a_narrower_create(api: ApiClient) -> Non
     finally:
         # Deleting a locked row is permitted — it is a lock_cleared transition.
         api.delete(f"{ADMIN_THRESHOLDS}/{locked_id}")
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix", "body"),
+    [
+        ("GET", "", None),
+        ("POST", "", {"field_name": "one", "operator": "ge", "value": 1.0, "level": "good"}),
+    ],
+    ids=["list", "create"],
+)
+def test_per_metric_thresholds_of_an_unknown_metric_are_404(
+    api: ApiClient, method: str, suffix: str, body: JsonValue
+) -> None:
+    """The METRIC is resolved before anything else on this sub-resource.
+
+    `/v1/metrics/{id}/thresholds` is nested, so a request names two things and
+    only one of them exists here. Answering 404 for the parent — before the
+    body is validated on the create, per `find_enabled_metric` — is what keeps
+    the sub-resource from appearing to exist under a metric that does not.
+
+    A 200 with an empty list would be the plausible wrong answer for the list
+    case: indistinguishable from a real metric that has no thresholds yet,
+    which `test_metric_thresholds_listing_is_200` shows is a normal state.
+    """
+    path = analytics_path(f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds{suffix}")
+    response = api.request(method, path, json_body=body)
+
+    assert response.status_code == 404, (
+        f"{method} thresholds of a metric that does not exist answered "
+        f"{response.status_code}: {response.text[:300]}"
+    )
