@@ -67,11 +67,12 @@ UNIVERSAL_BOILERPLATE = frozenset({429})
 #: can answer (#1669), so without this the gate would demand statuses the API
 #: never returns.
 #:
-#: Self-cleaning: an entry that becomes observed, or leaves the spec, is
-#: reported so the list cannot quietly rot.
+#: Self-cleaning: an entry is reported when it becomes observed, when its
+#: operation leaves the spec, and when the spec stops declaring the code it
+#: subtracts — the last of which is what every #1669 fidelity fix produces.
 #:
 #: Every entry here is 403, and all of them for one reason: analytics has three
-#: places that can produce one, and 26 of its 29 operations reach none of them.
+#: places that can produce one, and most of its operations reach none of them.
 #:
 #:   * `domain/person_visibility.rs`  — asking about somebody outside the
 #:     caller's visible set. Reached only by `POST /v1/metric-results`.
@@ -90,12 +91,14 @@ UNIVERSAL_BOILERPLATE = frozenset({429})
 #: Nothing else in the service gates on anything: `is_tenant_admin`,
 #: `authorize_*` and `require_admin` appear nowhere in `handlers.rs`,
 #: `saved_queries.rs`, `catalog.rs`, `metric_definitions.rs` or
-#: `metric_drilldown.rs`. The spec declares 403 on all 29 anyway, because
-#: `.standard_errors` stamps the same seven codes on every route (#1669).
+#: `metric_drilldown.rs`. The spec declared 403 on every route anyway, because
+#: `.standard_errors` stamped the same seven codes on all of them (#1669); the
+#: fidelity fixes are correcting that route by route, and each one that lands
+#: retires an entry below.
 #:
 #: This does NOT retract the module docstring's point. 403 stays out of
 #: UNIVERSAL_BOILERPLATE — where a handler HAS the path, this suite is the only
-#: one that can prove it, and it does on all three. What is subtracted here is
+#: one that can prove it, and it does. What is subtracted here is
 #: per-route and sourced, which is also how the entries expire: when the real
 #: authorization wiring lands, these become observable and the gate says so.
 _NO_AUTHORIZATION_PATH = frozenset({403})
@@ -129,9 +132,12 @@ BLOCKED: dict[str, frozenset[int]] = {
     # Read-only catalogue + drilldown.
     "GET /v1/columns": _NO_AUTHORIZATION_PATH,
     "GET /v1/columns/{table}": _NO_AUTHORIZATION_PATH,
-    "GET /v1/metric-definitions": _NO_AUTHORIZATION_PATH,
     "POST /v1/catalog/get_metrics": _NO_AUTHORIZATION_PATH,
-    "POST /v1/metric-drilldown": _NO_AUTHORIZATION_PATH,
+    # `POST /v1/metric-drilldown` and `GET /v1/metric-definitions` used to sit
+    # here. #2134 corrected their declarations, so there is no longer a 403 to
+    # subtract — the gate reported both as stale and they came out.
+    # `/export` still carries the old boilerplate and the same absent gate.
+    "POST /v1/metric-drilldown/export": _NO_AUTHORIZATION_PATH,
     "GET /v1/persons/{email}": _NO_AUTHORIZATION_PATH,
 }
 
@@ -377,6 +383,17 @@ class SpecReport:
             )
         }
         self.stale_blocked = [op for op in sorted(BLOCKED) if op not in ops]
+        # The commoner staleness, and the one the operation-level check above
+        # misses entirely: the operation is still documented, but a code this
+        # list subtracts is no longer declared for it. That is exactly the shape
+        # every #1669 fidelity fix produces — the document stops over-declaring,
+        # and an exclusion written against the old text starts suppressing
+        # nothing while still reading as a live judgement about the route.
+        self.blocked_undeclared = {
+            op: gone
+            for op in sorted(BLOCKED)
+            if op in ops and (gone := set(BLOCKED[op]) - set(self.spec_ops[op]))
+        }
         # Codes the suite proved that the document does not declare — the
         # under-declaration half of #1669, invisible in the matrix below.
         self.undeclared = {
@@ -485,6 +502,11 @@ def advisories(spec: SpecReport | None) -> list[str]:
         for op, seen in spec.blocked_observed.items()
     ]
     out += [f"stale BLOCKED: {op} is no longer in the spec — drop the entry" for op in spec.stale_blocked]
+    out += [
+        f"stale BLOCKED: {op} no longer declares {sorted(gone)} — the document was "
+        "corrected, so the exclusion suppresses nothing; drop it"
+        for op, gone in spec.blocked_undeclared.items()
+    ]
     out += [
         f"observed but undeclared: {op} answered {sorted(codes)}, which the document does "
         "not declare — the suite covers it, the contract does not describe it"

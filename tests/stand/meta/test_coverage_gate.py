@@ -47,6 +47,16 @@ def _spec(paths: dict[str, dict[str, list[int]]]) -> dict[str, Any]:
     }
 
 
+def _passing_catalogue() -> coverage.CatalogueReport:
+    """A catalogue with nothing to report, so a spec finding stands alone."""
+    return _catalogue_report(
+        {
+            (METRICS.method, METRICS.path): [200],
+            (SUBCHART.method, SUBCHART.path): [200],
+        }
+    )
+
+
 def _catalogue_report(rows: dict[tuple[str, str], list[int]]) -> coverage.CatalogueReport:
     return coverage.CatalogueReport(
         catalogue=CATALOGUE, observed=coverage.by_label(_ledger(rows))
@@ -262,6 +272,30 @@ def test_403_is_subtracted_only_where_no_handler_can_produce_it() -> None:
         spec_ops=spec_ops, validated={"GET /v1/metrics": {200}}, unmatched=[]
     )
     assert report.required["GET /v1/metrics"] == {200, 401}, "403 subtracted, nothing else"
+
+
+def test_an_exclusion_the_document_outgrew_is_reported() -> None:
+    """The staleness an operation-level check cannot see.
+
+    A #1669 fidelity fix does not remove the operation — it stops the operation
+    over-declaring. An exclusion written against the old text then suppresses
+    nothing while still reading as a live judgement about the route, which is
+    the worst state for a suppression list to be in. Two entries here reached
+    it the moment #2134 landed.
+    """
+    op = next(iter(coverage.BLOCKED))
+    corrected = {op.split(" ", 1)[1]: {op.split(" ", 1)[0].lower(): [200, 401]}}
+    report = coverage.SpecReport(
+        spec_ops=coverage.spec_operations(_spec(corrected)), validated={op: {200}}, unmatched=[]
+    )
+
+    assert report.blocked_undeclared == {op: set(coverage.BLOCKED[op])}
+    assert any(
+        "stale BLOCKED" in note and "declares" in note for note in coverage.advisories(report)
+    )
+    assert not any("stale BLOCKED" in v for v in coverage.violations(_passing_catalogue(), report)), (
+        "hygiene is reported, never blocking — a corrected document must not fail the gate"
+    )
 
 
 def test_an_undeclared_code_the_suite_proved_is_reported() -> None:
