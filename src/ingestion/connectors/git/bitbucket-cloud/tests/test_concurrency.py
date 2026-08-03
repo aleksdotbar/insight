@@ -96,18 +96,36 @@ class TestConcurrentReadsMatchSerialOnes:
         assert parallel.state == serial.state
         assert len(parallel_client.commit_calls) == len(serial_client.commit_calls)
 
-    def test_records_of_one_repository_are_not_interleaved(self):
-        repos = fleet()
-        client = FleetClient(repos, delay=0.002)
-        stream = build(repos, client, 8)
+    def test_a_slow_repository_does_not_hold_back_finished_ones(self):
+        """One deep history at the front of a bucket must not park the whole
+        pool: the other repositories' records leave as soon as they are ready."""
+        repos = fleet_in_one_bucket(4)
+        slow = repos[0]
+        gate = threading.Event()
 
-        records = read_all_buckets(stream)
+        class SlowFirstClient(FleetClient):
+            def branches(self, repo):
+                if repo.uuid == slow.uuid:
+                    gate.wait(timeout=30)
+                return super().branches(repo)
 
-        seen: list[str] = []
+        client = SlowFirstClient(repos)
+        stream = build(repos, client, 4)
+        records = stream.read_records(None, stream_slice={"bucket_id": 0})
+
+        fast_slugs = {repo.slug for repo in repos[1:]}
+        seen: set[str] = set()
         for record in records:
-            if not seen or seen[-1] != record["repo_slug"]:
-                seen.append(record["repo_slug"])
-        assert len(seen) == len(set(seen)), "a repository's records must arrive as one run"
+            seen.add(record["repo_slug"])
+            if seen >= fast_slugs:
+                break
+        assert seen >= fast_slugs and slow.slug not in seen, (
+            "finished repositories must drain while the slow one is still fetching"
+        )
+
+        gate.set()
+        seen.update(record["repo_slug"] for record in records)
+        assert slow.slug in seen, "and the slow repository still completes"
 
     def test_work_actually_runs_in_parallel(self):
         repos = fleet()

@@ -228,12 +228,15 @@ class BitbucketStream(Stream, ABC):
     def _read_concurrently(
         self, bucket_id: int, repositories: Sequence[RepositoryRef]
     ) -> Iterable[Mapping[str, Any]]:
-        """Read several repositories at once, emit them one repository at a time.
+        """Read several repositories at once, emit whatever is ready.
 
         Fetching is the whole cost of a bucket and the per-repository reads are
-        independent, but the records still leave in submission order so a
-        failure is attributed to the repository that caused it and the state a
-        worker commits belongs to a repository that finished.
+        independent. Consuming in submission order would let one repository
+        with a deep history park every other worker on a full buffer and block
+        new submissions behind it; records interleave across repositories
+        instead, which bronze does not mind (append-only, keyed). Failures stay
+        attributed: each repository has its own queue, and its error travels on
+        it.
         """
         stop = threading.Event()
         pending: deque[_PendingRead] = deque()
@@ -253,9 +256,42 @@ class BitbucketStream(Stream, ABC):
                         pending.append(self._submit(pool, repo, bucket_id, stop))
                     if not pending:
                         return
-                    yield from self._consume(pending.popleft(), stop)
+                    yield from self._drain_ready(pending)
             finally:
                 stop.set()
+
+    def _drain_ready(self, pending: deque[_PendingRead]) -> Iterable[Mapping[str, Any]]:
+        drained_any = False
+        for read in list(pending):
+            while True:
+                try:
+                    item = read.records.get_nowait()
+                except queue.Empty:
+                    break
+                drained_any = True
+                if item is _READ_DONE:
+                    pending.remove(read)
+                    break
+                if isinstance(item, BaseException):
+                    self.handle_repository_error(read.repo, item)
+                    continue
+                yield item
+
+        if drained_any or not pending:
+            return
+        # Nothing ready anywhere: block briefly on the oldest read rather than
+        # spinning; the sweep resumes with whatever else arrived meanwhile.
+        oldest = pending[0]
+        try:
+            item = oldest.records.get(timeout=QUEUE_POLL_SECONDS)
+        except queue.Empty:
+            return
+        if item is _READ_DONE:
+            pending.remove(oldest)
+        elif isinstance(item, BaseException):
+            self.handle_repository_error(oldest.repo, item)
+        else:
+            yield item
 
     def _submit(
         self, pool: ThreadPoolExecutor, repo: RepositoryRef, bucket_id: int, stop: threading.Event
@@ -275,21 +311,6 @@ class BitbucketStream(Stream, ABC):
             self._offer(records, error, stop)
         finally:
             self._offer(records, _READ_DONE, stop)
-
-    def _consume(self, pending: _PendingRead, stop: threading.Event) -> Iterable[Mapping[str, Any]]:
-        while True:
-            try:
-                item = pending.records.get(timeout=QUEUE_POLL_SECONDS)
-            except queue.Empty:
-                if stop.is_set():
-                    return
-                continue
-            if item is _READ_DONE:
-                return
-            if isinstance(item, BaseException):
-                self.handle_repository_error(pending.repo, item)
-                continue
-            yield item
 
     @staticmethod
     def _offer(records: queue.Queue[Any], item: Any, stop: threading.Event) -> bool:
