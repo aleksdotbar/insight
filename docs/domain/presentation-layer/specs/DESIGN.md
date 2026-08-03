@@ -56,7 +56,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-contract-surface-doc` | Contract surface documented as the read boundary in [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md): the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and `person.*`/`identity.*` objects, with the additive-only rules and the granted `insight` legacy gold. Shipped (#1968) |
 | `cpt-presentation-fr-contract-version-stamp` | Engineering stamps `silver.contract_version` (single-row constant view, ledgerless CH migration); analytics pins `PINNED_CONTRACT_VERSION` and verifies the stamp in a periodic post-boot sweep, logging a mismatch or missing stamp without gating boot. Shipped (#1969) |
 | `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart. Shipped (#1970) |
-| `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only synthetic backend, FE-only variation. Per-experiment bundle (`Deployment` + `Service` + one prefix-strip `Ingress`) shipped as the `insight-preview` chart at `deploy/preview/`, applied by hand (#1971); pinning the shared backend to synthetic data (#1973) stays open |
+| `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only backend, FE-only variation. Per-experiment bundle (`Deployment` + `Service` + one prefix-strip `Ingress`) shipped as the `insight-preview` chart at `deploy/preview/`, applied by hand (#1971). Experiments are a capability gated off on production by default (`cpt-presentation-constraint-experiments-off-prod`, #1973). Shipped |
 | `cpt-presentation-fr-preview-auth` | Single fixed callback with a Redis-backed opaque `state` return path (already stashing `state -> { return_to, pkce_verifier, nonce }`, delete-on-read), extended so `return_to` is validated at store time against a configurable `/exp/` prefix. Shipped (#1972) |
 
 #### NFR Allocation
@@ -157,6 +157,12 @@ There is no Argo/GitOps in the platform. Preview provisioning is manual `kubectl
 - [ ] `p2` - **ID**: `cpt-presentation-constraint-single-host`
 
 One host serves all preview experiments, giving one Entra redirect URI (Entra has no reliable wildcard redirect). Addressing is path-based (`/exp/<name>`) with a same-origin session cookie and zero per-experiment Entra change.
+
+#### Experiments Off on Production by Default
+
+- [ ] `p2` - **ID**: `cpt-presentation-constraint-experiments-off-prod`
+
+Experimental frontends (`/exp/<name>`) are a capability, off by default, so a production stand cannot host them against customer data (PRD R1.4). The authenticator takes `experiments_enabled` (default `false`); a login return into the reserved `/exp/` subtree is honored only when it is `true`, otherwise the return falls back to `default_return_to` and the attempt is audit-logged. A production stand leaves it `false`; dev/demo preview hosts set `true` and serve experiments over that stand's own data (no synthetic requirement). This is the environment-level gate; a per-user RBAC capability supersedes it later, as the same surface becomes the analyst query builder. The gate lives on the authenticator (gitops); the `deploy/preview/` FE chart carries no auth env. The sanctioned saved-query console/CRUD is a separate, prod-safe surface and is not gated by this flag.
 
 #### No tenant_id on New Gold Outside the Coordinated Retrofit
 
@@ -370,17 +376,18 @@ Makes the saved-query API tangible: a single stable FE app (not a per-branch sta
 
 #### Preview Environment Router
 
-- [ ] `p2` - **ID**: `cpt-presentation-component-preview-router`
+- [x] `p2` - **ID**: `cpt-presentation-component-preview-router`
 
 ##### Why this component exists
 
-Serves many experimental FE builds under one host against one shared read-only synthetic backend, so FE developers get a tier-3 authoring loop that cannot touch customer data.
+Serves many experimental FE builds under one host against one shared read-only backend, gated so the capability is off on production and can never touch customer data there.
 
 ##### Responsibility scope
 
 - Path-based addressing `preview.insight…/exp/<name>/`: one host, one Entra redirect URI, same-origin session cookie. FE built with a relative asset base and a runtime router basepath so one image serves under any prefix; `/api/...` stays the shared absolute path.
 - Auth return path (shipped #1972): the authenticator's login-initiation already writes Redis `state → { return_to, pkce_verifier, nonce }` with a short TTL; Entra echoes the random `state` to the single fixed callback; the authenticator looks it up (miss/expired ⇒ reject; delete-on-read), exchanges the code, sets the cookie, and `302`s to `return_to`. #1972 adds the store-time `/exp/` prefix check: `sanitize_return_to` takes a configurable `return_to_prefix` (authenticator config) — empty keeps the permissive main-app posture; a preview-host deployment sets `/exp/` so a login can only return to an `/exp/<name>` path (same-origin already enforced by the site-relative check; `..`-traversal rejected), otherwise the configured default. The FE preview chart (`deploy/preview/`) still carries no auth env; the prefix is set on the preview-host authenticator deployment (gitops), which owns the single fixed Entra redirect URI.
-- Deployment: one route object per experiment applied by hand (`Deployment` + `Service` + one routing object with prefix-strip rewrite). The controller merges same-host route objects, so `apply` adds a path and `delete` removes it; no central config is rewritten. Portable by intent (Gateway API `HTTPRoute` after the Envoy move), but nginx-specific today: the route uses `pathType: ImplementationSpecific` with `nginx.ingress.kubernetes.io/{use-regex,rewrite-target}`. Shipped (#1971) as the `insight-preview` Helm chart at `deploy/preview/`: each experiment is one release named `preview-<name>`, the `Ingress` prefix-strips `/exp/<name>` (`rewrite-target: /$2`), and the experiment slug is validated as a DNS-1123 label of at most 55 characters at template time. Render-contract tests plus a `.github/workflows/preview-helm.yml` lane guard it. The auth return path above shipped (#1972); the synthetic-data pin (#1973) remains open, so this component stays unchecked.
+- Deployment: one route object per experiment applied by hand (`Deployment` + `Service` + one routing object with prefix-strip rewrite). The controller merges same-host route objects, so `apply` adds a path and `delete` removes it; no central config is rewritten. Portable by intent (Gateway API `HTTPRoute` after the Envoy move), but nginx-specific today: the route uses `pathType: ImplementationSpecific` with `nginx.ingress.kubernetes.io/{use-regex,rewrite-target}`. Shipped (#1971) as the `insight-preview` Helm chart at `deploy/preview/`: each experiment is one release named `preview-<name>`, the `Ingress` prefix-strips `/exp/<name>` (`rewrite-target: /$2`), and the experiment slug is validated as a DNS-1123 label of at most 55 characters at template time. Render-contract tests plus a `.github/workflows/preview-helm.yml` lane guard it. The auth return path above shipped (#1972).
+- Experiments-off-on-prod gate (shipped #1973): experiments are a capability, off by default, enforced at the authenticator's `/exp/` return path rather than the FE chart. The authenticator's `experiments_enabled` (default `false`) makes `login` honor a return into the reserved `/exp/` subtree only when `true`; otherwise it falls back to `default_return_to` and audit-logs `experiment_return_ignored`. A production stand leaves it `false`, so an experimental frontend cannot obtain a session there; dev/demo preview hosts set `true` and run over that stand's own data (`cpt-presentation-constraint-experiments-off-prod`). Enforced by `is_preview_return` + the `experiments_enabled` check in `login` (unit-tested), and set on the authenticator deployment behind the preview host (gitops). A future per-user RBAC capability replaces this single env-level check.
 
 ##### Responsibility boundaries
 
@@ -553,7 +560,7 @@ Ordered by quick win; each step ships value or safety on its own, and no step de
 4. **Tenant filter** (correctness, #1967) — replace the no-op with the injected predicate in the compiler's shared `WHERE`; `insight_tenant_id` first in `ORDER BY` for new gold; cover with an e2e metric test (`src/ingestion/tests/e2e`). Coordinated with engineering #1829.
 5. **Contract surface + version stamp** (stability, done, #1968/#1969) — the surface and additive-only rules named in CONTRACT-SURFACE.md; `silver.contract_version` stamped by migration and pinned/verified by analytics in a periodic sweep.
 6. **Query console** (value, FE, #1970) — thin stable app on the saved-query API: auth shell, author, list, run, render table / auto-chart. Tier-2 "promote to card" can follow.
-7. **Preview environments** (infra, FE, #1971-#1973) — path-based `/exp/<name>` on a shared read-only synthetic backend; Redis-`state` return path; one route object per experiment; manual `kubectl`/`helm`.
+7. **Preview environments** (infra, FE, #1971-#1973) — path-based `/exp/<name>` on a shared read-only backend; Redis-`state` return path; experiments gated off on production by default; one route object per experiment; manual `kubectl`/`helm`.
 
 Deferred: relocate legacy gold from `insight` to `presentation` (#1979-#1981); CI-driven preview provisioning (after the nginx-to-Envoy move).
 
