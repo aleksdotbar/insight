@@ -124,10 +124,10 @@ details Map(String, String)
 ```
 
 Evidence relations are MergeTree serving tables built from silver. Their
-ordering follows the evidence key access pattern, avoiding repeated silver
-reconstruction on read. Observation models derive their values from these
-evidence tables. Each source exposes one evidence relation and each measure
-has one granularity:
+ordering follows the drilldown predicate and cursor access pattern, avoiding
+repeated silver reconstruction for every page and export. Observation models
+derive their values from these evidence tables. The registry stores one
+evidence relation per source and one granularity per measure:
 
 - `event`: one source event, such as a commit.
 - `source_summary`: the finest summary preserved by silver.
@@ -171,6 +171,11 @@ cursor is versioned and bound to the normalized selection and request tenant.
 It is not an authorization token and modifying its ordering key cannot widen
 the server-owned relation or selection.
 
+`POST /v1/metric-drilldown/export` produces the complete selected population
+with the same projected columns as CSV or XLSX. Export is server-side and
+rejects results exceeding its row, byte, cell, execution-time, or concurrency
+limits. It never silently truncates.
+
 The evidence contract has these limitations:
 
 - Summary-grain silver cannot produce event-grain evidence. AI and
@@ -181,16 +186,17 @@ The evidence contract has these limitations:
 - Metric results and evidence are not transactionally snapshot-isolated from
   each other during a dbt rebuild. They reconcile after the complete gold
   build because observations derive from evidence.
-- Pagination is bound to the evidence table UUID. A rebuild during the
-  operation fails with `EVIDENCE_SNAPSHOT_EXPIRED`; the client must restart
-  the selection rather than mix rows from two builds. Previous table
+- Pagination and each export are bound to the evidence table UUID. A rebuild
+  during the operation fails with `EVIDENCE_SNAPSHOT_EXPIRED`; the client must
+  restart the selection rather than mix rows from two builds. Previous table
   snapshots are not retained.
-- Drilldown preserves the existing metric entity and tenant behavior. This
-  does not add identity-tree authorization or warehouse tenant enforcement.
 - Source links are omitted. Hosted services commonly use custom domains, and
   the current silver contract does not preserve a canonical web base URL. A
   future source registry can add a non-secret `web_base_url` keyed by source
   instance and combine it with provider-specific record identifiers.
+- Drilldown preserves the existing metric entity and tenant behavior. This
+  change does not add identity-tree authorization or warehouse tenant
+  enforcement.
 
 ## Computations
 
@@ -536,8 +542,9 @@ one that applies.
 
 ### Case 1: metric over an existing measure
 
-The measure already appears in a managed observation source (check the
-`measures` list of the source in `builtin.rs` and the emitting gold model).
+The measure already appears in a managed source. Check the source's `measures`
+list in `builtin.rs`, the emitting evidence model, and the observation model
+derived from it.
 
 1. Add one `MetricSeed` to `BUILTIN_METRICS` in
    `src/backend/services/analytics/src/domain/metric_definitions/builtin.rs`:
@@ -547,54 +554,72 @@ The measure already appears in a managed observation source (check the
 2. Run `cargo test -p analytics` — the registry invariant tests validate
    key shapes, input/measure references, and computation field combinations.
 
-The reconciler seeds the definition on the next deploy. No SQL, no migration,
-no dbt change.
+The reconciler seeds the definition on the next deploy. If every input measure
+has healthy evidence metadata, the metric automatically receives drilldown,
+table, and CSV/XLSX export support. No drilldown-specific SQL, frontend
+configuration, migration, or dbt change is required.
 
 ### Case 2: new measure from an existing source
 
 The source exists but does not emit the measure yet.
 
-1. Add the measure branch to the source's gold model in `src/ingestion/gold/`:
-   one `UNION ALL` entry calling a shape macro from
-   `src/ingestion/dbt/macros/metric_observation_measures.sql` —
-   `sum_measure(measure_key, relation, value_expr, dimensions_col,
-   where=none)` for aggregated numerics, `presence_measure(measure_key,
-   relations)` for row-existence markers, `event_measure(measure_key,
-   relation, value_expr, dimensions_col, where=none)` for per-event values
-   feeding median metrics. Every branch is a shape-macro call; a new macro
-   is added only when a new computation kind becomes executable.
-   Read only class-contract columns; never vendor-specific ones — if the fact
-   you need is not in the class contract, extend the class contract first
-   (staging models declare semantics, see the class `schema.yml`).
-2. Add the `measure_key` to the gold model's `schema.yml` `accepted_values`
-   test.
-3. Add the measure key to the source's `measures` list in `builtin.rs`.
-4. Add the `MetricSeed` as in case 1.
-5. Validate: `dbt parse` + `cargo test -p analytics` (see Validation
+1. Add the measure to the source's `<family>_metric_evidence` model in
+   `src/ingestion/gold/`. Summary measures use the shared shape macros from
+   `src/ingestion/dbt/macros/metric_observation_measures.sql`;
+   event measures select stable source records into the evidence contract.
+   Read only class-contract columns; never vendor-specific ones. If the fact
+   is absent from the class contract, extend that contract first (staging
+   models declare semantics in their `schema.yml`).
+2. Choose the evidence granularity deliberately:
+   - emit one stable row per source record for `event`.
+   - emit the finest source-retained grouping for `source_summary`.
+   - emit the reconstructed participating population for
+     `derived_population`.
+   Event rows need deterministic `record_id` values and should place reusable
+   grouping fields in `dimensions` and human-facing fields in `details`.
+3. Derive the matching observation measure from the evidence relation. The
+   observation remains the aggregate-ready runtime input; the evidence row is
+   the population that explains it.
+4. Add the `measure_key` to the observation model's `schema.yml`
+   `accepted_values` test.
+5. Add the measure key to the source's `measures` list in `builtin.rs` and
+   classify its evidence granularity.
+6. Add or reuse a source-measure presentation rule when the default
+   date-plus-value table is insufficient. Declare detail keys there and add
+   explicit column metadata only for fields that are not humanized strings.
+7. Add the `MetricSeed` as in case 1.
+8. Validate: `dbt parse` + `cargo test -p analytics` (see Validation
    commands).
 
 ### Case 3: new observation source
 
 The metric family reads data no managed source covers.
 
-1. Create a dbt gold model in `src/ingestion/gold/` named
-   `<family>_metric_observations`, emitting the source measure observation
-   contract, `schema=insight`, `ref()`-ing silver models (medallion layering
-   rules: `docs/domain/ingestion-data-flow/specs/DESIGN.md`). Document columns
-   and measure keys in `src/ingestion/gold/schema.yml`.
+1. Create `<family>_metric_evidence` and
+   `<family>_metric_observations` dbt gold models in
+   `src/ingestion/gold/`, `schema=insight`, `ref()`-ing silver models
+   (medallion layering rules:
+   `docs/domain/ingestion-data-flow/specs/DESIGN.md`). The evidence model emits
+   the evidence contract; the observation model derives the aggregate-ready
+   observation contract from it. Document both in
+   `src/ingestion/gold/schema.yml`.
 2. Add a `BuiltinSource` (source + measures + dimensions) to `builtin.rs`,
-   with `source_ref` set to the relation name. No backend enum or table-name
-   code changes: the relation name is data, validated on load against the
-   `<family>_metric_observations` shape (`ObservationRelation`) and probed at
-   runtime by the schema validator.
-3. Add `MetricSeed`s as in case 1.
-4. Validate: `dbt parse` + `cargo test -p analytics` (see Validation
+   with `source_ref` and `evidence_ref` set to their relation names and every
+   measure assigned an evidence granularity. No backend enum or table-name
+   code changes are required: relation names are validated data and both
+   contracts are probed by the runtime schema validator.
+3. Add source-measure presentation rules for event shapes that need
+   human-facing detail columns.
+4. Add `MetricSeed`s as in case 1.
+5. Validate: `dbt parse` + `cargo test -p analytics` (see Validation
    commands). The runtime schema validator probes the new relation at
    startup.
 
 ### Rules that hold for every case
 
 - No metric-key-specific branches in runtime code.
+- Evidence presentation branches may depend on source and measure, never on
+  final metric key.
 - No vendor names, vendor columns, or label mappings in gold models — labels
   and taxonomy come from class-contract columns declared by staging.
 - Measure filter predicates (`where=` on shape macros) may reference only
@@ -652,6 +677,14 @@ Until one exists, custom definitions can be stored but cannot produce new source
 Frontend collection rendering:
 
 - requests metric keys and views.
+- treats the optional `drilldown` capability as the only evidence-action
+  switch; there is no frontend metric allowlist.
+- forwards the canonical metric selection returned by `/v1/metric-results`,
+  narrowing period and dimension filters for chart-point interactions.
+- renders server-owned typed evidence columns and rows without interpreting
+  the internal evidence contract.
+- uses the same canonical selection for table pagination and server-side
+  CSV/XLSX export.
 - treats configured required views as required.
 - normalizes response arrays only for local lookup.
 - renders using returned label, description, explanation, unit, format,
