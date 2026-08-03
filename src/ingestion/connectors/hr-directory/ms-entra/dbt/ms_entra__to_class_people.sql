@@ -46,8 +46,8 @@ SELECT
     -- Entra has no employment-type field; default until the BambooHR join
     -- in Silver Step 2 (Identity Manager) supplies the real value.
     'full_time'                                     AS employment_type,
-    CAST(NULL AS Nullable(Date))                    AS hire_date,
-    CAST(NULL AS Nullable(Date))                    AS termination_date,
+    CAST(NULL AS Nullable(DateTime))                AS hire_date,
+    CAST(NULL AS Nullable(DateTime))                AS termination_date,
     CAST(NULL AS Nullable(String))                  AS location,
     CAST(NULL AS Nullable(String))                  AS country,
     CAST(NULL AS Nullable(Float64))                 AS fte,
