@@ -6,7 +6,6 @@ import logging
 import queue
 import re
 import threading
-import time
 import uuid
 from abc import ABC
 from collections import deque
@@ -44,11 +43,6 @@ RECORD_BUFFER = 500
 # its repository finished, leaving every other worker parked on a full buffer.
 DRAIN_BATCH = 64
 QUEUE_POLL_SECONDS = 0.5
-# A worker parks on a full buffer until the consumer catches up. If nothing is
-# consuming for this long the consumer is gone — an abandoned generator whose
-# frame something still holds — and the workers have to be released, or the
-# non-daemon pool threads keep the process alive at exit.
-ABANDONED_CONSUMER_SECONDS = 300.0
 DEFAULT_CONCURRENCY = 4
 MAX_CONCURRENCY = 16
 _READ_DONE = object()
@@ -358,18 +352,21 @@ class BitbucketStream(Stream, ABC):
     def apply_staged_state(self, entries: Mapping[str, Mapping[str, Any]]) -> None:
         del entries
 
-    def _offer(self, records: queue.Queue[Any], item: Any, stop: threading.Event) -> bool:
-        """Park on a full buffer until the consumer catches up, or we abandon."""
-        deadline = time.monotonic() + ABANDONED_CONSUMER_SECONDS
+    @staticmethod
+    def _offer(records: queue.Queue[Any], item: Any, stop: threading.Event) -> bool:
+        """Park on a full buffer for as long as the read is still wanted.
+
+        No timeout: a full queue cannot tell an absent consumer from a slow
+        destination, and giving up on the second would abandon a repository
+        mid-read. `stop` belongs to the consumer, which sets it once it is
+        finished with the bucket — by which point nothing waits on these
+        records.
+        """
         while not stop.is_set():
             try:
                 records.put(item, timeout=QUEUE_POLL_SECONDS)
             except queue.Full:
-                if time.monotonic() < deadline:
-                    continue
-                logger.warning(f"{self.name}: nothing has consumed records for {ABANDONED_CONSUMER_SECONDS:.0f}s")
-                stop.set()
-                return False
+                continue
             return True
         return False
 

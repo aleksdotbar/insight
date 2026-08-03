@@ -8,6 +8,7 @@ import pytest
 from source_bitbucket_cloud.client import BitbucketApiError, RepositoryRef
 from source_bitbucket_cloud.streams.base import (
     BUCKET_COUNT,
+    QUEUE_POLL_SECONDS,
     RECORD_BUFFER,
     repo_state_key,
     repository_bucket,
@@ -344,3 +345,29 @@ class TestOutputRotatesBetweenRepositories:
         assert len(set(opening)) == 2, (
             f"the first {len(opening)} records all came from {opening[0]}; output must rotate"
         )
+
+
+class TestASlowConsumerIsNotAnAbsentOne:
+    def test_a_paused_consumer_still_receives_every_record(self):
+        """A full queue means the destination is slow, not that the read was
+        abandoned: the worker parks and delivers once consumption resumes."""
+        repos = fleet_in_one_bucket(1)
+        history = RECORD_BUFFER * 3
+
+        class WideClient(FleetClient):
+            def commits_between(self, repo, include, exclude):
+                return iter([{"hash": f"c{index}", "date": DATE} for index in range(history)])
+
+        stream = build(repos, WideClient(repos), 2)
+        seen = 0
+
+        with closing(stream.read_records(None, stream_slice={"bucket_id": 0})) as records:
+            for record in records:
+                assert record["record_type"] == "item"
+                if seen == 0:
+                    # Long enough for the worker to fill the buffer and park.
+                    time.sleep(QUEUE_POLL_SECONDS * 3)
+                seen += 1
+
+        assert seen == history, f"parked worker delivered {seen} of {history}"
+        assert repo_state_key(repos[0]) in stream.state["repositories"]
