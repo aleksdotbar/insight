@@ -717,14 +717,16 @@ async fn run_unknown_saved_query_returns_404() -> TestResult {
 #[tokio::test]
 #[ignore = "requires live MariaDB (INTEGRATION_TESTS_MARIADB_URL)"]
 async fn saved_query_is_tenant_scoped() -> TestResult {
-    // A query created under tenant A must be invisible to tenant B — the
-    // handler filters every read by `insight_tenant_id`.
+    // A query created under tenant A must be unreachable through every verb for
+    // tenant B — the handler resolves the row tenant-filtered before any read,
+    // write, or run.
     let Some(db) = connect_or_skip().await else {
         return Ok(());
     };
     let tenant_a = Uuid::now_v7();
     let app_a = app(db.clone(), tenant_a);
     let resp = app_a
+        .clone()
         .oneshot(json_req("POST", "/v1/queries", &create_body())?)
         .await?;
     assert_eq!(resp.status(), StatusCode::CREATED);
@@ -732,11 +734,46 @@ async fn saved_query_is_tenant_scoped() -> TestResult {
     let id = created["id"].as_str().unwrap_or_default().to_owned();
 
     let app_b = app(db, Uuid::now_v7());
-    let resp = app_b.oneshot(get(&format!("/v1/queries/{id}"))?).await?;
+
+    let resp = app_b.clone().oneshot(get("/v1/queries")?).await?;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let list = body_json(resp).await?;
+    let items = list["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("list payload has no items array: {list}"));
+    assert!(
+        items.iter().all(|i| i["id"].as_str() != Some(id.as_str())),
+        "tenant B's list must not contain tenant A's saved query: {list}"
+    );
+
+    let cross_tenant_requests = [
+        get(&format!("/v1/queries/{id}"))?,
+        json_req(
+            "PUT",
+            &format!("/v1/queries/{id}"),
+            &json!({ "name": "hijacked" }),
+        )?,
+        delete_req(&format!("/v1/queries/{id}"))?,
+        json_req("POST", &format!("/v1/queries/{id}/run"), &json!({}))?,
+    ];
+    for req in cross_tenant_requests {
+        let label = format!("{} {}", req.method(), req.uri());
+        let resp = app_b.clone().oneshot(req).await?;
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "tenant B must not reach tenant A's saved query via {label}"
+        );
+    }
+
+    // The row survives untouched for its owner — B's PUT/DELETE changed nothing.
+    let resp = app_a.oneshot(get(&format!("/v1/queries/{id}"))?).await?;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await?;
     assert_eq!(
-        resp.status(),
-        StatusCode::NOT_FOUND,
-        "tenant B must not see tenant A's saved query"
+        body["name"],
+        create_body()["name"],
+        "tenant A's saved query must be unchanged after tenant B's attempts"
     );
     Ok(())
 }
