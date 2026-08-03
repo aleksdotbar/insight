@@ -110,6 +110,27 @@ class Profile(BaseModel):
     display_name: str | None = None
 
 
+class IdentityValue(BaseModel):
+    """`GET /internal/persons/by-email/{email}` — the login-bootstrap lookup.
+
+    NOT a `Profile`, though both are "a person looked up by email". This route
+    answers the identity VALUE that matched — the alias row, pointing at what it
+    resolved to — because at login the caller has an email and needs to learn
+    which person it belongs to, not to read that person's attributes. Hence
+    `insight_source_id` rather than `person_id`, and no tenant at all: the
+    tenant is exactly what is still unknown at that point.
+
+    Declared here rather than generated, for the reason the coverage gate does
+    not gate identity on its document: the committed spec is the retired .NET
+    contract, and it describes neither this route's shape nor several others.
+    """
+
+    value_type: str
+    value: str
+    insight_source_type: str
+    insight_source_id: UUID
+
+
 # ---------------------------------------------------------------------------
 # Admin: roles, assignments, visibility
 # ---------------------------------------------------------------------------

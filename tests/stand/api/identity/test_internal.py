@@ -34,7 +34,7 @@ from __future__ import annotations
 import pytest
 from insight_stand import ApiClient, Manifest, PersonaSession, identity_path
 
-from ..schemas import Profile
+from ..schemas import IdentityValue
 
 
 @pytest.mark.requires_service_principal
@@ -58,7 +58,16 @@ def test_internal_lookup_serves_a_service_principal(
         f"the service principal was refused {person.email}: "
         f"{response.status_code} {response.text[:300]}"
     )
-    assert str(response.parse(Profile).person_id) == person.uuid
+
+    # The alias row, not the person's profile — see `IdentityValue`. Asserting
+    # the whole shape rather than just the id: the point of a login-bootstrap
+    # lookup is that the email it was ASKED about is the one it resolved, and an
+    # answer about a different person would satisfy an id-only check whenever
+    # the seed happens to have one person.
+    resolved = response.parse(IdentityValue)
+    assert (resolved.value_type, resolved.value) == ("email", person.email)
+    assert resolved.insight_source_type == "person"
+    assert str(resolved.insight_source_id) == person.uuid
 
 
 @pytest.mark.requires_service_principal

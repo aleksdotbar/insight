@@ -85,6 +85,7 @@ from .common import (
     ProblemDocument,
 )
 from .identity import (
+    IdentityValue,
     Operation,
     OperationList,
     PersonRole,
@@ -106,6 +107,7 @@ __all__: Sequence[str] = (
     "AdminMetricThresholdView",
     "CatalogResponse",
     "ColumnListResponse",
+    "IdentityValue",
     "ListResponse",
     "Metric",
     "MetricDefinitionListResponse",
