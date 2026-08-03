@@ -6,6 +6,7 @@ from conftest import FakeCatalog, repository
 from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient
 from source_bitbucket_cloud.streams.base import (
     BUCKET_COUNT,
+    MAX_TEXT_BYTES,
     normalize_start_date,
     now_iso,
     repo_state_key,
@@ -22,7 +23,8 @@ def test_helpers():
     with pytest.raises(ValueError):
         normalize_start_date("invalid")
     assert truncate(None) is None
-    assert len(truncate("x" * 20_000).encode()) <= 16_384
+    assert len(truncate("x" * 20_000).encode()) <= MAX_TEXT_BYTES
+    assert MAX_TEXT_BYTES <= 2_048, "generated descriptions must not multiply bronze storage"
     assert unique_key("T", "S", "a:b") == "T:S:a%3Ab"
     assert 0 <= repository_bucket("{r-1}") < BUCKET_COUNT
 

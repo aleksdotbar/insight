@@ -22,7 +22,10 @@ from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient, Re
 logger = logging.getLogger("airbyte")
 
 BUCKET_COUNT = 8
-MAX_TEXT_BYTES = 16_384
+# Commit messages, PR descriptions and comment bodies are kept for display,
+# not parsed: nothing downstream reads past the opening lines, while generated
+# descriptions routinely run to tens of KB and multiply bronze storage.
+MAX_TEXT_BYTES = 2_048
 # Bumped from 2 when entity and state keys moved back to workspace/slug: a
 # version-2 state is keyed by repository uuid and no longer addresses anything.
 STATE_VERSION = 3
