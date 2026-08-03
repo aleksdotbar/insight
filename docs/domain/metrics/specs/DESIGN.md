@@ -140,10 +140,10 @@ evidence relation per source and one granularity per measure:
 - `derived_population`: a source entity participating in a derived metric.
 
 All managed evidence and observation tables use the shared
-`metric_serving_table` dbt macro. It owns their materialization, storage keys,
-partitioning, tags, and bounded query settings. These settings apply uniformly;
-model-specific query settings are retained only when required by model
-semantics.
+`metric_evidence_table` and `metric_observations_table` dbt macros. They own
+materialization, storage keys, partitioning, tags, and bounded query settings.
+These settings apply uniformly; model-specific query settings are retained
+only when required by model semantics.
 
 The tables are partitioned by calendar month from `metric_date`. Evidence is
 ordered by tenant, source, entity type, entity, measure, date, and record ID;

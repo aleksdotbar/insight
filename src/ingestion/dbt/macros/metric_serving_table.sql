@@ -18,7 +18,7 @@
     {{ return(settings) }}
 {% endmacro %}
 
-{% macro metric_serving_table(table_kind, join_use_nulls=none) %}
+{% macro metric_serving_table(include_record_id, join_use_nulls=none) %}
     {% set order_by = [
         'tenant_id',
         'source_key',
@@ -27,10 +27,8 @@
         'measure_key',
         'metric_date'
     ] %}
-    {% if table_kind == 'evidence' %}
+    {% if include_record_id %}
         {% do order_by.append('record_id') %}
-    {% elif table_kind != 'observations' %}
-        {{ exceptions.raise_compiler_error('Unsupported metric serving table kind: ' ~ table_kind) }}
     {% endif %}
     {{ config(
         materialized='table',
@@ -41,4 +39,12 @@
         tags=['gold'],
         query_settings=metric_serving_query_settings(join_use_nulls=join_use_nulls)
     ) }}
+{% endmacro %}
+
+{% macro metric_evidence_table(join_use_nulls=none) %}
+    {{ metric_serving_table(true, join_use_nulls=join_use_nulls) }}
+{% endmacro %}
+
+{% macro metric_observations_table() %}
+    {{ metric_serving_table(false) }}
 {% endmacro %}

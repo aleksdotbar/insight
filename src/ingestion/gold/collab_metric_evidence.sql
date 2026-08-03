@@ -1,4 +1,4 @@
-{{ metric_serving_table('evidence') }}
+{{ metric_evidence_table() }}
 
 -- Resolution happens HERE, once per gold build: evidence carries BOTH keys —
 -- `entity_id` is the canonical person id (or '' when identity does not know

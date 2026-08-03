@@ -1,4 +1,4 @@
-{{ metric_serving_table('observations') }}
+{{ metric_observations_table() }}
 
 SELECT
     tenant_id,
