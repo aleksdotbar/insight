@@ -1,17 +1,12 @@
 {{ config(
     materialized='table',
     engine='MergeTree',
-    order_by=['tenant_id', 'source_key', 'measure_key', 'entity_id', 'metric_date', 'record_id'],
+    order_by=['tenant_id', 'source_key', 'entity_type', 'entity_id', 'measure_key', 'metric_date', 'record_id'],
+    partition_by='toYYYYMM(metric_date)',
     schema='insight',
     alias='git_metric_evidence',
     tags=['gold'],
-    query_settings={
-        'join_use_nulls': 1,
-        'max_memory_usage': 1610612736,
-        'max_threads': 4,
-        'max_bytes_before_external_group_by': 805306368,
-        'max_bytes_before_external_sort': 805306368
-    }
+    query_settings=metric_serving_query_settings(join_use_nulls=1)
 ) }}
 
 -- Resolution happens HERE, once per gold build: evidence carries BOTH keys —

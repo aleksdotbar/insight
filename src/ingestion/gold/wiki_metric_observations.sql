@@ -1,17 +1,12 @@
 {{ config(
     materialized='table',
     engine='MergeTree',
-    order_by=['source_key', 'measure_key', 'entity_id', 'metric_date'],
+    order_by=['tenant_id', 'source_key', 'entity_type', 'entity_id', 'measure_key', 'metric_date'],
+    partition_by='toYYYYMM(metric_date)',
     schema='insight',
     alias='wiki_metric_observations',
     tags=['gold'],
-    query_settings={
-        'max_memory_usage': 3221225472,
-        'max_threads': 4,
-        'max_bytes_before_external_group_by': 805306368,
-        'max_bytes_before_external_sort': 805306368,
-        'join_algorithm': 'grace_hash,hash'
-    }
+    query_settings=metric_serving_query_settings()
 ) }}
 
 SELECT
