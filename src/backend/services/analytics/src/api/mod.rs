@@ -480,7 +480,8 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric definitions",
         )
-        .standard_errors(openapi)
+        .error_401(openapi)
+        .error_500(openapi)
         .handler(metric_definitions::list_metric_definitions)
         .register(router, openapi);
 
