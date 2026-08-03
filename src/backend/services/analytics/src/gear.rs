@@ -3,9 +3,9 @@
 //! Hosts the analytics REST surface on the `api-gateway` system gear (the REST
 //! host) under `toolkit::bootstrap::run_server`. All runtime construction that
 //! used to live in `main.rs::run_server` — the self-managed MariaDB pool, its
-//! migrations + startup probes, the ClickHouse / Identity clients and the
-//! schema validators — happens in [`AnalyticsApiGear::init`]. Auth is disabled
-//! on this host; the tenant override layer lives in [`crate::auth`].
+//! migrations + startup probe, the ClickHouse / Identity clients and the
+//! metric-definition validator — happens in [`AnalyticsApiGear::init`]. Auth is
+//! disabled on this host; the tenant override layer lives in [`crate::auth`].
 //!
 //! The DB is self-managed (LOCKED DECISION): we do NOT use the toolkit `db`
 //! capability — ClickHouse is not a toolkit-db backend, and the gear keeps its
@@ -18,12 +18,11 @@ use toolkit::api::OpenApiRegistry;
 use toolkit::{Gear, GearCtx, RestApiCapability};
 
 use crate::config::GearConfig;
-use crate::domain::schema_validator::SchemaValidator;
 use crate::{api, infra};
 
-/// Analytics API gear. Capabilities: `rest` only (the startup schema-validator
-/// scan is a one-shot `tokio::spawn` in `init`, faithful to the old
-/// `run_server`; no `stateful`/`RunnableCapability`).
+/// Analytics API gear. Capabilities: `rest` only (the background validator and
+/// contract-version passes are `tokio::spawn`ed in `init`; no
+/// `stateful`/`RunnableCapability`).
 // Config key is the gear name `analytics`; env overrides are
 // `APP__gears__analytics__config__*`.
 #[toolkit::gear(
@@ -85,9 +84,6 @@ impl Gear for AnalyticsApiGear {
         // Identity client.
         let identity = infra::identity::IdentityClient::new(&cfg.identity_url)?;
 
-        // Schema-validator (Refs #521). Held in AppState and cloned into the
-        // post-init startup pass below.
-        let validator = SchemaValidator::new(db.clone(), ch.clone());
         let metric_definition_validator =
             crate::domain::metric_definitions::MetricDefinitionValidator::new(
                 db.clone(),
@@ -101,19 +97,12 @@ impl Gear for AnalyticsApiGear {
             ch,
             identity,
             config: cfg,
-            validator: validator.clone(),
         };
 
         self.state
             .set(Arc::new(state))
             .map_err(|_| anyhow::anyhow!("{} gear already initialized", Self::MODULE_NAME))?;
 
-        // Startup schema-validator scan (Refs #521). One-shot, post-init, so a
-        // ClickHouse outage at boot can never delay readiness — faithful to the
-        // old `run_server`'s `tokio::spawn(validator.validate_all())`.
-        tokio::spawn(async move {
-            validator.validate_all().await;
-        });
         // INVARIANT: periodic and never gating boot — the stamp lands after
         // boot (post-install migrate hook) and a later in-place bump must
         // surface without a pod restart.

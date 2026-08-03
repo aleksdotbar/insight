@@ -1,12 +1,8 @@
 //! `metric_key` (`table_name.column_name`) parser.
 //!
-//! The DB-side CHECK `chk_metric_catalog_metric_key_shape` constrains the wire
-//! format to `^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$`; this parser is the
-//! application-layer mirror per the dual-validate principle. It rejects every
-//! shape the regex would reject so a row that somehow slipped past the DB CHECK
-//! (a DBA dropping the constraint, a future MariaDB downgrade losing CHECK
-//! enforcement) cannot bypass the validator and reach the ClickHouse query as
-//! an unconstrained string.
+//! The wire format is `^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$`. Request validation
+//! parses every caller-supplied metric key through here, so an unconstrained
+//! string can never reach a ClickHouse query.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ParseError {

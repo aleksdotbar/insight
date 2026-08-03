@@ -38,7 +38,6 @@ use toolkit_security::SecurityContext;
 use crate::api::AppState;
 use crate::config::GearConfig;
 use crate::domain::metric_definitions::test_fixture::DrilldownFixture;
-use crate::domain::schema_validator::SchemaValidator;
 use crate::infra::identity::IdentityClient;
 
 const ENV_VAR: &str = "INTEGRATION_TESTS_MARIADB_URL";
@@ -72,13 +71,11 @@ fn dead_ch() -> insight_clickhouse::Client {
 
 /// Build a full `AppState` against the live DB.
 fn build_state(db: DatabaseConnection, identity: IdentityClient) -> AppState {
-    let validator = SchemaValidator::new(db.clone(), dead_ch());
     AppState {
         db,
         ch: dead_ch(),
         identity,
         config: GearConfig::default(),
-        validator,
     }
 }
 

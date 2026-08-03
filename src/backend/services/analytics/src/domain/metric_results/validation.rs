@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::api::error::MetricError;
 use crate::domain::metric_definitions::{ComputationSpec, MetricDefinition, load_definitions};
-use crate::domain::schema_validator::parse::parse_metric_key;
+use crate::domain::metric_key::parse_metric_key;
 
 use super::dto::{
     MetricDimensionFilterRequest, MetricGroupLimitRequest, MetricResultsRequest, MetricViewRequest,

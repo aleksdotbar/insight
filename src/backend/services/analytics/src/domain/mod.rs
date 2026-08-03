@@ -1,8 +1,8 @@
 pub mod contract_version;
 pub mod metric_definitions;
 pub mod metric_drilldown;
+pub mod metric_key;
 pub mod metric_results;
 pub(crate) mod person_visibility;
 pub mod query_gate;
 pub mod saved_query;
-pub mod schema_validator;
