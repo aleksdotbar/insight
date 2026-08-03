@@ -14,7 +14,7 @@ standard per-language tools (`cargo`, `pytest`).
 |---|---|---|---|
 | **Unit** | One function / module in isolation | `cargo test`, `pytest`, `vitest` | CI (every PR) |
 | **Integration** | Components against real stores; the API contract | Testcontainers · dbt tests · OpenAPI-drift + metric-coverage · API & metric rig | CI (every PR) |
-| **E2E** | The whole system through its real surfaces | ingestion (Airbyte → Argo) · chart install + smoke · UI (Playwright + axe) | CI (smoke) · Test (full) · Beta (shallow) |
+| **E2E** | The whole system through its real surfaces | ingestion (Airbyte → Argo) · chart install + smoke · compose-stand suite (API contract + UI journeys, Playwright) | CI (smoke, +2 non-required compose-stand checks) · Test (full) · Beta (shallow) |
 | **Performance** | It stays fast under load | latency p50/95/99 · load · stress · soak | Test · Beta |
 
 **Push tests down** — write each check at the lowest level that gives confidence; higher levels exist only for what
@@ -100,13 +100,23 @@ cd src/ingestion/tests/e2e
 
 ## 6. E2E
 
-- Real ingestion (Airbyte → Argo/Kestra → bronze → API), the umbrella-chart deployment, and UI flows (Playwright + axe).
+- Real ingestion (Airbyte → Argo/Kestra → bronze → API), the umbrella-chart deployment, and UI flows (Playwright,
+  role + accessible-name locators — no accessibility or contrast checking).
 - On PR, only the **deployment smoke** runs (chart installs + rollout). Full ingestion + UI run in **Test**; a
   **shallow acceptance validation** runs in **Beta**.
 - Every user-facing surface **should** have at least one smoke assertion.
+- A separate **compose-stand suite** (`tests/stand`, documented in `tests/stand/README.md`) drives a real Keycloak
+  login and four browser journeys against the SPA, an API-contract suite, and a metrics harness — all against a
+  local `docker-compose` stand seeded deterministically for tests (`deploy/seed`). Run it with
+  `./dev-compose.sh test-stand up|test|down`.
 
 **CI:** `functional-k3s.yml` — ephemeral k3d install. Today it only *installs*; a real smoke must build + import the
 PR's images and assert `/health` + a few golden metrics.
+
+**CI:** `e2e-stand.yml` — two **non-required** checks against the compose-stand suite: `api-smoke` (112 HTTP
+contract tests, no browser) and `ui-journeys` (12 tests: the four browser journeys plus the metrics harness, run
+inside the published `ui-tests` image). Neither blocks merge — both stand up a full stack against a live IdP and,
+as of this writing, have not yet run in GitHub Actions, so their flake rate is unmeasured.
 
 ---
 
@@ -132,3 +142,4 @@ PR's images and assert `/health` + a few golden metrics.
 
 - `src/ingestion/tests/e2e/README.md` — the API & metric rig
 - `docs/domain/bronze-to-api-e2e/specs/` — PRD / DESIGN for the bronze-to-api rig
+- `tests/stand/README.md` — the compose-stand suite (API contract, UI journeys, metrics)
