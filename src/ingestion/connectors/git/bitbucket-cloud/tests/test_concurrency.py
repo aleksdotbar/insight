@@ -331,10 +331,8 @@ class TestOutputRotatesBetweenRepositories:
         stream = build(repos, FastClient(repos), 2)
         opening: list[str] = []
 
-        # The consumer has to be the slower side, otherwise it empties each
-        # queue before the producer can refill and rotation is not being tested.
-        # Closed explicitly: an abandoned read leaves workers parked, and this
-        # test is the one that fails while holding the generator.
+        # A fast consumer empties each queue before the producer refills, testing nothing.
+        # Closed explicitly: this test fails while holding the generator, which parks workers.
         with closing(stream.read_records(None, stream_slice={"bucket_id": 0})) as records:
             for record in records:
                 opening.append(record["repo_slug"])
