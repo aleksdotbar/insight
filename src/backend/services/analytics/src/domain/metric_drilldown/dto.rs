@@ -15,6 +15,7 @@ pub(super) const MAX_FILTERS: usize = 10;
 pub(super) const MAX_DISPLAY_DIMENSIONS: usize = 10;
 pub(super) const MAX_FILTER_VALUES: usize = 100;
 pub(super) const MAX_FILTER_VALUE_BYTES: usize = 512;
+pub const MAX_EXPORT_ROWS: usize = 50_000;
 pub const EVIDENCE_QUERY_TIMEOUT_SECS: u64 = 45;
 pub const EVIDENCE_QUERY_MEMORY_BYTES: usize = 256 * 1024 * 1024;
 pub const EVIDENCE_QUERY_READ_BYTES: usize = 512 * 1024 * 1024;
@@ -49,6 +50,25 @@ pub struct MetricDrilldownRequest {
     pub display_dimensions: Vec<String>,
     pub limit: Option<usize>,
     pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricDrilldownExportFormat {
+    Csv,
+    Xlsx,
+}
+
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct MetricDrilldownExportRequest {
+    pub metric_key: String,
+    pub entity: MetricDrilldownEntity,
+    pub period: MetricDrilldownPeriod,
+    #[serde(default)]
+    pub filters: Vec<MetricDrilldownFilter>,
+    #[serde(default)]
+    pub display_dimensions: Vec<String>,
+    pub format: MetricDrilldownExportFormat,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -94,6 +114,7 @@ pub struct MetricDrilldownResponse {
 }
 
 impl toolkit::api::api_dto::RequestApiDto for MetricDrilldownRequest {}
+impl toolkit::api::api_dto::RequestApiDto for MetricDrilldownExportRequest {}
 impl toolkit::api::api_dto::ResponseApiDto for MetricDrilldownResponse {}
 
 #[derive(Debug)]
@@ -144,4 +165,13 @@ pub struct EvidenceQueryRow {
     pub subject_key: String,
     pub dimensions_json: String,
     pub details: serde_json::Value,
+}
+
+impl MetricDrilldownExportFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Csv => "csv",
+            Self::Xlsx => "xlsx",
+        }
+    }
 }
