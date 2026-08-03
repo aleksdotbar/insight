@@ -11,7 +11,6 @@ an id read off a metric result resolves to a profile with no second mapping.
 from __future__ import annotations
 
 import pytest
-
 from lib.identity_stub import SEEDED_EMAIL, SEEDED_PERSON, SEEDED_PERSON_ID, UNKNOWN_EMAIL, UNKNOWN_PERSON_ID
 
 pytestmark = pytest.mark.api

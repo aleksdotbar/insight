@@ -8,7 +8,6 @@ from __future__ import annotations
 import uuid
 
 import pytest
-
 from lib import identity_seed as seed
 
 pytestmark = pytest.mark.identity

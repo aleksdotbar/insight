@@ -119,10 +119,7 @@ class _Handler(BaseHTTPRequestHandler):
         # validated request ids verbatim).
         requested = body.get("person_ids") or []
         visible = {person_id_for(email) for email in self.server.visible}  # type: ignore[attr-defined]
-        self._send(
-            200,
-            {"visible": [p for p in requested if isinstance(p, str) and p.lower() in visible]},
-        )
+        self._send(200, {"visible": [p for p in requested if isinstance(p, str) and p.lower() in visible]})
 
     def _send_profile(self, body: dict[str, Any]) -> None:
         value = body.get("value", "")
@@ -158,9 +155,7 @@ class IdentityStub:
     """
 
     def __init__(
-        self,
-        people: dict[str, dict[str, Any]] | None = None,
-        visible: tuple[str, ...] = VISIBLE_EMAILS,
+        self, people: dict[str, dict[str, Any]] | None = None, visible: tuple[str, ...] = VISIBLE_EMAILS
     ) -> None:
         self._people = dict(people) if people is not None else {SEEDED_EMAIL: SEEDED_PERSON}
         self._visible = visible

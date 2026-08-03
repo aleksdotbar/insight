@@ -5,7 +5,6 @@ import re
 from typing import Any
 
 import pytest
-
 from lib import clickhouse
 from lib.analytics import AnalyticsProcess
 from lib.ch_seeder import CHSeeder
@@ -65,9 +64,7 @@ def _all_persona_emails(test_yaml: TestYaml) -> list[str]:
 def _person_ids_for(emails: list[str], aliases: dict[str, list[str]]) -> dict[str, str]:
     """email -> person id, with `identity_aliases` bound to the canonical
     persona's id so several source accounts resolve to ONE person."""
-    canonical_of = {
-        alias.strip().lower(): canonical for canonical, group in aliases.items() for alias in group
-    }
+    canonical_of = {alias.strip().lower(): canonical for canonical, group in aliases.items() for alias in group}
     return {email: person_id_for(canonical_of.get(email.strip().lower(), email)) for email in emails}
 
 
@@ -213,9 +210,7 @@ def test_metric_smoke(
     #    build (the rig plays the persons-sync role here).
     persona_emails = _all_persona_emails(test_yaml)
     all_person_ids = _person_ids_for(persona_emails, test_yaml.identity_aliases)
-    to_person_id = {
-        email: all_person_ids[email] for email in _requested_persona_emails(test_yaml)
-    }
+    to_person_id = {email: all_person_ids[email] for email in _requested_persona_emails(test_yaml)}
     # The visibility gate asks the stub about the ids this case requests, so
     # the stub's visible set is derived from the yaml — never a hand-kept list
     # a new persona could fall outside of (that reads as an authz bug).
@@ -230,9 +225,7 @@ def test_metric_smoke(
     #    the identity cutover — translate on the way out and back so the 36
     #    case files stay human-readable.
     canonical_of = {
-        alias.strip().lower(): canonical
-        for canonical, group in test_yaml.identity_aliases.items()
-        for alias in group
+        alias.strip().lower(): canonical for canonical, group in test_yaml.identity_aliases.items() for alias in group
     }
     to_email: dict[str, str] = {}
     for email, person_id in to_person_id.items():
@@ -247,9 +240,7 @@ def test_metric_smoke(
         # expects can name one person.
         canonical = canonical_of.get(email.lower()) or canonical_of.get(seen.lower())
         if canonical is None:
-            raise AssertionError(
-                f"two requested spellings share a person id: {seen!r} and {email!r}"
-            )
+            raise AssertionError(f"two requested spellings share a person id: {seen!r} and {email!r}")
         to_email[person_id] = canonical
     for case in test_yaml.cases:
         status, payload = analytics.call_request(_translate(case["request"], to_person_id))

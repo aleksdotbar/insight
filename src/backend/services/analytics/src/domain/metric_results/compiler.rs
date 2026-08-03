@@ -1041,9 +1041,9 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    use crate::domain::metric_results::validation::ValidatedEntitySelection;
     use crate::domain::metric_definitions::definition::ValueTransform;
     use crate::domain::metric_results::batch::{RankedDimension, RankedGroup};
+    use crate::domain::metric_results::validation::ValidatedEntitySelection;
     use chrono::NaiveDate;
 
     use crate::domain::metric_definitions::definition::{

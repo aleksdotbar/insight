@@ -164,13 +164,9 @@ def seed(cfg: SessionConfig) -> None:
             )
             for person, (email, account, name, dept, title) in PEOPLE.items():
                 cur.executemany(
-                    observation_sql,
-                    _observation_rows(TEST_TENANT_ID, person, email, account, name, dept, title),
+                    observation_sql, _observation_rows(TEST_TENANT_ID, person, email, account, name, dept, title)
                 )
-            cur.executemany(
-                observation_sql,
-                _emailless_observation_rows(TEST_TENANT_ID, NO_EMAIL_PERSON),
-            )
+            cur.executemany(observation_sql, _emailless_observation_rows(TEST_TENANT_ID, NO_EMAIL_PERSON))
             # eve: same shape, other tenant.
             cur.executemany(
                 observation_sql,
@@ -194,10 +190,7 @@ def seed(cfg: SessionConfig) -> None:
                         ALICE.bytes,
                     ),
                 )
-            cur.execute(
-                org_sql,
-                (OTHER_TENANT.bytes, SOURCE_TYPE, SOURCE_ID.bytes, EVE.bytes, None, ALICE.bytes),
-            )
+            cur.execute(org_sql, (OTHER_TENANT.bytes, SOURCE_TYPE, SOURCE_ID.bytes, EVE.bytes, None, ALICE.bytes))
 
             # alice is the tenant admin (fixed assignment id so revoke tests
             # elsewhere can reference it).
@@ -205,13 +198,7 @@ def seed(cfg: SessionConfig) -> None:
                 "INSERT INTO person_roles (person_role_id, insight_tenant_id, person_id, role_id,"
                 " valid_from, valid_to, author_person_id, reason)"
                 " VALUES (%s, %s, %s, %s, UTC_TIMESTAMP(6), NULL, %s, 'e2e-seed')",
-                (
-                    ALICE_ADMIN_ASSIGNMENT.bytes,
-                    TEST_TENANT_ID.bytes,
-                    ALICE.bytes,
-                    ADMIN_ROLE_ID.bytes,
-                    ALICE.bytes,
-                ),
+                (ALICE_ADMIN_ASSIGNMENT.bytes, TEST_TENANT_ID.bytes, ALICE.bytes, ADMIN_ROLE_ID.bytes, ALICE.bytes),
             )
 
             # persons-seed operator: an active admin assignment in SEED_TENANT
@@ -234,13 +221,7 @@ def seed(cfg: SessionConfig) -> None:
                 "INSERT INTO visibility (visibility_id, insight_tenant_id, viewer_person_id,"
                 " viewed_person_id, valid_from, valid_to, author_person_id, reason)"
                 " VALUES (%s, %s, %s, %s, UTC_TIMESTAMP(6), NULL, %s, 'e2e-seed')",
-                (
-                    VISIBILITY_GRANT_BOB_HIDDEN.bytes,
-                    TEST_TENANT_ID.bytes,
-                    BOB.bytes,
-                    HIDDEN.bytes,
-                    ALICE.bytes,
-                ),
+                (VISIBILITY_GRANT_BOB_HIDDEN.bytes, TEST_TENANT_ID.bytes, BOB.bytes, HIDDEN.bytes, ALICE.bytes),
             )
     finally:
         conn.close()

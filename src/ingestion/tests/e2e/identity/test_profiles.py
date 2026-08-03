@@ -18,9 +18,9 @@ import uuid
 
 import httpx
 import pytest
+from lib import identity_seed as seed
 
 from identity.contract import AMBIGUOUS_STATUSES, problem
-from lib import identity_seed as seed
 
 pytestmark = pytest.mark.identity
 
@@ -30,9 +30,7 @@ def _resolve_email(client: httpx.Client, email: str) -> httpx.Response:
 
 
 def _resolve_person_id(client: httpx.Client, person_id: uuid.UUID | str) -> httpx.Response:
-    return client.post(
-        "/v1/profiles", json={"value_type": "person_id", "value": str(person_id)}
-    )
+    return client.post("/v1/profiles", json={"value_type": "person_id", "value": str(person_id)})
 
 
 def test_resolve_by_email_200_full_profile(api) -> None:
