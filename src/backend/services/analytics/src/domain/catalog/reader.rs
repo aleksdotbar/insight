@@ -219,7 +219,7 @@ mod tests {
 
         async fn invalidate(&self, tenant_id: Uuid, mode: InvalidateMode) -> anyhow::Result<()> {
             // Tenant-prefix purge: remove every entry whose tenant matches.
-            // Matches the production `SCAN cat:v1:{tenant}:* + UNLINK`.
+            // Matches the production `UNLINK cat:v1:{tenant}` hash drop.
             let mut g = self
                 .store
                 .lock()
