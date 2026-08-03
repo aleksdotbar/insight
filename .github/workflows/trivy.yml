@@ -50,7 +50,8 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/src:ro" \
             -w /src \
-            --ignorefile /src/.trivyignore.yaml \n            "$TRIVY_IMAGE" fs \
+            "$TRIVY_IMAGE" fs \
+              --ignorefile /src/.trivyignore.yaml \
               --scanners vuln,secret,misconfig \
               --severity CRITICAL \
               --ignore-unfixed \
@@ -97,7 +98,8 @@ jobs:
             -v "${{ github.workspace }}:/src" \
             -v /tmp/trivy-cache:/root/.cache \
             -w /src \
-            --ignorefile /src/.trivyignore.yaml \n            "$TRIVY_IMAGE" fs \
+            "$TRIVY_IMAGE" fs \
+              --ignorefile /src/.trivyignore.yaml \
               --scanners vuln,misconfig \
               --severity CRITICAL,HIGH,MEDIUM,LOW \
               --include-dev-deps \
@@ -213,7 +215,8 @@ jobs:
             -v "${{ github.workspace }}:/src" \
             -v /tmp/trivy-cache:/root/.cache \
             -w /src \
-            --ignorefile /src/.trivyignore.yaml \n            "$TRIVY_IMAGE" fs \
+            "$TRIVY_IMAGE" fs \
+              --ignorefile /src/.trivyignore.yaml \
               --scanners misconfig \
               --severity CRITICAL,HIGH,MEDIUM,LOW \
               --exit-code 0 \
