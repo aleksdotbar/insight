@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from source_bitbucket_cloud.client import UNCOMPUTABLE_DIFF
 from source_bitbucket_cloud.streams.base import BitbucketIncrementalStream, repo_scope, schema, unique_key
 from source_bitbucket_cloud.streams.git_ranges import CommitRangeMixin
 
@@ -45,7 +46,9 @@ class FileChangesStream(CommitRangeMixin, BitbucketIncrementalStream):
         # completeness gate keeps whatever was known before instead of treating
         # the empty read as "this commit changed nothing".
         present, entries = self._client.paginate_optional(
-            self._client.repo_path(repo, f"diffstat/{sha}"), params={"pagelen": "100"}
+            self._client.repo_path(repo, f"diffstat/{sha}"),
+            params={"pagelen": "100"},
+            tolerate_messages=UNCOMPUTABLE_DIFF,
         )
         for entry in entries:
             new_file = entry.get("new") or {}

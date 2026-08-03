@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import random
 import time
@@ -14,12 +15,33 @@ import requests
 from source_bitbucket_cloud.auth import auth_headers
 
 
+# Bitbucket answers 400 for a pull request whose source and destination share
+# no ancestry: the diff is undefined rather than empty, and no retry or later
+# sync can make it computable.
+UNCOMPUTABLE_DIFF = frozenset({"No common ancestor"})
+
+
 class BitbucketApiError(RuntimeError):
     def __init__(self, status_code: int, url: str, body: str) -> None:
         super().__init__(f"Bitbucket API returned {status_code} for {url}: {body[:500]}")
         self.status_code = status_code
         self.url = url
         self.body = body
+
+    @property
+    def _payload(self) -> Mapping[str, Any]:
+        try:
+            payload = json.loads(self.body)
+        except (TypeError, ValueError):
+            return {}
+        return payload if isinstance(payload, Mapping) else {}
+
+    @property
+    def error_message(self) -> str:
+        error = self._payload.get("error")
+        if not isinstance(error, Mapping):
+            return ""
+        return str(error.get("message") or "")
 
 
 @dataclass(frozen=True)
@@ -170,10 +192,28 @@ class BitbucketClient:
                 raise ValueError(f"Unexpected Bitbucket response from {response.url}")
             first = False
 
+    def _optional_request(
+        self,
+        path_or_url: str,
+        *,
+        params: Mapping[str, Any] | Sequence[tuple[str, Any]] | None = None,
+        tolerate_messages: Collection[str] = (),
+    ) -> requests.Response | None:
+        try:
+            return self.request("GET", path_or_url, params=params, allow_statuses={403, 404})
+        except BitbucketApiError as error:
+            if error.status_code == 400 and error.error_message in tolerate_messages:
+                return None
+            raise
+
     def paginate_optional(
-        self, path: str, *, params: Mapping[str, Any] | Sequence[tuple[str, Any]] | None = None
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | Sequence[tuple[str, Any]] | None = None,
+        tolerate_messages: Collection[str] = (),
     ) -> tuple[bool, Iterable[Mapping[str, Any]]]:
-        response = self.request("GET", path, params=params, allow_statuses={403, 404})
+        response = self._optional_request(path, params=params, tolerate_messages=tolerate_messages)
         if response is None:
             return False, ()
 
@@ -197,7 +237,7 @@ class BitbucketClient:
                 if next_value:
                     seen.add(str(next_value))
                 current = (
-                    self.request("GET", str(next_value), allow_statuses={403, 404})
+                    self._optional_request(str(next_value), tolerate_messages=tolerate_messages)
                     if next_value
                     else None
                 )
