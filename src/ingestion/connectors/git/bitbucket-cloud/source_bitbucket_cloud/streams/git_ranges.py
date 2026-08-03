@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import date, timedelta
 from typing import Any, TypeVar
 
 from source_bitbucket_cloud.client import BitbucketApiError, BranchRef, RepositoryCatalog, RepositoryRef
 
+logger = logging.getLogger("airbyte")
+
 Heads = TypeVar("Heads", list[str], dict[str, str])
 
-# A branch head this far behind the window can only reach commits the date
-# filter discards, and ranging it pages the whole history it points at. The
-# margin absorbs the clock skew of user-supplied commit dates.
+# A branch head this far behind the window is not ranged at all: reading it
+# pages the whole history it points at for commits the date filter then throws
+# away. Deliberately lossy past the margin — commit dates are user-supplied, so
+# an ancestor dated inside the window can hang off an older head and is then
+# never collected. The margin is the tolerance for that.
 COLD_START_MARGIN = timedelta(days=90)
 
 # Bitbucket names only the unresolvable shas it noticed, so a repository with
-# several dead heads needs more than one pruning round; the cap keeps a
-# pathological repository from spending the request budget on repair attempts.
+# several dead heads needs more than one pruning round. Past this many the
+# listing is misbehaving badly enough to say so out loud.
 RANGE_REPAIR_ATTEMPTS = 8
 
 
@@ -74,30 +79,35 @@ class CommitRangeMixin:
     ) -> Iterable[Mapping[str, object]]:
         includes = list(current_heads)
         excludes = list(previous_heads)
-        last_error = BitbucketApiError(404, "", "")
-        for _ in range(RANGE_REPAIR_ATTEMPTS):
+        # Every round either drops at least one sha or clears the excludes once,
+        # so this bounds the walk without ever stopping a walk that is still
+        # getting somewhere: giving up mid-repair leaves the repository to fail
+        # the same way on every future sync.
+        rounds = len(includes) + len(excludes) + 2
+        for attempt in range(rounds):
+            if attempt == RANGE_REPAIR_ATTEMPTS:
+                logger.warning(
+                    f"{repo.workspace}/{repo.slug}: commit range still being repaired after "
+                    f"{attempt} attempts; the branch listing is advertising heads the commits "
+                    "endpoint cannot resolve"
+                )
             try:
                 yield from self._client.commits_between(repo, includes, excludes)
                 return
             except BitbucketApiError as exc:
                 if exc.status_code != 404:
                     raise
-                last_error = exc
                 # Retrying re-yields whatever the failed attempt already
                 # emitted; bronze collapses the overlap on unique_key.
                 missing = exc.missing_shas
-                if missing.intersection(includes) or missing.intersection(excludes):
-                    if unresolved is not None:
-                        unresolved.update(missing.intersection(includes))
-                    includes = [sha for sha in includes if sha not in missing]
-                    excludes = [sha for sha in excludes if sha not in missing]
-                    if not includes:
-                        return
-                elif excludes:
+                if not missing.intersection(includes) and not missing.intersection(excludes):
+                    if not excludes:
+                        raise
                     excludes = []
-                else:
-                    raise
-        # Out of repair attempts: re-raise the API error so the repository is
-        # treated as unreadable this sync (skipped, state untouched) rather
-        # than quarantined as a transient fault that a retry could clear.
-        raise last_error
+                    continue
+                if unresolved is not None:
+                    unresolved.update(missing.intersection(includes))
+                includes = [sha for sha in includes if sha not in missing]
+                excludes = [sha for sha in excludes if sha not in missing]
+                if not includes:
+                    return

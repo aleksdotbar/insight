@@ -128,28 +128,52 @@ class TestMissingShasArePruned:
         assert [r["hash"] for r in records] == ["new"]
         assert client.commit_calls == [(["new"], ["old"]), (["new"], [])]
 
-    def test_repair_gives_up_as_a_denial_not_a_quarantine(self, repo):
-        """A repository whose range never resolves is unreadable, not flaky:
-        skipping keeps the sync green instead of failing it every run."""
+    def test_repair_keeps_going_while_it_is_getting_somewhere(self, repo):
+        """The API names only the shas it noticed, so a repository with many
+        dead heads needs many rounds. Stopping part-way would leave it failing
+        the same way on every future sync."""
+        heads = 20
 
         class OneAtATime(FakeClient):
-            """Names a single dead head per answer, so pruning never converges
-            within the cap."""
+            """Names a single dead head per answer."""
 
             def commits_between(self, repo, include, exclude):
                 self.commit_calls.append((list(include), list(exclude)))
                 raise commit_not_found(sorted(include)[0])
 
         client = OneAtATime()
-        client.branch_values[repo.uuid] = [branch(f"b{index}", f"sha{index:02d}") for index in range(20)]
+        client.branch_values[repo.uuid] = [branch(f"b{index}", f"sha{index:02d}") for index in range(heads)]
         stream = build(CommitsStream, client, repo)
 
         records = read_all_buckets(stream)
 
         assert records == []
-        assert stream._failed_repositories == []
+        assert stream._failed_repositories == [], "pruning to nothing is not a failure"
+        assert not stream._catalog.is_inaccessible(repo), "nor a denial: the listing was readable"
+        assert len(client.commit_calls) == heads, (
+            f"every dead head must be pruned; stopped after {len(client.commit_calls)} of {heads}"
+        )
+        assert len(client.commit_calls) > RANGE_REPAIR_ATTEMPTS, "and past the warning threshold"
+
+    def test_repair_still_terminates_when_nothing_can_be_pruned(self, repo):
+        class NamesSomethingElse(FakeClient):
+            def commits_between(self, repo, include, exclude):
+                self.commit_calls.append((list(include), list(exclude)))
+                raise commit_not_found("a-sha-not-in-this-range")
+
+        client = NamesSomethingElse()
+        client.branch_values[repo.uuid] = [branch("main", "head")]
+        stream = build(CommitsStream, client, repo)
+        stream.state = {
+            "version": 3,
+            "bucket_count": 8,
+            "repositories": {repo_state_key(repo): {"head_shas": ["old"], "repo_updated_on": "stale"}},
+        }
+
+        read_all_buckets(stream)
+
+        assert len(client.commit_calls) == 2, "clear the excludes once, then give up"
         assert stream._catalog.is_inaccessible(repo)
-        assert len(client.commit_calls) <= RANGE_REPAIR_ATTEMPTS, "the repair loop must terminate"
 
     def test_unnamed_404_without_excludes_is_a_denial(self, repo):
         class BareNotFound(FakeClient):
