@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from itertools import chain
 from typing import Any
 
 from source_bitbucket_cloud.client import BitbucketApiError
 from source_bitbucket_cloud.streams.base import BitbucketIncrementalStream, repo_scope, schema, unique_key
 from source_bitbucket_cloud.streams.git_ranges import CommitRangeMixin
+
+
+RANGE_PREFETCH = 500
 
 
 class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStream):
@@ -27,6 +31,11 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
             return
         branches, current_heads = self.branch_snapshot(repo)
         previous_heads = prior.get("heads") or {}
+        if previous_heads and not current_heads:
+            # Every stored branch would read as deleted, and a later listing
+            # that finds them again emits no correction. An answer this
+            # sweeping is not trusted: nothing is emitted, nothing advances.
+            return
         branch_by_name = {branch.name: branch for branch in branches}
         unresolved: set[str] = set()
         for branch_name in sorted(set(current_heads) | set(previous_heads)):
@@ -90,8 +99,20 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
         )
 
     def _changes(self, repo, branch, include: str, exclude: str | None, action: str, unresolved: set[str]):
+        # Recovery below has to replace the whole range, so nothing may have
+        # been emitted when it runs — but a first read of a branch spans its
+        # entire history and several repositories are in flight at once. Hold
+        # only the head of the range: the API rejects a stale exclude on the
+        # first request, so a recoverable failure lands inside this window,
+        # while a longer range spills into a plain stream.
+        prefetched: list[Mapping[str, Any]] = []
+        commits: Iterator[Mapping[str, Any]] = iter(())
         try:
-            commits = list(self._client.commits_between(repo, [include], [exclude] if exclude else []))
+            commits = iter(self._client.commits_between(repo, [include], [exclude] if exclude else []))
+            for commit in commits:
+                prefetched.append(commit)
+                if len(prefetched) >= RANGE_PREFETCH:
+                    break
         except BitbucketApiError as exc:
             if exc.status_code == 404 and include in exc.missing_shas:
                 # The head this range starts from is gone: nothing is reachable
@@ -126,7 +147,7 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
                 reachability_action="removal_unavailable",
             )
             return
-        yield from self._reachability_records(repo, branch, include, action, commits)
+        yield from self._reachability_records(repo, branch, include, action, chain(prefetched, commits))
 
     def _reachability_records(self, repo, branch, head, action, commits):
         for commit in commits:
