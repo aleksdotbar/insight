@@ -14,7 +14,7 @@ use super::AppState;
 use super::canonical_json::CanonicalJson;
 use super::error::VisibilityError;
 use super::gate::require_caller;
-use crate::infra::db::subchart_repo;
+use crate::infra::db::{persons_repo, subchart_repo};
 
 // One bound parameter per person id, so the request bounds the query. Equal to
 // the analytics metric-results cap on purpose: that endpoint forwards a whole
@@ -47,16 +47,19 @@ pub async fn filter_visible_persons(
 
     let requested = dedup_person_ids(&req.person_ids)?;
 
-    // INVARIANT: the wildcard short-circuit echoes the request, so the answer
-    // is a SUBSET OF THE INPUT — never a statement that each id exists in the
-    // tenant. The SQL branch cannot say more either (an id absent from the
-    // visible set and an id absent from the tenant are one answer), so callers
-    // must not read presence here as existence.
+    // A wildcard grant covers everyone IN THE TENANT, not everyone whose UUID
+    // the caller can type: the echo is intersected with the tenant's persons
+    // log, or a wildcard holder in tenant A could get tenant B's ids confirmed
+    // as visible — and analytics treats this answer as authorization. Not an
+    // existence oracle beyond what the grant already implies: a wildcard
+    // holder may see every person the tenant has.
     let visible = if subchart_repo::has_wildcard_grant(&state.db, tenant, caller)
         .await
         .map_err(read_err)?
     {
-        requested
+        persons_repo::persons_in_tenant(&state.db, tenant, &requested)
+            .await
+            .map_err(read_err)?
     } else {
         let visible = subchart_repo::visible_targets(
             &state.db,

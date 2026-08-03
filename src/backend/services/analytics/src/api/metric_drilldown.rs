@@ -9,6 +9,7 @@ use toolkit_security::SecurityContext;
 
 use super::AppState;
 use crate::api::error::MetricError;
+use crate::domain::person_visibility::authorize_entity_ids;
 use crate::domain::metric_drilldown::{
     EVIDENCE_QUERY_MEMORY_BYTES, EVIDENCE_QUERY_READ_BYTES, EVIDENCE_QUERY_RESULT_BYTES,
     EVIDENCE_QUERY_TIMEOUT_SECS, EvidenceQueryRow, MetricDrilldownRequest, MetricDrilldownResponse,
@@ -25,10 +26,25 @@ static QUERY_SEMAPHORE: LazyLock<Semaphore> =
 pub async fn query_metric_drilldown(
     Extension(state): Extension<Arc<AppState>>,
     Extension(ctx): Extension<SecurityContext>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<MetricDrilldownRequest>,
 ) -> Result<Json<MetricDrilldownResponse>, CanonicalError> {
     let started = Instant::now();
     let req = validate_request(&state.db, &state.ch, ctx.subject_tenant_id(), req).await?;
+
+    // Visibility gate BEFORE any ClickHouse work, same predicate and failure
+    // matrix as `/v1/metric-results`: this endpoint serves per-person evidence
+    // rows — names, record labels, contributions — so an unchecked id here is
+    // the same IDOR the sibling endpoint answers 403 for.
+    authorize_entity_ids(
+        &state.identity,
+        &ctx,
+        super::forwarded_authorization(&headers),
+        &req.selection.entity.r#type,
+        &[req.person_id],
+    )
+    .await?;
+
     let log_comment = format!("metric-drilldown:page:{}", req.plan.definition.key());
     let rows = fetch_rows(&state, &req, &log_comment).await?;
     verify_evidence_snapshot(&state.ch, &req.plan.relation, &req.snapshot_id).await?;

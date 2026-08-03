@@ -844,7 +844,7 @@ async fn metric_drilldown_validates_selection_before_clickhouse_error() -> TestR
         let app = app(db.clone(), fixture.tenant_id);
         let body = json!({
             "metric_key": "git.commits",
-            "entity": {"type": "person", "id": "person@example.com"},
+            "entity": {"type": "person", "id": "019e2830-0000-7000-8000-000000000001"},
             "period": {"from": "2026-07-01", "to": "2026-07-28"},
             "filters": [{"dimension": "repository", "values": ["org/repo"]}],
             "display_dimensions": ["repository"],
@@ -883,8 +883,22 @@ async fn metric_drilldown_rejects_invalid_selection_without_clickhouse() -> Test
         }),
         json!({
             "metric_key": "git.commits",
-            "entity": {"type": "person", "id": "person@example.com"},
+            "entity": {"type": "person", "id": "019e2830-0000-7000-8000-000000000001"},
             "period": {"from": "2026-07-28", "to": "2026-07-01"},
+            "limit": 100
+        }),
+        // The pre-cutover email shape and the nil UUID: entity.id is a
+        // canonical person id here like on every other person-keyed route.
+        json!({
+            "metric_key": "git.commits",
+            "entity": {"type": "person", "id": "person@example.com"},
+            "period": {"from": "2026-07-01", "to": "2026-07-28"},
+            "limit": 100
+        }),
+        json!({
+            "metric_key": "git.commits",
+            "entity": {"type": "person", "id": "00000000-0000-0000-0000-000000000000"},
+            "period": {"from": "2026-07-01", "to": "2026-07-28"},
             "limit": 100
         }),
     ] {

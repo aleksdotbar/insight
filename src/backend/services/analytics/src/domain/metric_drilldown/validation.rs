@@ -32,7 +32,7 @@ struct CommonRequest {
     cursor: Option<String>,
 }
 
-use super::error::{config_error, db_error, evidence_unavailable, invalid, parse_date};
+use super::error::{config_error, db_error, evidence_unavailable, invalid, invalid_error, parse_date};
 use super::presentation::evidence_presentation;
 
 pub async fn validate_request(
@@ -80,10 +80,16 @@ async fn validate_common(
     if entity_type != "person" {
         return invalid("entity.type", "only person entities are supported");
     }
-    let entity_id = normalize_evidence_entity_id(&entity.id);
-    if entity_id.is_empty() {
-        return invalid("entity.id", "person entity id must not be empty");
-    }
+    // Canonical person id, like every other person-keyed route since the
+    // identity cutover; the pre-cutover email shape (and the nil UUID, which
+    // parses but is never a person) is a loud 400. The compiler translates the
+    // id back to the person's source emails, because the evidence relations
+    // deliberately stay email-keyed (coverage measures the gap from them).
+    let person_id = uuid::Uuid::parse_str(entity.id.trim())
+        .ok()
+        .filter(|id| !id.is_nil())
+        .ok_or_else(|| invalid_error("entity.id", "entity.id must be a person UUID"))?;
+    let entity_id = person_id.to_string();
     if limit == 0 || limit > max_limit {
         return invalid("limit", format!("limit must be between 1 and {max_limit}"));
     }
@@ -139,6 +145,7 @@ async fn validate_common(
     };
     Ok(ValidatedMetricDrilldown {
         selection,
+        person_id,
         from,
         to,
         limit,
@@ -197,15 +204,6 @@ async fn load_evidence_plan(
         source_key,
         inputs,
     })
-}
-
-// INVARIANT: the evidence relations this endpoint reads are keyed by the
-// lowercased email, not by `person_id` — the identity cutover reached the
-// observation and cohort relations only. Every other person-keyed route takes a
-// person UUID, so this one must NOT be handed one, and it is not behind the
-// visibility gate those routes use.
-fn normalize_evidence_entity_id(entity_id: &str) -> String {
-    entity_id.trim().to_ascii_lowercase()
 }
 
 fn normalize_filters(

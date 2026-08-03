@@ -526,11 +526,16 @@ Peer views expose aggregates only (no peer entity ids); period, timeseries,
 and breakdown views expose per-entity values — for ids the caller is allowed
 to see.
 
-Warehouse tenant isolation is enforced in the compiler: every observation and
-cohort read leads with `tenant_id = ?`, bound from the request. The
-control-plane tenant id and the warehouse `tenant_id` strings stamped at
-ingestion still have no defined mapping, which is the remaining multi-tenant
-unlock.
+Warehouse tenant isolation is compiled into every observation and cohort
+read but is OFF BY DEFAULT: the predicate is `tenant_id = ?` only when
+`metric_catalog.enforce_tenant_scope` is set, and degrades to a match-all
+(`tenant_id = ? OR 1 = 1`) otherwise, because the `tenant_id` stamped at
+ingestion has no defined mapping to the control-plane tenant yet — an exact
+match would silently empty every metric. Until an environment aligns the
+stamp and flips the flag, this runtime is SINGLE-TENANT: with the filter
+degraded, a peer pool sharing a `cohort_id` across tenants would mix them,
+so multi-tenant deployment is unsupported rather than partially isolated.
+Defining the mapping and defaulting the flag on is the multi-tenant unlock.
 
 Schema validation checks:
 

@@ -63,8 +63,11 @@ The request shape is UUIDs because the metrics runtime keys on `person_id`
 since the identity cutover; the email-taking first cut of this endpoint
 (and its `resolve_person_ids_by_emails` position-keyed resolution, needed
 because `value_id` compares case- and accent-insensitively) is gone with
-it. On a wildcard grant the answer echoes the request, so it is a subset of
-the input rather than a statement that each id exists in the tenant.
+it. On a wildcard grant the answer is the request intersected with the
+tenant's persons log: the grant covers everyone in the tenant, not everyone
+whose UUID the caller can type, and consumers read this answer as
+authorization — echoing a foreign tenant's id back would confirm it as
+visible.
 
 Three properties keep it least-privilege despite the missing admin gate:
 
@@ -76,7 +79,9 @@ Three properties keep it least-privilege despite the missing admin gate:
   `POST /v1/profiles` one id at a time.
 - **Absence carries the denial.** An id the caller may not see and an id
   that resolves to nobody are both simply absent, so the endpoint is not
-  an existence oracle.
+  an existence oracle beyond what the caller's own grants already imply —
+  a wildcard holder learns tenant membership, which their grant lets them
+  enumerate through `POST /v1/profiles` anyway.
 
 Roles stay out of the predicate. Holding the `admin` role confers no
 visibility, exactly as before — administering identity and seeing people

@@ -99,6 +99,9 @@ impl toolkit::api::api_dto::ResponseApiDto for MetricDrilldownResponse {}
 #[derive(Debug)]
 pub struct ValidatedMetricDrilldown {
     pub selection: MetricDrilldownSelection,
+    /// Canonical person id parsed from `selection.entity.id` — what the
+    /// visibility gate authorizes and the compiler resolves to source emails.
+    pub person_id: uuid::Uuid,
     pub from: NaiveDate,
     pub to: NaiveDate,
     pub limit: usize,

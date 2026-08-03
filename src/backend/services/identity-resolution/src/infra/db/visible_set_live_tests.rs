@@ -6,7 +6,7 @@
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Value};
 use uuid::Uuid;
 
-use super::{connect_single, roles_repo, subchart_repo};
+use super::{connect_single, persons_repo, roles_repo, subchart_repo};
 
 const ENV_VAR: &str = "INTEGRATION_TESTS_MARIADB_URL";
 const FIXTURE_REASON: &str = "visible-set-live-test";
@@ -174,6 +174,31 @@ async fn an_explicit_grant_reaches_outside_the_reporting_line() -> TestResult {
     let visible = f.visible(viewer, &[granted, stranger]).await?;
 
     assert_eq!(visible, vec![granted]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_wildcard_echo_is_bounded_by_the_tenant() -> TestResult {
+    // A wildcard grant covers everyone IN THE TENANT: an id from another
+    // tenant or from nowhere must not come back from the batch existence
+    // filter, or the visible-persons wildcard branch would confirm foreign
+    // UUIDs as visible — and analytics reads that answer as authorization.
+    let Some(f) = fixture_or_skip().await? else {
+        return Ok(());
+    };
+    let ours = f.person("in-tenant@example.com").await?;
+
+    let other = Fixture {
+        db: f.db.clone(),
+        tenant: Uuid::now_v7(),
+        source_id: f.source_id,
+    };
+    let foreign = other.person("other-tenant@example.com").await?;
+
+    let got =
+        persons_repo::persons_in_tenant(&f.db, f.tenant, &[ours, foreign, Uuid::now_v7()]).await?;
+
+    assert_eq!(got, vec![ours], "only the caller-tenant person survives");
     Ok(())
 }
 

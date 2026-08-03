@@ -11,6 +11,14 @@ use super::dto::{
 };
 use super::error::config_error;
 
+/// The entity predicate translates the canonical person id into that person's
+/// CURRENT source emails through the same resolution map the gold build joins
+/// (`identity.identity_persons`, latest-observation-wins per email): the
+/// evidence relations stay email-keyed on purpose — coverage measures the
+/// resolution gap from them — so the translation happens here, at read time.
+/// Rows can drift from the observation the user clicked between an identity
+/// sync and the next gold rebuild; evidence is advisory detail, and the
+/// alternative (persisting the map each build) buys little for the cost.
 pub fn compile_query(
     req: &ValidatedMetricDrilldown,
 ) -> Result<(String, Vec<String>), CanonicalError> {
@@ -65,7 +73,12 @@ fn compile_value_query(req: &ValidatedMetricDrilldown) -> (String, Vec<String>) 
                 ifNull(evidence.subject_key, '') AS subject_key, \
                 toJSONString(evidence.dimensions) AS dimensions_json, evidence.details \
          FROM {database}.{table} AS evidence \
-         WHERE evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id = ? \
+         WHERE evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id IN (SELECT email FROM (\
+             SELECT lower(trimBoth(value_effective)) AS email, person_id \
+             FROM identity.identity_persons \
+             WHERE value_type = 'email' AND value_effective IS NOT NULL AND trimBoth(value_effective) != '' \
+             ORDER BY email, created_at DESC, id DESC LIMIT 1 BY email\
+         ) WHERE person_id = toUUID(?)) \
            AND evidence.metric_date >= toDate(?) AND evidence.metric_date <= toDate(?) \
            AND evidence.measure_key IN ({measures}){filter_sql}{cursor_sql} \
          ORDER BY role, metric_date, ifNull(toString(observed_at), ''), source_key, measure_key, record_id, record_kind, ifNull(subject_key, '') \
@@ -121,7 +134,12 @@ fn compile_ratio_query(
                    '' AS subject_key, any(toJSONString(evidence.dimensions)) AS dimensions_json, \
                    CAST(map() AS Map(String, String)) AS details \
             FROM {database}.{table} AS evidence \
-            WHERE evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id = ? \
+            WHERE evidence.source_key = ? AND evidence.entity_type = ? AND evidence.entity_id IN (SELECT email FROM (\
+             SELECT lower(trimBoth(value_effective)) AS email, person_id \
+             FROM identity.identity_persons \
+             WHERE value_type = 'email' AND value_effective IS NOT NULL AND trimBoth(value_effective) != '' \
+             ORDER BY email, created_at DESC, id DESC LIMIT 1 BY email\
+         ) WHERE person_id = toUUID(?)) \
               AND evidence.metric_date >= toDate(?) AND evidence.metric_date <= toDate(?) \
               AND evidence.measure_key IN (?, ?){filter_sql} \
             GROUP BY evidence.metric_date\
@@ -195,7 +213,7 @@ mod tests {
     use crate::domain::metric_definitions::EvidenceGranularity;
     use crate::domain::metric_drilldown::dto::EvidencePresentation;
     use crate::domain::metric_drilldown::presentation::evidence_presentation;
-    use crate::domain::metric_drilldown::test_support::{input, plan, validated};
+    use crate::domain::metric_drilldown::test_support::{TEST_PERSON, input, plan, validated};
 
     #[test]
     fn value_query_binds_filters_and_cursor() {
@@ -242,7 +260,7 @@ mod tests {
                 "value",
                 "git", // scope: source, entity type, entity id
                 "person",
-                "person@example.com",
+                &TEST_PERSON.to_string(), // resolved to source emails via the identity map
                 "2026-07-01", // period bounds
                 "2026-07-31",
                 "commit_count", // measure_key IN
@@ -307,7 +325,7 @@ mod tests {
                 "work_hours",
                 "git", // scope: source, entity type, entity id
                 "person",
-                "person@example.com",
+                &TEST_PERSON.to_string(), // resolved to source emails via the identity map
                 "2026-07-01", // period bounds
                 "2026-07-31",
                 "focus_hours", // measure_key IN
