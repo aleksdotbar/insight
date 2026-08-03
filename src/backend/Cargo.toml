@@ -100,6 +100,7 @@ toolkit = { package = "cf-gears-toolkit", version = "=0.6.13" }
 toolkit-auth = { package = "cf-gears-toolkit-auth", version = "=0.7.2" }
 toolkit-security = { package = "cf-gears-toolkit-security", version = "=0.7.2" }
 toolkit-canonical-errors = { package = "cf-gears-toolkit-canonical-errors", version = "=0.7.4", features = ["axum", "sea-orm"] }
+toolkit-odata = { package = "cf-gears-toolkit-odata", version = "=0.8.2" }
 
 # gears-rust SDKs (crates.io)
 authn-resolver-sdk = { package = "cf-gears-authn-resolver-sdk", version = "0.3.18" }

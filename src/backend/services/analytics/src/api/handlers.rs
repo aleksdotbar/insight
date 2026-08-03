@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use sea_orm::{ActiveModelTrait, ColumnTrait, Condition, EntityTrait, NotSet, QueryFilter, Set};
 use toolkit_canonical_errors::{CanonicalError, Problem};
+use toolkit_odata::ODataLimits;
 use uuid::Uuid;
 
 use super::AppState;
@@ -16,6 +17,7 @@ use super::error::{MetricError, PersonError, ThresholdError};
 use crate::domain::metric::{
     CreateMetricRequest, Metric, MetricSummary, TableColumn, UpdateMetricRequest,
 };
+use crate::domain::metric_filter::{self, MetricFilter};
 use crate::domain::query::{
     BatchQueryRequest, BatchQueryResponse, BatchQueryResult, PageInfo, QueryRequest, QueryResponse,
 };
@@ -255,7 +257,22 @@ async fn execute_metric_query(
     //    one long row per (person, metric_key) — up to roster_size × metric_count.
     //    Default ($top=25) and all existing callers (≤200) are unaffected by the
     //    higher ceiling; only callers that explicitly request more get it.
-    let top = req.top.clamp(1, 5000);
+    let limits = query_limits();
+    let top = req
+        .top
+        .clamp(1, u64::try_from(limits.max_top).unwrap_or(u64::MAX));
+
+    // 3. Parse $filter into the typed conjunctive model (toolkit-odata AST);
+    //    malformed, over-budget, or out-of-schema filters are a 400.
+    let filter = match req.filter.as_deref().map(str::trim) {
+        Some(raw) if !raw.is_empty() => MetricFilter::parse(raw, &limits).map_err(|e| {
+            MetricError::invalid_argument()
+                .with_resource(id.to_string())
+                .with_field_violation("$filter", e.to_string(), "INVALID")
+                .create()
+        })?,
+        _ => MetricFilter::default(),
+    };
 
     // 4. Build ClickHouse query from structured metric fields.
     //
@@ -302,119 +319,78 @@ async fn execute_metric_query(
     // If the FROM clause is a subquery, we inject the metric_date range INSIDE the
     // subquery (before its GROUP BY). Keeps per-person aggregation bounded to the
     // selected period. Outer person_id (eq / IN) filters still apply post-aggregate.
-    let (effective_from, date_pushed) = if let Some(ref filter) = req.filter {
-        let date_from = extract_odata_value(filter, "metric_date", "ge");
-        // Accept both `lt` (exclusive) and `le` (inclusive) — the FE's
-        // `odataDateFilter` emits `le`, OData spec also allows `lt`. Without
-        // both, the upper bound is silently dropped and the period extends
-        // to "today" — which is exactly the bug we're fixing here.
-        let (date_to, date_to_op) = match extract_odata_value(filter, "metric_date", "lt") {
-            Some(v) => (Some(v), "<"),
-            None => match extract_odata_value(filter, "metric_date", "le") {
-                Some(v) => (Some(v), "<="),
-                None => (None, "<"),
-            },
-        };
-        // Build the validated `WHERE metric_date …` fragment. Each bound is
-        // checked as a strict YYYY-MM-DD date because it is interpolated (not
-        // bound) into the clause — see build_metric_date_where. An invalid
-        // value is a 400, mirroring the $orderby validator.
-        let where_inner =
-            match build_metric_date_where(date_from.as_deref(), date_to.as_deref(), date_to_op) {
-                Ok(w) => w,
-                Err(bad) => {
-                    return Err(MetricError::invalid_argument()
-                        .with_resource(id.to_string())
-                        .with_field_violation(
-                            "$filter",
-                            format!("invalid metric_date value (expected YYYY-MM-DD): {bad}"),
-                            "INVALID",
-                        )
-                        .create());
-                }
-            };
-        if let Some(ref where_inner) = where_inner {
+    let (effective_from, date_pushed) = match build_metric_date_where(&filter) {
+        Some(ref where_inner) => {
             let normalised = ensure_subquery_from(&from_clause);
             match inject_date_filter_into_subqueries(&normalised, where_inner) {
                 Some(new_from) => (new_from, true),
                 None => (from_clause.clone(), false),
             }
-        } else {
-            (from_clause.clone(), false)
         }
-    } else {
-        (from_clause.clone(), false)
+        None => (from_clause.clone(), false),
     };
-    let _ = effective_from;
 
     let mut sql = format!("SELECT {select_expr} FROM {effective_from} WHERE 1=1");
 
-    // Parse OData $filter (simplified — production needs a proper OData parser)
-    if let Some(ref filter) = req.filter {
-        if !date_pushed {
-            // Date filter was provided but couldn't be pushed into a subquery
-            // (e.g. the FROM clause is a bare table without parentheses — the
-            // "Team Members" shape, where the outer query reads
-            // `bronze_bamboohr.employees` directly). Adding the filter to the
-            // outer WHERE would reference `metric_date` against a table that
-            // doesn't expose that column, producing a ClickHouse
-            // `UNKNOWN_IDENTIFIER` 500. Drop the filter with a warning so the
-            // request still returns 200 (unfiltered) and the misconfiguration
-            // is visible in logs.
-            let has_date_filter = extract_odata_value(filter, "metric_date", "ge").is_some()
-                || extract_odata_value(filter, "metric_date", "lt").is_some()
-                || extract_odata_value(filter, "metric_date", "le").is_some();
-            if has_date_filter {
-                tracing::warn!(
-                    metric_id = %id,
-                    "date filter on metric_date was provided but could not be \
-                     injected into a subquery (FROM clause is not a subquery). \
-                     Filter is ignored; the request returns unfiltered results.",
-                );
-            }
-        }
-        // Person filter — use person_id directly (no Identity Resolution for MVP).
-        // Gold tables have a resolved person_id column; Silver tables would need
-        // alias resolution via Identity Resolution API when it's available.
-        if let Some(person_id) = extract_odata_value(filter, "person_id", "eq") {
-            sql.push_str(" AND person_id = ?");
-            params.push(person_id);
-        }
-        // Roster-scoped team aggregates: the FE passes the identity-tree
-        // subtree's person_ids as `person_id in ('a','b',…)` so a team's
-        // sections aggregate over exactly the members shown — the transitive,
-        // active subtree, matching the heatmap. One bound `?` per id; never
-        // interpolated.
-        if let Some(ids) = extract_odata_in_values(filter, "person_id") {
-            let placeholders = vec!["?"; ids.len()].join(", ");
-            let _ = write!(sql, " AND person_id IN ({placeholders})");
-            params.extend(ids);
-        }
-        // Department-scoped distribution metrics: the FE passes the
-        // org_unit_ids of the departments represented in the roster as
-        // `org_unit_id in ('a','b',…)` so the per-department distribution
-        // metrics return only the relevant departments. `org_unit_id` is a
-        // column of the FROM, so this lands in the outer WHERE before the
-        // re-appended GROUP BY. One bound `?` per id; never interpolated.
-        if let Some(ids) = extract_odata_in_values(filter, "org_unit_id") {
-            let placeholders = vec!["?"; ids.len()].join(", ");
-            let _ = write!(sql, " AND org_unit_id IN ({placeholders})");
-            params.extend(ids);
-        }
-        // Drill filter — used by IC Dashboard drill modal.
-        if let Some(drill_id) = extract_odata_value(filter, "drill_id", "eq") {
-            sql.push_str(" AND drill_id = ?");
-            params.push(drill_id);
-        }
-        // Per-metric scoping filters used by ic_histogram and ic_section_trend.
-        if let Some(metric_key) = extract_odata_value(filter, "metric_key", "eq") {
-            sql.push_str(" AND metric_key = ?");
-            params.push(metric_key);
-        }
-        if let Some(section_id) = extract_odata_value(filter, "section_id", "eq") {
-            sql.push_str(" AND section_id = ?");
-            params.push(section_id);
-        }
+    if filter.has_date_filter() && !date_pushed {
+        // Date filter was provided but couldn't be pushed into a subquery
+        // (e.g. the FROM clause is a bare table without parentheses — the
+        // "Team Members" shape, where the outer query reads
+        // `bronze_bamboohr.employees` directly). Adding the filter to the
+        // outer WHERE would reference `metric_date` against a table that
+        // doesn't expose that column, producing a ClickHouse
+        // `UNKNOWN_IDENTIFIER` 500. Drop the filter with a warning so the
+        // request still returns 200 (unfiltered) and the misconfiguration
+        // is visible in logs.
+        tracing::warn!(
+            metric_id = %id,
+            "date filter on metric_date was provided but could not be \
+             injected into a subquery (FROM clause is not a subquery). \
+             Filter is ignored; the request returns unfiltered results.",
+        );
+    }
+
+    // Person filter — use person_id directly (no Identity Resolution for MVP).
+    // Gold tables have a resolved person_id column; Silver tables would need
+    // alias resolution via Identity Resolution API when it's available.
+    if let Some(person_id) = filter.person_id {
+        sql.push_str(" AND person_id = ?");
+        params.push(person_id);
+    }
+    // Roster-scoped team aggregates: the FE passes the identity-tree
+    // subtree's person_ids as `person_id in ('a','b',…)` so a team's
+    // sections aggregate over exactly the members shown — the transitive,
+    // active subtree, matching the heatmap. One bound `?` per id; never
+    // interpolated.
+    if let Some(ids) = filter.person_ids {
+        let placeholders = vec!["?"; ids.len()].join(", ");
+        let _ = write!(sql, " AND person_id IN ({placeholders})");
+        params.extend(ids);
+    }
+    // Department-scoped distribution metrics: the FE passes the
+    // org_unit_ids of the departments represented in the roster as
+    // `org_unit_id in ('a','b',…)` so the per-department distribution
+    // metrics return only the relevant departments. `org_unit_id` is a
+    // column of the FROM, so this lands in the outer WHERE before the
+    // re-appended GROUP BY. One bound `?` per id; never interpolated.
+    if let Some(ids) = filter.org_unit_ids {
+        let placeholders = vec!["?"; ids.len()].join(", ");
+        let _ = write!(sql, " AND org_unit_id IN ({placeholders})");
+        params.extend(ids);
+    }
+    // Drill filter — used by IC Dashboard drill modal.
+    if let Some(drill_id) = filter.drill_id {
+        sql.push_str(" AND drill_id = ?");
+        params.push(drill_id);
+    }
+    // Per-metric scoping filters used by ic_histogram and ic_section_trend.
+    if let Some(metric_key) = filter.metric_key {
+        sql.push_str(" AND metric_key = ?");
+        params.push(metric_key);
+    }
+    if let Some(section_id) = filter.section_id {
+        sql.push_str(" AND section_id = ?");
+        params.push(section_id);
     }
 
     // Apply GROUP BY from parsed query_ref
@@ -422,19 +398,16 @@ async fn execute_metric_query(
         let _ = write!(sql, " GROUP BY {gb}");
     }
 
-    // Apply $orderby — validate against identifier pattern to prevent injection
+    // Apply $orderby — parsed via the toolkit's OData parser, re-validated as
+    // safe identifiers before interpolation.
     if let Some(ref orderby) = req.orderby {
-        if !is_valid_orderby(orderby) {
-            return Err(MetricError::invalid_argument()
+        let order_sql = parse_orderby_sql(orderby, &limits).map_err(|detail| {
+            MetricError::invalid_argument()
                 .with_resource(id.to_string())
-                .with_field_violation(
-                    "$orderby",
-                    format!("invalid $orderby: {orderby}"),
-                    "INVALID",
-                )
-                .create());
-        }
-        let _ = write!(sql, " ORDER BY {orderby}");
+                .with_field_violation("$orderby", detail, "INVALID")
+                .create()
+        })?;
+        let _ = write!(sql, " ORDER BY {order_sql}");
     }
 
     // Apply pagination (fetch top+1 to detect has_next)
@@ -475,13 +448,10 @@ async fn execute_metric_query(
     };
 
     // 6. Apply pagination — we fetched top+1 to detect has_next
-    let has_next = all_rows.len() > top as usize;
+    let top = usize::try_from(top).unwrap_or(usize::MAX);
+    let has_next = all_rows.len() > top;
     let items: Vec<serde_json::Value> = if has_next {
-        all_rows
-            .into_iter()
-            .take(top as usize)
-            .map(round_floats)
-            .collect()
+        all_rows.into_iter().take(top).map(round_floats).collect()
     } else {
         all_rows.into_iter().map(round_floats).collect()
     };
@@ -516,39 +486,55 @@ fn round_floats(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
-/// Simplified `OData` value extractor.
-/// Extracts value from patterns like `field_name ge 'value'`.
-fn extract_odata_value(filter: &str, field: &str, op: &str) -> Option<String> {
-    let pattern = format!("{field} {op} '");
-    if let Some(start) = filter.find(&pattern) {
-        let rest = &filter[start + pattern.len()..];
-        if let Some(end) = rest.find('\'') {
-            return Some(rest[..end].to_owned());
-        }
-    }
-    None
+/// `OData` input budgets for the metric query surface. `max_top` keeps the
+/// raised ceiling for per-person "member values" metrics (`roster_size` ×
+/// `metric_count` rows); the filter budgets are sized for roster `in` lists
+/// in `metric_filter`.
+fn query_limits() -> ODataLimits {
+    ODataLimits::new()
+        .with_max_top(5000)
+        .with_max_filter_length(metric_filter::MAX_FILTER_LENGTH)
 }
 
-/// Parse an `OData` `field in ('a','b',…)` list into its values. `person_id`s are
-/// emails (no `)`/`,` inside), so the paren group is delimited simply. Returns
-/// `None` for an absent or empty list; the caller binds each value as a `?`.
-fn extract_odata_in_values(filter: &str, field: &str) -> Option<Vec<String>> {
-    let pattern = format!("{field} in (");
-    let start = filter.find(&pattern)?;
-    let rest = &filter[start + pattern.len()..];
-    let end = rest.find(')')?;
-    let values: Vec<String> = rest[..end]
-        .split(',')
-        .filter_map(|tok| {
-            let t = tok.trim().strip_prefix('\'')?.strip_suffix('\'')?;
-            Some(t.replace("''", "'"))
-        })
-        .collect();
-    if values.is_empty() {
-        None
-    } else {
-        Some(values)
+/// Parse and validate `$orderby` via the toolkit's `OData` parser and render
+/// it back as an ORDER BY body. Every field is re-checked as a safe
+/// identifier because the rendered string is interpolated into SQL.
+fn parse_orderby_sql(raw: &str, limits: &ODataLimits) -> Result<String, String> {
+    let normalized = normalize_orderby_directions(raw);
+
+    let order = toolkit::api::odata::parse_orderby(&normalized)
+        .map_err(|e| format!("invalid $orderby: {e}"))?;
+    if order.is_empty() {
+        return Err(format!("invalid $orderby: {raw}"));
     }
+    limits
+        .validate_orderby_count(order.0.len())
+        .map_err(|e| format!("invalid $orderby: {e}"))?;
+
+    for key in &order.0 {
+        if !is_valid_ident(&key.field) {
+            return Err(format!("invalid $orderby field: {}", key.field));
+        }
+    }
+
+    Ok(order.to_string())
+}
+
+/// Lowercase `asc`/`desc` direction tokens so pre-existing callers that send
+/// uppercase directions keep working; field-name case is preserved.
+fn normalize_orderby_directions(raw: &str) -> String {
+    raw.split(',')
+        .map(|part| {
+            let mut tokens: Vec<String> = part.split_whitespace().map(str::to_owned).collect();
+            if let Some(last) = tokens.last_mut()
+                && (last.eq_ignore_ascii_case("asc") || last.eq_ignore_ascii_case("desc"))
+            {
+                *last = last.to_ascii_lowercase();
+            }
+            tokens.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Parse `query_ref` into (`select_expr`, `from_clause`, `group_by`).
@@ -928,25 +914,6 @@ impl StripPrefixInsensitive for str {
     }
 }
 
-/// Validate an `OData` `$orderby` expression.
-/// Accepts: `column_name [asc|desc] [, column_name [asc|desc]]*`
-fn is_valid_orderby(orderby: &str) -> bool {
-    if orderby.is_empty() {
-        return false;
-    }
-    orderby.split(',').all(|part| {
-        let tokens: Vec<&str> = part.split_whitespace().collect();
-        match tokens.len() {
-            1 => is_valid_ident(tokens[0]),
-            2 => {
-                is_valid_ident(tokens[0])
-                    && matches!(tokens[1].to_ascii_lowercase().as_str(), "asc" | "desc")
-            }
-            _ => false,
-        }
-    })
-}
-
 /// Validate a column/table identifier (letters, digits, underscores, dots).
 fn is_valid_ident(s: &str) -> bool {
     !s.is_empty()
@@ -956,61 +923,23 @@ fn is_valid_ident(s: &str) -> bool {
         && !s.ends_with('.')
 }
 
-/// Validate a `metric_date` filter value as a strict `YYYY-MM-DD` calendar date.
-///
-/// `metric_date` is the one filter interpolated into SQL rather than bound, so
-/// this guard is the injection boundary: it must reject anything that is not
-/// exactly ten chars of `dddd-dd-dd` (no quotes, backslashes, whitespace or SQL
-/// fragments). Month/day are range-checked as a sanity bound, not a full
-/// calendar (ClickHouse tolerates e.g. day 31 in a 30-day month, and
-/// `metric_date` is a `Date` column that rejects genuinely impossible values).
-fn is_valid_date(s: &str) -> bool {
-    let b = s.as_bytes();
-    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
-        return false;
-    }
-    let digits = |lo: usize, hi: usize| b[lo..hi].iter().all(u8::is_ascii_digit);
-    if !(digits(0, 4) && digits(5, 7) && digits(8, 10)) {
-        return false;
-    }
-    // Safe to parse: the ranges are verified ASCII digits above.
-    let month: u32 = s[5..7].parse().unwrap_or(0);
-    let day: u32 = s[8..10].parse().unwrap_or(0);
-    (1..=12).contains(&month) && (1..=31).contains(&day)
-}
-
 /// Build the ` WHERE metric_date …` fragment for the requested date range.
 ///
-/// This is the SQL-injection boundary for the date filter: `metric_date` is
-/// interpolated into the fragment (not bound as a `?`), so every bound is
-/// validated as a strict `YYYY-MM-DD` date first. On a malformed bound this
-/// returns `Err(bad_value)` (the caller maps it to a 400); with no bound it
-/// returns `Ok(None)` (no date filter). Because the values are validated they
-/// cannot contain a quote or backslash, so no escaping is needed.
-///
-/// `date_to_op` is the pre-selected comparison operator (`<` for `lt`, `<=`
-/// for `le`); it is a fixed literal chosen by the caller, never user input.
-fn build_metric_date_where(
-    date_from: Option<&str>,
-    date_to: Option<&str>,
-    date_to_op: &str,
-) -> Result<Option<String>, String> {
-    for v in [date_from, date_to].into_iter().flatten() {
-        if !is_valid_date(v) {
-            return Err(v.to_owned());
-        }
-    }
+/// The bounds are interpolated into the fragment (not bound as `?`) because
+/// it is pushed inside subqueries; they are typed `NaiveDate`s from the
+/// parsed `$filter`, whose `YYYY-MM-DD` rendering cannot carry SQL.
+fn build_metric_date_where(filter: &MetricFilter) -> Option<String> {
     let mut clauses: Vec<String> = vec![];
-    if let Some(v) = date_from {
-        clauses.push(format!("metric_date >= '{v}'"));
+    if let Some(d) = filter.date_from {
+        clauses.push(format!("metric_date >= '{d}'"));
     }
-    if let Some(v) = date_to {
-        clauses.push(format!("metric_date {date_to_op} '{v}'"));
+    if let Some((d, bound)) = filter.date_to {
+        clauses.push(format!("metric_date {} '{d}'", bound.sql_op()));
     }
     if clauses.is_empty() {
-        Ok(None)
+        None
     } else {
-        Ok(Some(format!(" WHERE {}", clauses.join(" AND "))))
+        Some(format!(" WHERE {}", clauses.join(" AND ")))
     }
 }
 
@@ -1334,38 +1263,6 @@ fn model_to_column(m: entities::table_columns::Model) -> TableColumn {
 mod tests {
     use super::*;
 
-    // ── extract_odata_in_values ─────────────────────────────
-
-    #[test]
-    fn extract_in_list_parses_quoted_person_ids() {
-        let f = "metric_date ge '2026-03-04' and person_id in ('a@x.com', 'b@y.com', 'c@z.com')";
-        assert_eq!(
-            extract_odata_in_values(f, "person_id"),
-            Some(vec!["a@x.com".into(), "b@y.com".into(), "c@z.com".into()])
-        );
-    }
-
-    #[test]
-    fn extract_in_list_absent_or_empty_is_none() {
-        assert_eq!(
-            extract_odata_in_values("person_id eq 'a@x.com'", "person_id"),
-            None
-        );
-        assert_eq!(
-            extract_odata_in_values("person_id in ()", "person_id"),
-            None
-        );
-    }
-
-    #[test]
-    fn extract_in_list_parses_quoted_org_unit_ids() {
-        let f = "metric_date ge '2026-03-04' and org_unit_id in ('eng', 'sales', 'ops')";
-        assert_eq!(
-            extract_odata_in_values(f, "org_unit_id"),
-            Some(vec!["eng".into(), "sales".into(), "ops".into()])
-        );
-    }
-
     // ── parse_query_ref ─────────────────────────────────────
 
     #[test]
@@ -1467,44 +1364,76 @@ mod tests {
         assert!(parse_query_ref("SELECT col FROM gold.t; DROP TABLE x").is_err());
     }
 
-    // ── is_valid_orderby ────────────────────────────────────
+    // ── parse_orderby_sql ───────────────────────────────────
 
     #[test]
-    fn orderby_single_column() {
-        assert!(is_valid_orderby("metric_date"));
+    fn orderby_single_column() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            parse_orderby_sql("metric_date", &query_limits())?,
+            "metric_date asc"
+        );
+        Ok(())
     }
 
     #[test]
-    fn orderby_with_direction() {
-        assert!(is_valid_orderby("metric_date desc"));
-        assert!(is_valid_orderby("person_id ASC"));
+    fn orderby_with_direction_any_case() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            parse_orderby_sql("metric_date desc", &query_limits())?,
+            "metric_date desc"
+        );
+        assert_eq!(
+            parse_orderby_sql("person_id ASC", &query_limits())?,
+            "person_id asc"
+        );
+        Ok(())
     }
 
     #[test]
-    fn orderby_multiple_columns() {
-        assert!(is_valid_orderby("metric_date desc, person_id asc"));
+    fn orderby_multiple_columns() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            parse_orderby_sql("metric_date desc, person_id asc", &query_limits())?,
+            "metric_date desc, person_id asc"
+        );
+        Ok(())
     }
 
     #[test]
-    fn orderby_dotted_column() {
-        assert!(is_valid_orderby("t.metric_date desc"));
+    fn orderby_dotted_column() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            parse_orderby_sql("t.metric_date desc", &query_limits())?,
+            "t.metric_date desc"
+        );
+        Ok(())
     }
 
     #[test]
     fn orderby_rejects_sql_injection() {
-        assert!(!is_valid_orderby("1; DROP TABLE metrics --"));
-        assert!(!is_valid_orderby("metric_date; DELETE FROM metrics"));
-        assert!(!is_valid_orderby("(SELECT 1)"));
+        for raw in [
+            "1; DROP TABLE metrics --",
+            "metric_date; DELETE FROM metrics",
+            "(SELECT 1)",
+            "metric_date'; --",
+        ] {
+            assert!(
+                parse_orderby_sql(raw, &query_limits()).is_err(),
+                "should reject: {raw:?}"
+            );
+        }
     }
 
     #[test]
     fn orderby_rejects_empty() {
-        assert!(!is_valid_orderby(""));
+        assert!(parse_orderby_sql("", &query_limits()).is_err());
     }
 
     #[test]
     fn orderby_rejects_invalid_direction() {
-        assert!(!is_valid_orderby("metric_date DROP"));
+        assert!(parse_orderby_sql("metric_date DROP", &query_limits()).is_err());
+    }
+
+    #[test]
+    fn orderby_rejects_too_many_fields() {
+        assert!(parse_orderby_sql("a, b, c, d, e, f", &query_limits()).is_err());
     }
 
     // ── is_valid_ident ──────────────────────────────────────
@@ -1525,62 +1454,17 @@ mod tests {
         assert!(!is_valid_ident("trailing_dot."));
     }
 
-    // ── is_valid_date (metric_date $filter injection guard) ──
-
-    #[test]
-    fn date_valid() {
-        assert!(is_valid_date("2026-01-01"));
-        assert!(is_valid_date("2026-12-31"));
-        assert!(is_valid_date("1970-01-01"));
-    }
-
-    #[test]
-    fn date_rejects_wrong_shape() {
-        assert!(!is_valid_date(""));
-        assert!(!is_valid_date("2026-1-1")); // not zero-padded / wrong length
-        assert!(!is_valid_date("2026/01/01")); // wrong separator
-        assert!(!is_valid_date("2026-01-01 ")); // trailing space
-        assert!(!is_valid_date("2026-13-01")); // month out of range
-        assert!(!is_valid_date("2026-00-10")); // month zero
-        assert!(!is_valid_date("2026-01-32")); // day out of range
-        assert!(!is_valid_date("2026-01-00")); // day zero
-        assert!(!is_valid_date("202X-01-01")); // non-digit
-        assert!(!is_valid_date("2026-01-01T00:00:00")); // datetime, not a Date
-    }
-
-    #[test]
-    fn date_rejects_sql_injection() {
-        // Quote-doubling does NOT neutralise a trailing backslash; strict
-        // validation must.
-        assert!(!is_valid_date("2026-01-01\\")); // backslash escapes the closing quote in CH
-        assert!(!is_valid_date("2026-01-01' OR '1'='1"));
-        assert!(!is_valid_date("2026-01-01'; DROP TABLE metrics --"));
-        assert!(!is_valid_date("2026-01-01' UNION SELECT 1--"));
-    }
-
-    #[test]
-    fn date_rejects_injection_payload_after_odata_extraction()
-    -> Result<(), Box<dyn std::error::Error>> {
-        // End-to-end: the value that reaches the interpolation site is whatever
-        // extract_odata_value pulls out of the raw $filter. This is the exact
-        // vector from the issue — it stops at the first quote and yields
-        // `2026-01-01\`, which the guard must reject.
-        let filter = "metric_date ge '2026-01-01\\' UNION SELECT 1--'";
-        let extracted =
-            extract_odata_value(filter, "metric_date", "ge").ok_or("value is extracted")?;
-        assert_eq!(extracted, "2026-01-01\\");
-        assert!(!is_valid_date(&extracted));
-        Ok(())
-    }
-
     // ── build_metric_date_where ─────────────────────────────
+
+    fn date_filter(raw: &str) -> Result<MetricFilter, Box<dyn std::error::Error>> {
+        Ok(MetricFilter::parse(raw, &query_limits())?)
+    }
 
     #[test]
     fn build_date_where_both_bounds() -> Result<(), Box<dyn std::error::Error>> {
-        let out = build_metric_date_where(Some("2026-04-01"), Some("2026-05-01"), "<")?
-            .ok_or("expected a WHERE fragment")?;
+        let filter = date_filter("metric_date ge '2026-04-01' and metric_date lt '2026-05-01'")?;
         assert_eq!(
-            out,
+            build_metric_date_where(&filter).ok_or("expected a WHERE fragment")?,
             " WHERE metric_date >= '2026-04-01' AND metric_date < '2026-05-01'"
         );
         Ok(())
@@ -1588,34 +1472,29 @@ mod tests {
 
     #[test]
     fn build_date_where_inclusive_upper() -> Result<(), Box<dyn std::error::Error>> {
-        let out = build_metric_date_where(None, Some("2026-05-01"), "<=")?
-            .ok_or("expected a WHERE fragment")?;
-        assert_eq!(out, " WHERE metric_date <= '2026-05-01'");
+        let filter = date_filter("metric_date le '2026-05-01'")?;
+        assert_eq!(
+            build_metric_date_where(&filter).ok_or("expected a WHERE fragment")?,
+            " WHERE metric_date <= '2026-05-01'"
+        );
         Ok(())
     }
 
     #[test]
     fn build_date_where_lower_only() -> Result<(), Box<dyn std::error::Error>> {
-        let out = build_metric_date_where(Some("2026-04-01"), None, "<")?
-            .ok_or("expected a WHERE fragment")?;
-        assert_eq!(out, " WHERE metric_date >= '2026-04-01'");
+        let filter = date_filter("metric_date ge '2026-04-01'")?;
+        assert_eq!(
+            build_metric_date_where(&filter).ok_or("expected a WHERE fragment")?,
+            " WHERE metric_date >= '2026-04-01'"
+        );
         Ok(())
     }
 
     #[test]
     fn build_date_where_none_when_no_bounds() -> Result<(), Box<dyn std::error::Error>> {
-        assert!(build_metric_date_where(None, None, "<")?.is_none());
+        let filter = date_filter("person_id eq 'a@x.com'")?;
+        assert!(build_metric_date_where(&filter).is_none());
         Ok(())
-    }
-
-    #[test]
-    fn build_date_where_rejects_injection() {
-        // The injection vector (and any malformed bound) must be an Err, never
-        // an interpolated fragment.
-        let res = build_metric_date_where(Some("2026-01-01\\"), None, "<");
-        assert!(res.is_err());
-        assert_eq!(res.err(), Some("2026-01-01\\".to_owned()));
-        assert!(build_metric_date_where(Some("2026-04-01"), Some("2026-05-01'--"), "<").is_err());
     }
 
     // ── inject_date_filter_into_subqueries ──────────────────
