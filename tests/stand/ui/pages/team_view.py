@@ -1,4 +1,11 @@
-"""A lead's team view — `/ic/$person/team`. Locators and navigation only."""
+"""A lead's team view — `/ic/$person_id/team`. Locators and navigation only.
+
+`$person_id` is the canonical person UUID since the identity cutover (#2098),
+the same key `PersonView` uses. Keying it on the email sent the SPA to a
+route it could not resolve, and it rendered the PERSONAL view instead — a
+redirect, not an error, which is why the failure read as a missing table
+rather than as a bad URL.
+"""
 
 from __future__ import annotations
 
@@ -12,11 +19,11 @@ class TeamView:
         self.page = page
 
     @staticmethod
-    def path(email: str) -> str:
-        return f"/ic/{quote(email, safe='')}/team"
+    def path(person_id: str) -> str:
+        return f"/ic/{quote(person_id, safe='')}/team"
 
-    def go(self, email: str) -> None:
-        self.page.goto(self.path(email), wait_until="domcontentloaded")
+    def go(self, person_id: str) -> None:
+        self.page.goto(self.path(person_id), wait_until="domcontentloaded")
 
     def team_heading(self, display_name: str) -> Locator:
         """The heading naming whose team this is.

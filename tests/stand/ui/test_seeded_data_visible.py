@@ -132,7 +132,7 @@ def test_the_team_view_lists_every_report_the_roster_declares(
     sign_in(page, base_url, persona)
 
     team = TeamView(page)
-    team.go(persona.email)
+    team.go(lead.uuid)
     expect(team.team_heading(lead.display_name)).to_be_visible()
     for name in reports:
         expect(team.member_row(name)).to_be_visible()
