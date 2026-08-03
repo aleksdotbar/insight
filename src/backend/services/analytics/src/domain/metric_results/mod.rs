@@ -16,5 +16,11 @@ pub use builder::{
 pub use compiler::{
     BreakdownQueryRow, CompiledQuery, HistogramQueryRow, RankingQueryRow, TimeseriesQueryRow,
 };
-pub use dto::{MetricResultViewDto, MetricResultsRequest, MetricResultsResponse};
+pub use dto::{
+    MetricDimensionFilterDto, MetricResultSelectionDto, MetricResultViewDto,
+    MetricResultsEntityDto, MetricResultsPeriodDto, MetricResultsRequest, MetricResultsResponse,
+};
 pub use validation::{ValidatedMetricResultsRequest, validate_request};
+pub(crate) use validation::{
+    normalize_entity_id, normalize_entity_type, normalize_key, normalize_metric_key,
+};

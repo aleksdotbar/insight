@@ -23,12 +23,12 @@
 # which honours ENABLE_AUTO_RELOAD=true to wrap the binary in `watchexec`.
 # When unset, runs the bare command (matching prod). NEVER set this in k8s.
 
-name: insight
+name: ${COMPOSE_PROJECT_NAME:-insight}
 
 # ─── Networks ─────────────────────────────────────────────────────────
 networks:
   insight:
-    name: insight
+    name: ${COMPOSE_PROJECT_NAME:-insight}
 
 # ─── Volumes (data + build artefacts) ─────────────────────────────────
 volumes:
@@ -76,7 +76,7 @@ services:
     # profile inactive.
     profiles: ["local-mariadb"]
     image: mariadb:11.4
-    container_name: insight-mariadb
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-mariadb
     networks: [insight]
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root-local}
@@ -102,7 +102,7 @@ services:
     # the real host and leave this profile inactive.
     profiles: ["local-clickhouse"]
     image: clickhouse/clickhouse-server:25.7.5
-    container_name: insight-clickhouse
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-clickhouse
     networks: [insight]
     environment:
       CLICKHOUSE_DB: insight
@@ -133,7 +133,7 @@ services:
   redis:
     !!merge <<: *restart-policy
     image: redis:7-alpine
-    container_name: insight-redis
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-redis
     networks: [insight]
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -149,7 +149,7 @@ services:
   redpanda:
     !!merge <<: *restart-policy
     image: redpandadata/redpanda:v24.2.7
-    container_name: insight-redpanda
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-redpanda
     networks: [insight]
     command:
       - redpanda
@@ -194,7 +194,7 @@ services:
   analytics:
     !!merge <<: *backend-common
     image: ${ANALYTICS_IMAGE:-insight-analytics:dev}
-    container_name: insight-analytics
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-analytics
     build:
       context: src/backend
       dockerfile: services/analytics/Dockerfile
@@ -262,14 +262,14 @@ services:
     # blocks forever on service_completed_successfully) + restart:no + init.
     !!merge <<: *backend-common
     image: ${IDENTITY_RESOLUTION_IMAGE:-insight-identity-resolution:dev}
-    container_name: insight-identity-resolution-migrate
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-identity-resolution-migrate
     build:
       context: src/backend
       dockerfile: services/identity-resolution/Dockerfile
     depends_on:
       mariadb: {condition: service_healthy, required: false}
     environment:
-      APP__gears__identity-resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
+      APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
     volumes:
       - type: bind
         source: ./deploy/compose/build/identity-resolution/identity-resolution
@@ -289,7 +289,7 @@ services:
   identity-resolution:
     !!merge <<: *backend-common
     image: ${IDENTITY_RESOLUTION_IMAGE:-insight-identity-resolution:dev}
-    container_name: insight-identity-resolution
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-identity-resolution
     build:
       context: src/backend
       dockerfile: services/identity-resolution/Dockerfile
@@ -304,13 +304,13 @@ services:
       # gears-rust host: structural config (gears list, oidc-authn-plugin
       # full-auth wiring) lives in the bind-mounted
       # deploy/compose/identity-resolution-fullauth.yaml; these
-      # APP__gears__identity-resolution__config__* env vars override the
+      # APP__gears__identity_resolution__config__* env vars override the
       # deployment-specific leaf values.
-      APP__gears__identity-resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
-      APP__gears__identity-resolution__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
-      APP__gears__identity-resolution__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
-      APP__gears__identity-resolution__config__clickhouse_user: "${CLICKHOUSE_USER:-insight}"
-      APP__gears__identity-resolution__config__clickhouse_password: "${CLICKHOUSE_PASSWORD:-insight-local}"
+      APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
+      APP__gears__identity_resolution__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
+      APP__gears__identity_resolution__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
+      APP__gears__identity_resolution__config__clickhouse_user: "${CLICKHOUSE_USER:-insight}"
+      APP__gears__identity_resolution__config__clickhouse_password: "${CLICKHOUSE_PASSWORD:-insight-local}"
     volumes:
       - type: bind
         source: ./deploy/compose/build/identity-resolution/identity-resolution
@@ -347,7 +347,7 @@ services:
   authenticator:
     !!merge <<: *backend-common
     image: ${AUTHENTICATOR_IMAGE:-insight-authenticator:dev}
-    container_name: insight-authenticator
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-authenticator
     build:
       context: src/backend
       dockerfile: services/authenticator/Dockerfile
@@ -422,7 +422,7 @@ services:
     !!merge <<: *backend-common
     profiles: ["auth-fakeidp"]
     image: ${FAKEIDP_IMAGE:-insight-fakeidp:dev}
-    container_name: insight-fakeidp
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-fakeidp
     build:
       context: src/backend
       dockerfile: services/fakeidp/Dockerfile
@@ -457,7 +457,7 @@ services:
   # profile.
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
-    container_name: insight-keycloak
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-keycloak
     command: ["start-dev", "--import-realm", "--http-relative-path=/kc"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -500,7 +500,7 @@ services:
   authn-tls:
     !!merge <<: *backend-common
     image: nginx:1.27-alpine
-    container_name: insight-authn-tls
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-authn-tls
     depends_on:
       authenticator: {condition: service_started}
     volumes:
@@ -515,7 +515,7 @@ services:
   gateway:
     !!merge <<: *backend-common
     image: ${GATEWAY_IMAGE:-insight-gateway:dev}
-    container_name: insight-gateway
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-gateway
     build:
       context: src/backend
       dockerfile: services/gateway/Dockerfile
@@ -542,7 +542,7 @@ services:
     !!merge <<: *restart-policy
     profiles: ["front-dev"]
     image: node:24-bookworm-slim
-    container_name: insight-front
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-front
     networks:
       insight:
         aliases: [insight-front]
@@ -567,7 +567,7 @@ services:
     !!merge <<: *restart-policy
     profiles: ["front-built"]
     image: nginx:1.27-alpine
-    container_name: insight-front
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-front
     networks:
       insight:
         aliases: [insight-front]
@@ -591,7 +591,7 @@ services:
     # with "no matching manifest for linux/arm64/v8".
     platform: linux/amd64
     image: ${FRONTEND_IMAGE:-ghcr.io/constructorfabric/insight-front:latest}
-    container_name: insight-front
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-front
     networks:
       insight:
         aliases: [insight-front]
@@ -623,7 +623,7 @@ services:
   build-rust:
     profiles: ["build"]
     image: rust:1.95-bookworm
-    container_name: insight-build-rust
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-build-rust
     networks: [insight]
     working_dir: /workspace
     environment:
@@ -650,7 +650,7 @@ services:
   build-frontend:
     profiles: ["build"]
     image: node:24-bookworm-slim
-    container_name: insight-build-frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-build-frontend
     networks: [insight]
     working_dir: /app
     volumes:
@@ -667,7 +667,7 @@ services:
   # (identity | silver | all) through to seed.py.
   seed-sample:
     profiles: ["seed"]
-    container_name: insight-seed-sample
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-seed-sample
     networks: [insight]
     build:
       context: deploy/seed

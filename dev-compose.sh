@@ -22,6 +22,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
+COMPOSE_INSTANCE=""
 
 # ──────────────────────────────────────────────────────────────────────
 # Shared helpers
@@ -32,6 +33,32 @@ cd "$ROOT_DIR"
 trim()     { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"; printf '%s' "$s"; }
 contains() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }
 add()      { local list="$1" item="$2"; contains "$list" "$item" && printf '%s' "$list" || printf '%s %s' "$list" "$item"; }
+
+compose_project_name() {
+  local instance="${1:-}"
+  if [[ -z "$instance" ]]; then
+    printf '%s' "insight"
+    return 0
+  fi
+  if [[ "$instance" == "worktree" ]]; then
+    local worktree_root
+    worktree_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+      echo "ERROR: --instance=worktree requires a git worktree." >&2
+      return 2
+    }
+    instance="$(basename "$worktree_root")"
+    if [[ "$instance" == "back" ]]; then
+      instance="$(basename "$(dirname "$worktree_root")")"
+    fi
+  fi
+  case "$instance" in
+    *[!a-z0-9_-]*|[-_]*|"")
+      echo "ERROR: --instance must start with a lowercase letter or digit and contain only lowercase letters, digits, hyphens, or underscores." >&2
+      return 2
+      ;;
+  esac
+  printf 'insight-%s' "$instance"
+}
 
 resolve_env_file() {
   local f="${1:-.env.compose}"
@@ -113,6 +140,11 @@ Options:
   --no-frontend             Don't start any frontend variant.
   --skip-build              Don't rebuild artefacts — reuse what's
                             already in deploy/compose/build/.
+  --instance=NAME           Isolate containers, networks, and volumes as
+                            insight-NAME. Default: insight.
+                            Use worktree to derive NAME from the checkout.
+                            Full instances cannot run concurrently because
+                            published host ports are shared.
   --env-file=PATH           Alternate dotenv file. Default: .env.compose.
 
 Out-of-scope:
@@ -284,6 +316,7 @@ cmd_up() {
   local build_only_csv=""
   local frontend_mode_override=""
   local auth_mode_override=""
+  local instance="$COMPOSE_INSTANCE"
   local skip_build=false
   local no_frontend=false
 
@@ -328,6 +361,21 @@ cmd_up() {
 
   env_file="$(resolve_env_file "$env_file")"
   set -a; source "$env_file"; set +a
+  COMPOSE_PROJECT_NAME="$(compose_project_name "$instance")" || return $?
+  export COMPOSE_PROJECT_NAME
+  [[ -n "$instance" ]] && echo "Compose instance → $COMPOSE_PROJECT_NAME"
+  local instance_mariadb_fresh=false
+  local instance_clickhouse_fresh=false
+  if [[ -n "$instance" ]]; then
+    if [[ "${MARIADB_EXTERNAL:-false}" != "true" ]] &&
+       ! docker volume inspect "${COMPOSE_PROJECT_NAME}_mariadb-data" >/dev/null 2>&1; then
+      instance_mariadb_fresh=true
+    fi
+    if [[ "${CLICKHOUSE_EXTERNAL:-false}" != "true" ]] &&
+       ! docker volume inspect "${COMPOSE_PROJECT_NAME}_clickhouse-data" >/dev/null 2>&1; then
+      instance_clickhouse_fresh=true
+    fi
+  fi
 
   if [[ -n "${VITE_DEV_USER_EMAIL:-}" && -z "${DEV_USER_EMAIL:-}" ]]; then
     echo "ERROR: VITE_DEV_USER_EMAIL was renamed to DEV_USER_EMAIL." >&2
@@ -516,7 +564,7 @@ YML
     }
   fi
 
-  local compose_cmd=(docker compose --env-file "$env_file" -f docker-compose.yml -f "$override")
+  local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml -f "$override")
   local profiles=()
   # Pull local DB services into scope unless the user pointed at an
   # external host. Backends use required:false on those depends_on
@@ -592,7 +640,25 @@ YML
   "${compose_cmd[@]}" --profile auth-fakeidp --profile auth-keycloak stop "$other_idp" >/dev/null 2>&1 || true
 
   echo "=== docker compose up ==="
-  "${compose_cmd[@]}" ${profiles[@]+"${profiles[@]}"} up -d --remove-orphans
+  if ! "${compose_cmd[@]}" ${profiles[@]+"${profiles[@]}"} up -d --remove-orphans; then
+    "${compose_cmd[@]}" ps -a >&2 || true
+    "${compose_cmd[@]}" logs --no-color --tail=80 >&2 || true
+    if [[ -n "$instance" &&
+          ( "$instance_mariadb_fresh" == "true" || "$instance_clickhouse_fresh" == "true" ) ]]; then
+      echo "ERROR: stack startup failed; removing newly created database state." >&2
+      "${compose_cmd[@]}" ${profiles[@]+"${profiles[@]}"} down --remove-orphans >/dev/null 2>&1 || true
+      if [[ "$instance_mariadb_fresh" == "true" ]]; then
+        docker volume rm "${COMPOSE_PROJECT_NAME}_mariadb-data" >/dev/null 2>&1 || true
+      fi
+      if [[ "$instance_clickhouse_fresh" == "true" ]]; then
+        docker volume rm "${COMPOSE_PROJECT_NAME}_clickhouse-data" >/dev/null 2>&1 || true
+        docker volume rm "${COMPOSE_PROJECT_NAME}_clickhouse-logs" >/dev/null 2>&1 || true
+      fi
+    else
+      echo "ERROR: stack startup failed." >&2
+    fi
+    return 1
+  fi
 
   echo
   "${compose_cmd[@]}" ps
@@ -604,8 +670,13 @@ YML
   # `up` calls skip this block. For external DBs, the wizard pre-marks
   # them seeded unless the user explicitly opted in.
   local need_maria=false need_ch=false
-  [[ "${SEEDED_LOCAL_MARIA:-}" != "true" ]] && need_maria=true
-  [[ "${SEEDED_LOCAL_CH:-}"    != "true" ]] && need_ch=true
+  if [[ -n "$instance" ]]; then
+    need_maria="$instance_mariadb_fresh"
+    need_ch="$instance_clickhouse_fresh"
+  else
+    [[ "${SEEDED_LOCAL_MARIA:-}" != "true" ]] && need_maria=true
+    [[ "${SEEDED_LOCAL_CH:-}"    != "true" ]] && need_ch=true
+  fi
   if [[ "$need_maria" == "true" || "$need_ch" == "true" ]]; then
     local seed_target=""
     if   [[ "$need_maria" == "true" && "$need_ch" == "true" ]]; then seed_target=all
@@ -614,11 +685,17 @@ YML
     fi
     echo "=== First-run seed ($seed_target) ==="
     if cmd_seed --env-file "$env_file" "$seed_target"; then
-      [[ "$need_maria" == "true" ]] && update_env_var "$env_file" SEEDED_LOCAL_MARIA true
-      [[ "$need_ch"    == "true" ]] && update_env_var "$env_file" SEEDED_LOCAL_CH    true
+      if [[ -z "$instance" ]]; then
+        [[ "$need_maria" == "true" ]] && update_env_var "$env_file" SEEDED_LOCAL_MARIA true
+        [[ "$need_ch"    == "true" ]] && update_env_var "$env_file" SEEDED_LOCAL_CH    true
+      fi
     else
       echo "WARN: seed failed; SEEDED_LOCAL_* not updated." >&2
-      echo "      Re-run: ./dev-compose.sh seed $seed_target" >&2
+      if [[ -n "$instance" ]]; then
+        echo "      Re-run: ./dev-compose.sh seed --instance=$instance $seed_target" >&2
+      else
+        echo "      Re-run: ./dev-compose.sh seed $seed_target" >&2
+      fi
     fi
     echo
   fi
@@ -628,11 +705,13 @@ YML
   report_service_urls "$frontend_up" "$AUTH_MODE"
   echo
 
+  local instance_option=""
+  [[ -n "$instance" ]] && instance_option=" --instance=$instance"
   echo "Service URLs: ./dev-compose.sh urls"
-  echo "Stop:        ./dev-compose.sh down"
-  echo "Rebuild one: ./dev-compose.sh build <service>"
-  echo "Re-seed:     ./dev-compose.sh seed"
-  echo "Wipe state:  ./dev-compose.sh prune"
+  echo "Stop:        ./dev-compose.sh down$instance_option"
+  echo "Rebuild one: ./dev-compose.sh build$instance_option <service>"
+  echo "Re-seed:     ./dev-compose.sh seed$instance_option"
+  echo "Wipe state:  ./dev-compose.sh prune$instance_option"
 }
 
 # ──────────────────────────────────────────────────────────────────────
@@ -727,13 +806,16 @@ clickhouse-data, redis-data, redpanda-data, rust-target) are PRESERVED
 unless --volumes is passed.
 
 Options:
-  --volumes  / -v  Also remove named volumes and wipe deploy/compose/build/.
+  --volumes  / -v  Also remove named volumes. For the default instance,
+                   also wipe deploy/compose/build/.
+  --instance=NAME   Target the isolated insight-NAME stack. Default: insight.
   --env-file=PATH  Alternate dotenv file.
 EOF
 }
 
 cmd_down() {
   local env_file=".env.compose"
+  local instance="$COMPOSE_INSTANCE"
   local wipe=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -745,20 +827,25 @@ cmd_down() {
     esac
   done
   env_file="$(resolve_env_file "$env_file")"
+  COMPOSE_PROJECT_NAME="$(compose_project_name "$instance")" || return $?
+  export COMPOSE_PROJECT_NAME
 
   local override="deploy/compose/override.generated.yml"
-  local compose_cmd=(docker compose --env-file "$env_file" -f docker-compose.yml)
+  local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml)
   [[ -f "$override" ]] && compose_cmd+=(-f "$override")
 
   "${compose_cmd[@]}" \
     --profile front-dev --profile front-built --profile front-ghcr \
     --profile auth-fakeidp --profile auth-keycloak \
     --profile build --profile seed \
+    --profile local-mariadb --profile local-clickhouse \
     down $([[ "$wipe" == "true" ]] && echo "--volumes --remove-orphans")
 
-  if [[ "$wipe" == "true" ]]; then
+  if [[ "$wipe" == "true" && -z "$instance" ]]; then
     echo "Wiping host-side build artefacts (deploy/compose/build/)..."
     rm -rf deploy/compose/build/
+  elif [[ "$wipe" == "true" ]]; then
+    echo "Preserving worktree build artefacts."
   fi
   echo "Done."
 }
@@ -769,7 +856,7 @@ cmd_down() {
 
 cmd_build_help() {
   cat <<'EOF'
-usage: dev-compose.sh build <target>
+usage: dev-compose.sh build [--instance NAME] [--env-file PATH] <target>
 
 Rebuild one host-side artefact and let the already-running container
 pick it up via ENABLE_AUTO_RELOAD.
@@ -786,16 +873,24 @@ EOF
 
 cmd_build() {
   local env_file=".env.compose"
-  if [[ "${1:-}" == "--env-file" ]]; then env_file="$2"; shift 2; fi
-  if [[ "${1:-}" == --env-file=* ]]; then env_file="${1#*=}"; shift; fi
+  local instance="$COMPOSE_INSTANCE"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --env-file=*) env_file="${1#*=}"; shift ;;
+      --env-file)   env_file="$2"; shift 2 ;;
+      *) break ;;
+    esac
+  done
 
   local target="${1:-}"
   [[ -z "$target" || "$target" == "-h" || "$target" == "--help" ]] && { cmd_build_help; return 0; }
 
   env_file="$(resolve_env_file "$env_file")"
   set -a; source "$env_file"; set +a
+  COMPOSE_PROJECT_NAME="$(compose_project_name "$instance")" || return $?
+  export COMPOSE_PROJECT_NAME
 
-  local compose_cmd=(docker compose --env-file "$env_file" -f docker-compose.yml --profile build)
+  local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml --profile build)
   build_rust_bins() {
     local bin_flags=""
     local b
@@ -848,7 +943,7 @@ cmd_build() {
 
 cmd_seed_help() {
   cat <<'EOF'
-usage: dev-compose.sh seed [identity|silver|all]
+usage: dev-compose.sh seed [--instance NAME] [--env-file PATH] [identity|silver|all]
 
 Populate the demo dataset. Stack must be up first.
 
@@ -870,13 +965,21 @@ EOF
 
 cmd_seed() {
   local env_file=".env.compose"
-  if [[ "${1:-}" == "--env-file" ]]; then env_file="$2"; shift 2; fi
-  if [[ "${1:-}" == --env-file=* ]]; then env_file="${1#*=}"; shift; fi
+  local instance="$COMPOSE_INSTANCE"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --env-file=*) env_file="${1#*=}"; shift ;;
+      --env-file)   env_file="$2"; shift 2 ;;
+      *) break ;;
+    esac
+  done
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then cmd_seed_help; return 0; fi
 
   env_file="$(resolve_env_file "$env_file")"
+  COMPOSE_PROJECT_NAME="$(compose_project_name "$instance")" || return $?
+  export COMPOSE_PROJECT_NAME
   local override="deploy/compose/override.generated.yml"
-  local compose_cmd=(docker compose --env-file "$env_file" -f docker-compose.yml)
+  local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml)
   [[ -f "$override" ]] && compose_cmd+=(-f "$override")
 
   local args=("$@")
@@ -909,10 +1012,14 @@ cmd_seed() {
 
 cmd_prune_help() {
   cat <<'EOF'
-usage: dev-compose.sh prune
+usage: dev-compose.sh prune [--instance NAME]
 
 DESTRUCTIVE — wipes local stack state. Interactive: you must approve
 each step. There is no `--yes` switch on purpose.
+
+With --instance, only that instance's containers, networks, and named
+volumes are removed. Worktree-level config, keys, and build artefacts
+are preserved.
 
 The main pass removes:
   • all stack containers (insight-*)
@@ -931,9 +1038,30 @@ EOF
 }
 
 cmd_prune() {
-  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then cmd_prune_help; return 0; fi
+  local instance="$COMPOSE_INSTANCE"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help) cmd_prune_help; return 0 ;;
+      *) echo "ERROR: unknown arg: $1" >&2; cmd_prune_help; return 2 ;;
+    esac
+  done
+  COMPOSE_PROJECT_NAME="$(compose_project_name "$instance")" || return $?
+  export COMPOSE_PROJECT_NAME
 
-  cat <<EOF
+  if [[ -n "$instance" ]]; then
+    cat <<EOF
+This will permanently remove Docker state for Compose instance
+$COMPOSE_PROJECT_NAME:
+  • containers
+  • named volumes
+  • the instance network
+
+Worktree-level build artefacts, generated config, keys, and .env.compose
+will be preserved.
+
+EOF
+  else
+    cat <<EOF
 This will permanently remove the local Insight stack state:
   • containers (insight-*)
   • named volumes (mariadb-data, clickhouse-data, redis-data,
@@ -944,6 +1072,7 @@ This will permanently remove the local Insight stack state:
   • .env.compose
 
 EOF
+  fi
   if ! ask_yes_no "Proceed?" "n"; then
     echo "Aborted." >&2
     return 1
@@ -962,7 +1091,7 @@ EOF
   fi
 
   local override="deploy/compose/override.generated.yml"
-  local compose_cmd=(docker compose --env-file "$env_file" -f docker-compose.yml)
+  local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml)
   [[ -f "$override" ]] && compose_cmd+=(-f "$override")
 
   echo "=== docker compose down --volumes --remove-orphans ==="
@@ -973,19 +1102,19 @@ EOF
     --profile local-mariadb --profile local-clickhouse \
     down --volumes --remove-orphans || true
 
-  if [[ -d deploy/compose/build ]]; then
+  if [[ -z "$instance" && -d deploy/compose/build ]]; then
     echo "Removing deploy/compose/build/..."
     rm -rf deploy/compose/build/
   fi
-  if [[ -d deploy/compose/authenticator-dev-keys ]]; then
+  if [[ -z "$instance" && -d deploy/compose/authenticator-dev-keys ]]; then
     echo "Removing deploy/compose/authenticator-dev-keys/ (dev signing key)..."
     rm -rf deploy/compose/authenticator-dev-keys/
   fi
-  if [[ -f "$override" ]]; then
+  if [[ -z "$instance" && -f "$override" ]]; then
     echo "Removing $override..."
     rm -f "$override"
   fi
-  if [[ -f .env.compose ]]; then
+  if [[ -z "$instance" && -f .env.compose ]]; then
     echo "Removing .env.compose..."
     rm -f .env.compose
   fi
@@ -993,6 +1122,11 @@ EOF
   echo
   echo "Stack state wiped."
   echo
+
+  if [[ -n "$instance" ]]; then
+    echo "Done."
+    return
+  fi
 
   # Image removal is a separate question — re-pulling is slow.
   if ask_yes_no "Also remove pulled ghcr.io/constructorfabric/insight-* images?" "n"; then
@@ -1039,13 +1173,31 @@ EOF
 main() {
   local sub="${1:-help}"
   [[ $# -gt 0 ]] && shift
+  local args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --instance=*)
+        COMPOSE_INSTANCE="${1#*=}"
+        [[ -n "$COMPOSE_INSTANCE" ]] || { echo "ERROR: --instance requires a value." >&2; return 2; }
+        shift ;;
+      --instance)
+        [[ $# -ge 2 ]] || { echo "ERROR: --instance requires a value." >&2; return 2; }
+        COMPOSE_INSTANCE="$2"
+        [[ -n "$COMPOSE_INSTANCE" ]] || { echo "ERROR: --instance requires a value." >&2; return 2; }
+        shift 2 ;;
+      *)
+        args+=("$1")
+        shift ;;
+    esac
+  done
+  compose_project_name "$COMPOSE_INSTANCE" >/dev/null || return $?
   case "$sub" in
-    up)    cmd_up    "$@" ;;
-    down)  cmd_down  "$@" ;;
-    build) cmd_build "$@" ;;
-    seed)  cmd_seed  "$@" ;;
-    urls)  cmd_urls  "$@" ;;
-    prune) cmd_prune "$@" ;;
+    up)    cmd_up    ${args[@]+"${args[@]}"} ;;
+    down)  cmd_down  ${args[@]+"${args[@]}"} ;;
+    build) cmd_build ${args[@]+"${args[@]}"} ;;
+    seed)  cmd_seed  ${args[@]+"${args[@]}"} ;;
+    urls)  cmd_urls  ${args[@]+"${args[@]}"} ;;
+    prune) cmd_prune ${args[@]+"${args[@]}"} ;;
     help|-h|--help) usage ;;
     *) echo "ERROR: unknown subcommand: $sub" >&2; usage; return 2 ;;
   esac

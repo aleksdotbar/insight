@@ -6,6 +6,7 @@ mod catalog;
 pub(crate) mod error;
 mod handlers;
 mod metric_definitions;
+mod metric_drilldown;
 mod metric_results;
 mod saved_queries;
 
@@ -65,6 +66,12 @@ pub struct AppState {
     /// endpoints, the validation gauntlet, the `lock-enforcer` SQL, and the
     /// `audit-emitter` dual-sink contract.
     pub admin_threshold: AdminThresholdService,
+}
+
+pub(crate) fn forwarded_authorization(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
 }
 
 /// Register all analytics routes onto the host's stateless router.
@@ -310,6 +317,11 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Run a saved query")
         .authenticated()
         .no_license_required()
+        .json_request::<saved_query::RunSavedQueryRequest>(
+            openapi,
+            "Optional named parameters (`period`); `tenant` is always injected from context",
+        )
+        .request_optional()
         .json_response_with_schema::<saved_query::RunResponse>(
             openapi,
             StatusCode::OK,
@@ -317,6 +329,24 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         )
         .standard_errors(openapi)
         .handler(saved_queries::run_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/metric-drilldown")
+        .operation_id("analytics_api.metric_drilldown.create")
+        .summary("List metric evidence")
+        .authenticated()
+        .no_license_required()
+        .json_request::<crate::domain::metric_drilldown::MetricDrilldownRequest>(
+            openapi,
+            "Metric evidence selection",
+        )
+        .json_response_with_schema::<crate::domain::metric_drilldown::MetricDrilldownResponse>(
+            openapi,
+            StatusCode::OK,
+            "Metric evidence",
+        )
+        .standard_errors(openapi)
+        .handler(metric_drilldown::query_metric_drilldown)
         .register(router, openapi);
 
     // Thresholds (legacy)

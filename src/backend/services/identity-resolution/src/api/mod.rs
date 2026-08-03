@@ -9,7 +9,9 @@ pub mod person_roles;
 pub mod roles;
 pub mod seed;
 pub mod subchart;
+pub mod sync;
 pub mod visibility;
+pub mod visible_persons;
 
 use std::sync::Arc;
 
@@ -108,6 +110,37 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         )
         .standard_errors(openapi)
         .handler(seed::list_persons_seed)
+        .register(router, openapi);
+
+    // Persons-sync journal (read-only, admin-gated): the sync itself is
+    // CLI-only (`identity-resolution sync` — see crate::sync_runner), same
+    // trigger model as the seed after #1690.
+    let router = OperationBuilder::get("/v1/persons-sync/{id}")
+        .operation_id("identity_resolution.persons_sync.get")
+        .summary("Get a persons-sync operation")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<sync::PersonsSyncOperationResponse>(
+            openapi,
+            StatusCode::OK,
+            "Operation status",
+        )
+        .standard_errors(openapi)
+        .handler(sync::get_persons_sync)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/v1/persons-sync")
+        .operation_id("identity_resolution.persons_sync.list")
+        .summary("List persons-sync operations")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<sync::PersonsSyncListResponse>(
+            openapi,
+            StatusCode::OK,
+            "Operations",
+        )
+        .standard_errors(openapi)
+        .handler(sync::list_persons_sync)
         .register(router, openapi);
 
     // Roles catalogue (admin-gated CRUD over the global `roles` table).
@@ -241,7 +274,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .handler(subchart::get_forest)
         .register(router, openapi);
 
-    OperationBuilder::get("/v1/subchart/{person_id}")
+    let router = OperationBuilder::get("/v1/subchart/{person_id}")
         .operation_id("identity_resolution.subchart.get")
         .summary("Depth-bounded org subtree rooted at a person")
         .authenticated()
@@ -253,5 +286,20 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         )
         .standard_errors(openapi)
         .handler(subchart::get_subchart)
+        .register(router, openapi);
+
+    OperationBuilder::post("/v1/visible-persons")
+        .operation_id("identity_resolution.visible_persons.create")
+        .summary("Filter emails to the ones the caller may see")
+        .authenticated()
+        .no_license_required()
+        .json_request::<visible_persons::VisiblePersonsRequest>(openapi, "Emails to check")
+        .json_response_with_schema::<visible_persons::VisiblePersonsResponse>(
+            openapi,
+            StatusCode::OK,
+            "Visible subset",
+        )
+        .standard_errors(openapi)
+        .handler(visible_persons::filter_visible_persons)
         .register(router, openapi)
 }

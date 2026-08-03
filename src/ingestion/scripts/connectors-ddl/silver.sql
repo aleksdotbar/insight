@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS silver.class_collab_document_activity
     `synced_count` Nullable(Decimal(38, 9)),
     `shared_internally_count` Nullable(Decimal(38, 9)),
     `shared_externally_count` Nullable(Decimal(38, 9)),
-    `visited_page_count` Nullable(Decimal(38, 9)),
+    `visited_page_count` Nullable(Int64),
     `report_period` Nullable(String),
     `collected_at` DateTime,
     `data_source` String,
@@ -1187,5 +1187,12 @@ CREATE TABLE IF NOT EXISTS silver.zendesk__support_event
 ENGINE = ReplacingMergeTree(_version)
 ORDER BY unique_key
 SETTINGS allow_nullable_key = 1, replicated_deduplication_window = '0', index_granularity = 8192
+;
+
+CREATE OR REPLACE VIEW silver.contract_version
+(
+    `version` UInt32
+)
+AS SELECT toUInt32(1) AS version
 ;
 

@@ -268,19 +268,19 @@ metadata:
     helm.sh/resource-policy: keep   # see analytics-config rationale above
 type: Opaque
 stringData:
-  APP__gears__identity-resolution__config__database_url: "mysql://${MDB_USER}:${MDB_PW}@${MDB_HOST}:${MDB_PORT}/${IDENTITY_RESOLUTION_DB}"
-  APP__gears__identity-resolution__config__clickhouse_url: "http://${CH_HOST}:${CH_PORT}"
-  APP__gears__identity-resolution__config__clickhouse_database: "${CH_DB}"
-  APP__gears__identity-resolution__config__clickhouse_user: "${CH_USER}"
-  APP__gears__identity-resolution__config__clickhouse_password: "${CH_PW}"
+  APP__gears__identity_resolution__config__database_url: "mysql://${MDB_USER}:${MDB_PW}@${MDB_HOST}:${MDB_PORT}/${IDENTITY_RESOLUTION_DB}"
+  APP__gears__identity_resolution__config__clickhouse_url: "http://${CH_HOST}:${CH_PORT}"
+  APP__gears__identity_resolution__config__clickhouse_database: "${CH_DB}"
+  APP__gears__identity_resolution__config__clickhouse_user: "${CH_USER}"
+  APP__gears__identity_resolution__config__clickhouse_password: "${CH_PW}"
 EOF
   # First-admin bootstrap inputs (migrate initContainer): mirror the
   # chart-side block in charts/insight/templates/secrets.yaml.
   if [ -n "$TENANT_DEFAULT" ] && [ "$TENANT_DEFAULT" != "null" ]; then
-    echo "  APP__gears__identity-resolution__config__tenant_default_id: \"${TENANT_DEFAULT}\""
+    echo "  APP__gears__identity_resolution__config__tenant_default_id: \"${TENANT_DEFAULT}\""
   fi
   if [ -n "$IDENTITY_RESOLUTION_BOOTSTRAP_ADMIN" ] && [ "$IDENTITY_RESOLUTION_BOOTSTRAP_ADMIN" != "null" ]; then
-    echo "  APP__gears__identity-resolution__config__bootstrap_admin_person_id: \"${IDENTITY_RESOLUTION_BOOTSTRAP_ADMIN}\""
+    echo "  APP__gears__identity_resolution__config__bootstrap_admin_person_id: \"${IDENTITY_RESOLUTION_BOOTSTRAP_ADMIN}\""
   fi
 } | kubectl -n "$NS_APP" apply -f - >/dev/null
 echo "composed → $NS_APP/insight-identity-resolution-config"

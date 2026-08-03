@@ -84,6 +84,15 @@ pub struct MetricCatalogConfig {
     ///
     /// Env: `APP__gears__analytics__config__metric_catalog__tenant_default_id`.
     pub tenant_default_id: Option<Uuid>,
+
+    /// Enforce the per-tenant observation filter (#1967) on metric reads.
+    /// Defaults to `false`: the ingested `tenant_id` in the bronze/silver/gold
+    /// pipeline is not yet aligned to the JWT tenant, so an exact
+    /// `tenant_id = <session>` match would silently empty every metric read.
+    /// Flip to `true` per environment once the ingest tenant is aligned (#1829).
+    ///
+    /// Env: `APP__gears__analytics__config__metric_catalog__enforce_tenant_scope`.
+    pub enforce_tenant_scope: bool,
 }
 
 fn default_bind_addr() -> String {

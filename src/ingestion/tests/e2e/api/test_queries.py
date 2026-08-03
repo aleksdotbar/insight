@@ -5,17 +5,23 @@
   GET    /v1/queries/{id}         200 · 400 non-uuid · 404 unknown · 404 deleted
   PUT    /v1/queries/{id}         200 · 400 bad-sql · 400 non-uuid · 404 unknown · 415 wrong-ct · 400 off-schema (xfail)
   DELETE /v1/queries/{id}         204 · 400 non-uuid · 404 unknown
-  POST   /v1/queries/{id}/run     200 rows · 400 non-uuid · 404 unknown
+  POST   /v1/queries/{id}/run     200 rows · 200 {tenant}/{period} params · 400 missing param · 400 non-uuid · 404 unknown
 
 The scratch query's `sql` runs the REAL read path end-to-end: gated by the
 single-SELECT gate on write and run, then executed on ClickHouse as
 `presentation_ro` — one deterministic row {one: 1} comes back. CRUD is a hard
 delete (no soft-delete flag), so a deleted id is a plain 404.
+
+Named parameters (#1966) are bound server-side: `{tenant}` is always the signed
+session tenant, `{period}` binds from the optional run body.
 """
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
+from lib.config import TEST_TENANT_ID
 
 from api.endpoint_helpers import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_scratch_saved_query, text_body_request
 
@@ -166,6 +172,49 @@ def test_run_saved_query_200(api, scratch_saved_query: dict) -> None:
     r = api.post(f"/v1/queries/{scratch_saved_query['id']}/run")
     assert r.status_code == 200, f"status={r.status_code} body={r.text}"
     assert r.json()["rows"] == [{"one": 1}]
+
+
+def _create_query(api, name_prefix: str, sql: str) -> dict:
+    """POST a saved query with arbitrary `sql` (the shared helper pins the
+    scratch ref). Caller owns the hard-delete cleanup."""
+    r = api.post("/v1/queries", json={"name": f"{name_prefix}-{uuid.uuid4().hex[:8]}", "sql": sql})
+    assert r.status_code == 201, f"create: status={r.status_code} body={r.text}"
+    return r.json()
+
+
+def test_run_saved_query_200_injects_tenant_param(api) -> None:
+    """`{tenant}` is always bound from the signed session context (#1966): a
+    query echoing it returns the session tenant, never a client-supplied value."""
+    q = _create_query(api, "e2e-tenant-param", "SELECT {tenant:String} AS tenant FROM system.one")
+    try:
+        r = api.post(f"/v1/queries/{q['id']}/run")
+        assert r.status_code == 200, f"status={r.status_code} body={r.text}"
+        assert r.json()["rows"] == [{"tenant": str(TEST_TENANT_ID)}]
+    finally:
+        api.delete(f"/v1/queries/{q['id']}")
+
+
+def test_run_saved_query_200_binds_period_param(api) -> None:
+    """`period` supplied on the run body binds `{period}` server-side (#1966)."""
+    q = _create_query(api, "e2e-period-param", "SELECT {period:String} AS period FROM system.one")
+    try:
+        r = api.post(f"/v1/queries/{q['id']}/run", json={"period": "2026-Q1"})
+        assert r.status_code == 200, f"status={r.status_code} body={r.text}"
+        assert r.json()["rows"] == [{"period": "2026-Q1"}]
+    finally:
+        api.delete(f"/v1/queries/{q['id']}")
+
+
+def test_run_saved_query_400_missing_named_param(api) -> None:
+    """A query referencing a parameter left unbound (`{period}` with no period on
+    the run body) is caller error → 400, not a bare 500 (#1966 classifies
+    ClickHouse's UNKNOWN_QUERY_PARAMETER)."""
+    q = _create_query(api, "e2e-missing-param", "SELECT {period:String} AS period FROM system.one")
+    try:
+        r = api.post(f"/v1/queries/{q['id']}/run")
+        assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+    finally:
+        api.delete(f"/v1/queries/{q['id']}")
 
 
 def test_run_saved_query_400_non_uuid(api) -> None:

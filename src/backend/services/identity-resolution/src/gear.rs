@@ -19,7 +19,7 @@ use crate::config::GearConfig;
 
 /// Identity-resolution gear. Capability: `rest` (HTTP surface). Config key is
 /// the gear name `identity-resolution`; env overrides are
-/// `APP__gears__identity-resolution__config__*`.
+/// `APP__gears__identity_resolution__config__*`.
 #[derive(Default)]
 #[toolkit::gear(name = "identity-resolution", capabilities = [rest])]
 pub struct IdentityResolutionGear {
@@ -104,6 +104,29 @@ pub async fn run_seed(
     }
     let summary = crate::seed_runner::run(&cfg, mode, force).await?;
     tracing::info!(?summary, "persons-seed run finished");
+    Ok(())
+}
+
+/// `sync` subcommand: copy the `persons` log into ClickHouse
+/// `identity.identity_persons` once and exit (the metrics resolve source).
+/// Same shape as [`run_seed`].
+///
+/// # Errors
+///
+/// [`crate::sync_runner::SyncRunError`] — the caller maps each variant to a
+/// distinct process exit code.
+pub async fn run_sync(
+    app: &toolkit::bootstrap::AppConfig,
+    force: bool,
+) -> Result<(), crate::sync_runner::SyncRunError> {
+    let cfg = extract_gear_config(app).map_err(crate::sync_runner::SyncRunError::Failed)?;
+    if cfg.database_url.is_empty() {
+        return Err(crate::sync_runner::SyncRunError::Failed(anyhow::anyhow!(
+            "`gears.identity-resolution.config.database_url` is required for sync"
+        )));
+    }
+    let summary = crate::sync_runner::run(&cfg, force).await?;
+    tracing::info!(?summary, "persons-sync run finished");
     Ok(())
 }
 

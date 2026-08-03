@@ -28,19 +28,19 @@ Reuse the exact connection string the deployed identity service uses, rewriting
 the host to localhost:
 ```bash
 URL=$(kubectl -n insight get secret insight-identity-resolution-config \
-  -o jsonpath='{.data.APP__gears__identity-resolution__config__database_url}' | base64 -d \
+  -o jsonpath='{.data.APP__gears__identity_resolution__config__database_url}' | base64 -d \
   | sed 's#@[^/]*/#@127.0.0.1:3306/#')
 # → mysql://insight:<password>@127.0.0.1:3306/identity
 ```
 
 ### 3. Run the service — from `src/backend`
-Pass the DB URL as an env override. **Use `env "NAME=VALUE" …`, not `export`** —
-the gear name contains a hyphen (`identity-resolution`), which a shell `export`
-variable name cannot contain.
+Pass the DB URL as an env override. The toolkit maps the underscored
+`identity_resolution` environment-key segment to the hyphenated
+`identity-resolution` YAML gear name.
 ```bash
 cd src/backend
-env "APP__gears__identity-resolution__config__database_url=$URL" \
-  cargo run -p identity-resolution -- -c services/identity-resolution/config/insight.yaml
+export APP__gears__identity_resolution__config__database_url="$URL"
+cargo run -p identity-resolution -- -c services/identity-resolution/config/insight.yaml
 ```
 Startup log should show `connected to MariaDB` and `HTTP server bound on 0.0.0.0:8082`.
 
@@ -57,7 +57,7 @@ open http://localhost:8082/docs   # OpenAPI docs page
 - `database_url` is left **empty** in `config/insight.yaml` — no credentials are
   committed. It is injected via the env override above (or, in a real deploy,
   from the umbrella Secret).
-- Config env-override convention: `APP__gears__identity-resolution__config__<field>`
+- Config env-override convention: `APP__gears__identity_resolution__config__<field>`
   (double underscore between path segments).
 - If the service fails at init with `gear 'identity-resolution' not found`, the
   `gears.identity-resolution.config` section is missing from the config YAML.
