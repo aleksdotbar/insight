@@ -22,7 +22,7 @@ from __future__ import annotations
 import pytest
 from insight_stand import ApiClient, Manifest, analytics_path
 
-from .schemas import EXTRACTOR_REJECTION_CONTENT_TYPE, ColumnListResponse
+from ..schemas import EXTRACTOR_REJECTION_CONTENT_TYPE, ColumnListResponse
 
 COLUMNS = analytics_path("/v1/columns")
 

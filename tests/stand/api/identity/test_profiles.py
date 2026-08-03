@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from insight_stand import Manifest, PersonaSession, identity_path
 
-from .schemas import ProblemDocument, Profile
+from ..schemas import ProblemDocument, Profile
 
 PROFILES = identity_path("/v1/profiles")
 

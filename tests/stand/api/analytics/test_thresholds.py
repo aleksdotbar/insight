@@ -23,8 +23,8 @@ from __future__ import annotations
 import pytest
 from insight_stand import OTHER_TENANT_FIXTURE, ApiClient, PersonaSession, analytics_path
 
-from . import scratch
-from .schemas import (
+from .. import scratch
+from ..schemas import (
     AdminMetricThresholdList,
     AdminMetricThresholdView,
     CatalogResponse,

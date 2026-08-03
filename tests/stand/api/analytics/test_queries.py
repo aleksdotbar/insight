@@ -21,8 +21,8 @@ from __future__ import annotations
 
 from insight_stand import ApiClient, analytics_path
 
-from .schemas import RunResponse, SavedQuery, SavedQueryListResponse
-from .scratch import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_saved_query
+from ..schemas import RunResponse, SavedQuery, SavedQueryListResponse
+from ..scratch import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_saved_query
 
 QUERIES = analytics_path("/v1/queries")
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from insight_stand import ApiClient, ApiResponse, Manifest, analytics_path
 
-from .schemas import (
+from ..schemas import (
     MetricDefinitionListResponse,
     MetricResultsResponse,
     PeriodView,

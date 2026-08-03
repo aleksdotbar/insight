@@ -21,7 +21,7 @@ from __future__ import annotations
 import pytest
 from insight_stand import ApiClient, Manifest, analytics_path
 
-from .schemas import (
+from ..schemas import (
     EXTRACTOR_REJECTION_CONTENT_TYPE,
     CatalogResponse,
     MetricDefinitionListResponse,

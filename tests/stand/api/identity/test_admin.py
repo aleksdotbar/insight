@@ -27,8 +27,8 @@ import pytest
 from insight_stand import ADMIN_ROLE, ApiClient, Manifest, PersonaSession, identity_path
 from pydantic import BaseModel
 
-from . import scratch
-from .schemas import (
+from .. import scratch
+from ..schemas import (
     OperationList,
     PersonRole,
     PersonRoleList,

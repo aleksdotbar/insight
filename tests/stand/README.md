@@ -16,8 +16,16 @@ persona resolution) lives in `../lib`; both are one uv project
 | Path | Contents |
 |---|---|
 | `conftest.py` | Session wiring: manifest loading, `--stand-manifest`, the `session_for` persona factory, `requires_seed` / capability-marker enforcement. |
-| `api/` | HTTP contract tests — no browser. |
+| `api/` | HTTP contract tests — no browser. Shared fixtures, the operation catalogue, the scratch policy and the response models live here. |
+| `api/analytics/` | The `/api/analytics` prefix, one module per path group. |
+| `api/identity/` | The `/api/identity` prefix, one module per concern. |
+| `api/test_gateway.py` | Neither service — the edge, sweeping 401 over every catalogued operation at once. |
 | `ui/` | The four browser journeys, plus `ui/pages/` (page objects). |
+
+Split by service because that is the axis along which a test's setup
+differs: identity's answers depend on **who is asking** (the org chart, the
+admin row, the kind of principal), analytics' mostly on **what was
+created**.
 
 ## Running it locally
 

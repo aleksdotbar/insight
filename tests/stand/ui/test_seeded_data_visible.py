@@ -1,7 +1,7 @@
 """Journey 2 — a person signs in and sees THEIR OWN seeded organisation.
 
 Why this is a browser test and not an API test: `/v1/subchart` already proves the
-API knows who reports to a lead, and `tests/stand/api/test_identity.py` asserts
+API knows who reports to a lead, and `tests/stand/api/identity/` asserts
 exactly that. What no API call can show is that the deployed SPA takes that
 answer, renders it in the signed-in person's view, and renders it as navigable
 links. A stand where identity is perfect and the frontend renders an empty shell

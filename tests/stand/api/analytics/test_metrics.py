@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from insight_stand import ApiClient, analytics_path
 
-from .schemas import Metric, MetricListResponse, QueryResponse
-from .scratch import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_metric
+from ..schemas import Metric, MetricListResponse, QueryResponse
+from ..scratch import NON_UUID, SCRATCH_QUERY_REF, UNKNOWN_ID, create_metric
 
 METRICS = analytics_path("/v1/metrics")
 

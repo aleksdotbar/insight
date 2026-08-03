@@ -15,7 +15,7 @@ its API, so a suite has nothing to create them with:
 Seeded here rather than inserted by a test fixture on purpose. The compose-stand
 suite holds no database connection — that would hand every test a back door
 around the deployed path it exists to exercise (see
-tests/stand/api/test_analytics_columns.py) — so anything a test needs and no
+tests/stand/api/analytics/test_columns.py) — so anything a test needs and no
 endpoint creates has to be seeded, and then NAMED IN THE MANIFEST. A test reads
 the name from there; it never hardcodes one.
 
