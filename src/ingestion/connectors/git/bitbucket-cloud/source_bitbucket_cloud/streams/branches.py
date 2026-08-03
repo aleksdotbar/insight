@@ -38,9 +38,16 @@ class BranchesStream(BitbucketIncrementalStream):
         repo_updated_on = str(repo.raw.get("updated_on") or "")
         if repo_updated_on and prior.get("repo_updated_on") == repo_updated_on:
             return
+        branches = self._catalog.branches(repo)
+        if prior.get("branch_count") and not branches:
+            # A snapshot replaces the previous one, so publishing an empty one
+            # deletes every branch this repository had. An answer that sweeping
+            # is not trusted: no marker, no state, look again next pass.
+            return
+
         generation = self.generation("branches", *repo_scope(repo))
         entity_keys: set[str] = set()
-        for branch in self._catalog.branches(repo):
+        for branch in branches:
             entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), branch.name)
             entity_keys.add(entity_key)
             yield self.item(
@@ -69,7 +76,9 @@ class BranchesStream(BitbucketIncrementalStream):
             workspace=repo.workspace,
             repo_slug=repo.slug,
         )
-        self.commit_repository_state(repo, {"repo_updated_on": repo_updated_on})
+        self.commit_repository_state(
+            repo, {"repo_updated_on": repo_updated_on, "branch_count": len(entity_keys)}
+        )
 
     def get_json_schema(self) -> Mapping[str, Any]:
         nullable_string = {"type": ["null", "string"]}

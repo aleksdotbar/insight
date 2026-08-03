@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from source_bitbucket_cloud.streams.base import BUCKET_COUNT, repo_state_key
+from source_bitbucket_cloud.streams.branches import BranchesStream
 from source_bitbucket_cloud.streams.commit_branch_reachability import CommitBranchReachabilityStream
 from source_bitbucket_cloud.streams.commits import CommitsStream
 from source_bitbucket_cloud.streams.file_changes import FileChangesStream
@@ -111,3 +112,45 @@ class TestEmptyListingDoesNotForgetHeads:
 
         stored = stream.state["repositories"][repo_state_key(repo)][field]
         assert stored == (["moved"] if field == "head_shas" else {"main": "moved"})
+
+
+class TestBranchSnapshotsSurviveAnEmptyListing:
+    """A branch snapshot replaces the previous one, so publishing an empty one
+    deletes every branch the repository had."""
+
+    def build(self, client, repo):
+        return BranchesStream(**{**SHARED, "client": client, "catalog": FakeCatalog([repo], client)})
+
+    def synced(self, client, repo):
+        stream = self.build(client, repo)
+        stream.state = {}
+        read_all_buckets(stream)
+        return stream.state
+
+    def test_an_empty_listing_publishes_no_snapshot(self, repo):
+        client = FakeClient()
+        client.branch_values[repo.uuid] = [branch("main", "a1")]
+        state = self.synced(client, repo)
+
+        client.branch_values[repo.uuid] = []
+        pushed = repository(updated_on="2026-07-01T00:00:00+00:00")
+        second = self.build(client, pushed)
+        second.state = state
+
+        records = read_all_buckets(second)
+
+        assert records == [], "neither items nor a marker: the snapshot would read as 'no branches'"
+        assert second.state["repositories"][repo_state_key(pushed)]["repo_updated_on"] != "2026-07-01T00:00:00+00:00", (
+            "and the cursor must stay open so the listing is retried"
+        )
+
+    def test_a_repository_that_never_had_branches_still_reports_an_empty_snapshot(self, repo):
+        client = FakeClient()
+        client.branch_values[repo.uuid] = []
+
+        records = read_all_buckets(self.build(client, repo))
+
+        markers = [r for r in records if r["record_type"] == "snapshot_complete"]
+        assert markers and markers[0]["snapshot_item_count"] == 0, (
+            "with nothing to lose, an empty answer is just an empty repository"
+        )
