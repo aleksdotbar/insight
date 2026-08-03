@@ -182,7 +182,19 @@ ensure_authenticator_dev_key() {
     echo "WARN: openssl unavailable — the authenticator will fail to start without $key" >&2
     return 1
   fi
-  chmod 600 "$key"
+  # 0644, not 0600. The authenticator image runs as uid 1000 (its Dockerfile's
+  # `appuser`) and bind-mounts this directory read-only, so an owner-only file
+  # is unreadable to it whenever the host uid differs — which is every Linux CI
+  # runner, where the checkout belongs to uid 1001. Docker Desktop hides this by
+  # presenting mounted files as the container user, so it reproduces only in CI
+  # and only as "Permission denied (os error 13)" on gear init.
+  #
+  # Safe because of what this key is: an ephemeral P-256 key generated per
+  # checkout into a gitignored directory, used to sign dev tokens for a local
+  # stand and nothing else. A deployment mounts a real key from a K8s Secret.
+  # The service-token PRIVATE half below stays 0600 — the authenticator resolves
+  # only the named `*.pub.pem` entries in `public_key_paths` and never reads it.
+  chmod 644 "$key"
   ensure_service_token_dev_key "$dir"
 }
 
