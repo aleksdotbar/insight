@@ -80,7 +80,7 @@ secrecy = { version = "0.10", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 
 # Caching
-redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "1", features = ["tokio-comp", "connection-manager"] }
 
 # JWT (gateway-JWT mint/verify, RFC 7523 assertions, fakeidp id_tokens).
 # One version + one crypto provider (aws_lc_rs) across the workspace: v10 needs
