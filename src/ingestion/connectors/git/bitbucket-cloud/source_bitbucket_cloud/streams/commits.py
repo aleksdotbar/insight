@@ -37,7 +37,9 @@ class CommitsStream(CommitRangeMixin, BitbucketIncrementalStream):
                 yield record
 
         stored = [sha for sha in self.retained_heads(current_head_shas, previous_head_shas) if sha not in unresolved]
-        complete = self.complete_read(current_head_shas, previous_head_shas, unresolved)
+        complete = self.complete_read(
+            current_head_shas, unresolved, empty_confirmed=self.empty_listing_confirmed(prior, "head_shas")
+        )
         self.commit_repository_state(
             repo,
             {

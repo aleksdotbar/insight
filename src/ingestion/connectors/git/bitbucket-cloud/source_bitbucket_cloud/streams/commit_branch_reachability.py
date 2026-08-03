@@ -89,7 +89,9 @@ class CommitBranchReachabilityStream(CommitRangeMixin, BitbucketIncrementalStrea
             name: head for name, head in self.retained_heads(current_heads, previous_heads).items()
             if name not in unresolved
         }
-        complete = self.complete_read(current_heads, previous_heads, unresolved)
+        complete = self.complete_read(
+            current_heads, unresolved, empty_confirmed=self.empty_listing_confirmed(prior, "heads")
+        )
         self.commit_repository_state(
             repo,
             {

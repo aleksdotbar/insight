@@ -179,3 +179,56 @@ class TestBranchSnapshotsSurviveAnEmptyListing:
         assert stream.state["repositories"][repo_state_key(repo)]["repo_updated_on"] == "older", (
             "the cursor must stay open so the listing is retried"
         )
+
+
+@pytest.mark.parametrize("stream_class", list(HEAD_FIELD))
+class TestAFirstEmptyListingIsNotTrusted:
+    """On fresh state an empty listing is indistinguishable from a glitch, and
+    trusting it advances the cursor with no heads — the idle gate then skips the
+    repository until somebody pushes to it."""
+
+    def build(self, stream_class, client, repo):
+        stream = stream_class(**{**SHARED, "client": client, "catalog": FakeCatalog([repo], client)})
+        stream.state = {}
+        return stream
+
+    def test_the_cursor_stays_open(self, stream_class, repo):
+        client = FakeClient()
+        client.branch_values[repo.uuid] = []
+
+        stream = self.build(stream_class, client, repo)
+        read_all_buckets(stream)
+
+        stored = stream.state["repositories"][repo_state_key(repo)]
+        assert stored["repo_updated_on"] == "", "an unconfirmed empty listing must not close the idle gate"
+
+    def test_the_repository_is_read_again_without_a_push(self, stream_class, repo):
+        client = FakeClient()
+        client.branch_values[repo.uuid] = []
+        first = self.build(stream_class, client, repo)
+        read_all_buckets(first)
+
+        client.branch_values[repo.uuid] = [branch("main", "fresh")]
+        client.commit_values = [{"hash": "fresh", "date": DATE}]
+        second = self.build(stream_class, client, repo)
+        second.state = first.state
+
+        records = read_all_buckets(second)
+
+        assert records, "the reappearing branch must be picked up"
+        assert client.commit_calls, "and its range actually fetched"
+
+    def test_a_repeated_empty_listing_finally_settles(self, stream_class, repo):
+        client = FakeClient()
+        client.branch_values[repo.uuid] = []
+        first = self.build(stream_class, client, repo)
+        read_all_buckets(first)
+
+        second = self.build(stream_class, client, repo)
+        second.state = first.state
+        read_all_buckets(second)
+
+        stored = second.state["repositories"][repo_state_key(repo)]
+        assert stored["repo_updated_on"] == repo.raw["updated_on"], (
+            "the same answer twice is the repository, not the API"
+        )

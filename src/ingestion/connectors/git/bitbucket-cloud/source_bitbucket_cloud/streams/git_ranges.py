@@ -57,15 +57,24 @@ class CommitRangeMixin:
         """
         return current if current or not previous else previous
 
-    def complete_read(self, current: Heads, previous: Heads, unresolved: Collection[str]) -> bool:
+    def complete_read(
+        self, current: Heads, unresolved: Collection[str], *, empty_confirmed: bool
+    ) -> bool:
         """Whether this pass actually saw everything the repository offers.
 
-        Only holds back the cursor for what could not be read: a head the API
-        refused to resolve, or a listing that came back empty for a repository
-        known to have branches. A head deliberately left out of the range
-        (out of the start window) is still a complete read.
+        An empty listing is never taken at face value the first time: trusting
+        it advances the cursor with no heads, and the idle gate then skips the
+        repository until somebody pushes to it. It counts only once the same
+        answer has been recorded before — which state written before this rule
+        existed never has. A head deliberately left out of the range (out of the
+        start window) is still a complete read.
         """
-        return not unresolved and bool(current or not previous)
+        if unresolved:
+            return False
+        return bool(current) or empty_confirmed
+
+    def empty_listing_confirmed(self, prior: Mapping[str, Any], field: str) -> bool:
+        return field in prior and not prior[field]
 
     def cursor_value(self, prior: Mapping[str, Any], repo_updated_on: str, complete: bool) -> str:
         return repo_updated_on if complete else str(prior.get("repo_updated_on") or "")
