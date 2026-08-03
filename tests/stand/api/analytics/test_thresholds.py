@@ -2,8 +2,8 @@
 
     GET    /v1/metrics/{id}/thresholds          200
     POST   /v1/metrics/{id}/thresholds          xfail #1663
-    PUT    /v1/metrics/{id}/thresholds/{tid}    blocked by the same bug
-    DELETE /v1/metrics/{id}/thresholds/{tid}    blocked by the same bug
+    PUT    /v1/metrics/{id}/thresholds/{tid}    404 unknown · create blocked by #1663
+    DELETE /v1/metrics/{id}/thresholds/{tid}    404 unknown · create blocked by #1663
 
     GET    /v1/admin/metric-thresholds          200
     POST   /v1/admin/metric-thresholds          201
@@ -64,6 +64,29 @@ def test_metric_thresholds_listing_is_200(api: ApiClient, scratch_metric: Metric
     response = api.get(analytics_path(f"/v1/metrics/{scratch_metric.id}/thresholds"))
     assert response.status_code == 200, f"status={response.status_code} {response.text[:300]}"
     assert response.parse(ThresholdListResponse).items == []
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_metric_threshold_write_to_an_unknown_id_is_404(
+    api: ApiClient, scratch_metric: Metric, method: str
+) -> None:
+    """A real metric, a threshold id nobody holds — 404, not 500 and not 204.
+
+    The only thing #1663 leaves reachable on these two operations. Its create
+    500s, so no threshold exists to update or delete, and without this the
+    routes are touched by nothing but the anonymous sweep — proving they refuse
+    a stranger while saying nothing about whether they work.
+
+    The metric in the path is real on purpose: a 404 for a metric that does not
+    exist either would pass while telling us only that SOMETHING was missing.
+    """
+    path = analytics_path(f"/v1/metrics/{scratch_metric.id}/thresholds/{scratch.UNKNOWN_ID}")
+    response = api.request(method, path, json_body={"value": 1} if method == "PUT" else None)
+
+    assert response.status_code == 404, (
+        f"{method} on a threshold that does not exist under a metric that does "
+        f"answered {response.status_code}: {response.text[:300]}"
+    )
 
 
 @pytest.mark.xfail(

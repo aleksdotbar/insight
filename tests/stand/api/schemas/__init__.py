@@ -98,6 +98,7 @@ from .identity import (
     SubchartNode,
     Visibility,
     VisibilityList,
+    VisiblePersons,
 )
 
 __all__: Sequence[str] = (
@@ -135,4 +136,5 @@ __all__: Sequence[str] = (
     "ThresholdListResponse",
     "Visibility",
     "VisibilityList",
+    "VisiblePersons",
 )

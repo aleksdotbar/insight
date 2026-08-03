@@ -121,6 +121,55 @@ def test_admin_listing_is_403_for_a_realm_admin_without_the_grant(
     assert problem.detail, f"{path}: the refusal carries no detail a caller can act on"
 
 
+#: The two admin listings that also serve a per-operation detail route. The
+#: other three (`/v1/roles`, `/v1/person-roles`, `/v1/visibility`) have no GET
+#: by id — their by-id verb is DELETE, covered by the round-trips below.
+JOURNALS_WITH_A_DETAIL_ROUTE = ("/v1/persons-seed", "/v1/persons-sync")
+
+
+@pytest.mark.requires_seed("admin_operator")
+@pytest.mark.parametrize("journal", JOURNALS_WITH_A_DETAIL_ROUTE)
+def test_an_unknown_journal_entry_is_404_for_the_operator(
+    admin_operator_session: PersonaSession, journal: str
+) -> None:
+    """The detail route reached, past the gate, by somebody who may use it.
+
+    Both journals are empty on a seeded stand — no seed or sync has run — so a
+    404 for an id nobody holds is the only answer these routes can give, and
+    the only way to show they exist at all. Without it the two are touched by
+    nothing but the anonymous sweep, which proves the EDGE refuses a stranger
+    and nothing whatever about the route behind it.
+    """
+    response = admin_operator_session.client.get(
+        identity_path(f"{journal}/{scratch.UNKNOWN_ID}")
+    )
+    assert response.status_code == 404, (
+        f"{journal}/<unknown> answered {response.status_code} to the admin operator: "
+        f"{response.text[:300]}"
+    )
+    assert response.parse(ProblemDocument).status == 404
+
+
+@pytest.mark.requires_seed("admin_operator", "ceo")
+@pytest.mark.parametrize("journal", JOURNALS_WITH_A_DETAIL_ROUTE)
+def test_a_journal_entry_is_403_without_the_grant(
+    realm_admin_session: PersonaSession, journal: str
+) -> None:
+    """And the detail route reads the same grant its listing does.
+
+    The pair that makes the 404 above mean something: alone it is equally
+    consistent with the route being open to anyone authenticated. Ordered as
+    the service checks — admin first, existence second — so a caller without
+    the grant cannot tell an id that exists from one that does not.
+    """
+    response = realm_admin_session.client.get(identity_path(f"{journal}/{scratch.UNKNOWN_ID}"))
+    assert response.status_code == 403, (
+        f"{journal}/<unknown> answered {response.status_code} to {realm_admin_session.name}, "
+        f"who holds {ADMIN_ROLE} in the realm but no person_roles grant — a 404 here would "
+        f"leak that the gate ran after the lookup: {response.text[:300]}"
+    )
+
+
 @pytest.mark.requires_seed("admin_operator")
 def test_the_roles_catalogue_contains_the_admin_role(
     admin_operator_session: PersonaSession,

@@ -187,6 +187,17 @@ class Visibility(BaseModel):
         return self.valid_to is None
 
 
+class VisiblePersons(BaseModel):
+    """`POST /v1/visible-persons` — the subset of the asked-about emails.
+
+    A list of what survived, not a per-email verdict: an address the caller
+    may not see is absent rather than present-and-false, which is the same
+    non-disclosure choice `/v1/subchart/{id}` makes by answering 404.
+    """
+
+    visible: list[str]
+
+
 # ---------------------------------------------------------------------------
 # Seed / sync journals
 # ---------------------------------------------------------------------------
