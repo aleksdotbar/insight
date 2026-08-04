@@ -208,6 +208,7 @@ jobs:
             -e MARIADB_USER=insight -e MARIADB_PASSWORD=insight \
             -e MARIADB_ROOT_PASSWORD=root \
             -p 3306:3306 mariadb:11.4
+          docker run -d --name insight-redis -p 6379:6379 redis:7-alpine
           for i in $(seq 1 60); do
             if docker exec insight-maria healthcheck.sh --connect --innodb_initialized 2>/dev/null; then
               echo "MariaDB ready"; break
