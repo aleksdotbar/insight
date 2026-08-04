@@ -31,6 +31,9 @@ class PersonView:
     def person_heading(self, display_name: str) -> Locator:
         return self.page.get_by_role("heading", name=display_name)
 
+    def team_view_switch(self) -> Locator:
+        return self.page.get_by_role("button", name="Team", exact=True)
+
     def kpi_tile(self, label: str) -> Locator:
         return self.page.get_by_role("button", name=f"Open {label} details")
 

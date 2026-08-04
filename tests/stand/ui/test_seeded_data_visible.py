@@ -136,8 +136,40 @@ def test_the_team_view_lists_every_report_the_roster_declares(
 
     sign_in(page, base_url, persona)
 
+    personal = PersonView(page)
+    personal.go(lead.uuid)
+    expect(personal.person_heading(lead.display_name)).to_be_visible()
+
+    team_switch = personal.team_view_switch()
+    expect(team_switch).to_be_visible()
+    team_switch.click()
+
     team = TeamView(page)
-    team.go(lead.uuid)
+    expect(page).to_have_url(f"{base_url}{TeamView.path(lead.uuid)}")
     expect(team.team_heading(lead.display_name)).to_be_visible()
+    expect(team.metrics_overview()).to_be_visible()
+
     for name in reports:
-        expect(team.member_row(name)).to_be_visible()
+        row = team.member_row(name)
+        expect(row).to_be_visible()
+        for metric_label in (
+            "Tasks closed",
+            "Time to resolution",
+            "Bugs fixed",
+            "Pull requests merged",
+            "PR cycle time",
+            "Focus Time",
+            "Meeting Hours",
+            "AI active days",
+        ):
+            expect(team.recorded_metric_cell(name, metric_label)).to_be_visible()
+        expect(team.unrecorded_metric_cell(name, "Page edits")).to_be_visible()
+
+    for label in ("Task delivery", "Git output", "Collaboration", "AI adoption"):
+        card = team.domain_card(label)
+        expect(card).to_be_visible()
+        expect(card).not_to_contain_text("No metrics with peer data for this period.")
+
+    wiki = team.domain_card("Wiki")
+    expect(wiki).to_be_visible()
+    expect(wiki).to_contain_text("No metrics with peer data for this period.")
