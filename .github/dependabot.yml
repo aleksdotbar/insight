@@ -35,10 +35,6 @@ updates:
       base-images:
         patterns: ["*"]
 
-  # Language ecosystems below run daily from 21:00 UTC onward, staggered by
-  # 30 minutes so the checks (and any resulting CI runs) do not all land at once.
-  # One entry per language/service; majors stay as individual PRs, minor+patch
-  # are grouped per entry.
   - package-ecosystem: cargo
     directory: /src/backend
     schedule:
@@ -65,8 +61,6 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
-  # One manifest per connector; grouping applies per directory, so each
-  # connector still gets its own PR.
   - package-ecosystem: pip
     directories: ["/src/ingestion/connectors/*/*"]
     schedule:
