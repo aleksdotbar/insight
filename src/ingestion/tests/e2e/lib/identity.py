@@ -177,17 +177,10 @@ def create_identity_database(cfg: SessionConfig) -> None:
     )
     try:
         with conn.cursor() as cur:
-            # A database NAME cannot be a bound parameter, and this one is the
-            # module constant above — never a caller's string. The user in the
-            # GRANT is bound, which is the half that does take input.
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-            # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
-            cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+            cur.execute(
                 f"CREATE DATABASE IF NOT EXISTS `{IDENTITY_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
             )
-            cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-                f"GRANT ALL PRIVILEGES ON `{IDENTITY_DATABASE}`.* TO %s@'%%'", (cfg.mariadb_user,)
-            )
+            cur.execute(f"GRANT ALL PRIVILEGES ON `{IDENTITY_DATABASE}`.* TO %s@'%%'", (cfg.mariadb_user,))
             cur.execute("FLUSH PRIVILEGES")
     finally:
         conn.close()
