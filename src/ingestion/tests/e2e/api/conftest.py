@@ -14,15 +14,27 @@ import uuid
 import pytest
 from lib import mariadb
 from lib.analytics import AnalyticsProcess
-from lib.config import SessionConfig, TEST_TENANT_ID
+from lib.config import TEST_TENANT_ID, SessionConfig
 
-from api.endpoint_helpers import create_scratch_metric
+from api.endpoint_helpers import create_scratch_metric, create_scratch_saved_query
 
 
 @pytest.fixture
 def api(analytics: AnalyticsProcess):
     """Recording httpx client (the coverage chokepoint), one per test."""
     with analytics.client() as c:
+        yield c
+
+
+@pytest.fixture
+def anon_api(analytics: AnalyticsProcess):
+    """Recording client with NO Authorization header (401 cases)."""
+    import httpx
+    from lib import api_coverage
+
+    with httpx.Client(
+        base_url=analytics.base_url, timeout=30.0, event_hooks={"response": [api_coverage.record_response]}
+    ) as c:
         yield c
 
 
@@ -43,6 +55,15 @@ def scratch_metric(api) -> dict:
     m = create_scratch_metric(api, "e2e-scratch")
     yield m
     api.delete(f"/v1/metrics/{m['id']}")
+
+
+@pytest.fixture
+def scratch_saved_query(api) -> dict:
+    """A scratch saved query (`e2e-scratch-query-*`, `SELECT 1 FROM system.one`);
+    hard-deleted in teardown so it never leaks into `GET /v1/queries`."""
+    q = create_scratch_saved_query(api, "e2e-scratch-query")
+    yield q
+    api.delete(f"/v1/queries/{q['id']}")
 
 
 @pytest.fixture

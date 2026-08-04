@@ -13,22 +13,22 @@
 #
 # Layout:
 #   * infra services  : mariadb, clickhouse, redis, redpanda
-#   * backend         : api-gateway, analytics, identity
+#   * backend         : api-gateway, analytics, identity-resolution
 #   * frontend        : ONE of insight-front-{dev,built,ghcr}, selected by
 #                       FRONTEND_MODE (profile-gated)
-#   * builders        : build-rust, build-dotnet, build-frontend
+#   * builders        : build-rust, build-frontend
 #                       (profile=build — invoked by dev-compose.sh build)
 #
 # Auto-reload: every backend container runs the shared docker-entrypoint.sh
 # which honours ENABLE_AUTO_RELOAD=true to wrap the binary in `watchexec`.
 # When unset, runs the bare command (matching prod). NEVER set this in k8s.
 
-name: insight
+name: ${COMPOSE_PROJECT_NAME:-insight}
 
 # ─── Networks ─────────────────────────────────────────────────────────
 networks:
   insight:
-    name: insight
+    name: ${COMPOSE_PROJECT_NAME:-insight}
 
 # ─── Volumes (data + build artefacts) ─────────────────────────────────
 volumes:
@@ -76,7 +76,7 @@ services:
     # profile inactive.
     profiles: ["local-mariadb"]
     image: mariadb:11.4
-    container_name: insight-mariadb
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-mariadb
     networks: [insight]
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root-local}
@@ -102,7 +102,7 @@ services:
     # the real host and leave this profile inactive.
     profiles: ["local-clickhouse"]
     image: clickhouse/clickhouse-server:25.7.5
-    container_name: insight-clickhouse
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-clickhouse
     networks: [insight]
     environment:
       CLICKHOUSE_DB: insight
@@ -118,6 +118,10 @@ services:
       - clickhouse-data:/var/lib/clickhouse
       - clickhouse-logs:/var/log/clickhouse-server
       - ./deploy/compose/clickhouse-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      # presentation_ro role + grant-less `presentation` user, so analytics can
+      # connect read-only on first `up` (#1964). Role file is the canonical one.
+      - ./src/ingestion/scripts/bootstrap-db/presentation-role.sql:/docker-entrypoint-initdb.d/01-presentation-role.sql:ro
+      - ./deploy/compose/presentation-user.sql:/docker-entrypoint-initdb.d/02-presentation-user.sql:ro
       # Profile override — see the file for the join_use_nulls rationale.
       - ./deploy/compose/clickhouse-user-defaults.xml:/etc/clickhouse-server/users.d/seed-defaults.xml:ro
     healthcheck:
@@ -129,7 +133,7 @@ services:
   redis:
     !!merge <<: *restart-policy
     image: redis:7-alpine
-    container_name: insight-redis
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-redis
     networks: [insight]
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -145,7 +149,7 @@ services:
   redpanda:
     !!merge <<: *restart-policy
     image: redpandadata/redpanda:v24.2.7
-    container_name: insight-redpanda
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-redpanda
     networks: [insight]
     command:
       - redpanda
@@ -175,9 +179,9 @@ services:
 
   # ── Backend services ──────────────────────────────────────────────────
   #
-  # All three use the EXISTING service Dockerfiles (modified to bundle
+  # All use the EXISTING service Dockerfiles (modified to bundle
   # docker-entrypoint.sh + watchexec). For ghcr mode, set
-  # API_GATEWAY_IMAGE / ANALYTICS_IMAGE / IDENTITY_IMAGE to a registry
+  # ANALYTICS_IMAGE / IDENTITY_RESOLUTION_IMAGE to a registry
   # ref in .env.compose — the dev-compose.sh up script generates an
   # override that drops `build:` and the bind-mount for affected services.
 
@@ -190,7 +194,7 @@ services:
   analytics:
     !!merge <<: *backend-common
     image: ${ANALYTICS_IMAGE:-insight-analytics:dev}
-    container_name: insight-analytics
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-analytics
     build:
       context: src/backend
       dockerfile: services/analytics/Dockerfile
@@ -210,9 +214,11 @@ services:
       APP__gears__analytics__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/analytics"
       APP__gears__analytics__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
       APP__gears__analytics__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
-      APP__gears__analytics__config__clickhouse_user: "${CLICKHOUSE_USER:-insight}"
-      APP__gears__analytics__config__clickhouse_password: "${CLICKHOUSE_PASSWORD:-insight-local}"
-      APP__gears__analytics__config__identity_url: "http://identity:8082"
+      # Read-only query-path identity (#1964): the grant-less `presentation` user
+      # (provisioned at CH init below), not the admin.
+      APP__gears__analytics__config__clickhouse_user: "presentation"
+      APP__gears__analytics__config__clickhouse_password: "${CLICKHOUSE_PRESENTATION_PASSWORD:-presentation-local}"
+      APP__gears__analytics__config__identity_url: "http://identity-resolution:8082"
       APP__gears__analytics__config__redis_url: "redis://redis:6379"
       APP__gears__analytics__config__metric_catalog__tenant_default_id: "${TENANT_DEFAULT_ID:-00000000-df51-5b42-9538-d2b56b7ee953}"
       # Gateway-JWT verification (NGINX_BFF R1) is done by the upstream
@@ -243,67 +249,27 @@ services:
     ports:
       - "${ANALYTICS_PORT:-8081}:8081"
 
-  identity:
-    !!merge <<: *backend-common
-    image: ${IDENTITY_IMAGE:-insight-identity:dev}
-    container_name: insight-identity
-    build:
-      context: src/backend
-      dockerfile: services/identity/Dockerfile
-    depends_on:
-      # required: false → compose skips this dependency when mariadb's
-      # `local-mariadb` profile isn't active (external MariaDB mode).
-      mariadb: {condition: service_healthy, required: false}
-    environment:
-      !!merge <<: *backend-env
-      ASPNETCORE_URLS: "http://0.0.0.0:8082"
-      IDENTITY__mariadb__url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
-      IDENTITY__identity__bind_addr: "0.0.0.0:8082"
-      IDENTITY__identity__tenant_default_id: "${TENANT_DEFAULT_ID:-00000000-df51-5b42-9538-d2b56b7ee953}"
-      # Gateway-JWT verification (NGINX_BFF R1). `auth_gateway_issuer` must equal
-      # the authenticator's gateway_issuer (the token `iss`); `auth_gateway_jwks_url`
-      # must be network-reachable (the authenticator serves JWKS on :8083).
-      # `iss` must equal the token's (authn-tls). identity is .NET (not the gears
-      # plugin) and fetches JWKS from an explicit URL with RequireHttps off, so
-      # it keeps the plain-http JWKS endpoint directly — no TLS front needed here.
-      IDENTITY__identity__auth_gateway_issuer: "${AUTHENTICATOR_GATEWAY_ISSUER:-https://authn-tls:8443}"
-      IDENTITY__identity__auth_gateway_jwks_url: "${GATEWAY_JWKS_URL:-http://authenticator:8083/.well-known/jwks.json}"
-    volumes:
-      # The .NET publish dir is replaced wholesale, not just one binary.
-      - ./deploy/compose/build/identity:/app:ro
-    command:
-      - "/app/Insight.Identity.Api.dll" # <watched path — the published DLL>
-      - "--"
-      - "dotnet"
-      - "/app/Insight.Identity.Api.dll"
-    ports:
-      - "${IDENTITY_PORT:-8082}:8082"
-
-  # ── Identity Resolution (Rust port of identity, epic #1602) ────────────
+  # ── Identity Resolution (Rust identity service, epic #1602) ────────────
   #
-  # Runs SIDE-BY-SIDE with the .NET `identity` service during the cutover:
-  # same API surface, same MariaDB `identity` database (schema now owned
-  # by the Rust migrator), same internal port 8082 — published on a different HOST
-  # port. Consumers keep calling `identity:8082` until the cutover flips
-  # their URLs to `identity-resolution:8082` (rollback = flip back).
-  # One-shot schema migration (mirrors the k8s migrate initContainer): the
-  # Rust service owns the identity schema — incl. 014, which the frozen .NET
-  # DbUp set no longer carries — so compose must run `migrate` before the
-  # server. Exits 0 and stays exited; the server below gates on it.
+  # Owns the MariaDB `identity` database (schema applied by the Rust
+  # migrator). Internal port 8082; consumers call `identity-resolution:8082`.
+  # One-shot schema migration (mirrors the k8s migrate initContainer):
+  # compose must run `migrate` before the server. Exits 0 and stays exited;
+  # the server below gates on it.
   identity-resolution-migrate:
     # backend-common supplies the insight network (without it the migrator
     # lands on the default network, can't resolve `mariadb`, and the server
     # blocks forever on service_completed_successfully) + restart:no + init.
     !!merge <<: *backend-common
     image: ${IDENTITY_RESOLUTION_IMAGE:-insight-identity-resolution:dev}
-    container_name: insight-identity-resolution-migrate
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-identity-resolution-migrate
     build:
       context: src/backend
       dockerfile: services/identity-resolution/Dockerfile
     depends_on:
       mariadb: {condition: service_healthy, required: false}
     environment:
-      APP__gears__identity-resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
+      APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
     volumes:
       - type: bind
         source: ./deploy/compose/build/identity-resolution/identity-resolution
@@ -323,7 +289,7 @@ services:
   identity-resolution:
     !!merge <<: *backend-common
     image: ${IDENTITY_RESOLUTION_IMAGE:-insight-identity-resolution:dev}
-    container_name: insight-identity-resolution
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-identity-resolution
     build:
       context: src/backend
       dockerfile: services/identity-resolution/Dockerfile
@@ -338,13 +304,13 @@ services:
       # gears-rust host: structural config (gears list, oidc-authn-plugin
       # full-auth wiring) lives in the bind-mounted
       # deploy/compose/identity-resolution-fullauth.yaml; these
-      # APP__gears__identity-resolution__config__* env vars override the
+      # APP__gears__identity_resolution__config__* env vars override the
       # deployment-specific leaf values.
-      APP__gears__identity-resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
-      APP__gears__identity-resolution__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
-      APP__gears__identity-resolution__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
-      APP__gears__identity-resolution__config__clickhouse_user: "${CLICKHOUSE_USER:-insight}"
-      APP__gears__identity-resolution__config__clickhouse_password: "${CLICKHOUSE_PASSWORD:-insight-local}"
+      APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
+      APP__gears__identity_resolution__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
+      APP__gears__identity_resolution__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
+      APP__gears__identity_resolution__config__clickhouse_user: "${CLICKHOUSE_USER:-insight}"
+      APP__gears__identity_resolution__config__clickhouse_password: "${CLICKHOUSE_PASSWORD:-insight-local}"
     volumes:
       - type: bind
         source: ./deploy/compose/build/identity-resolution/identity-resolution
@@ -381,7 +347,7 @@ services:
   authenticator:
     !!merge <<: *backend-common
     image: ${AUTHENTICATOR_IMAGE:-insight-authenticator:dev}
-    container_name: insight-authenticator
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-authenticator
     build:
       context: src/backend
       dockerfile: services/authenticator/Dockerfile
@@ -390,12 +356,12 @@ services:
       # required: false → compose skips this dependency when the fakeidp
       # profile is inactive (--auth=keycloak runs auth-keycloak instead).
       fakeidp: {condition: service_started, required: false}
-      identity: {condition: service_started}
+      identity-resolution: {condition: service_started}
     environment:
       !!merge <<: *backend-env
       APP__gears__authenticator__config__redis_url: "redis://redis:6379"
       APP__gears__authenticator__config__signing_keys_path: "/app/keys"
-      APP__gears__authenticator__config__identity_url: "${AUTHENTICATOR_IDENTITY_URL:-http://identity:8082}"
+      APP__gears__authenticator__config__identity_url: "${AUTHENTICATOR_IDENTITY_URL:-http://identity-resolution:8082}"
       # Token `iss` = the TLS discovery front, so downstream verifiers resolve
       # the JWKS over https (the plugin's runtime is https-only). The browser
       # still reaches the gateway plainly at :8080.
@@ -456,7 +422,7 @@ services:
     !!merge <<: *backend-common
     profiles: ["auth-fakeidp"]
     image: ${FAKEIDP_IMAGE:-insight-fakeidp:dev}
-    container_name: insight-fakeidp
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-fakeidp
     build:
       context: src/backend
       dockerfile: services/fakeidp/Dockerfile
@@ -491,7 +457,7 @@ services:
   # profile.
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
-    container_name: insight-keycloak
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-keycloak
     command: ["start-dev", "--import-realm", "--http-relative-path=/kc"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -534,7 +500,7 @@ services:
   authn-tls:
     !!merge <<: *backend-common
     image: nginx:1.27-alpine
-    container_name: insight-authn-tls
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-authn-tls
     depends_on:
       authenticator: {condition: service_started}
     volumes:
@@ -549,14 +515,14 @@ services:
   gateway:
     !!merge <<: *backend-common
     image: ${GATEWAY_IMAGE:-insight-gateway:dev}
-    container_name: insight-gateway
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-gateway
     build:
       context: src/backend
       dockerfile: services/gateway/Dockerfile
     depends_on:
       authenticator: {condition: service_started}
       analytics: {condition: service_started}
-      identity: {condition: service_started}
+      identity-resolution: {condition: service_started}
     environment:
       GATEWAY_AUTHENTICATOR_URL: "http://authenticator:8083"
       GATEWAY_FRONT_URL: "http://insight-front:80"
@@ -576,7 +542,7 @@ services:
     !!merge <<: *restart-policy
     profiles: ["front-dev"]
     image: node:24-bookworm-slim
-    container_name: insight-front
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-front
     networks:
       insight:
         aliases: [insight-front]
@@ -601,7 +567,7 @@ services:
     !!merge <<: *restart-policy
     profiles: ["front-built"]
     image: nginx:1.27-alpine
-    container_name: insight-front
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-front
     networks:
       insight:
         aliases: [insight-front]
@@ -625,7 +591,7 @@ services:
     # with "no matching manifest for linux/arm64/v8".
     platform: linux/amd64
     image: ${FRONTEND_IMAGE:-ghcr.io/constructorfabric/insight-front:latest}
-    container_name: insight-front
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-front
     networks:
       insight:
         aliases: [insight-front]
@@ -657,7 +623,7 @@ services:
   build-rust:
     profiles: ["build"]
     image: rust:1.95-bookworm
-    container_name: insight-build-rust
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-build-rust
     networks: [insight]
     working_dir: /workspace
     environment:
@@ -681,27 +647,10 @@ services:
         install -m 0755 /target/release/analytics /out/analytics/analytics
         install -m 0755 /target/release/authenticator /out/authenticator/authenticator
 
-  build-dotnet:
-    profiles: ["build"]
-    image: mcr.microsoft.com/dotnet/sdk:9.0
-    container_name: insight-build-dotnet
-    networks: [insight]
-    working_dir: /src
-    volumes:
-      - ./src/backend/services/identity:/src
-      - ./deploy/compose/build/identity:/out
-    command:
-      - "bash"
-      - "-c"
-      - |
-        set -eux
-        dotnet publish src/Insight.Identity.Api/Insight.Identity.Api.csproj \
-          -c Debug -o /out /p:UseAppHost=false
-
   build-frontend:
     profiles: ["build"]
     image: node:24-bookworm-slim
-    container_name: insight-build-frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-build-frontend
     networks: [insight]
     working_dir: /app
     volumes:
@@ -718,7 +667,7 @@ services:
   # (identity | silver | all) through to seed.py.
   seed-sample:
     profiles: ["seed"]
-    container_name: insight-seed-sample
+    container_name: ${COMPOSE_PROJECT_NAME:-insight}-seed-sample
     networks: [insight]
     build:
       context: deploy/seed
@@ -728,7 +677,7 @@ services:
       # mariadb/clickhouse profiles to be active.
       mariadb: {condition: service_healthy, required: false}
       clickhouse: {condition: service_healthy, required: false}
-      identity: {condition: service_started}
+      identity-resolution: {condition: service_started}
     environment:
       # Identity / persons anchor
       DEV_USER_EMAIL: "${DEV_USER_EMAIL:-}"
@@ -745,6 +694,8 @@ services:
       CLICKHOUSE_USER: "${CLICKHOUSE_USER:-insight}"
       CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-insight-local}"
       CLICKHOUSE_DATABASE: "${CLICKHOUSE_DATABASE:-insight}"
+      # Grant-less `presentation` user's password (#1964), provisioned on seed.
+      CLICKHOUSE_PRESENTATION_PASSWORD: "${CLICKHOUSE_PRESENTATION_PASSWORD:-presentation-local}"
       # apply-ch-migrations.sh runs `dbt run` from /ingestion/dbt. The
       # ingestion tree is bind-mounted read-only (below), so redirect dbt's
       # writable outputs (target/, logs/) to a writable scratch dir.

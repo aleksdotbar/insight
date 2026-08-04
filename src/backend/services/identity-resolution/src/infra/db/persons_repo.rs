@@ -10,7 +10,7 @@
 
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilter,
-    QueryResult, Statement,
+    QueryResult, QuerySelect, Statement,
 };
 use uuid::Uuid;
 
@@ -164,6 +164,60 @@ pub async fn resolve_person_ids_by_source_id(
 
     let rows = db.query_all(stmt).await?;
     person_ids_from_rows(rows)
+}
+
+/// Whether the tenant's persons log holds any observation for `person_id`.
+///
+/// The existence question the `value_type='person_id'` profile lookup needs:
+/// the log is the person registry, so "has at least one row" IS "the person
+/// exists in this tenant". Kept as a bounded EXISTS-shaped probe rather than
+/// reusing `fetch_person_observations`, which pulls every row of the person.
+///
+/// # Errors
+///
+/// Returns an error if the query fails.
+/// The subset of `person_ids` with at least one observation in the tenant's
+/// persons log — the batch form of [`person_exists`], for the wildcard branch
+/// of the visible-persons filter: a wildcard grant covers everyone IN THE
+/// TENANT, so ids from another tenant (or from nowhere) must not be echoed
+/// back as visible.
+///
+/// # Errors
+///
+/// Returns an error if the query fails or a stored `person_id` is not 16 bytes.
+pub async fn persons_in_tenant(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    person_ids: &[Uuid],
+) -> anyhow::Result<Vec<Uuid>> {
+    if person_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = persons::Entity::find()
+        .select_only()
+        .column(persons::Column::PersonId)
+        .filter(persons::Column::InsightTenantId.eq(tenant_id.as_bytes().to_vec()))
+        .filter(persons::Column::PersonId.is_in(person_ids.iter().map(|id| id.as_bytes().to_vec())))
+        .distinct()
+        .into_tuple::<Vec<u8>>()
+        .all(db)
+        .await?;
+
+    rows.iter().map(|raw| Ok(Uuid::from_slice(raw)?)).collect()
+}
+
+pub async fn person_exists(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    person_id: Uuid,
+) -> anyhow::Result<bool> {
+    let found = persons::Entity::find()
+        .filter(persons::Column::InsightTenantId.eq(tenant_id.as_bytes().to_vec()))
+        .filter(persons::Column::PersonId.eq(person_id.as_bytes().to_vec()))
+        .one(db)
+        .await?;
+    Ok(found.is_some())
 }
 
 /// Fetch every observation row for a person within the tenant (all value types,

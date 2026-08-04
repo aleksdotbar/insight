@@ -8,12 +8,14 @@ one test per (path, method, status-code) case:
   test_catalog.py            POST /v1/catalog/get_metrics
   test_metrics.py            GET+POST /v1/metrics · GET+PUT+DELETE /v1/metrics/{id}
                              POST /v1/metrics/{id}/query · POST /v1/metrics/queries
+  test_queries.py            GET+POST /v1/queries · GET+PUT+DELETE /v1/queries/{id}
+                             POST /v1/queries/{id}/run
   test_metric_thresholds.py  GET+POST /v1/metrics/{id}/thresholds
                              PUT+DELETE /v1/metrics/{id}/thresholds/{tid}
   test_admin_thresholds.py   GET+POST /v1/admin/metric-thresholds
                              GET+PUT+DELETE /v1/admin/metric-thresholds/{id}
   test_columns.py            GET /v1/columns · GET /v1/columns/{table}
-  test_persons.py            GET /v1/persons/{email}
+  test_persons.py            GET /v1/persons/{person_id}
   test_metric_results.py     POST /v1/metric-results
 
 Resources come from fixtures (`api/conftest.py`): scratch metric / threshold /

@@ -219,8 +219,8 @@ def _collect_metrics(cfg: SessionConfig) -> None:
 def identity_stub():
     """In-process loopback Identity stub (lib.identity_stub).
 
-    The rig runs no Identity service, so GET /v1/persons/{email} would 500
-    ("identity not configured"). This stub resolves one seeded email (→ 200) and
+    The rig runs no Identity service, so GET /v1/persons/{person_id} would 500
+    ("identity not configured"). This stub resolves one seeded person (→ 200) and
     404s the rest, so the persons endpoint exercises its real 200/404 contract
     (#1691). Started before `analytics` (which depends on it) so its URL is known
     when the binary boots — the analytics IdentityClient reads identity_url once
@@ -315,11 +315,7 @@ def pytest_sessionfinish(session, exitstatus):
     identity_out = Path(__file__).parent / ".artifacts" / "observed_identity_endpoints.json"
     try:
         api_coverage.dump_observed_identity(identity_out)
-        LOG.info(
-            "wrote identity-endpoint ledger (%d ops): %s",
-            len(api_coverage._OBSERVED_IDENTITY),
-            identity_out,
-        )
+        LOG.info("wrote identity-endpoint ledger (%d ops): %s", len(api_coverage._OBSERVED_IDENTITY), identity_out)
     except OSError as e:
         LOG.warning("could not write identity-endpoint ledger %s: %s", identity_out, e)
 

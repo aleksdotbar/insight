@@ -163,9 +163,9 @@ The system **MUST** accept exactly one read statement — a single `SELECT`/`WIT
 
 #### Read-Only Role
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-read-only-role`
+- [x] `p1` - **ID**: `cpt-presentation-fr-read-only-role`
 
-The system **MUST** execute contract reads under a dedicated `presentation_ro` role that has `SELECT` on the silver, identity, `person`, and legacy-gold (`insight`) databases and `CREATE`/`INSERT` only in `presentation`, with no `DROP`/`ALTER`/`TRUNCATE` anywhere. (#1963 provisions the role; it becomes the query-path identity once the analytics connection is wired to execute as it.)
+The system **MUST** execute contract reads under a dedicated `presentation_ro` role that has `SELECT` on the silver, identity, `person`, and legacy-gold (`insight`) databases and `CREATE`/`INSERT` only in `presentation`, with no `DROP`/`ALTER`/`TRUNCATE` anywhere. (#1963 provisions the role; #1964 adds the grant-less `presentation` user that carries it and points analytics at that user, so the role is now the active query-path identity.)
 
 **Rationale**: Read-only enforced by construction, not by convention.
 
@@ -173,9 +173,9 @@ The system **MUST** execute contract reads under a dedicated `presentation_ro` r
 
 #### Presentation Namespace
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-namespace`
+- [x] `p1` - **ID**: `cpt-presentation-fr-namespace`
 
-The system **MUST** provide an empty `presentation` ClickHouse database for new presentation artifacts (new gold, saved-query results, scratch). Legacy gold **MUST** remain read-only in the `insight` database (relabel, not migrate). (#1964.)
+The system **MUST** provide an empty `presentation` ClickHouse database for new presentation artifacts (new gold, saved-query results, scratch). Legacy gold **MUST** remain read-only in the `insight` database (relabel, not migrate). (#1964 always creates the database at bootstrap/deploy; the grant-less `presentation` user is provisioned when its password is supplied.)
 
 **Rationale**: Presentation needs a place to write without touching engineering-owned data, without a disruptive physical migration.
 
@@ -185,9 +185,9 @@ The system **MUST** provide an empty `presentation` ClickHouse database for new 
 
 #### Saved-Query CRUD and Run
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-saved-query-crud`
+- [x] `p1` - **ID**: `cpt-presentation-fr-saved-query-crud`
 
-The system **MUST** allow an analyst to create, list, fetch, update, delete, and run saved queries scoped to their tenant. Create and update **MUST** validate the SQL through the single-SELECT gate; run **MUST** execute read-only and return rows. (#1965.)
+The system **MUST** allow an analyst to create, list, fetch, update, delete, and run saved queries scoped to their tenant. Create and update **MUST** validate the SQL through the single-SELECT gate; run **MUST** execute read-only and return rows. (Shipped, #1965.)
 
 **Rationale**: A new analytics slice needs no engineering change and no re-ingest.
 
@@ -195,9 +195,9 @@ The system **MUST** allow an analyst to create, list, fetch, update, delete, and
 
 #### Named Query Parameters
 
-- [ ] `p1` - **ID**: `cpt-presentation-fr-query-params`
+- [x] `p1` - **ID**: `cpt-presentation-fr-query-params`
 
-The system **MUST** support named query parameters, always injecting `tenant` from request context and supporting a `period` parameter. The `tenant` parameter **MUST NOT** be settable from client SQL. (#1966.)
+The system **MUST** support named query parameters, always injecting `tenant` from request context and supporting a `period` parameter supplied on the run request. The `tenant` parameter **MUST NOT** be settable from client SQL. Parameter values **MUST** be bound as ClickHouse server-side parameters (`{name:Type}`), never string-interpolated, so a value can never alter query structure. (Shipped, #1966.)
 
 **Rationale**: Consistent, safe parameterization; the tenant value is authoritative from context.
 
@@ -209,7 +209,9 @@ The system **MUST** support named query parameters, always injecting `tenant` fr
 
 - [ ] `p1` - **ID**: `cpt-presentation-fr-tenant-filter`
 
-The system **MUST** inject a literal tenant predicate (`insight_tenant_id = <ctx.tenant>`) server-side on every contract read, sourced from request context and not from client SQL. This **MUST** replace the current no-op filter. (#1967, coordinated with engineering #1829.)
+The system **MUST** inject a literal tenant predicate (`tenant_id = <ctx.tenant>`, the column the gold observation and cohort contract exposes) server-side on every contract read, sourced from request context and not from client SQL. This **MUST** replace the current no-op filter. (#1967, coordinated with engineering #1829.)
+
+**Status**: Shipped for the structured `metric_results` read path (#1967). The legacy per-metric `query_ref` path (`execute_metric_query`) is not yet scoped and stays outside the guarantee until it is restricted to tenant-safe sources or given per-query enforcement; the requirement stays open until all exposed contract-read paths enforce tenant scope.
 
 **Rationale**: Every read is tenant-scoped; client SQL cannot widen it.
 
@@ -219,9 +221,9 @@ The system **MUST** inject a literal tenant predicate (`insight_tenant_id = <ctx
 
 #### Contract Surface Documentation
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-contract-surface-doc`
+- [x] `p2` - **ID**: `cpt-presentation-fr-contract-surface-doc`
 
-The system **MUST** document the contract surface — the silver and identity objects presentation may read — so additive-only evolution can be checked against it. (#1968.)
+The system **MUST** document the contract surface — the silver and identity objects presentation may read — so additive-only evolution can be checked against it. (Shipped, #1968: [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) names the `class_*`/`fct_*`/`mtr_*`/`dim_*` silver families and the `person.*`/`identity.*` objects as the stable read surface, with the additive-only rules.)
 
 **Rationale**: The contract must be explicit for both layers to evolve it safely and additively.
 
@@ -229,9 +231,9 @@ The system **MUST** document the contract surface — the silver and identity ob
 
 #### Contract Version Stamp
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-contract-version-stamp`
+- [x] `p2` - **ID**: `cpt-presentation-fr-contract-version-stamp`
 
-The system **MUST** stamp a contract version so presentation can detect the contract surface it was built against. (#1969.)
+The system **MUST** stamp a contract version so presentation can detect the contract surface it was built against. The stamp **MUST** be readable through the contract itself, and presentation **MUST** pin the version it was built against and report a mismatch without refusing to serve. (Shipped, #1969: `silver.contract_version` single-row view stamped by a ClickHouse migration; the analytics service pins `PINNED_CONTRACT_VERSION` and verifies the stamp in a periodic post-boot probe. See [CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) §2.3.)
 
 **Rationale**: Additive-only changes are safer to reason about with an explicit version.
 
@@ -241,7 +243,7 @@ The system **MUST** stamp a contract version so presentation can detect the cont
 
 #### Stable Query Console
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-query-console`
+- [x] `p2` - **ID**: `cpt-presentation-fr-query-console`
 
 The system **MUST** provide a single stable FE app (not per-branch stands) where an analyst authors a query (name plus SQL), gets an id, picks from their saved queries, runs it, and sees the result as a table or auto-chart. The console **MUST** consume only the saved-query API. (#1970.)
 
@@ -257,13 +259,17 @@ The system **MUST** serve many experimental FE builds under path-based addressin
 
 **Rationale**: FE developers need an isolated tier-3 authoring loop that cannot touch customer data.
 
+**Status**: Serving path shipped (#1971): the `insight-preview` Helm chart (`deploy/preview/`) provisions one experiment per release — `Deployment` + `Service` + one prefix-strip `Ingress` under `/exp/<name>` on the shared host, applied and removed by hand. Pinning the shared backend to synthetic data (#1973) is still open, so this requirement stays open.
+
 **Actors**: `cpt-presentation-actor-fe-dev`
 
 #### Preview Authentication Return Path
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-preview-auth`
+- [x] `p2` - **ID**: `cpt-presentation-fr-preview-auth`
 
-The system **MUST** authenticate preview environments through a single fixed callback using a Redis-backed opaque `state` return path, validated at store time (same-origin, `/exp/` allowlist), with nothing tamperable carried in the URL. (#1972.)
+The system **MUST** authenticate preview environments through a single fixed callback using a Redis-backed opaque `state` return path. The caller-supplied `return_to` **MUST** be sanitized and validated at store time (same-origin, `/exp/` prefix) before it enters the Redis login state, and **MUST NOT** be forwarded through the OIDC callback — only the opaque `state` rides the callback URL. (#1972.)
+
+**Status**: Shipped (#1972). The authenticator already stashes `state -> { return_to, pkce_verifier, nonce }` in Redis (short TTL, delete-on-read) and `302`s to `return_to` off the single fixed callback; #1972 adds the store-time `/exp/` check. `return_to` sanitization gained a configurable `return_to_prefix` knob: empty (default) keeps the permissive main-app posture; a preview-host deployment sets it to `/exp/` so a login can only return to an `/exp/<name>` path, and a non-matching or `..`-traversing value falls back to the configured default.
 
 **Rationale**: One host means one Entra redirect URI; the return path must be safe with no per-experiment Entra change.
 
@@ -291,6 +297,8 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 **Threshold**: 0 cross-tenant rows returned in isolation testing.
 
+**Status**: Met for the structured `metric_results` read path (#1967, verified by compiler unit tests and the #1359 e2e). Not yet met for the legacy `execute_metric_query` path; the NFR stays open until isolation testing covers every exposed contract-read path.
+
 **Rationale**: Multi-tenant SaaS compliance requirement.
 
 ### 6.2 NFR Exclusions
@@ -305,13 +313,13 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 #### Saved-Query API
 
-- [ ] `p1` - **ID**: `cpt-presentation-interface-saved-query-api`
+- [x] `p1` - **ID**: `cpt-presentation-interface-saved-query-api`
 
 **Type**: REST API (HTTP/JSON)
 
 **Stability**: unstable
 
-**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN.
+**Description**: CRUD and read-only run over saved queries, tenant-scoped. The one new surface Phase A adds. Detailed endpoint contracts live in DESIGN. (CRUD + run shipped in #1965; named parameters shipped in #1966.)
 
 **Breaking Change Policy**: Unstable in Phase A; contract hardens in a later phase.
 
@@ -412,4 +420,4 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 | No-op tenant filter left in place on a read path | Cross-tenant data leak | Inject the predicate in one shared place; cover with cross-tenant isolation tests |
 | Tenant-id retrofit (#1829) lands out of sync | Filter targets a missing/renamed column | Coordinate the flat filter with engineering #1829 |
 | Manual preview provisioning drifts or leaks | Stale experiments or config rewritten | One route object per experiment, merged by the controller; central config never rewritten |
-| Preview `state` tampering | Open-redirect or session hijack on the return path | Validate `return_to` at store time (same-origin, `/exp/` allowlist); delete-on-read opaque `state` |
+| Preview `state` tampering | Open-redirect or session hijack on the return path | Validate `return_to` at store time (same-origin, `/exp/` prefix); delete-on-read opaque `state` |

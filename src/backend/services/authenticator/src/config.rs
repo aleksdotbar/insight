@@ -257,6 +257,10 @@ pub struct AuthenticatorConfig {
     /// Where to send the browser after a successful login when the request
     /// named no (or an unsafe) `return_to`. A site-relative path.
     pub default_return_to: String,
+    /// `return_to` prefix honored at login time; must be site-relative and end
+    /// in `/`. Empty (default) = any same-origin path. A preview host sets
+    /// `/exp/` to confine logins to `/exp/<name>`.
+    pub return_to_prefix: String,
 
     // NOTE: first-admin bootstrap (DD-AUTH-08) and RBAC/ACL are deliberately
     // NOT in step 04 — deferred to a separate universe-admin initiative. Local
@@ -354,6 +358,7 @@ impl Default for AuthenticatorConfig {
                 "profile".to_owned(),
             ],
             default_return_to: "/".to_owned(),
+            return_to_prefix: String::new(),
             csrf_origins: Vec::new(),
             janitor_interval_seconds: 30,
             rate_limit: RateLimitConfig::default(),
@@ -407,6 +412,28 @@ impl AuthenticatorConfig {
             anyhow::ensure!(!value.trim().is_empty(), "{name} is required (empty)");
         }
 
+        // `default_return_to` lands verbatim in Location headers (login
+        // fallback and every `auth_error` bounce). A non-site-relative value
+        // would open-redirect on our own config, and a `#` fragment would hide
+        // `auth_error=` from the SPA's query parsing — defeating its login
+        // retry loop guard.
+        anyhow::ensure!(
+            self.default_return_to.starts_with('/')
+                && !self.default_return_to.starts_with("//")
+                && !self.default_return_to.contains('#')
+                && !self.default_return_to.chars().any(char::is_control),
+            "default_return_to must be a site-relative path without a fragment"
+        );
+
+        // Trailing `/` keeps prefix matching on a path boundary: `/exp/` admits
+        // `/exp/<name>`, not `/expunge`.
+        let prefix = &self.return_to_prefix;
+        anyhow::ensure!(
+            prefix.is_empty()
+                || (prefix.starts_with('/') && !prefix.starts_with("//") && prefix.ends_with('/')),
+            "return_to_prefix {prefix:?} must be a site-relative path prefix ending in '/'"
+        );
+
         // Service tokens: if any service is registered, the token endpoint must
         // know the `aud` it expects on assertions (its own URL). A registry
         // entry with zero public keys can never authenticate — reject it early.
@@ -458,6 +485,41 @@ mod tests {
     #[derive(serde::Deserialize)]
     struct GearSection {
         config: AuthenticatorConfig,
+    }
+
+    /// `Default` plus the required fields, so a test can `validate()` in isolation.
+    fn valid_config() -> AuthenticatorConfig {
+        AuthenticatorConfig {
+            gateway_issuer: "https://gw.example".to_owned(),
+            redirect_uri: "https://gw.example/auth/callback".to_owned(),
+            signing_keys_path: "/keys".to_owned(),
+            identity_url: "https://identity.example".to_owned(),
+            idp: IdpConfig {
+                issuer_url: "https://idp.example".to_owned(),
+                client_id: "client".to_owned(),
+                ..IdpConfig::default()
+            },
+            ..AuthenticatorConfig::default()
+        }
+    }
+
+    #[test]
+    fn return_to_prefix_must_be_site_relative_and_boundaried() {
+        for ok in ["", "/exp/"] {
+            let cfg = AuthenticatorConfig {
+                return_to_prefix: ok.to_owned(),
+                ..valid_config()
+            };
+            assert!(cfg.validate().is_ok(), "should accept prefix {ok:?}");
+        }
+
+        for bad in ["/exp", "exp/", "//evil/", "https://evil/"] {
+            let cfg = AuthenticatorConfig {
+                return_to_prefix: bad.to_owned(),
+                ..valid_config()
+            };
+            assert!(cfg.validate().is_err(), "should reject prefix {bad:?}");
+        }
     }
 
     /// The dev `config/insight.yaml` must deserialize into the config struct

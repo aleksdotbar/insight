@@ -6,7 +6,9 @@ mod catalog;
 pub(crate) mod error;
 mod handlers;
 mod metric_definitions;
+mod metric_drilldown;
 mod metric_results;
+mod saved_queries;
 
 #[cfg(test)]
 mod http_live_tests;
@@ -18,7 +20,15 @@ use axum::http::StatusCode;
 use axum::{Extension, Router};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use toolkit::api::{OpenApiInfo, OpenApiRegistry, OpenApiRegistryImpl, OperationBuilder};
+use toolkit::api::{
+    OpenApiInfo, OpenApiRegistry, OpenApiRegistryImpl, OperationBuilder, ResponseSpec,
+};
+use utoipa::openapi::RefOr;
+use utoipa::openapi::content::ContentBuilder;
+use utoipa::openapi::header::HeaderBuilder;
+use utoipa::openapi::schema::{
+    KnownFormat, ObjectBuilder, Schema, SchemaFormat, SchemaType, Type as OpenApiType,
+};
 
 use crate::config::GearConfig;
 use crate::domain::admin_threshold::AdminThresholdService;
@@ -29,6 +39,7 @@ use crate::domain::catalog::response as catalog_response;
 use crate::domain::metric;
 use crate::domain::metric_definitions::listing as metric_definitions_listing;
 use crate::domain::query;
+use crate::domain::saved_query;
 use crate::domain::schema_validator::SchemaValidator;
 use crate::domain::threshold;
 use crate::infra::identity::{IdentityClient, Person};
@@ -63,6 +74,12 @@ pub struct AppState {
     /// endpoints, the validation gauntlet, the `lock-enforcer` SQL, and the
     /// `audit-emitter` dual-sink contract.
     pub admin_threshold: AdminThresholdService,
+}
+
+pub(crate) fn forwarded_authorization(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
 }
 
 /// Register all analytics routes onto the host's stateless router.
@@ -226,8 +243,146 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric results",
         )
-        .standard_errors(openapi)
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_403(openapi)
+        .error_415(openapi)
+        .error_500(openapi)
         .handler(metric_results::query_metric_results)
+        .register(router, openapi);
+
+    // Saved-query CRUD + run (#1965) — the presentation-layer "Data Analytics"
+    // surface. CRUD is service-DB metadata; only `/run` reaches ClickHouse.
+    router = OperationBuilder::get("/v1/queries")
+        .operation_id("analytics_api.queries.list")
+        .summary("List saved queries")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<saved_query::SavedQueryListResponse>(
+            openapi,
+            StatusCode::OK,
+            "List of saved queries",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::list_saved_queries)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/queries")
+        .operation_id("analytics_api.queries.create")
+        .summary("Create a saved query")
+        .authenticated()
+        .no_license_required()
+        .json_request::<saved_query::CreateSavedQueryRequest>(openapi, "Saved query to create")
+        .json_response_with_schema::<saved_query::SavedQuery>(
+            openapi,
+            StatusCode::CREATED,
+            "Created saved query",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::create_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::get("/v1/queries/{id}")
+        .operation_id("analytics_api.queries.get")
+        .summary("Get a saved query by id")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<saved_query::SavedQuery>(
+            openapi,
+            StatusCode::OK,
+            "Saved query",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::get_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::put("/v1/queries/{id}")
+        .operation_id("analytics_api.queries.update")
+        .summary("Update a saved query")
+        .authenticated()
+        .no_license_required()
+        .json_request::<saved_query::UpdateSavedQueryRequest>(
+            openapi,
+            "Saved query fields to update",
+        )
+        .json_response_with_schema::<saved_query::SavedQuery>(
+            openapi,
+            StatusCode::OK,
+            "Updated saved query",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::update_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::delete("/v1/queries/{id}")
+        .operation_id("analytics_api.queries.delete")
+        .summary("Delete a saved query")
+        .authenticated()
+        .no_license_required()
+        .no_content_response(StatusCode::NO_CONTENT, "Saved query deleted")
+        .standard_errors(openapi)
+        .handler(saved_queries::delete_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/queries/{id}/run")
+        .operation_id("analytics_api.queries.run")
+        .summary("Run a saved query")
+        .authenticated()
+        .no_license_required()
+        .json_request::<saved_query::RunSavedQueryRequest>(
+            openapi,
+            "Optional named parameters (`period`); `tenant` is always injected from context",
+        )
+        .request_optional()
+        .json_response_with_schema::<saved_query::RunResponse>(
+            openapi,
+            StatusCode::OK,
+            "Query result rows",
+        )
+        .standard_errors(openapi)
+        .handler(saved_queries::run_saved_query)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/metric-drilldown")
+        .operation_id("analytics_api.metric_drilldown.create")
+        .summary("List metric evidence")
+        .authenticated()
+        .no_license_required()
+        .json_request::<crate::domain::metric_drilldown::MetricDrilldownRequest>(
+            openapi,
+            "Metric evidence selection",
+        )
+        .json_response_with_schema::<crate::domain::metric_drilldown::MetricDrilldownResponse>(
+            openapi,
+            StatusCode::OK,
+            "Metric evidence",
+        )
+        .error_400(openapi)
+        .error_401(openapi)
+        .error_404(openapi)
+        .error_415(openapi)
+        .error_429(openapi)
+        .error_500(openapi)
+        .handler(metric_drilldown::query_metric_drilldown)
+        .register(router, openapi);
+
+    router = OperationBuilder::post("/v1/metric-drilldown/export")
+        .operation_id("analytics_api.metric_drilldown.export")
+        .summary("Export metric evidence")
+        .authenticated()
+        .no_license_required()
+        .json_request::<crate::domain::metric_drilldown::MetricDrilldownExportRequest>(
+            openapi,
+            "Metric evidence export selection",
+        )
+        .response(ResponseSpec {
+            status: StatusCode::OK.as_u16(),
+            content_type: "text/csv",
+            description: "Complete metric evidence export".to_owned(),
+            schema_name: None,
+        })
+        .standard_errors(openapi)
+        .handler(metric_drilldown::export_metric_drilldown)
         .register(router, openapi);
 
     // Thresholds (legacy)
@@ -286,9 +441,9 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .register(router, openapi);
 
     // Person lookup (delegates to Identity service)
-    router = OperationBuilder::get("/v1/persons/{email}")
+    router = OperationBuilder::get("/v1/persons/{person_id}")
         .operation_id("analytics_api.persons.get")
-        .summary("Resolve a person by email")
+        .summary("Resolve a person by canonical person id")
         .authenticated()
         .no_license_required()
         .json_response_with_schema::<Person>(openapi, StatusCode::OK, "Person")
@@ -361,7 +516,8 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
             StatusCode::OK,
             "Metric definitions",
         )
-        .standard_errors(openapi)
+        .error_401(openapi)
+        .error_500(openapi)
         .handler(metric_definitions::list_metric_definitions)
         .register(router, openapi);
 
@@ -452,9 +608,44 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
 pub fn openapi_document() -> anyhow::Result<utoipa::openapi::OpenApi> {
     let openapi = OpenApiRegistryImpl::new();
     let _ = build_operations(Router::new(), &openapi);
-    openapi
+    let mut document = openapi
         .build_openapi(&openapi_info())
-        .map_err(|e| anyhow::anyhow!("failed to build analytics OpenAPI document: {e}"))
+        .map_err(|e| anyhow::anyhow!("failed to build analytics OpenAPI document: {e}"))?;
+    let response = document
+        .paths
+        .paths
+        .get_mut("/v1/metric-drilldown/export")
+        .and_then(|path| path.post.as_mut())
+        .and_then(|operation| operation.responses.responses.get_mut("200"))
+        .ok_or_else(|| anyhow::anyhow!("metric drilldown export response is missing"))?;
+    let RefOr::T(response) = response else {
+        return Err(anyhow::anyhow!(
+            "metric drilldown export response must be inline"
+        ));
+    };
+    let schema = Schema::Object(
+        ObjectBuilder::new()
+            .schema_type(SchemaType::Type(OpenApiType::String))
+            .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary)))
+            .build(),
+    );
+    for media_type in [
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ] {
+        response.content.insert(
+            media_type.to_owned(),
+            ContentBuilder::new().schema(Some(schema.clone())).build(),
+        );
+    }
+    response.headers.insert(
+        "Content-Disposition".to_owned(),
+        HeaderBuilder::new()
+            .schema(ObjectBuilder::new().schema_type(OpenApiType::String))
+            .description(Some("Attachment filename"))
+            .build(),
+    );
+    Ok(document)
 }
 
 #[cfg(test)]
@@ -470,5 +661,35 @@ mod tests {
     fn build_operations_registers_the_full_table_without_state() {
         let openapi = OpenApiRegistryImpl::new();
         let _router: Router = build_operations(Router::new(), &openapi);
+    }
+
+    #[test]
+    fn export_response_advertises_both_file_media_types_and_the_filename_header() {
+        let document =
+            openapi_document().unwrap_or_else(|error| panic!("document must build: {error}"));
+        let response = document
+            .paths
+            .paths
+            .get("/v1/metric-drilldown/export")
+            .and_then(|path| path.post.as_ref())
+            .and_then(|operation| operation.responses.responses.get("200"))
+            .unwrap_or_else(|| panic!("export 200 response must be registered"));
+        let RefOr::T(response) = response else {
+            panic!("export response must be inline, not a $ref");
+        };
+
+        for media_type in [
+            "text/csv",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ] {
+            assert!(
+                response.content.contains_key(media_type),
+                "export must advertise {media_type}"
+            );
+        }
+        assert!(
+            response.headers.contains_key("Content-Disposition"),
+            "export must advertise the attachment filename header"
+        );
     }
 }

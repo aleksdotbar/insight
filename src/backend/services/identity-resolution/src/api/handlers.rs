@@ -184,8 +184,9 @@ pub async fn internal_person_by_email(
 ///
 /// Validation mirrors the .NET `ResolveProfileRequestValidator`; resolution
 /// dispatches on `value_type` ("email" across all sources, "id" scoped to one
-/// source instance). Returns the (possibly empty or multi-element) match set —
-/// the caller maps 0 → 404, 1 → profile, >1 → 409.
+/// source instance, `person_id` the canonical person itself). Returns the
+/// (possibly empty or multi-element) match set — the caller maps 0 → 404,
+/// 1 → profile, >1 → 409.
 async fn resolve_person_ids(
     state: &AppState,
     tenant: Uuid,
@@ -200,11 +201,11 @@ async fn resolve_person_ids(
             .with_field_violation("value_type", "value_type is required", "REQUIRED")
             .create());
     }
-    if value_type != "email" && value_type != "id" {
+    if value_type != "email" && value_type != "id" && value_type != "person_id" {
         return Err(ProfileError::invalid_argument()
             .with_field_violation(
                 "value_type",
-                "value_type must be 'email' or 'id'",
+                "value_type must be 'email', 'id' or 'person_id'",
                 "INVALID",
             )
             .create());
@@ -218,6 +219,10 @@ async fn resolve_person_ids(
         return Err(ProfileError::invalid_argument()
             .with_field_violation("value", "value must be at most 320 characters", "INVALID")
             .create());
+    }
+
+    if value_type == "person_id" {
+        return resolve_person_id_mode(state, tenant, req).await;
     }
 
     if value_type == "id" {
@@ -269,6 +274,52 @@ async fn resolve_person_ids(
                 CanonicalError::internal("profile resolution failed").create()
             })
     }
+}
+
+/// The `value_type='person_id'` mode: the canonical person needs no resolution
+/// step, so this only validates the key and confirms the person exists in the
+/// tenant. Visibility still applies downstream, so name resolution and metric
+/// access answer to one rule.
+async fn resolve_person_id_mode(
+    state: &AppState,
+    tenant: Uuid,
+    req: &ResolveProfileRequest,
+) -> Result<Vec<Uuid>, CanonicalError> {
+    // Cross-field shape matches email's: a person id is tenant-wide, and
+    // source scoping is what selects the 'id' mode instead.
+    if req.insight_source_type.is_some() || req.insight_source_id.is_some() {
+        return Err(ProfileError::invalid_argument()
+            .with_field_violation(
+                "insight_source_type",
+                "insight_source_type / insight_source_id must be null for value_type='person_id'",
+                "INVALID",
+            )
+            .create());
+    }
+
+    let person_id = Uuid::parse_str(req.value.trim())
+        .ok()
+        .filter(|person_id| !person_id.is_nil())
+        .ok_or_else(|| {
+            ProfileError::invalid_argument()
+                .with_field_violation(
+                    "value",
+                    "value must be a person UUID for value_type='person_id'",
+                    "INVALID",
+                )
+                .create()
+        })?;
+
+    // A person exists iff the append-only log holds an observation for it; an
+    // unknown id yields no candidate, so the caller answers 404 — the same
+    // shape an unknown email takes, and no probe for which ids exist.
+    let exists = persons_repo::person_exists(&state.db, tenant, person_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "resolve by person id failed");
+            CanonicalError::internal("profile resolution failed").create()
+        })?;
+    Ok(if exists { vec![person_id] } else { Vec::new() })
 }
 
 /// Resolve the person's parent (supervisor) edge from `org_chart`, filtered to

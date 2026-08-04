@@ -134,7 +134,7 @@ class AnalyticsProcess:
         self.cfg = cfg
         self.binary = binary
         self.port = port
-        # Identity base URL for GET /v1/persons/{email}. Empty → the handler 500s
+        # Identity base URL for GET /v1/persons/{person_id}. Empty → the handler 500s
         # ("identity not configured"); the rig passes the in-process stub's URL so
         # the endpoint exercises its real 200/404 contract (#1691).
         self.identity_url = identity_url
