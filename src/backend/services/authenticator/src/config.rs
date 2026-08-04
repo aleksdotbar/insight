@@ -186,7 +186,7 @@ impl Default for AuditConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct RateLimitConfig {
-    /// Cap on concurrent live `asm:login_state:*` entries; excess
+    /// Cap on concurrent live `{asm}:login_state:*` entries; excess
     /// `/auth/login` gets 429 before any state is written (stops a
     /// slow-trickle Redis-exhaustion attack the edge cannot see).
     pub login_state_max: u64,
@@ -261,6 +261,13 @@ pub struct AuthenticatorConfig {
     /// in `/`. Empty (default) = any same-origin path. A preview host sets
     /// `/exp/` to confine logins to `/exp/<name>`.
     pub return_to_prefix: String,
+    /// Master switch for the preview experiments capability (`/exp/<name>`
+    /// tier-3 frontends). Default `false`: a login can never return into the
+    /// `/exp/` subtree, so a production stand cannot host experimental
+    /// frontends against its data. Dev/demo preview hosts set `true` and serve
+    /// experiments over that stand's own data. A per-user RBAC capability will
+    /// supersede this environment-level gate.
+    pub experiments_enabled: bool,
 
     // NOTE: first-admin bootstrap (DD-AUTH-08) and RBAC/ACL are deliberately
     // NOT in step 04 — deferred to a separate universe-admin initiative. Local
@@ -359,6 +366,7 @@ impl Default for AuthenticatorConfig {
             ],
             default_return_to: "/".to_owned(),
             return_to_prefix: String::new(),
+            experiments_enabled: false,
             csrf_origins: Vec::new(),
             janitor_interval_seconds: 30,
             rate_limit: RateLimitConfig::default(),

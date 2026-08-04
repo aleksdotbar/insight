@@ -1,18 +1,4 @@
-{{ config(
-    materialized='table',
-    engine='MergeTree',
-    order_by=['tenant_id', 'source_key', 'measure_key', 'entity_id', 'metric_date', 'record_id'],
-    schema='insight',
-    alias='git_metric_evidence',
-    tags=['gold'],
-    query_settings={
-        'join_use_nulls': 1,
-        'max_memory_usage': 1610612736,
-        'max_threads': 4,
-        'max_bytes_before_external_group_by': 805306368,
-        'max_bytes_before_external_sort': 805306368
-    }
-) }}
+{{ metric_evidence_table(join_use_nulls=1) }}
 
 -- Resolution happens HERE, once per gold build: evidence carries BOTH keys —
 -- `entity_id` is the canonical person id (or '' when identity does not know
@@ -103,7 +89,6 @@ file_changes_source AS (
         file_changes.lines_removed AS lines_removed,
         commits.repository_value AS repository_value,
         commits.repository_label AS repository_label,
-        commits.source_dimensions AS source_dimensions,
         CAST(
             [
                 tuple('file_extension', file_extension, file_extension_label),
@@ -239,7 +224,7 @@ pull_requests_source AS (
         AND pr_commit_emails.repo_slug = prs.repo_slug
         AND pr_commit_emails.pr_id = prs.pr_id
 ),
-prs_created_source AS (
+pull_request_measures AS (
     SELECT
         tenant_id,
         pr_id,
@@ -247,52 +232,89 @@ prs_created_source AS (
         title,
         author_name,
         assumeNotNull(entity_id) AS entity_id,
-        toDate(created_on) AS metric_date,
-        created_on AS observed_at,
-        state,
-        change_size,
+        toDate(pr_measure.3) AS metric_date,
+        pr_measure.3 AS observed_at,
+        pr_measure.1 AS measure_key,
+        pr_measure.2 AS contribution,
         repository_label,
         repository_value,
         source_dimensions
-    FROM pull_requests_source
-    WHERE entity_id IS NOT NULL
-      AND entity_id != ''
-      AND created_on IS NOT NULL
+    FROM pull_requests_source AS pull_request
+    ARRAY JOIN CAST(arrayConcat(
+        if(
+            created_on IS NOT NULL,
+            [tuple('pr_created', toFloat64(1), toDateTime64(assumeNotNull(created_on), 3))],
+            []
+        ),
+        if(
+            created_on IS NOT NULL AND state = 'MERGED',
+            [tuple('pr_created_merged', toFloat64(1), toDateTime64(assumeNotNull(created_on), 3))],
+            []
+        ),
+        if(
+            created_on IS NOT NULL AND ifNull(change_size, 0) > 0,
+            [tuple('pr_change_size', toFloat64(ifNull(change_size, 0)), toDateTime64(assumeNotNull(created_on), 3))],
+            []
+        ),
+        if(
+            state = 'MERGED' AND closed_on IS NOT NULL,
+            [tuple('pr_merged', toFloat64(1), toDateTime64(assumeNotNull(closed_on), 3))],
+            []
+        ),
+        if(
+            cycle_hours IS NOT NULL AND closed_on IS NOT NULL,
+            [tuple('pr_cycle_hours', toFloat64(assumeNotNull(cycle_hours)), toDateTime64(assumeNotNull(closed_on), 3))],
+            []
+        )
+    ) AS Array(Tuple(measure_key String, contribution Float64, observed_at DateTime64(3)))) AS pr_measure
+    WHERE pull_request.entity_id IS NOT NULL
+      AND pull_request.entity_id != ''
 ),
-prs_merged_source AS (
+file_change_measures AS (
     SELECT
         tenant_id,
-        pr_id,
-        pr_number,
-        title,
-        author_name,
-        assumeNotNull(entity_id) AS entity_id,
-        toDate(closed_on) AS metric_date,
-        closed_on AS observed_at,
-        cycle_hours,
-        repository_label,
-        repository_value,
-        source_dimensions
-    FROM pull_requests_source
-    WHERE entity_id IS NOT NULL
-      AND entity_id != ''
-      AND state = 'MERGED'
-      AND closed_on IS NOT NULL
+        entity_id,
+        metric_date,
+        file_measure.1 AS measure_key,
+        file_measure.2 AS value,
+        file_measure.3 AS dimensions
+    FROM file_changes_source
+    ARRAY JOIN CAST(arrayConcat(
+        if(
+            lines_added IS NOT NULL,
+            [tuple('lines_added', toFloat64(assumeNotNull(lines_added)), category_source_dimensions)],
+            []
+        ),
+        if(
+            lines_removed IS NOT NULL,
+            [tuple('lines_removed', toFloat64(assumeNotNull(lines_removed)), category_source_dimensions)],
+            []
+        ),
+        if(
+            category = 'code' AND lines_added IS NOT NULL,
+            [tuple('code_lines_added', toFloat64(assumeNotNull(lines_added)), file_source_dimensions)],
+            []
+        )
+    ) AS Array(Tuple(
+        measure_key String,
+        value Float64,
+        dimensions Array(Tuple(key String, value String, label Nullable(String)))
+    ))) AS file_measure
 ),
 measure_observations AS (
     {{ presence_measure('commit_day', ['commits_source']) }}
 
     UNION ALL
 
-    {{ sum_measure('code_lines_added', 'file_changes_source', 'lines_added', 'file_source_dimensions', where="category = 'code'") }}
-
-    UNION ALL
-
-    {{ sum_measure('lines_added', 'file_changes_source', 'lines_added', 'category_source_dimensions') }}
-
-    UNION ALL
-
-    {{ sum_measure('lines_removed', 'file_changes_source', 'lines_removed', 'category_source_dimensions') }}
+    SELECT
+        tenant_id,
+        entity_id,
+        metric_date,
+        measure_key,
+        toNullable(sum(value)) AS value,
+        dimensions
+    FROM file_change_measures
+    GROUP BY tenant_id, entity_id, metric_date, measure_key, dimensions
 )
 SELECT
     assumeNotNull(tenant_id) AS tenant_id,
@@ -368,12 +390,12 @@ SELECT
     assumeNotNull(entity_id) AS entity_id,
     assumeNotNull(metric_date) AS metric_date,
     toNullable(toDateTime64(observed_at, 3)) AS observed_at,
-    pr_measure.1 AS measure_key,
-    concat(repository_value, ':pr:', toString(pr_id), ':', pr_measure.1) AS record_id,
+    measure_key,
+    concat(repository_value, ':pr:', toString(pr_id), ':', measure_key) AS record_id,
     'pull_request' AS record_kind,
     'event' AS granularity,
     if(title = '', concat('PR #', toString(pr_number)), title) AS record_label,
-    toNullable(toFloat64(pr_measure.2)) AS contribution,
+    toNullable(toFloat64(contribution)) AS contribution,
     CAST(NULL AS Nullable(String)) AS subject_key,
     source_dimensions AS dimensions,
     map(
@@ -382,44 +404,7 @@ SELECT
         'repository', repository_label,
         'author', author_name
     ) AS details
-FROM prs_created_source
-ARRAY JOIN arrayConcat(
-    [tuple('pr_created', toFloat64(1))],
-    if(state = 'MERGED', [tuple('pr_created_merged', toFloat64(1))], []),
-    if(ifNull(change_size, 0) > 0, [tuple('pr_change_size', toFloat64(change_size))], [])
-) AS pr_measure
-WHERE tenant_id IS NOT NULL
-  AND entity_id IS NOT NULL
-  AND metric_date IS NOT NULL
-
-UNION ALL
-
-SELECT
-    assumeNotNull(tenant_id) AS tenant_id,
-    'git' AS source_key,
-    'person' AS entity_type,
-    assumeNotNull(entity_id) AS entity_id,
-    assumeNotNull(metric_date) AS metric_date,
-    toNullable(toDateTime64(observed_at, 3)) AS observed_at,
-    pr_measure.1 AS measure_key,
-    concat(repository_value, ':pr:', toString(pr_id), ':', pr_measure.1) AS record_id,
-    'pull_request' AS record_kind,
-    'event' AS granularity,
-    if(title = '', concat('PR #', toString(pr_number)), title) AS record_label,
-    toNullable(toFloat64(pr_measure.2)) AS contribution,
-    CAST(NULL AS Nullable(String)) AS subject_key,
-    source_dimensions AS dimensions,
-    map(
-        'ref', toString(pr_number),
-        'title', title,
-        'repository', repository_label,
-        'author', author_name
-    ) AS details
-FROM prs_merged_source
-ARRAY JOIN arrayConcat(
-    [tuple('pr_merged', toFloat64(1))],
-    if(cycle_hours IS NOT NULL, [tuple('pr_cycle_hours', toFloat64(cycle_hours))], [])
-) AS pr_measure
+FROM pull_request_measures
 WHERE tenant_id IS NOT NULL
   AND entity_id IS NOT NULL
   AND metric_date IS NOT NULL

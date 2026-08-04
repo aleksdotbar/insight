@@ -45,7 +45,13 @@ helm uninstall preview-<name> --namespace <ns>
   job (not FE-side OIDC), extended with a Redis-backed opaque `state` through the
   single fixed callback that `302`s back to `/exp/<name>`. This chart deliberately
   carries no auth env; that wiring lands with #1972.
-- **#1973** — pin the shared preview backend to synthetic data only.
+- **#1973** — experiments are a gated capability, off by default. The authenticator
+  takes `experiments_enabled` (default `false`); only when a stand sets it `true` is a
+  login return into `/exp/<name>` honored, so a **production** stand cannot host
+  experimental frontends against its data. Dev/demo preview hosts opt in and run
+  experiments over that stand's own data (no synthetic pin). This FE chart carries no
+  backend/auth env; the gate lives on the authenticator (gitops), like the return
+  prefix in #1972. A per-user RBAC capability supersedes this env-level gate later.
 - **#1981** — CI-driven provisioning, sequenced after the nginx-to-Envoy move; the
   `pathType: ImplementationSpecific` route becomes a Gateway API `HTTPRoute` then.
 

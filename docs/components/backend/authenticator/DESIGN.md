@@ -47,6 +47,7 @@ date: 2026-07-06
   - [DD-AUTH-07: Access-Control Claims Fetched Once, at Login](#dd-auth-07-access-control-claims-fetched-once-at-login)
   - [DD-AUTH-08: Empty-Table First-Admin Bootstrap plus INSTALLER](#dd-auth-08-empty-table-first-admin-bootstrap-plus-installer)
   - [DD-AUTH-09: View-As Override at Session Mint, Gated by an Environment Flag](#dd-auth-09-view-as-override-at-session-mint-gated-by-an-environment-flag)
+  - [DD-AUTH-10: Single-Slot Session Keyspace (`{asm}:` Hash Tag)](#dd-auth-10-single-slot-session-keyspace-asm-hash-tag)
   - [RESOLVED (step 07): ES256 for the Gateway JWT](#resolved-step-07-es256-for-the-gateway-jwt)
 - [6. Traceability](#6-traceability)
 
@@ -71,7 +72,7 @@ The authenticator is a plain HTTP service: no proxying, no K8s API access, no st
 | Requirement | Design Response |
 |---|---|
 | `cpt-insightspec-fr-auth-oidc-login` | Confidential OIDC client with PKCE; IdP tokens stored in the session record only; session-fixation revoke on callback |
-| `cpt-insightspec-fr-auth-session-model` | Stable `session_id` (UUIDv7) keys everything; `asm:token:{token}` mapping is the only rotating artifact |
+| `cpt-insightspec-fr-auth-session-model` | Stable `session_id` (UUIDv7) keys everything; `{asm}:token:{token}` mapping is the only rotating artifact |
 | `cpt-insightspec-fr-auth-session-cookie` | `__Host-`-prefixed opaque cookie, TTL 600 s default, set on `/auth/callback` |
 | `cpt-insightspec-fr-auth-session-refresh` | New mapping write + old-mapping grace TTL; `refresh_at` with 90 s margin and 120 s jitter window |
 | `cpt-insightspec-fr-auth-session-store` | Redis keyspace in 3.7: session HASH, token mapping, linked JWT, ZSET index, sid index, refresh-due ZSET; MULTI/EXEC pipelines |
@@ -81,7 +82,7 @@ The authenticator is a plain HTTP service: no proxying, no K8s API access, no st
 | `cpt-insightspec-fr-auth-session-list`, `cpt-insightspec-fr-auth-session-revoke` | ZSET index reads; one revoke pipeline shared by logout, back-channel, admin, and `invalid_grant` paths |
 | `cpt-insightspec-fr-auth-logout` | Local + RP-initiated + back-channel receiver with `jti` replay guard |
 | `cpt-insightspec-fr-auth-csrf` | Double-submit token bound to the session + `Origin` allowlist |
-| `cpt-insightspec-fr-auth-idp-refresh` | Leader-elected refresher over `asm:idp_refresh_due`; per-session rotation lock; fail-open transport / fail-closed verdict |
+| `cpt-insightspec-fr-auth-idp-refresh` | Leader-elected refresher over `{asm}:idp_refresh_due`; per-session rotation lock; fail-open transport / fail-closed verdict |
 | `cpt-insightspec-fr-auth-service-tokens` | Token listener + RFC 7523 verification against the registry; same signer, same JWKS |
 | `cpt-insightspec-fr-auth-bootstrap` | Empty-table guard in the login path; INSTALLER as the production path |
 | `cpt-insightspec-fr-auth-internal-reachability` | Two listeners (3.10); NetworkPolicies; credential checks on every endpoint |
@@ -98,7 +99,23 @@ The authenticator is a plain HTTP service: no proxying, no K8s API access, no st
 | `cpt-insightspec-nfr-auth-rate-limit` | Layer-2 precise limits | Auth Controller | Redis token bucket by session/user + login-state cap | Flood test: 429 at cap, bounded Redis entries |
 | `cpt-insightspec-nfr-auth-fail-closed` | No auth without Redis | Session Manager | No local cache; readiness = Redis + keys loaded | Kill Redis; verify 401/503 + not-ready |
 
-**ADRs**: [`cpt-insightspec-adr-auth-0001-per-environment-idp-selection`](specs/ADR/0001-per-environment-idp-selection.md) -- which IdP backs the authenticator's OIDC client per environment (fakeidp for all dev environments -- CI, compose, and local k8s -- because it injects the `tenant_id` claim with zero extra infrastructure; Dex, heavy brokers, and a dev-login endpoint rejected; the production IdP/broker deferred), realising `cpt-insightspec-fr-auth-oidc-login` wiring without a code change. Remaining decisions are captured inline in [section 5](#5-design-decisions) until extracted alongside implementation.
+**ADRs**:
+
+- [`cpt-insightspec-adr-auth-0001-per-environment-idp-selection`](specs/ADR/0001-per-environment-idp-selection.md)
+  (superseded) -- fakeidp for all dev environments; Dex, heavy brokers, and a dev-login endpoint
+  rejected; the production IdP/broker deferred.
+- [`cpt-insightspec-adr-auth-0002-real-idp-on-deployed-stands`](specs/ADR/0002-real-idp-on-deployed-stands.md)
+  -- one shared, pre-provisioned Keycloak backs every deployed stand (realm per environment,
+  roster-generated, `tenant_id` protocol mapper); supersedes ADR-0001 for CI and local k8s.
+- [`cpt-insightspec-adr-auth-0003-keycloak-identity-broker`](specs/ADR/0003-keycloak-identity-broker.md)
+  -- Keycloak adopted as the identity broker for customer IdPs and social logins (GitHub #2163),
+  presenting one uniform OIDC issuer to the authenticator; realm content managed as code
+  (keycloak-config-cli from gitops, secrets via sealed secrets); per-provider mappers inject the
+  single `tenant_id` claim (DD-AUTH-04); amends ADR-0002 by retiring fakeidp everywhere.
+
+All three realise `cpt-insightspec-fr-auth-oidc-login` wiring without a code change -- the IdP
+stays a config value. Remaining decisions are captured inline in
+[section 5](#5-design-decisions) until extracted alongside implementation.
 
 ### 1.3 Architecture Layers
 
@@ -124,7 +141,7 @@ graph TB
     end
 
     subgraph State
-        RD[(Redis - asm:* keys)]
+        RD[(Redis - {asm}:* keys)]
         SEC[Mounted Secret<br/>signing keys]
         REG[Service registry<br/>gitops config]
     end
@@ -232,13 +249,13 @@ The authenticator is an idiomatic gears-rust gear built on the published `cf-gea
 
 | Entity | Purpose | Storage |
 |---|---|---|
-| `Session` | Active login of one user on one device; stable identity (`session_id`, UUIDv7); holds person, tenants, roles snapshot, IdP linkage, IdP refresh token, expiries, CSRF token | Redis HASH `asm:session:{session_id}` |
-| `SessionToken` | Rotating cookie credential; maps token to `session_id` | Redis STRING `asm:token:{token}` |
-| `LinkedJwt` | The signed gateway JWT linked 1:1 to the session | Redis STRING `asm:jwt:{session_id}` |
-| `UserSessionIndex` | All `session_id`s for one person, scored by expiry | Redis ZSET `asm:user_sessions:{person_id}` |
-| `SidIndex` | Map (OIDC issuer, OIDC sid) to local sessions | Redis SET `asm:sid_index:{iss}:{idp_sid}` |
-| `LoginState` | Per-login transient state (PKCE verifier, nonce) | Redis HASH `asm:login_state:{state}`, TTL 5 min |
-| `IdpRefreshSchedule` | Sessions due for IdP token refresh, scored by due time | Redis ZSET `asm:idp_refresh_due` |
+| `Session` | Active login of one user on one device; stable identity (`session_id`, UUIDv7); holds person, tenants, roles snapshot, IdP linkage, IdP refresh token, expiries, CSRF token | Redis HASH `{asm}:session:{session_id}` |
+| `SessionToken` | Rotating cookie credential; maps token to `session_id` | Redis STRING `{asm}:token:{token}` |
+| `LinkedJwt` | The signed gateway JWT linked 1:1 to the session | Redis STRING `{asm}:jwt:{session_id}` |
+| `UserSessionIndex` | All `session_id`s for one person, scored by expiry | Redis ZSET `{asm}:user_sessions:{person_id}` |
+| `SidIndex` | Map (OIDC issuer, OIDC sid) to local sessions | Redis SET `{asm}:sid_index:{iss}:{idp_sid}` |
+| `LoginState` | Per-login transient state (PKCE verifier, nonce) | Redis HASH `{asm}:login_state:{state}`, TTL 5 min |
+| `IdpRefreshSchedule` | Sessions due for IdP token refresh, scored by due time | Redis ZSET `{asm}:idp_refresh_due` |
 | `ServiceRegistryEntry` | Service name, public key(s) (inline or by file path), allowed roles | Gitops-reviewable config (mounted) |
 | `SigningKey` | Current + previous JWT signing keys | Mounted K8s Secret, in-process cache |
 
@@ -342,7 +359,7 @@ Does not call the OIDC provider. Does not authenticate requests by itself. Does 
 The gateway's `auth_request` target -- the session check and JWT injection behind one subrequest.
 
 ##### Responsibility scope
-`GET /internal/authz`: resolve `asm:token:{token}` to `session_id`, load session, read the linked JWT; under the reissue age, return it as-is; past it, rebuild claims from the session record, sign, `SET asm:jwt:{session_id} NX EX` (parallel requests converge on one canonical JWT), return the winner. Emit `X-Gateway-Jwt` and the `Cache-Control` header (`max-age = min(authz_cache_max_age, jwt_exp - now - 60 s)` on 200, `no-store` otherwise).
+`GET /internal/authz`: resolve `{asm}:token:{token}` to `session_id`, load session, read the linked JWT; under the reissue age, return it as-is; past it, rebuild claims from the session record, sign, `SET {asm}:jwt:{session_id} NX EX` (parallel requests converge on one canonical JWT), return the winner. Emit `X-Gateway-Jwt` and the `Cache-Control` header (`max-age = min(authz_cache_max_age, jwt_exp - now - 60 s)` on 200, `no-store` otherwise).
 
 ##### Responsibility boundaries
 Never writes session state other than the JWT slot. Never sets cookies (the subrequest response's `Set-Cookie` would be discarded by nginx anyway). No correlation-id generation -- the response is cacheable; correlation ids are minted at the edge.
@@ -377,7 +394,7 @@ Does not verify inbound JWTs (the host's auth pipeline does, for the admin surfa
 No-user workloads need signed identity without a secret in transit.
 
 ##### Responsibility scope
-`POST /internal/token` on the second listener: validate the RFC 7523 assertion (signature against the registry's public keys, `aud`, `exp` at most 60 s), require a tenant scope (reject `400` if none), replay-guard `jti` (`SET NX`, same pattern as `asm:logout_jti`), audit, and mint a token with a stable per-service UUID `sub` (deterministic v5), `sub_type = service`, registry roles (including `service`), and the requested single `tenant_id`.
+`POST /internal/token` on the second listener: validate the RFC 7523 assertion (signature against the registry's public keys, `aud`, `exp` at most 60 s), require a tenant scope (reject `400` if none), replay-guard `jti` (`SET NX`, same pattern as `{asm}:logout_jti`), audit, and mint a token with a stable per-service UUID `sub` (deterministic v5), `sub_type = service`, registry roles (including `service`), and the requested single `tenant_id`.
 
 ##### Responsibility boundaries
 Does not manage the registry (gitops does). Does not issue user tokens.
@@ -411,7 +428,7 @@ Does not store sessions; holds no IdP tokens beyond one operation.
 The session must not outlive the IdP's willingness to vouch for the user, even when the IdP has no back-channel logout.
 
 ##### Responsibility scope
-Leader-elected worker (Redis lock) owned by the gear's runnable capability. Loop: `ZRANGEBYSCORE asm:idp_refresh_due 0 now`, spawn one refresh task per due session under a per-session lock (refresh-token rotation is one-time-use; racing burns the grant), bounded by a semaphore (`idp.refresh_concurrency`, default 128 -- politeness toward the customer IdP, not our capacity). Store rotated tokens back and re-schedule with write-time jitter. `invalid_grant` verdict: revoke all linked sessions via the Session Manager's standard pipeline. Transient errors (timeout, 5xx, 429 with `Retry-After`): backoff and retry, never revoke.
+Leader-elected worker (Redis lock) owned by the gear's runnable capability. Loop: `ZRANGEBYSCORE {asm}:idp_refresh_due 0 now`, spawn one refresh task per due session under a per-session lock (refresh-token rotation is one-time-use; racing burns the grant), bounded by a semaphore (`idp.refresh_concurrency`, default 128 -- politeness toward the customer IdP, not our capacity). Store rotated tokens back and re-schedule with write-time jitter. `invalid_grant` verdict: revoke all linked sessions via the Session Manager's standard pipeline. Transient errors (timeout, 5xx, 429 with `Retry-After`): backoff and retry, never revoke.
 
 ##### Responsibility boundaries
 Does not talk to the browser. Does not decide policy beyond the configured `no_refresh_token_policy`.
@@ -444,7 +461,7 @@ Does not protect `/api/*` (gateway strips nothing relevant there; `SameSite=Stri
 Per-key Redis TTLs remove records, but the ZSET indexes and the refresh schedule still list dead members until trimmed.
 
 ##### Responsibility scope
-Leader-elected periodic pass over single, well-known keys: `ZREMRANGEBYSCORE` expired members from `asm:login_state_live` and orphans from `asm:idp_refresh_due`; emit backlog/removed metrics. Per-user session indexes are trimmed inline by their writers and TTL-bounded, so the pass never scans the keyspace.
+Leader-elected periodic pass over single, well-known keys: `ZREMRANGEBYSCORE` expired members from `{asm}:login_state_live` and orphans from `{asm}:idp_refresh_due`; emit backlog/removed metrics. Per-user session indexes are trimmed inline by their writers and TTL-bounded, so the pass never scans the keyspace.
 
 ##### Responsibility boundaries
 Does not delete session records (TTL does). One leader per pass.
@@ -570,15 +587,15 @@ sequenceDiagram
     participant R as Redis
 
     N->>B: GET /internal/authz (subrequest on exchange-cache miss)
-    B->>R: GET asm:token:{token} -> session_id; load session
+    B->>R: GET {asm}:token:{token} -> session_id; load session
     alt no / expired session
         B-->>N: 401 + Cache-Control: no-store
     else JWT age < reissue threshold (4 min)
-        B->>R: GET asm:jwt:{session_id}
+        B->>R: GET {asm}:jwt:{session_id}
         B-->>N: 200 + X-Gateway-Jwt (stored JWT as-is,<br/>>= 60 s validity left) + Cache-Control: max-age
     else JWT age >= reissue threshold
         B->>B: rebuild claims from session record, sign fresh JWT
-        B->>R: SET asm:jwt:{session_id} NX EX (stampede-safe)
+        B->>R: SET {asm}:jwt:{session_id} NX EX (stampede-safe)
         B-->>N: 200 + X-Gateway-Jwt (canonical winner) + Cache-Control: max-age
     end
 ```
@@ -599,10 +616,10 @@ sequenceDiagram
     participant R as Redis
 
     U->>B: POST /auth/refresh (cookie = old token)
-    B->>R: GET asm:token:{old} -> session_id; load session
+    B->>R: GET {asm}:token:{old} -> session_id; load session
     alt mapping resolves, under absolute cap
         B->>B: new token = csprng()<br/>new_exp = min(now + ttl, absolute_expires_at)<br/>refresh_at = new_exp - 90s +/- 60s jitter
-        B->>R: pipeline: SET asm:token:{new} session_id EX new_exp<br/>PEXPIRE asm:token:{old} grace_ms<br/>update session expires_at + TTL + ZSET score
+        B->>R: pipeline: SET {asm}:token:{new} session_id EX new_exp<br/>PEXPIRE {asm}:token:{old} grace_ms<br/>update session expires_at + TTL + ZSET score
         B-->>U: 200 {expires_at, refresh_at} + Set-Cookie (new token)
         Note over B,R: session_id, linked JWT, indexes: UNTOUCHED.<br/>No RENAME, no swap key -- the expiring old<br/>mapping IS the grace window.
     else mapping gone
@@ -628,7 +645,7 @@ sequenceDiagram
     participant I as OIDC IdP
 
     loop every tick
-        W->>R: ZRANGEBYSCORE asm:idp_refresh_due 0 now
+        W->>R: ZRANGEBYSCORE {asm}:idp_refresh_due 0 now
         R-->>W: due session_ids
         par per session, semaphore-capped
             W->>R: acquire per-session lock (rotation safety)
@@ -663,17 +680,17 @@ sequenceDiagram
 
     I->>B: POST /auth/oidc/back-channel-logout (logout_token)
     B->>B: validate (sig, iss, aud, iat, events, jti)
-    B->>R: SET asm:logout_jti:{iss}:{jti} NX EX ...
+    B->>R: SET {asm}:logout_jti:{iss}:{jti} NX EX ...
     alt replay (NX failed)
         B-->>I: 200 (idempotent, no revoke)
     else first delivery
-        B->>R: resolve sessions via asm:sid_index (or asm:sub_index on sub-only fallback)
+        B->>R: resolve sessions via {asm}:sid_index (or {asm}:sub_index on sub-only fallback)
         B->>R: standard revoke pipeline per session
         B-->>I: 200
     end
 ```
 
-**Description**: Includes the `jti` replay guard and the documented sub-only blast-radius fallback — resolved via the `asm:sub_index` written at login (Identity cannot resolve a bare `sub`, and the logout path must not depend on another service).
+**Description**: Includes the `jti` replay guard and the documented sub-only blast-radius fallback — resolved via the `{asm}:sub_index` written at login (Identity cannot resolve a bare `sub`, and the logout path must not depend on another service).
 
 #### Service token issuance
 
@@ -705,20 +722,20 @@ sequenceDiagram
 
 - [ ] `p3` - **ID**: `cpt-insightspec-db-auth-redis`
 
-This module's "database" is Redis. All keys carry the `asm:` prefix (authenticator session management) -- owner-prefixed keys on the shared Redis instance, one prefix per module, so operators can identify the owner from the key name. Explicitly absent: **no swap-key family, no RENAME-based rotation, no separate JWT-cache prefix** -- the linked JWT lives under `asm:jwt:*` with the same lifecycle as the session.
+This module's "database" is Redis. All keys carry the `{asm}:` prefix (authenticator session management) -- owner-prefixed keys on the shared Redis instance, one prefix per module, so operators can identify the owner from the key name. Explicitly absent: **no swap-key family, no RENAME-based rotation, no separate JWT-cache prefix** -- the linked JWT lives under `{asm}:jwt:*` with the same lifecycle as the session.
 
 ```mermaid
 graph LR
     P[person_id]
-    IDX["asm:user_sessions:{person_id}<br/>ZSET - score = expires_at"]
-    S["asm:session:{session_id}<br/>HASH"]
-    T1["asm:token:{token}<br/>STRING -> session_id"]
-    T2["asm:token:{old_token}<br/>STRING -> session_id (grace TTL)"]
-    J["asm:jwt:{session_id}<br/>STRING (signed JWT)"]
-    SIDX["asm:sid_index:{iss}:{idp_sid}<br/>SET of session_id"]
-    LS["asm:login_state:{state}<br/>HASH (5 min TTL)"]
-    LJTI["asm:logout_jti:{iss}:{jti}<br/>STRING - replay guard"]
-    DUE["asm:idp_refresh_due<br/>ZSET - score = refresh due time"]
+    IDX["{asm}:user_sessions:{person_id}<br/>ZSET - score = expires_at"]
+    S["{asm}:session:{session_id}<br/>HASH"]
+    T1["{asm}:token:{token}<br/>STRING -> session_id"]
+    T2["{asm}:token:{old_token}<br/>STRING -> session_id (grace TTL)"]
+    J["{asm}:jwt:{session_id}<br/>STRING (signed JWT)"]
+    SIDX["{asm}:sid_index:{iss}:{idp_sid}<br/>SET of session_id"]
+    LS["{asm}:login_state:{state}<br/>HASH (5 min TTL)"]
+    LJTI["{asm}:logout_jti:{iss}:{jti}<br/>STRING - replay guard"]
+    DUE["{asm}:idp_refresh_due<br/>ZSET - score = refresh due time"]
 
     P --> IDX
     IDX --> S
@@ -729,7 +746,7 @@ graph LR
     S -. scheduled refresh .-> DUE
 ```
 
-#### Key: `asm:token:{token}`
+#### Key: `{asm}:token:{token}`
 
 **Type**: Redis STRING. Value: `session_id`.
 
@@ -737,7 +754,7 @@ graph LR
 
 **TTL**: session `expires_at` for the live mapping; `grace_ms` (PX) for the superseded one.
 
-#### Key: `asm:session:{session_id}`
+#### Key: `{asm}:session:{session_id}`
 
 **Type**: Redis HASH. Keyed by the **stable** `session_id` (UUIDv7), never by the cookie value.
 
@@ -763,7 +780,7 @@ graph LR
 
 **Redis TTL**: matches `expires_at`; re-set on every refresh.
 
-#### Key: `asm:jwt:{session_id}`
+#### Key: `{asm}:jwt:{session_id}`
 
 **Type**: Redis STRING. Value: the full signed gateway JWT.
 
@@ -771,7 +788,7 @@ graph LR
 
 **TTL**: `jwt_reissue_after_seconds` on NX fill; bounded overall by the session's lifecycle.
 
-#### Key: `asm:user_sessions:{person_id}`
+#### Key: `{asm}:user_sessions:{person_id}`
 
 **Type**: Redis ZSET. Member: `session_id`. Score: `expires_at`.
 
@@ -779,51 +796,51 @@ graph LR
 
 **Cleanup**: session-create trims already-expired members in the same pipeline (same key, so the transaction stays single-slot on Redis Cluster), and the key carries an `EXPIREAT` at the longest member's absolute expiry, applied `NX` then `GT` so it only ever extends. Abandoned indexes self-expire; no keyspace `SCAN` is required anywhere (Redis Cluster has no cluster-wide cursor).
 
-**Upgrade from pre-TTL builds**: indexes written before this scheme carry no TTL, and writer-driven cleanup only reaches indexes a writer touches. Flush `asm:*` at upgrade (sessions are ephemeral; users re-login); otherwise pre-upgrade sessions live out their TTL with a possible listing/revocation blind spot.
+**Upgrade from pre-TTL builds**: indexes written before this scheme carry no TTL, and writer-driven cleanup only reaches indexes a writer touches. Flush `{asm}:*` at upgrade (sessions are ephemeral; users re-login); otherwise pre-upgrade sessions live out their TTL with a possible listing/revocation blind spot.
 
-#### Key: `asm:sid_index:{iss}:{idp_sid}`
+#### Key: `{asm}:sid_index:{iss}:{idp_sid}`
 
 **Type**: Redis SET of `session_id`.
 
 **Purpose**: Resolve back-channel `logout_token` (`iss` + `sid`) to local sessions. Never churned by rotation.
 
-#### Key: `asm:login_state:{state}`
+#### Key: `{asm}:login_state:{state}`
 
 **Type**: Redis HASH. Fields: `pkce_verifier`, `nonce`, `redirect_to`, `override_email` (view-as target, DD-AUTH-09; empty on normal logins). **TTL**: 5 minutes, one-shot. The live count is capped (layer-2 rate limiting).
 
-#### Key: `asm:logout_jti:{iss}:{jti}`
+#### Key: `{asm}:logout_jti:{iss}:{jti}`
 
 **Type**: Redis STRING presence flag, `SET NX`. Replay guard for back-channel logout tokens. **TTL**: `(iat + max_clock_skew + grace) - now`. The same pattern guards `/internal/token` assertion `jti`s (next key).
 
-#### Key: `asm:svc_jti:{service}:{jti}`
+#### Key: `{asm}:svc_jti:{service}:{jti}`
 
 **Type**: Redis STRING presence flag, `SET NX EX`. One-shot replay guard for RFC 7523 service-token client assertions (DD-AUTH-05): the token issuer sets it the first time a `jti` is seen for a service and rejects any later reuse. **TTL**: the assertion's remaining lifetime plus `service_tokens.clock_skew_leeway_seconds`, so an assertion cannot be replayed within its own validity window and the key expires once it no longer could be accepted.
 
-#### Key: `asm:idp_refresh_due`
+#### Key: `{asm}:idp_refresh_due`
 
 **Type**: Redis ZSET. Member: `session_id`. Score: IdP access-token expiry minus `idp.refresh_safety_margin_seconds`, **jittered at write** so sessions do not come due in the same second after a deploy or Redis restore.
 
 **Purpose**: The refresher's schedule -- `ZRANGEBYSCORE ... 0 now`, no scanning. Maintained in the same pipelines as the session record.
 
-#### Key: `asm:sub_index:{iss}:{idp_sub}`
+#### Key: `{asm}:sub_index:{iss}:{idp_sub}`
 
 **Type**: Redis SET of `session_id`. Maintained in the create/revoke pipelines like the sid index.
 
 **Purpose**: Resolve a back-channel `logout_token` that carries only `(iss, sub)` (no `sid`) to the user's sessions — the documented log-out-everywhere fallback.
 
-#### Key: `asm:login_state_live`
+#### Key: `{asm}:login_state_live`
 
 **Type**: Redis ZSET. Member: OIDC `state`. Score: login-state expiry.
 
-**Purpose**: Counts live `asm:login_state:*` entries for the layer-2 login cap (counting via SCAN per login would be pathological). Written/removed in the login-state pipelines; the janitor trims expired members.
+**Purpose**: Counts live `{asm}:login_state:*` entries for the layer-2 login cap (counting via SCAN per login would be pathological). Written/removed in the login-state pipelines; the janitor trims expired members.
 
-#### Key: `asm:rl:{class}:{key}`
+#### Key: `{asm}:rl:{class}:{key}`
 
 **Type**: Redis HASH (`tokens`, `ts`), driven by an atomic Lua token-bucket script; self-expiring.
 
-**Purpose**: Layer-2 rate-limit buckets — `asm:rl:refresh:{session_id}` and `asm:rl:callback:{state}` (DESIGN section 4.4).
+**Purpose**: Layer-2 rate-limit buckets — `{asm}:rl:refresh:{session_id}` and `{asm}:rl:callback:{state}` (DESIGN section 4.4).
 
-#### Keys: `asm:leader:{worker}`, `asm:refresh_lock:{session_id}`
+#### Keys: `{asm}:leader:{worker}`, `{asm}:refresh_lock:{session_id}`
 
 **Type**: Redis STRING locks (`SET NX PX`).
 
@@ -931,7 +948,7 @@ service_tokens:
       roles: ["service"]      # baked into the token; "service" is always added
 ```
 
-Validation at boot: every registered entry must carry at least one key (inline or by path) -- each is parsed into a verifier, so a malformed or missing key fails the gear at boot, not on the first request -- and `audience` must be non-empty whenever `services` is non-empty, and `token_bind_addr` must differ from the main `bind_addr`. The assertion `jti` replay guard reuses the `logout_jti` `SET NX EX` pattern under `asm:svc_jti:{service}:{jti}` (see 3.7). Dev/compose seed a single `testclient` entry via `public_key_paths`; the keypair is **generated at bring-up** (like the gateway signing key) and never committed. No real registry entry ships in the chart by default.
+Validation at boot: every registered entry must carry at least one key (inline or by path) -- each is parsed into a verifier, so a malformed or missing key fails the gear at boot, not on the first request -- and `audience` must be non-empty whenever `services` is non-empty, and `token_bind_addr` must differ from the main `bind_addr`. The assertion `jti` replay guard reuses the `logout_jti` `SET NX EX` pattern under `{asm}:svc_jti:{service}:{jti}` (see 3.7). Dev/compose seed a single `testclient` entry via `public_key_paths`; the keypair is **generated at bring-up** (like the gateway signing key) and never committed. No real registry entry ships in the chart by default.
 
 ### 3.10 Gear Anatomy
 
@@ -962,11 +979,11 @@ A single helper sets every session cookie; attributes are hard-coded (`__Host-si
 
 ### 4.3 Janitor and Leader Election
 
-Background tasks (janitor, IdP refresher) run on every pod but elect one leader per pass via a Redis lock (TTL slightly longer than the interval) -- DD-BFF-09: no extra K8s objects, Redis is already a hard dependency, a missed pass costs little. The janitor trims `asm:login_state_live` and `asm:idp_refresh_due` -- both single, well-known keys, so the pass issues no keyspace `SCAN` (Redis Cluster has no cluster-wide cursor). Per-user session indexes need no pass: writers trim them inline and a guarded `EXPIREAT` bounds abandoned keys. Backlog metrics alert if no pod runs a pass for twice the interval.
+Background tasks (janitor, IdP refresher) run on every pod but elect one leader per pass via a Redis lock (TTL slightly longer than the interval) -- DD-BFF-09: no extra K8s objects, Redis is already a hard dependency, a missed pass costs little. The janitor trims `{asm}:login_state_live` and `{asm}:idp_refresh_due` -- both single, well-known keys, so the pass issues no keyspace `SCAN` (Redis Cluster has no cluster-wide cursor). Per-user session indexes need no pass: writers trim them inline and a guarded `EXPIREAT` bounds abandoned keys. Backlog metrics alert if no pod runs a pass for twice the interval.
 
 ### 4.4 Rate Limiting
 
-Two layers by design: the gateway carries the coarse per-IP flood guard (`limit_req`, order of 60 r/min with generous burst -- legitimate steady-state traffic is smooth by construction thanks to the big refresh jitter). The authenticator owns the precise layer: a Redis token bucket keyed by session/user, and the login-state cap (default 1000 live `asm:login_state:*` entries per pod, 429 beyond) that stops a slow-trickle Redis-exhaustion attack the edge cannot see. Both run before any expensive work and emit metrics.
+Two layers by design: the gateway carries the coarse per-IP flood guard (`limit_req`, order of 60 r/min with generous burst -- legitimate steady-state traffic is smooth by construction thanks to the big refresh jitter). The authenticator owns the precise layer: a Redis token bucket keyed by session/user, and the login-state cap (default 1000 live `{asm}:login_state:*` entries per pod, 429 beyond) that stops a slow-trickle Redis-exhaustion attack the edge cannot see. Both run before any expensive work and emit metrics.
 
 ### 4.5 Key Rotation
 
@@ -1006,7 +1023,7 @@ Decisions that predate this spec, recorded here with their original IDs (code an
 - **DD-BFF-02 -- Explicit session refresh, no sliding TTL**: only `POST /auth/refresh` extends the session; API traffic never does. Unchanged (TTL default now 600 s).
 - **DD-BFF-03 -- ZSET for the user-session index**: score = expiry makes listing and inline cleanup O(log N). Unchanged; members are now stable `session_id`s, so rotation no longer touches the index at all.
 - **DD-BFF-09 -- Workers coordinate via Redis lock**: one leader per pass, no extra K8s objects. Unchanged; now also covers the IdP refresher.
-- **DD-ROUTER-03 -- Redis-backed JWT storage (not in-memory)**: multi-pod correctness and single-DEL invalidation. Unchanged in spirit; the key is now `asm:jwt:{session_id}` with a login-time fill instead of `router:jwt_cache:{sid}` with a lazy fill.
+- **DD-ROUTER-03 -- Redis-backed JWT storage (not in-memory)**: multi-pod correctness and single-DEL invalidation. Unchanged in spirit; the key is now `{asm}:jwt:{session_id}` with a login-time fill instead of `router:jwt_cache:{sid}` with a lazy fill.
 - **DD-ROUTER-09 -- JWT storage size cap**: bounded by per-entry TTL plus Redis `allkeys-lru`; losing an entry only costs a re-sign. Unchanged.
 - **DD-ROUTER-10 -- Fill uses `SET ... NX EX`**: parallel reissues converge on one canonical JWT per session per window. Unchanged, applied to the reissue-ahead path.
 
@@ -1019,7 +1036,7 @@ Decisions that predate this spec, recorded here with their original IDs (code an
 
 ### DD-AUTH-01: JWT Minted at Login, Linked 1:1 to the Session
 
-**Decision**: The gateway JWT is created at `/auth/callback` in the same pipeline as the session, stored at `asm:jwt:{session_id}`, served as-is while under the reissue age, and reissued ahead of expiry.
+**Decision**: The gateway JWT is created at `/auth/callback` in the same pipeline as the session, stored at `{asm}:jwt:{session_id}`, served as-is while under the reissue age, and reissued ahead of expiry.
 
 **Why**:
 - The hot path becomes two Redis reads -- no signing, no claim rebuilding per request.
@@ -1030,7 +1047,7 @@ Decisions that predate this spec, recorded here with their original IDs (code an
 
 ### DD-AUTH-02: Session Identity / Credential Split
 
-**Decision**: Stable `session_id` (UUIDv7) as the universal server-side key and JWT `sid`; the cookie value is only an `asm:token:{token}` mapping. Rotation = write new mapping + let the old one expire after `grace_ms`. No `RENAME`, no ZSET member replacement, no sid-index churn, no dedicated swap/grace key family.
+**Decision**: Stable `session_id` (UUIDv7) as the universal server-side key and JWT `sid`; the cookie value is only an `{asm}:token:{token}` mapping. Rotation = write new mapping + let the old one expire after `grace_ms`. No `RENAME`, no ZSET member replacement, no sid-index churn, no dedicated swap/grace key family.
 
 **Why**:
 - Conflating cookie value = session id = Redis key = `sid` claim was the actual bug behind the earlier design's stale-`sid` problem and heavyweight rotation pipeline.
@@ -1041,7 +1058,7 @@ Decisions that predate this spec, recorded here with their original IDs (code an
 
 ### DD-AUTH-03: Background IdP Token Refresh
 
-**Decision**: Store the IdP refresh token at login; a leader-elected worker refreshes ahead of IdP expiry off the `asm:idp_refresh_due` schedule; `invalid_grant` kills all linked sessions; transport failures retry forever without killing anything; `no_refresh_token_policy` governs IdPs that issue no refresh token.
+**Decision**: Store the IdP refresh token at login; a leader-elected worker refreshes ahead of IdP expiry off the `{asm}:idp_refresh_due` schedule; `invalid_grant` kills all linked sessions; transport failures retry forever without killing anything; `no_refresh_token_policy` governs IdPs that issue no refresh token.
 
 **Why**:
 - A session must not outlive the IdP's willingness to vouch for the user; back-channel logout is optional in the wild, so the refresher is the guaranteed deactivation path.
@@ -1106,7 +1123,15 @@ Decisions that predate this spec, recorded here with their original IDs (code an
 
 **Why**: The gateway hardening made viewer identity exclusively gateway-authored (inbound `X-Insight-*` stripped), which correctly killed the old client-side override; the replacement must therefore act where identity is authored. All decision inputs are server-side (flag, login-state value, person store) — the parameter itself is never trusted as identity, so the spoofing hole stays closed. A per-user allowlist is deliberately absent: roles are `default_roles` until the permissions service exists, so the flag marks the whole *environment* (dev/demo) as impersonation-capable instead of pretending to per-user authorization we cannot yet enforce. Once DD-AUTH-07 lands, the gate can become a role check without changing the flow.
 
-**Consequences**: The session behaves as the target everywhere downstream (JWT `sub`, scope, session index) — that is the point. The record keeps `impersonator_*` fields and the real `idp_sub`/`idp_sid`/refresh token, so audit attribution, back-channel logout, and the background refresher keep targeting the real principal's IdP grant; the session is additionally indexed under the impersonator's `asm:user_sessions:*` (scored at the absolute cap — rotation only re-scores the target's index) so revoke-by-person against the real principal reaches it, and the real principal may list/revoke it as their own. `/auth/me` exposes `impersonator_email` for the SPA's "viewing as" banner. An unknown target is denied 403 (audited to the durable sink, not just the log), never silently ignored. Two accepted sharp edges, bounded by flag-on environments holding no real users: the Identity lookup is email-only (no tenant memberships until #1687), so a target from another tenant resolves and is paired with the caller's tenant claim; and compromise of any account grants impersonation of any known person. Both are why the default is `false` at every layer.
+**Consequences**: The session behaves as the target everywhere downstream (JWT `sub`, scope, session index) — that is the point. The record keeps `impersonator_*` fields and the real `idp_sub`/`idp_sid`/refresh token, so audit attribution, back-channel logout, and the background refresher keep targeting the real principal's IdP grant; the session is additionally indexed under the impersonator's `{asm}:user_sessions:*` (scored at the absolute cap — rotation only re-scores the target's index) so revoke-by-person against the real principal reaches it, and the real principal may list/revoke it as their own. `/auth/me` exposes `impersonator_email` for the SPA's "viewing as" banner. An unknown target is denied 403 (audited to the durable sink, not just the log), never silently ignored. Two accepted sharp edges, bounded by flag-on environments holding no real users: the Identity lookup is email-only (no tenant memberships until #1687), so a target from another tenant resolves and is paired with the caller's tenant claim; and compromise of any account grants impersonation of any known person. Both are why the default is `false` at every layer.
+
+### DD-AUTH-10: Single-Slot Session Keyspace (`{asm}:` Hash Tag)
+
+**Decision**: The session-management key prefix is the Redis Cluster hash tag itself: every key starts with `{asm}:`, so all session keys hash to one cluster slot.
+
+**Why**: The store's guarantees rest on multi-key atomics — the `MULTI/EXEC` create/revoke pipelines, the 4-key rotation CAS, and the guarded refresh store — and Redis Cluster only permits them within one slot. A shared tag preserves every one of them verbatim. Finer-grained tags cannot work here: the token→session lookup knows only the cookie token (no tag derivable), and the refresh schedule and login-state cap are deliberately global structures. Sharding is not the goal — auth traffic is orders of magnitude below one shard's capacity — cluster support is about HA and infra standardization, and a replica-backed slot preserves both.
+
+**Consequences**: All `{asm}:*` data lives on one shard, including the rate-limit buckets (single-key scripts that could shard; co-located for naming consistency, revisit only if that shard ever runs hot). On standalone Redis the braces are inert characters. The rename is deliberately not backward compatible: pre-rename keys are unreachable and age out via their TTLs; live sessions drop once at rollout and users re-login.
 
 ### RESOLVED (step 07): ES256 for the Gateway JWT
 
@@ -1123,5 +1148,5 @@ The authenticator's Key Store loads a mounted PKCS#8 **EC P-256** private key (`
 - **PRD**: [PRD.md](./PRD.md)
 - **Sibling**: [Gateway DESIGN](../gateway/DESIGN.md) -- the nginx edge: routing, exchange cache, subrequest contract consumer
 - **Parent**: [Backend PRD](../specs/PRD.md), [Backend DESIGN](../specs/DESIGN.md)
-- **ADRs**: [ADR/](./ADR/) -- to be authored alongside implementation; decisions captured inline in section 5 until then
+- **ADRs**: [specs/ADR/](./specs/ADR/) -- 0001 (per-environment IdP, superseded), 0002 (real IdP on deployed stands), 0003 (Keycloak identity broker, configured as code); further decisions captured inline in section 5 until extracted
 - **Decision document**: the nginx + authorization analysis (workspace-level) that mandated this architecture

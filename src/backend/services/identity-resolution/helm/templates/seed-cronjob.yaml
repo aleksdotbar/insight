@@ -64,6 +64,11 @@ spec:
                   mountPath: /app/config/insight.yaml
                   subPath: insight.yaml
                   readOnly: true
+                # The gears host creates `server.home_dir` at boot; the `seed`
+                # subcommand never starts grpc-hub, so /app/data is the only
+                # writable path it needs under a read-only root.
+                - name: data
+                  mountPath: /app/data
               envFrom:
                 # Same Secret as the deployment: database_url, clickhouse_*,
                 # tenant_default_id — everything the seed needs.
@@ -82,10 +87,15 @@ spec:
               {{- end }}
               securityContext:
                 allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
               resources:
                 {{- toYaml .Values.seed.resources | nindent 16 }}
           volumes:
             - name: identity-resolution-config
               configMap:
                 name: {{ include "insight-identity-resolution.fullname" . }}-gears-config
+            - name: data
+              emptyDir: {}
 {{- end }}

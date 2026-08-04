@@ -1,5 +1,5 @@
 //! Session Manager — the single owner of session state in Redis (DESIGN §3.2,
-//! §3.7). All keys carry the `asm:` prefix (authenticator session management).
+//! §3.7). All keys carry the `{asm}:` prefix (authenticator session management).
 //!
 //! Multi-key writes go through `MULTI/EXEC` pipelines so a session and its
 //! linked JWT, indexes, and refresh schedule stay consistent. The store fails
@@ -28,7 +28,7 @@ pub struct LoginState {
 }
 
 impl LoginState {
-    /// The HASH fields for `asm:login_state:{state}`.
+    /// The HASH fields for `{asm}:login_state:{state}`.
     fn to_fields(&self) -> Vec<(&'static str, String)> {
         vec![
             ("pkce_verifier", self.pkce_verifier.clone()),
@@ -50,7 +50,7 @@ impl LoginState {
     }
 }
 
-/// A session record — the `asm:session:{session_id}` HASH (DESIGN §3.7).
+/// A session record — the `{asm}:session:{session_id}` HASH (DESIGN §3.7).
 #[derive(Debug, Clone)]
 pub struct SessionRecord {
     pub person_id: String,
@@ -81,7 +81,7 @@ pub struct SessionRecord {
 }
 
 impl SessionRecord {
-    /// The HASH fields for `asm:session:{session_id}` (DESIGN §3.7). `Vec`
+    /// The HASH fields for `{asm}:session:{session_id}` (DESIGN §3.7). `Vec`
     /// arrays serialize as JSON; optional fields store `""` when absent.
     fn to_fields(&self) -> Vec<(&'static str, String)> {
         let json = |v: &[String]| serde_json::to_string(v).unwrap_or_else(|_| "[]".to_owned());
@@ -169,36 +169,36 @@ pub struct NewSession {
 }
 
 fn session_key(session_id: &str) -> String {
-    format!("asm:session:{session_id}")
+    format!("{{asm}}:session:{session_id}")
 }
 fn token_key(token: &str) -> String {
-    format!("asm:token:{token}")
+    format!("{{asm}}:token:{token}")
 }
 fn jwt_key(session_id: &str) -> String {
-    format!("asm:jwt:{session_id}")
+    format!("{{asm}}:jwt:{session_id}")
 }
 fn user_sessions_key(person_id: &str) -> String {
-    format!("asm:user_sessions:{person_id}")
+    format!("{{asm}}:user_sessions:{person_id}")
 }
 fn sid_index_key(iss: &str, idp_sid: &str) -> String {
-    format!("asm:sid_index:{iss}:{idp_sid}")
+    format!("{{asm}}:sid_index:{iss}:{idp_sid}")
 }
 fn sub_index_key(iss: &str, idp_sub: &str) -> String {
-    format!("asm:sub_index:{iss}:{idp_sub}")
+    format!("{{asm}}:sub_index:{iss}:{idp_sub}")
 }
 fn logout_jti_key(iss: &str, jti: &str) -> String {
-    format!("asm:logout_jti:{iss}:{jti}")
+    format!("{{asm}}:logout_jti:{iss}:{jti}")
 }
 fn login_state_key(state: &str) -> String {
-    format!("asm:login_state:{state}")
+    format!("{{asm}}:login_state:{state}")
 }
 /// Live login-state index (ZSET, score = expiry) backing the layer-2 cap:
-/// counting `asm:login_state:*` cheaply requires an index, not SCAN-per-login.
-const LOGIN_STATE_LIVE_KEY: &str = "asm:login_state_live";
+/// counting `{asm}:login_state:*` cheaply requires an index, not SCAN-per-login.
+const LOGIN_STATE_LIVE_KEY: &str = "{asm}:login_state_live";
 fn service_jti_key(service: &str, jti: &str) -> String {
-    format!("asm:svc_jti:{service}:{jti}")
+    format!("{{asm}}:svc_jti:{service}:{jti}")
 }
-const REFRESH_DUE_KEY: &str = "asm:idp_refresh_due";
+const REFRESH_DUE_KEY: &str = "{asm}:idp_refresh_due";
 
 /// The Session Manager. Cheap to clone (the connection manager is `Arc`-backed).
 #[derive(Clone)]
@@ -342,7 +342,7 @@ impl SessionManager {
     // ── Service-token assertion replay guard ───────────────────────────────
 
     /// One-shot replay guard for an RFC 7523 client assertion `jti`
-    /// (`asm:svc_jti:{service}:{jti}`), mirroring the back-channel `logout_jti`
+    /// (`{asm}:svc_jti:{service}:{jti}`), mirroring the back-channel `logout_jti`
     /// pattern: `SET NX EX`. Returns `true` when this `jti` was seen for the
     /// first time (the caller may proceed), `false` when it is a replay.
     ///
@@ -649,7 +649,7 @@ impl SessionManager {
         Ok(led == 1)
     }
 
-    /// Sessions due for IdP refresh (`ZRANGEBYSCORE asm:idp_refresh_due 0 now`,
+    /// Sessions due for IdP refresh (`ZRANGEBYSCORE {asm}:idp_refresh_due 0 now`,
     /// bounded).
     ///
     /// # Errors
@@ -690,7 +690,7 @@ impl SessionManager {
         let mut conn = self.conn.clone();
         let token = uuid::Uuid::now_v7().to_string();
         let set: Option<String> = redis::cmd("SET")
-            .arg(format!("asm:refresh_lock:{session_id}"))
+            .arg(format!("{{asm}}:refresh_lock:{session_id}"))
             .arg(&token)
             .arg("NX")
             .arg("PX")
@@ -721,7 +721,7 @@ impl SessionManager {
         ";
         let mut conn = self.conn.clone();
         let _: i64 = redis::Script::new(UNLOCK)
-            .key(format!("asm:refresh_lock:{session_id}"))
+            .key(format!("{{asm}}:refresh_lock:{session_id}"))
             .arg(owner_token)
             .invoke_async(&mut conn)
             .await
@@ -884,7 +884,7 @@ impl SessionManager {
     // ── Back-channel logout (PRD 5.10) ─────────────────────────────────────
 
     /// One-shot replay guard for a back-channel `logout_token` `jti`
-    /// (`asm:logout_jti:{iss}:{jti}`, `SET NX EX`). Returns `true` on first
+    /// (`{asm}:logout_jti:{iss}:{jti}`, `SET NX EX`). Returns `true` on first
     /// delivery; `false` when this `(iss, jti)` was already accepted.
     ///
     /// # Errors

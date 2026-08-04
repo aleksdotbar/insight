@@ -62,7 +62,7 @@ Phase A draws the contract and makes it safe by construction, so a new analytics
 | The source is safe | **Baseline**: presentation and engineering share one writable surface. **Target**: no presentation-side operation can write, alter, or drop engineering-owned data; worst case is damage to `presentation` scratch. **Timeframe**: end of Phase A. |
 | Self-serve analytics without engineering change | **Baseline**: every new slice needs an engineering change or re-ingest. **Target**: an analyst authors, saves, and runs a new query with no deploy. **Timeframe**: end of Phase A. |
 | Every read is tenant-scoped | **Baseline**: tenant filter is a no-op. **Target**: 100% of contract reads carry a server-injected tenant predicate the client cannot widen. **Timeframe**: end of Phase A. |
-| Isolated FE authoring loop | **Baseline**: no isolated place to build widgets. **Target**: FE developers build and validate widgets on a shared read-only preview backend on synthetic data. **Timeframe**: end of Phase A. |
+| Isolated FE authoring loop | **Baseline**: no isolated place to build widgets. **Target**: FE developers build and validate widgets on a shared read-only preview backend on non-production stands (dev/demo); the experiment capability is disabled on production. **Timeframe**: end of Phase A. |
 
 ### 1.4 Glossary
 
@@ -75,7 +75,7 @@ Phase A draws the contract and makes it safe by construction, so a new analytics
 | Single-SELECT gate | A parse-and-reject check that accepts exactly one `SELECT`/`WITH` statement and rejects everything else. |
 | `presentation_ro` role | A ClickHouse role with `SELECT` on the contract and `CREATE`/`INSERT` only in `presentation`. |
 | Saved query | A stored `SELECT`/`WITH` over the contract with an id, name, and tenant, runnable read-only. |
-| Preview environment | A path-based FE deployment (`/exp/<name>`) against a shared read-only synthetic backend. |
+| Preview environment | A path-based FE deployment (`/exp/<name>`) against a shared read-only backend, enabled only on non-production stands. |
 | Relabel, not migrate | Legacy gold stays read-only in the `insight` DB; only new gold is authored in `presentation`. |
 
 ## 2. Actors
@@ -253,13 +253,13 @@ The system **MUST** provide a single stable FE app (not per-branch stands) where
 
 #### Preview Environments
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-preview-envs`
+- [x] `p2` - **ID**: `cpt-presentation-fr-preview-envs`
 
-The system **MUST** serve many experimental FE builds under path-based addressing (`/exp/<name>`) on a single host, against one shared read-only backend on synthetic data (never customer production). Only the FE varies per experiment. (#1971, #1973.)
+The system **MUST** serve many experimental FE builds under path-based addressing (`/exp/<name>`) on a single host, against one shared read-only backend. Only the FE varies per experiment. Experiments **MUST** be a capability that is disabled on production by default, so a production stand cannot host experimental frontends against customer data; non-production stands (dev/demo) enable it and run over that stand's own data. (#1971, #1973.)
 
 **Rationale**: FE developers need an isolated tier-3 authoring loop that cannot touch customer data.
 
-**Status**: Serving path shipped (#1971): the `insight-preview` Helm chart (`deploy/preview/`) provisions one experiment per release — `Deployment` + `Service` + one prefix-strip `Ingress` under `/exp/<name>` on the shared host, applied and removed by hand. Pinning the shared backend to synthetic data (#1973) is still open, so this requirement stays open.
+**Status**: Shipped. Serving path (#1971): the `insight-preview` Helm chart (`deploy/preview/`) provisions one experiment per release — `Deployment` + `Service` + one prefix-strip `Ingress` under `/exp/<name>` on the shared host, applied and removed by hand. Experiments-off-on-prod gate (#1973): the authenticator's `experiments_enabled` (default `false`) honors a login return into the `/exp/` subtree only when set, so a production stand cannot host experimental frontends; dev/demo preview hosts opt in. A per-user RBAC capability supersedes this environment-level gate later.
 
 **Actors**: `cpt-presentation-actor-fe-dev`
 
@@ -362,22 +362,22 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 ### Validate a Widget on a Preview Environment
 
-- [ ] `p2` - **ID**: `cpt-presentation-usecase-preview-widget`
+- [x] `p2` - **ID**: `cpt-presentation-usecase-preview-widget`
 
 **Actor**: `cpt-presentation-actor-fe-dev`
 
 **Preconditions**:
 - A preview route object exists for the experiment (`/exp/<name>`).
-- The shared read-only synthetic backend is available.
+- The stand is non-production with experiments enabled, and its shared read-only backend is available.
 
 **Main Flow**:
 1. FE developer applies the per-experiment bundle (FE image plus route object).
 2. Developer opens `/exp/<name>/` and authenticates through the fixed callback.
 3. System resolves the Redis-backed `state` return path and establishes the session.
-4. Developer exercises the widget against the shared read-only synthetic backend.
+4. Developer exercises the widget against the shared read-only backend on that non-production stand.
 
 **Postconditions**:
-- The widget is validated against synthetic data with no access to customer production.
+- The widget is validated on a non-production stand; production stands do not host experiments, so customer data is never exposed to an experimental frontend.
 
 **Alternative Flows**:
 - **`state` missing or expired**: System rejects the callback; the developer restarts login.
@@ -391,7 +391,7 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 - [ ] Cross-tenant reads return no rows.
 - [ ] The `presentation` namespace exists and legacy gold remains read-only in `insight`.
 - [ ] The query console runs a saved query and renders the result as a table or auto-chart.
-- [ ] A preview environment serves an FE build under `/exp/<name>` on the shared read-only synthetic backend with an authenticated return path.
+- [x] A preview environment serves an FE build under `/exp/<name>` on the shared read-only backend with an authenticated return path, and the experiment capability is disabled on production by default.
 
 ## 10. Dependencies
 
