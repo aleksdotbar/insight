@@ -186,7 +186,7 @@ impl Default for AuditConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct RateLimitConfig {
-    /// Cap on concurrent live `asm:login_state:*` entries; excess
+    /// Cap on concurrent live `{asm}:login_state:*` entries; excess
     /// `/auth/login` gets 429 before any state is written (stops a
     /// slow-trickle Redis-exhaustion attack the edge cannot see).
     pub login_state_max: u64,
