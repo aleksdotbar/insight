@@ -221,12 +221,12 @@ async fn fetch_rows(
     let mut query = state
         .ch
         .query(&sql)
-        .with_option("log_comment", log_comment)
-        .with_option("max_execution_time", QUERY_TIMEOUT.as_secs().to_string())
-        .with_option("max_threads", "2")
-        .with_option("max_memory_usage", EVIDENCE_QUERY_MEMORY_BYTES.to_string())
-        .with_option("max_bytes_to_read", EVIDENCE_QUERY_READ_BYTES.to_string())
-        .with_option("max_result_bytes", EVIDENCE_QUERY_RESULT_BYTES.to_string());
+        .with_setting("log_comment", log_comment)
+        .with_setting("max_execution_time", QUERY_TIMEOUT.as_secs().to_string())
+        .with_setting("max_threads", "2")
+        .with_setting("max_memory_usage", EVIDENCE_QUERY_MEMORY_BYTES.to_string())
+        .with_setting("max_bytes_to_read", EVIDENCE_QUERY_READ_BYTES.to_string())
+        .with_setting("max_result_bytes", EVIDENCE_QUERY_RESULT_BYTES.to_string());
     for param in params {
         query = query.bind(param);
     }

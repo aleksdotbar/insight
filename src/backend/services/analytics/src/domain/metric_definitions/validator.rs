@@ -505,13 +505,13 @@ impl MetricDefinitionValidator {
         let mut observation_query = self
             .ch
             .query(&observation_sql)
-            .with_option(
+            .with_setting(
                 "max_execution_time",
                 EVIDENCE_QUERY_TIMEOUT_SECS.to_string(),
             )
-            .with_option("max_memory_usage", EVIDENCE_QUERY_MEMORY_BYTES.to_string())
-            .with_option("max_bytes_to_read", EVIDENCE_QUERY_READ_BYTES.to_string())
-            .with_option("max_result_bytes", EVIDENCE_QUERY_RESULT_BYTES.to_string())
+            .with_setting("max_memory_usage", EVIDENCE_QUERY_MEMORY_BYTES.to_string())
+            .with_setting("max_bytes_to_read", EVIDENCE_QUERY_READ_BYTES.to_string())
+            .with_setting("max_result_bytes", EVIDENCE_QUERY_RESULT_BYTES.to_string())
             .bind(source_key);
         for (measure_key, _) in expected {
             observation_query = observation_query.bind(measure_key);
@@ -525,13 +525,13 @@ impl MetricDefinitionValidator {
         let mut query = self
             .ch
             .query(&sql)
-            .with_option(
+            .with_setting(
                 "max_execution_time",
                 EVIDENCE_QUERY_TIMEOUT_SECS.to_string(),
             )
-            .with_option("max_memory_usage", EVIDENCE_QUERY_MEMORY_BYTES.to_string())
-            .with_option("max_bytes_to_read", EVIDENCE_QUERY_READ_BYTES.to_string())
-            .with_option("max_result_bytes", EVIDENCE_QUERY_RESULT_BYTES.to_string())
+            .with_setting("max_memory_usage", EVIDENCE_QUERY_MEMORY_BYTES.to_string())
+            .with_setting("max_bytes_to_read", EVIDENCE_QUERY_READ_BYTES.to_string())
+            .with_setting("max_result_bytes", EVIDENCE_QUERY_RESULT_BYTES.to_string())
             .bind(source_key);
         for (measure_key, _) in expected {
             query = query.bind(measure_key);
