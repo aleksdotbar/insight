@@ -1,17 +1,4 @@
-{{ config(
-    materialized='table',
-    engine='MergeTree',
-    order_by=['tenant_id', 'source_key', 'measure_key', 'entity_id', 'metric_date', 'record_id'],
-    schema='insight',
-    alias='collab_metric_evidence',
-    tags=['gold'],
-    query_settings={
-        'max_memory_usage': 1610612736,
-        'max_threads': 4,
-        'max_bytes_before_external_group_by': 805306368,
-        'max_bytes_before_external_sort': 805306368
-    }
-) }}
+{{ metric_evidence_table() }}
 
 -- Resolution happens HERE, once per gold build: evidence carries BOTH keys —
 -- `entity_id` is the canonical person id (or '' when identity does not know
