@@ -97,6 +97,7 @@ dependencies = [
  "csv",
  "futures",
  "futures-util",
+ "hex",
  "insight-clickhouse",
  "redis",
  "reqwest 0.12.28",
