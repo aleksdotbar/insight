@@ -191,7 +191,7 @@ async fn csrf_token(http: &common::Client, auth_base: &str, token: &str) -> Stri
 /// Login with one override, log out, log in with ANOTHER override: no state
 /// from the first view-as session may leak into the second. Every layer keys
 /// on values that change across logins — the cookie token, the `session_id`,
-/// and the linked `asm:jwt:{session_id}` are all minted fresh, and the nginx
+/// and the linked `{asm}:jwt:{session_id}` are all minted fresh, and the nginx
 /// exchange cache (not in this stack) is keyed by the cookie value, so a new
 /// cookie can never hit the old entry. This test pins the authenticator side:
 /// the old credential is fully dead and the new session is the new target.
