@@ -47,6 +47,12 @@ updates:
       rust-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+    # reqwest 0.13 breaks the authenticator: openidconnect 4 / oauth2 5 implement
+    # their HTTP-client traits only for reqwest 0.12. Lift when a released
+    # openidconnect supports reqwest 0.13.
+    ignore:
+      - dependency-name: reqwest
+        versions: [">=0.13"]
 
   - package-ecosystem: pip
     directory: /deploy/seed
