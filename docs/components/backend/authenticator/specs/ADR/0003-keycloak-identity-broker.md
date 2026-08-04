@@ -78,8 +78,10 @@ an admin UI.
 
 Chosen: **Option A**. Keycloak fronts the authenticator as an **identity broker**: a realm
 federates the upstream IdPs (customer OIDC/SAML, GitHub, Google, Facebook, Apple) and presents a
-single uniform OIDC issuer. The authenticator is unchanged -- it keeps one `issuerUrl` per
-environment and the existing code + PKCE, refresh, and back-channel-logout machinery.
+single uniform OIDC issuer. The authenticator's flow logic is unchanged -- the existing
+code + PKCE, refresh, and back-channel-logout machinery against one issuer shape; its only
+change is configuration surface: the single `issuerUrl` generalises to a host-keyed issuer map
+for multi-customer (cloud) installations (see realm selection below).
 
 - **Provider coverage is built in.** Keycloak ships identity providers for GitHub, Google,
   Facebook, Microsoft, LinkedIn, GitLab and others, and Apple since Keycloak 24. GitHub's
@@ -97,11 +99,28 @@ environment and the existing code + PKCE, refresh, and back-channel-logout machi
   tenant; claim-importer mappers where the upstream carries tenancy, e.g. Entra `tid`). The
   client's **protocol mappers / client scopes** are the allow-list: the token contains only what
   is explicitly emitted -- `sub`, `email`, one string `tenant_id` -- matching what the compose
-  realm generator already emits today. Upstream claims never pass through by default.
+  realm generator already emits today. Upstream claims never pass through by default. Where a
+  single upstream registration itself distinguishes tenants by a claim value, the external value
+  is translated inside the realm: an advanced claim-to-group mapper (`syncMode: FORCE`) puts the
+  user in a per-tenant group whose `tenant_id` attribute carries the internal UUID, emitted by
+  the protocol mapper with group-attribute aggregation. The translation table is realm YAML, one
+  entry per external tenant, and an unmapped value fails closed -- no group, no `tenant_id`
+  claim, token rejected downstream. Exactly one group per user is an invariant the end-to-end
+  tests guard.
 - **Topology: one realm per customer**, holding that customer's brokered IdPs and one
   confidential client. The single-`tenant_id` rule holds because each provider registration (or
   upstream tenancy claim) maps to exactly one Insight tenant. Realm-per-tenant remains available
   if isolation inside a customer is ever required -- realms are just more YAML.
+- **IdP selection is the realm's login page; realm selection is host-based.** Within one
+  customer, no Insight code chooses a provider: an unauthenticated request lands on the broker
+  realm's login page, which offers exactly the options its YAML configures (password, social,
+  corporate SSO); a single-IdP realm auto-redirects (default IdP / `kc_idp_hint`). Across
+  customers -- the cloud case, where the issuer must be known while the user is still anonymous
+  -- the customer's hostname selects the realm: the authenticator's `issuerUrl` becomes a
+  host-keyed issuer map, with a single-entry map preserving today's behaviour for dedicated
+  installs. Keycloak **Organizations** (one shared realm, email-domain discovery) is rejected
+  for now: it weakens the per-customer realm isolation this decision builds on, and ADR-0002
+  already scoped it out; revisit only if per-customer hostnames are unavailable.
 - **Unknown users are refused by the existing boundary.** Brokering does not change person
   resolution: the authenticator still resolves the (now broker-issued) identity via the Identity
   Service, so a social login whose email matches no person is refused with the existing
@@ -124,6 +143,13 @@ social (GitHub / Google / Facebook / Apple)┴─brokered──▶ Keycloak real
 
 - Onboarding a customer IdP or enabling a social provider becomes a realm-YAML pull request plus
   a sealed secret -- no authenticator change, no per-IdP code, no admin-UI session.
+- The authenticator gains one bounded config change: `issuerUrl` becomes a host-keyed issuer map
+  (OIDC client and JWKS caches keyed by issuer); a single-entry map is the dedicated-install
+  degenerate case, so existing deployments are untouched.
+- The authenticator's configurable tenant-claim name (`idp.tenant_claim`) loses its purpose once
+  every environment is brokered -- the broker always emits `tenant_id`. It is defaulted to
+  `tenant_id` and frozen (kept as a chart value for third-party consumers wiring a non-broker
+  IdP directly, mirroring ADR-0002's `authDisabled` precedent), not removed.
 - The per-IdP branching at our edge (audience/scope quirks, `account_person_map`-style seams)
   collapses: the authenticator sees one issuer shape, and claim normalisation lives in versioned
   mapper definitions.
