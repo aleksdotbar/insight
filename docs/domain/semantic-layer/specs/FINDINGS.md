@@ -70,6 +70,21 @@ be first-class in this document:
   unrelated teams/cohorts. Cross-cohort comparison is aggregates-only: peer
   views return distributions with no member ids, suppressed below a minimum
   distinct-member floor so small groups cannot disclose individuals.
+- **Cohorts are org-gated, not tag-gated.** A person's peer cohort is drawn
+  from within their org-chart scope; tags/attributes refine the cohort *inside*
+  that boundary and never pull a person across it. An R&D member and a Sales
+  member who share a tag are never placed in the same cohort, so a shared tag
+  cannot route around scope isolation — even the aggregate a viewer sees stays
+  within org scope, not merely anonymized. The org chart is authoritative over
+  cohort composition; tags are secondary and only subdivide within it.
+
+  Current state / gap: only `org_unit` cohorts are *implicitly* org-scoped
+  today, because the peer pool is scoped by `cohort_key` value plus tenant
+  (`compile_peer_batch_query` / `push_cohort_scope`), never intersected with
+  the viewer's org-visible set. An arbitrary or tag-based cohort key would span
+  the org boundary. This rule must be enforced where cohort membership is
+  produced (the cohort dataset) and re-asserted as the compiler's injected
+  scope (#1980), so it holds for every cohort key, not just `org_unit`.
 
 Current state: analytics enforces this at the request boundary
 (`domain/person_visibility.rs` -> identity `/v1/visible-persons`), forwarding
