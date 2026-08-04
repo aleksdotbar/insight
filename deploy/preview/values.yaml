@@ -37,9 +37,13 @@ ingress:
   # Extra annotations merged onto the per-experiment route object.
   annotations: {}
 
-# No auth values: preview login is the gateway+authenticator's job, not FE-side
-# OIDC. The authenticated return path for /exp/<name> arrives with #1972; the
-# synthetic-data pin is #1973.
+# No auth or backend values: preview login is the gateway+authenticator's job,
+# not FE-side OIDC (authenticated return path shipped in #1972). Experiments are
+# a gated capability, off by default: only a stand whose authenticator sets
+# `experiments_enabled: true` honors a login return into `/exp/<name>`, so a
+# production stand cannot host experimental frontends against its data. Dev/demo
+# preview hosts opt in and serve experiments over that stand's own data. The gate
+# lives on the authenticator (gitops), not this FE chart (#1973).
 
 resources:
   requests:

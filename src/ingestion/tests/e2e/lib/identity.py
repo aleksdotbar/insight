@@ -245,8 +245,7 @@ class IdentityProcess:
         """
         if not self.supports_persons_sync:
             raise ApiSpawnError(
-                f"the sync CLI exists only on the rust implementation "
-                f"(selected: {self.implementation})"
+                f"the sync CLI exists only on the rust implementation (selected: {self.implementation})"
             )
         cmd = locate_rust_app(self.cfg)
         env = self._rust_env()
@@ -258,12 +257,7 @@ class IdentityProcess:
         if force:
             args.append("--force")
         return subprocess.run(  # noqa: S603 — harness-controlled argv
-            args,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
+            args, env=env, capture_output=True, text=True, timeout=timeout_s, check=False
         )
 
     def run_seed_cli(
@@ -287,8 +281,7 @@ class IdentityProcess:
         """
         if not self.supports_seed_cli:
             raise ApiSpawnError(
-                f"the seed CLI exists only on the rust implementation "
-                f"(selected: {self.implementation})"
+                f"the seed CLI exists only on the rust implementation (selected: {self.implementation})"
             )
         cmd = locate_rust_app(self.cfg)
         env = self._rust_env()
@@ -302,12 +295,7 @@ class IdentityProcess:
         if force:
             args.append("--force")
         return subprocess.run(  # noqa: S603 — harness-controlled argv
-            args,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
+            args, env=env, capture_output=True, text=True, timeout=timeout_s, check=False
         )
 
     def start(self) -> None:

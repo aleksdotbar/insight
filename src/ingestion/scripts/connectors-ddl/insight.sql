@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS insight.ai_metric_evidence
     `details` Map(String, String)
 )
 ENGINE = MergeTree
-ORDER BY (tenant_id, source_key, measure_key, entity_id, metric_date, record_id)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date, record_id)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -44,7 +45,8 @@ CREATE TABLE IF NOT EXISTS insight.ai_metric_observations
         label Nullable(String)))
 )
 ENGINE = MergeTree
-ORDER BY (source_key, measure_key, entity_id, metric_date)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -71,7 +73,8 @@ CREATE TABLE IF NOT EXISTS insight.collab_metric_evidence
     `details` Map(String, String)
 )
 ENGINE = MergeTree
-ORDER BY (tenant_id, source_key, measure_key, entity_id, metric_date, record_id)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date, record_id)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -92,7 +95,8 @@ CREATE TABLE IF NOT EXISTS insight.collab_metric_observations
         label Nullable(String)))
 )
 ENGINE = MergeTree
-ORDER BY (source_key, measure_key, entity_id, metric_date)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -119,7 +123,8 @@ CREATE TABLE IF NOT EXISTS insight.git_metric_evidence
     `details` Map(String, String)
 )
 ENGINE = MergeTree
-ORDER BY (tenant_id, source_key, measure_key, entity_id, metric_date, record_id)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date, record_id)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -140,7 +145,8 @@ CREATE TABLE IF NOT EXISTS insight.git_metric_observations
         label Nullable(String)))
 )
 ENGINE = MergeTree
-ORDER BY (source_key, measure_key, entity_id, metric_date)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -213,7 +219,8 @@ CREATE TABLE IF NOT EXISTS insight.task_metric_evidence
     `details` Map(String, String)
 )
 ENGINE = MergeTree
-ORDER BY (tenant_id, source_key, measure_key, entity_id, metric_date, record_id)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date, record_id)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -234,7 +241,8 @@ CREATE TABLE IF NOT EXISTS insight.task_metric_observations
         label Nullable(String)))
 )
 ENGINE = MergeTree
-ORDER BY (source_key, measure_key, entity_id, metric_date)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -288,7 +296,8 @@ CREATE TABLE IF NOT EXISTS insight.wiki_metric_evidence
     `details` Map(String, String)
 )
 ENGINE = MergeTree
-ORDER BY (tenant_id, source_key, measure_key, entity_id, metric_date, record_id)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date, record_id)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
@@ -309,7 +318,8 @@ CREATE TABLE IF NOT EXISTS insight.wiki_metric_observations
         label Nullable(String)))
 )
 ENGINE = MergeTree
-ORDER BY (source_key, measure_key, entity_id, metric_date)
+PARTITION BY toYYYYMM(metric_date)
+ORDER BY (tenant_id, source_key, entity_type, entity_id, measure_key, metric_date)
 SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 ;
 

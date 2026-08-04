@@ -139,6 +139,25 @@ evidence relation per source and one granularity per measure:
 - `source_summary`: the finest summary preserved by silver.
 - `derived_population`: a source entity participating in a derived metric.
 
+All managed evidence and observation tables use the shared
+`metric_evidence_table` and `metric_observations_table` dbt macros. They own
+materialization, storage keys, partitioning, tags, and bounded query settings.
+These settings apply uniformly; model-specific query settings are retained
+only when required by model semantics.
+
+The tables are partitioned by calendar month from `metric_date`. Evidence is
+ordered by tenant, source, entity type, entity, measure, date, and record ID;
+observations omit the final record ID. Monthly partitioning is physical
+storage only: it does not change metric dates, timestamps, row granularity, or
+drilldown results. Each insert block may address at most 512 partitions.
+
+dbt builds a replacement table and exchanges it only after the build
+succeeds. A failed or cancelled build therefore leaves the active table in
+place, and the next build removes abandoned temporary relations. Replacement
+is atomic per table, not across the complete gold DAG. Replacing evidence
+invalidates active evidence cursors through the existing snapshot-expired
+contract.
+
 Definitions do not declare a separate drilldown strategy. The runtime resolves
 the definition's existing input roles and source measures, requires every input
 to use the same evidence relation, and compiles the evidence selection from
