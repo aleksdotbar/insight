@@ -149,6 +149,12 @@ def test_the_team_view_lists_every_report_the_roster_declares(
     expect(team.team_heading(lead.display_name)).to_be_visible()
     expect(team.metrics_overview()).to_be_visible()
 
+    # Every member renders a cell for every column (recorded or an honest
+    # "not recorded") and at least one real recorded value — this catches a
+    # dropped member, a blank row, or a truncated column, without demanding
+    # every metric for every person. A member can legitimately close tasks
+    # yet fix no bugs, so "Bugs fixed: not recorded" for one member is data,
+    # not a defect.
     for name in reports:
         row = team.member_row(name)
         expect(row).to_be_visible()
@@ -162,7 +168,8 @@ def test_the_team_view_lists_every_report_the_roster_declares(
             "Meeting Hours",
             "AI active days",
         ):
-            expect(team.recorded_metric_cell(name, metric_label)).to_be_visible()
+            expect(team.metric_cell(name, metric_label)).to_be_visible()
+        expect(team.any_recorded_metric_cell(name)).to_be_visible()
         expect(team.unrecorded_metric_cell(name, "Page edits")).to_be_visible()
 
     for label in ("Task delivery", "Git output", "Collaboration", "AI adoption"):
