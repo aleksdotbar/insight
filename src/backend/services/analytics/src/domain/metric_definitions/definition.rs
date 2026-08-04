@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricDirection {
     HigherIsBetter,
@@ -8,7 +8,7 @@ pub enum MetricDirection {
     Neutral,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricFormat {
     Integer,
@@ -26,7 +26,7 @@ pub enum MetricComputation {
     DistinctCount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricInputRole {
     Value,
@@ -61,7 +61,8 @@ impl EvidenceGranularity {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     ManagedObservation,
     CustomObservationSql,
@@ -114,7 +115,8 @@ pub struct MetricDefinition {
 /// Affine + clamp shaping for a computed metric value:
 /// `y = clamp(clamp_min, clamp_max, multiplier * x + offset)`.
 /// Absent fields are identity (multiplier 1, offset 0, no bound).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[serde(default)]
 pub struct ValueTransform {
     pub multiplier: Option<f64>,
     pub offset: Option<f64>,
