@@ -57,3 +57,35 @@ def test_a_non_uuid_id_is_a_400(api) -> None:
     empty answer that reads as `nothing visible`."""
     r = api.post("/v1/visible-persons", json={"person_ids": [seed.ALICE_EMAIL]})
     assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+
+
+@pytest.mark.parametrize(
+    ("person_ids", "case"),
+    [
+        ([], "empty list"),
+        ([str(uuid.UUID(int=0))], "only the nil uuid"),
+    ],
+)
+def test_a_request_naming_nobody_is_a_400(api, person_ids, case) -> None:
+    """A request that resolves to no id at all is a client error: answering 200
+    with an empty `visible` would read to the caller as `nothing you asked for
+    is visible`, which is a different fact."""
+    r = api.post("/v1/visible-persons", json={"person_ids": person_ids})
+    assert r.status_code == 400, f"should reject {case}: status={r.status_code} body={r.text}"
+
+
+def test_more_ids_than_the_cap_is_a_400(api) -> None:
+    """The request bounds the query — one bound parameter per id. The cap
+    matches the analytics metric-results cap, which forwards a cleared request
+    here whole."""
+    over_cap = [str(uuid.uuid4()) for _ in range(1001)]
+
+    r = api.post("/v1/visible-persons", json={"person_ids": over_cap})
+    assert r.status_code == 400, f"status={r.status_code} body={r.text}"
+
+
+def test_unauthenticated_401(anon_api) -> None:
+    """Analytics reads this answer as authorization, so an unauthenticated
+    caller must never receive one."""
+    r = _check(anon_api, [seed.ALICE])
+    assert r.status_code == 401, f"status={r.status_code} body={r.text}"
