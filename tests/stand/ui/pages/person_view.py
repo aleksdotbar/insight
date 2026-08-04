@@ -41,6 +41,29 @@ class GitOutputDetails:
     def repository_table(self) -> Locator:
         return self.dialog.get_by_role("table").filter(has_text="PRs merged")
 
+    def table(self) -> Locator:
+        return self.repository_table()
+
+    def chart_view(self) -> Locator:
+        return (
+            self.table()
+            .locator('xpath=ancestor::*[@data-slot="card"][1]')
+            .get_by_role("button", name="Chart view")
+        )
+
+    def export(self) -> Locator:
+        return (
+            self.table()
+            .locator('xpath=ancestor::*[@data-slot="card"][1]')
+            .get_by_role("button", name="Export")
+        )
+
+    def metric_selector(self) -> Locator:
+        return self.dialog.get_by_role("combobox", name="Metric").filter(has_text="Commits")
+
+    def close(self) -> Locator:
+        return self.dialog.get_by_role("button", name="Close")
+
     def open_first_commit_bucket(self) -> MetricEvidenceDialog:
         table = self.repository_table()
         data_row = table.get_by_role("rowgroup").nth(1).get_by_role("row").first
