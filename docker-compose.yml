@@ -269,6 +269,15 @@ services:
     depends_on:
       mariadb: {condition: service_healthy, required: false}
     environment:
+      # UNDERSCORE, not hyphen, in the gear name. The shared entrypoint
+      # (src/backend/docker-entrypoint.sh) runs under /bin/sh = dash, and dash
+      # DROPS environment variables whose names are not valid shell
+      # identifiers. `APP__gears__identity-resolution__config__*` therefore
+      # never survives `exec "$@"` and the binary sees the YAML's empty
+      # default, failing with "database_url is required for migrate".
+      # gears-rust normalises `_` to `-` in the key path, so the shell-safe
+      # spelling reaches the same `gears.identity-resolution.config` node.
+      # Services whose gear name has no hyphen (analytics) are unaffected.
       APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
     volumes:
       - type: bind
@@ -305,7 +314,9 @@ services:
       # full-auth wiring) lives in the bind-mounted
       # deploy/compose/identity-resolution-fullauth.yaml; these
       # APP__gears__identity_resolution__config__* env vars override the
-      # deployment-specific leaf values.
+      # deployment-specific leaf values. Gear name spelled with an UNDERSCORE
+      # so the names stay valid shell identifiers — see the migrate service
+      # above for why the hyphenated spelling silently loses its value.
       APP__gears__identity_resolution__config__database_url: "mysql://${MARIADB_USER:-insight}:${MARIADB_PASSWORD:-insight-local}@${MARIADB_HOST:-mariadb}:${MARIADB_INTERNAL_PORT:-3306}/identity"
       APP__gears__identity_resolution__config__clickhouse_url: "http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
       APP__gears__identity_resolution__config__clickhouse_database: "${CLICKHOUSE_DATABASE:-insight}"
@@ -525,7 +536,12 @@ services:
       identity-resolution: {condition: service_started}
     environment:
       GATEWAY_AUTHENTICATOR_URL: "http://authenticator:8083"
-      GATEWAY_FRONT_URL: "http://insight-front:80"
+      # The three frontend variants listen on three different ports — vite on
+      # 5173, the local-dist nginx on 80, and the published image on 8080 since
+      # it began running as a non-root user (uid 101 cannot bind 80).
+      # dev-compose.sh sets this from FRONTEND_MODE; the default matches the
+      # published image, which is what a bare `docker compose` most likely runs.
+      GATEWAY_FRONT_URL: "http://insight-front:${FRONTEND_INTERNAL_PORT:-8080}"
     volumes:
       # Compose route table (docker service names). The k8s equivalent is the
       # chart's templated gateway.routes values. Edit + restart to regenerate.
@@ -598,21 +614,25 @@ services:
     environment:
       CSP_REMOTE: ${CSP_REMOTE:-}
     volumes:
-      # Patch script — inserts `location /api/ → gateway:8080` into
-      # the FE image's nginx template at a known marker, then chains to
-      # the original entrypoint. Avoids maintaining a parallel template
-      # (drift surface): we describe just the diff we need. The
-      # published image has no /api proxy because k8s ingress routes
-      # /api → gateway directly; compose has no front-proxy so the
-      # hop has to land locally.
-      - ./deploy/compose/front-ghcr-patch-template.sh:/compose/front-ghcr-patch-template.sh:ro
-    entrypoint: ["/bin/sh", "/compose/front-ghcr-patch-template.sh"]
-    # Restate the image's baked CMD — compose's `entrypoint:` override
-    # implicitly clears it, which would leave the patch script chaining
-    # to `/docker-entrypoint.sh` with no args, exiting silently.
-    command: ["nginx", "-g", "daemon off;"]
+      # Patch script — inserts `location /api/ → gateway:8080` into the
+      # FE image's nginx config at a known marker. Avoids maintaining a
+      # parallel config (drift surface): we describe just the diff we
+      # need. The published image has no /api proxy because k8s ingress
+      # routes /api → gateway directly; compose has no front-proxy so
+      # the hop has to land locally.
+      - ./deploy/compose/front-ghcr-patch-conf.sh:/compose/front-ghcr-patch-conf.sh:ro
+    # The COMMAND, deliberately — the image's entrypoint stays in place and
+    # runs first. It copies the config into /etc/nginx/conf.d and execs this,
+    # which patches what it produced and then execs nginx. Overriding the
+    # entrypoint instead used to work, and stopped once the image began
+    # running as `nginx` (uid 101): the template directory it wrote to is
+    # root-owned, so the patch died with "Permission denied" and the whole
+    # container with it. See the script for the full account.
+    command: ["/bin/sh", "/compose/front-ghcr-patch-conf.sh", "nginx", "-g", "daemon off;"]
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      # 8080 inside, not 80: the image runs as uid 101, which cannot bind a
+      # privileged port. The host side stays 3000 either way.
+      - "${FRONTEND_PORT:-3000}:${FRONTEND_INTERNAL_PORT:-8080}"
 
   # ── Builders (profile=build) ───────────────────────────────────────────
   #
@@ -642,10 +662,19 @@ services:
         apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev pkg-config libssl-dev cmake > /dev/null
         cargo build --release --bin analytics --bin authenticator
         mkdir -p /out/analytics /out/authenticator
-        [ ! -d /out/analytics/analytics ] || rm -rf /out/analytics/analytics
-        [ ! -d /out/authenticator/authenticator ] || rm -rf /out/authenticator/authenticator
-        install -m 0755 /target/release/analytics /out/analytics/analytics
-        install -m 0755 /target/release/authenticator /out/authenticator/authenticator
+        rm -rf /out/analytics/analytics
+        rm -rf /out/authenticator/authenticator
+        # cat + cmp, never cp/install: /out is a macOS bind mount where cp
+        # fails with "error deallocating: Invalid argument" AFTER writing a
+        # SHORT file, and `cp X Y && chmod Y` hides that from set -e (bash
+        # exempts every command in an && list but the last), shipping a
+        # truncated binary that segfaults on exec. cmp makes it fatal here.
+        cat /target/release/analytics > /out/analytics/analytics
+        chmod 0755 /out/analytics/analytics
+        cmp -s /target/release/analytics /out/analytics/analytics || { echo 'ERROR: /out/analytics/analytics copied corrupt' >&2; exit 1; }
+        cat /target/release/authenticator > /out/authenticator/authenticator
+        chmod 0755 /out/authenticator/authenticator
+        cmp -s /target/release/authenticator /out/authenticator/authenticator || { echo 'ERROR: /out/authenticator/authenticator copied corrupt' >&2; exit 1; }
 
   build-frontend:
     profiles: ["build"]
@@ -672,6 +701,13 @@ services:
     build:
       context: deploy/seed
       dockerfile: Dockerfile
+    # The image pins USER 1000. That is unambiguous where it was chosen — as a
+    # k8s Job the seed mounts nothing from a host — but compose bind-mounts the
+    # source below and the seed writes manifest.json back into it, so the
+    # container has to run as whoever owns the checkout. A tree owned by any
+    # other uid is simply not writable by 1000, and the seed dies on its last
+    # step with EACCES after doing all of its work. Still non-root.
+    user: "${SEED_UID:-1000}:${SEED_GID:-1000}"
     depends_on:
       # required: false → seeding an external DB doesn't need the local
       # mariadb/clickhouse profiles to be active.
@@ -701,9 +737,26 @@ services:
       # writable outputs (target/, logs/) to a writable scratch dir.
       DBT_TARGET_PATH: "/tmp/dbt-target"
       DBT_LOG_PATH: "/tmp/dbt-logs"
+      # The `user:` above is the host's uid, which has no /etc/passwd entry in
+      # this image, so Docker leaves HOME at "/" — not writable, and dbt writes
+      # ~/.dbt/.user.yml for its anonymous-usage id before it runs anything.
+      HOME: "/tmp"
+      # Seed window. SEED_ANCHOR_DATE is the last day carrying activity — an
+      # ISO date pins the dataset reproducibly, the literal `today` (or unset)
+      # tracks the calendar. Both are recorded in the emitted manifest.
+      SEED_ANCHOR_DATE: "${SEED_ANCHOR_DATE:-}"
+      SEED_DAYS: "${SEED_DAYS:-60}"
+      # Which IdP the stand is running, and the issuer the authenticator
+      # resolved for this run. `test-stand up` persists both after cmd_up so
+      # the manifest records the real IdP instead of assuming the default.
+      AUTH_MODE: "${AUTH_MODE:-fakeidp}"
+      AUTHENTICATOR_OIDC_ISSUER: "${AUTHENTICATOR_OIDC_ISSUER:-}"
     volumes:
       # Bind-mount the source so seed.py edits don't need a rebuild.
-      - ./deploy/seed:/app:ro
+      # NOT read-only: the seed writes manifest.json back into this directory
+      # at the end of a successful run, and downstream test phases read it
+      # from that fixed path.
+      - ./deploy/seed:/app
       # Schema + gold inputs: the SAME scripts the k8s clickhouse-migrate
       # Hook Job runs — create-bronze-placeholders.sh (+ lib/ch-exec.sh),
       # apply-ch-migrations.sh, migrations/*.sql — plus the full dbt project
