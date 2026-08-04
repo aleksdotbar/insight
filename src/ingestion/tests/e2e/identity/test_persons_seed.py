@@ -216,16 +216,22 @@ def test_persons_seed_end_to_end(identity_inputs, seed_api, identity_svc) -> Non
         request = op.get("request") or {}
         assert request.get("trigger") == "cli", op
 
-    # Freshly minted person_ids come from the tenant-agnostic internal lookup
-    # (no visibility gate — at this point NOBODY is in the seed admin's
-    # subtree, so /v1/profiles would correctly answer 404 for the admin).
+    # Freshly minted person_ids come from the tenant-agnostic internal
+    # by-email-override lookup, reused here purely as a convenient any-tenant
+    # email->person read (no visibility gate — at this point NOBODY is in the
+    # seed admin's subtree, so /v1/profiles would correctly answer 404 for the
+    # admin). This is a verification tool for the seed pipeline, not the
+    # login path — the login-bootstrap only ever resolves by external id
+    # (`/internal/persons/by-external-id`), never by email.
     with identity_svc.client(
         sub=str(seed.SEED_ADMIN), tenant=str(seed.SEED_TENANT), sub_type="service", roles="service"
     ) as svc:
-        shared = svc.get(f"/internal/persons/by-email/{SHARED_EMAIL}")
+        shared = svc.get(
+            "/internal/persons/by-email-override", params={"email": SHARED_EMAIL}
+        )
         assert shared.status_code == 200, f"status={shared.status_code} body={shared.text}"
         shared_id = shared.json()["insight_source_id"]
-        solo = svc.get(f"/internal/persons/by-email/{SOLO_EMAIL}")
+        solo = svc.get("/internal/persons/by-email-override", params={"email": SOLO_EMAIL})
         assert solo.status_code == 200, f"status={solo.status_code} body={solo.text}"
         # The solo account minted its own person.
         assert solo.json()["insight_source_id"] != shared_id
@@ -473,7 +479,7 @@ def _person_id_by_email(identity_svc, email: str) -> str:
     with identity_svc.client(
         sub=str(seed.SEED_ADMIN), tenant=str(seed.SEED_TENANT), sub_type="service", roles="service"
     ) as svc:
-        r = svc.get(f"/internal/persons/by-email/{email}")
+        r = svc.get("/internal/persons/by-email-override", params={"email": email})
         assert r.status_code == 200, f"status={r.status_code} body={r.text}"
         return r.json()["insight_source_id"]
 
