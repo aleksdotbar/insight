@@ -338,12 +338,19 @@ jobs:
 
   merge-analytics:
     needs: [changes, backend-analytics]
+    # != 'skipped', not == 'success': a failed platform build must turn this
+    # gate red, not skip it — a skipped required check reads as satisfied.
     if: |
       always()
-      && needs.backend-analytics.result == 'success'
+      && needs.backend-analytics.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Require the platform builds to have passed
+        if: needs.backend-analytics.result != 'success'
+        run: |
+          echo "::error::backend-analytics finished '${{ needs.backend-analytics.result }}' — nothing to merge."
+          exit 1
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -440,10 +447,15 @@ jobs:
     needs: [changes, backend-authenticator]
     if: |
       always()
-      && needs.backend-authenticator.result == 'success'
+      && needs.backend-authenticator.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Require the platform builds to have passed
+        if: needs.backend-authenticator.result != 'success'
+        run: |
+          echo "::error::backend-authenticator finished '${{ needs.backend-authenticator.result }}' — nothing to merge."
+          exit 1
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -540,10 +552,15 @@ jobs:
     needs: [changes, backend-gateway]
     if: |
       always()
-      && needs.backend-gateway.result == 'success'
+      && needs.backend-gateway.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Require the platform builds to have passed
+        if: needs.backend-gateway.result != 'success'
+        run: |
+          echo "::error::backend-gateway finished '${{ needs.backend-gateway.result }}' — nothing to merge."
+          exit 1
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -643,10 +660,15 @@ jobs:
     needs: [changes, backend-identity-resolution]
     if: |
       always()
-      && needs.backend-identity-resolution.result == 'success'
+      && needs.backend-identity-resolution.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Require the platform builds to have passed
+        if: needs.backend-identity-resolution.result != 'success'
+        run: |
+          echo "::error::backend-identity-resolution finished '${{ needs.backend-identity-resolution.result }}' — nothing to merge."
+          exit 1
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -808,10 +830,15 @@ jobs:
     needs: [changes, toolbox]
     if: |
       always()
-      && needs.toolbox.result == 'success'
+      && needs.toolbox.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Require the platform builds to have passed
+        if: needs.toolbox.result != 'success'
+        run: |
+          echo "::error::toolbox finished '${{ needs.toolbox.result }}' — nothing to merge."
+          exit 1
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -926,10 +953,15 @@ jobs:
     needs: [changes, ui-tests]
     if: |
       always()
-      && needs.ui-tests.result == 'success'
+      && needs.ui-tests.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Require the platform builds to have passed
+        if: needs.ui-tests.result != 'success'
+        run: |
+          echo "::error::ui-tests finished '${{ needs.ui-tests.result }}' — nothing to merge."
+          exit 1
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -1043,7 +1075,7 @@ jobs:
     if: |
       always()
       && needs.discover-images.outputs.any == 'true'
-      && needs.build-image.result == 'success'
+      && needs.build-image.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -1051,6 +1083,11 @@ jobs:
       matrix:
         entry: ${{ fromJson(needs.discover-images.outputs.matrix) }}
     steps:
+      - name: Require the platform builds to have passed
+        if: needs.build-image.result != 'success'
+        run: |
+          echo "::error::build-image finished '${{ needs.build-image.result }}' — nothing to merge."
+          exit 1
       - name: Download digests
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
