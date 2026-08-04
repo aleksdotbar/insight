@@ -40,6 +40,11 @@ pub struct GearConfig {
     /// `ClickHouse` without alias resolution (MVP mode).
     pub identity_url: String,
 
+    /// Redis URL (e.g., `redis://localhost:6379`). Empty disables every
+    /// Redis-backed path; multi-replica deploys configure it so a cache added
+    /// here is coordinated across replicas rather than per-process.
+    pub redis_url: String,
+
     /// Metric read configuration.
     pub metric_catalog: MetricCatalogConfig,
 }
@@ -54,6 +59,7 @@ impl Default for GearConfig {
             clickhouse_user: None,
             clickhouse_password: None,
             identity_url: String::new(),
+            redis_url: String::new(),
             metric_catalog: MetricCatalogConfig::default(),
         }
     }

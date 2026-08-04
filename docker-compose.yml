@@ -203,6 +203,7 @@ services:
       # profile isn't active (external MariaDB / ClickHouse modes).
       mariadb: {condition: service_healthy, required: false}
       clickhouse: {condition: service_healthy, required: false}
+      redis: {condition: service_healthy}
     environment:
       !!merge <<: *backend-env
       # analytics runs on the gears-rust host: structural config
@@ -218,6 +219,7 @@ services:
       APP__gears__analytics__config__clickhouse_user: "presentation"
       APP__gears__analytics__config__clickhouse_password: "${CLICKHOUSE_PRESENTATION_PASSWORD:-presentation-local}"
       APP__gears__analytics__config__identity_url: "http://identity-resolution:8082"
+      APP__gears__analytics__config__redis_url: "redis://redis:6379"
       # Gateway-JWT verification (NGINX_BFF R1) is done by the upstream
       # cf-gears-oidc-authn-plugin. Its config is nested/list-shaped (not
       # env-injectable) and resolves the JWKS via OIDC discovery over HTTPS ONLY,

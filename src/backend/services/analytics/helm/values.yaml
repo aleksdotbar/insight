@@ -24,6 +24,7 @@ resources:
 #   APP__gears__analytics__config__database_url
 #   APP__gears__analytics__config__clickhouse_url|_database|_user|_password
 #   APP__gears__analytics__config__identity_url
+#   APP__gears__analytics__config__redis_url
 #
 # The umbrella populates `insight-analytics-config` automatically; for
 # standalone installs the operator pre-creates an equivalent Secret and

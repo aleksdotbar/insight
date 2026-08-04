@@ -20,6 +20,7 @@
 #   APP__gears__analytics__config__clickhouse_user
 #   APP__gears__analytics__config__clickhouse_password
 #   APP__gears__analytics__config__identity_url
+#   APP__gears__analytics__config__redis_url
 # The oidc-authn-plugin's verification config is nested/list-shaped
 # (jwt.trusted_issuers, expected_audience, http_client.custom_ca_certificate_paths)
 # and so is supplied by the deployment's config layer (compose bind-mount / Helm
@@ -138,4 +139,5 @@ gears:
       clickhouse_database: "insight"
       # clickhouse_user / clickhouse_password: omit for no-auth ClickHouse.
       identity_url: ""
+      redis_url: ""
       metric_catalog:

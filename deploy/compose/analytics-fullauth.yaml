@@ -2,7 +2,7 @@
 # /app/config/insight.yaml). Same structure as
 # services/analytics/config/insight.yaml, but with the oidc-authn-plugin wired
 # to the dev TLS discovery front (`authn-tls`) + its self-signed CA at
-# /certs/ca.pem. DB/ClickHouse/identity leaves come from APP__ env in
+# /certs/ca.pem. DB/ClickHouse/identity/redis leaves come from APP__ env in
 # docker-compose.yml. NGINX_BFF R1: analytics verifies the ES256 gateway JWT.
 
 server:
@@ -94,4 +94,5 @@ gears:
       clickhouse_url: ""
       clickhouse_database: "insight"
       identity_url: ""
+      redis_url: ""
       metric_catalog: {}
