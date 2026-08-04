@@ -31,11 +31,16 @@ class PersonView:
     def person_heading(self, display_name: str) -> Locator:
         return self.page.get_by_role("heading", name=display_name)
 
-    def metric_tile(self, label: str) -> Locator:
-        """The tile for one named metric.
+    def kpi_tile(self, label: str) -> Locator:
+        return self.page.get_by_role("button", name=f"Open {label} details")
 
-        Addressed by its visible label rather than by position: the set of tiles
-        and their order are product decisions, and a test that indexed into them
-        would fail on a layout change that broke nothing.
-        """
-        return self.page.get_by_role("listitem").filter(has_text=label).first
+    def kpi_value(self, label: str) -> Locator:
+        return self.kpi_tile(label).locator("[data-slot='card-title']")
+
+    def populated_domain_card(self, label: str) -> Locator:
+        return self.page.get_by_role("button", name=f"Open {label} details")
+
+    def empty_domain_card(self, label: str) -> Locator:
+        return self.page.locator("[data-slot='card']").filter(
+            has=self.page.get_by_text(label, exact=True)
+        )
