@@ -292,7 +292,7 @@ a dashboard, and sees correct data — zero deploys, full audit history.
 
 ## Dependencies
 
-```
+```text
 Phase 1 ──► Phase 2 ──► Phase 3 (deletion)
                 │
                 └──► Phase 4 ──► Phase 5

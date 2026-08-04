@@ -1,6 +1,6 @@
 # Adoption Findings — Semantic Layer
 
-Review of [DESIGN.md](./DESIGN.md) + [IMPLEMENTATION.md](./IMPLEMENTATION.md)
+Review of [REFERENCE.md](./REFERENCE.md) + [IMPLEMENTATION.md](./IMPLEMENTATION.md)
 against the current codebase and the presentation-layer epic
 (constructorfabric/insight#1803). The design is adopted as the Phase B target;
 these are the reconciliation notes and the changes it implies to the existing
@@ -94,9 +94,9 @@ compiler-first this moves into the compiler's shared `WHERE` as an injected
 scope-agnostic; the scope is injected per request, exactly like tenancy.
 
 These two guarantees are recorded on the epic
-(constructorfabric/insight#1803) and belong in DESIGN.md §2 (Principles &
-Constraints) and the Compiler section as named injected scopes when the design
-is folded into the governed template.
+(constructorfabric/insight#1803) and are carried into the governed
+[DESIGN.md](./DESIGN.md) as named injected scopes (Principles & Constraints plus
+the compiler component), alongside the tenancy predicate.
 
 ## The real decision
 
@@ -107,13 +107,37 @@ format — is the load-bearing decision. The e2e metric suite is the parity
 invariant that makes the cutover safe (same seeds, same requests, same
 expectations against the new executor).
 
+## Open items from review (in the reference design)
+
+Points raised against [REFERENCE.md](./REFERENCE.md) that need an author/team
+decision; carried here rather than silently rewritten into the reference:
+
+- **Percentile capability is under-specified.** The expressiveness section
+  lists percentiles, but the measure aggregation enum
+  (`count | sum | avg | min | max | count_distinct`) omits it. Clarify whether
+  percentile is a **metric-level computation** (as median is today —
+  `ComputationSpec::Median` over event-grain measures) or a measure
+  aggregation, and state the read-time contract (percentiles compute over event
+  rows, never a percentile-of-percentiles). The governed DESIGN adopts the
+  metric-level reading unless the author decides otherwise.
+- **Do not serve a superseded custom-dataset table after a semantic version
+  bump.** The materialization section both invalidates caches on a version bump
+  and allows a failed rebuild to keep serving the previous table. Restrict the
+  previous-table fallback to refresh failures **under the same definition
+  version**; after a semantic bump, fall back to live compute or return
+  `unavailable` — never serve values computed under a superseded definition
+  (the section's own "version mismatch means recompute or reject" rule).
+- **Gate cache reads on definition availability.** The cache read decision
+  checks policy, version, and coverage but not availability; an `unavailable`
+  definition must not serve cached rows. Require `availability == available`
+  before cached or live execution, else return the stored unavailable error.
+
 ## Governance status
 
-This design is adopted as a governed in-repo document under
-`docs/domain/semantic-layer/specs/`, following the metrics-domain precedent
-(`docs/domain/metrics/specs/DESIGN.md`), which is a governing design doc not
-yet registered as a `cfs` SDLC artifact. Converting this into the strict
-`sdlc` DESIGN template (numbered sections, `cpt-semantic-*` IDs,
-Functional-Driver/NFR tables, a companion PRD) is a separate, larger task; it
-is deferred so the reformat does not distort the design before the team has
-committed to the schema-rewrite decision above.
+Adopted as governed `cfs` `sdlc` artifacts under
+`docs/domain/semantic-layer/specs/`: [PRD.md](./PRD.md) and
+[DESIGN.md](./DESIGN.md) are the template-conformant, registered artifacts;
+[REFERENCE.md](./REFERENCE.md) is the detailed design narrative they distill and
+cite for depth, and [IMPLEMENTATION.md](./IMPLEMENTATION.md) is the migration
+plan. The reference and implementation docs are kept verbatim as adopted so the
+governed specs never lose the original rationale.
