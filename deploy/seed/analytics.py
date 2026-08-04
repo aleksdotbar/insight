@@ -29,7 +29,7 @@ import logging
 import os
 import re
 import uuid as uuid_mod
-from collections.abc import Container, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -102,50 +102,34 @@ def seed_table_columns(cur: pymysql.cursors.Cursor) -> list[dict[str, str]]:
     return rows
 
 
-#: Every table this module names. The clone is driven by `information_schema`,
-#: so the SQL it builds carries identifiers rather than only bound values —
-#: which means the identifiers need a source of truth that is not the query
-#: itself. This is it: a name absent from here never reaches a statement.
-_KNOWN_TABLES: frozenset[str] = frozenset(
-    {
-        "table_columns",
-        "metric_definitions",
-        "metric_definition_inputs",
-        "metric_definition_dimensions",
-    }
-)
-
-#: MySQL identifier shape. Deliberately narrower than what MySQL accepts: every
-#: column in this schema is snake_case ASCII, so anything else is either a
-#: schema nobody expected or an answer `information_schema` should not have
-#: given.
+#: MySQL identifier shape, for the one statement in this module still built
+#: around a column list (`seed_definition_override`'s write — see the comment
+#: there for why it cannot be otherwise). Deliberately narrower than what MySQL
+#: accepts: every column in this schema is snake_case ASCII, so anything else
+#: is either a schema nobody expected or an answer `information_schema` should
+#: not have given.
 _IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
 
 
-def _quoted(identifier: str, *, allowed: Container[str]) -> str:
-    """Backtick-quote an identifier after checking it is one we asked for.
-
-    Values in this module are bound; identifiers cannot be, because a column
-    LIST is not a parameter. So they are validated instead — against the set
-    this module knows, and against the identifier shape — and the check runs at
-    the point of use rather than being asserted in a comment somewhere above it.
-
-    Not defence against a hostile database so much as against a silent one: an
-    `information_schema` answer this module did not expect should stop the seed
-    with a name in the message, not be pasted into a statement and produce a
-    syntax error three frames away.
-    """
-    if identifier not in allowed or not _IDENTIFIER.match(identifier):
-        raise ValueError(
-            f"refusing to build SQL around {identifier!r}: not an identifier this "
-            "module recognises. If the schema gained it, add it to the seed."
-        )
-    return f"`{identifier}`"
-
-
 def _column_list(columns: Sequence[str]) -> str:
-    """A backtick-quoted column list, every name checked as it goes in."""
-    return ", ".join(_quoted(c, allowed=set(columns)) for c in columns)
+    """A backtick-quoted column list, every name checked as it goes in.
+
+    Values in this module are bound; a column LIST cannot be, because it is not
+    a parameter — so it is validated instead, at the point of use rather than
+    asserted in a comment somewhere above it.
+
+    Not defence against a hostile caller; there is none, the names come from
+    `information_schema`. Defence against a silent schema: an answer this module
+    did not expect should stop the seed with the name in the message, not be
+    pasted into a statement and produce a syntax error three frames away.
+    """
+    for column in columns:
+        if not _IDENTIFIER.match(column):
+            raise ValueError(
+                f"refusing to build SQL around {column!r}: information_schema returned "
+                "a column name that is not the snake_case ASCII this schema uses."
+            )
+    return ", ".join(f"`{column}`" for column in columns)
 
 
 def _writable_columns(cur: pymysql.cursors.Cursor, table: str) -> list[str]:
@@ -176,31 +160,74 @@ def _child_row_id(table: str, source_id: bytes) -> bytes:
     return uuid_mod.uuid5(uuid_mod.UUID(DEFINITION_ROW_ID), f"{table}:{source_id.hex()}").bytes
 
 
+#: The child clone is done BY THE DATABASE — `CREATE … LIKE` plus
+#: `INSERT … SELECT *` copy whatever the schema currently holds, so this module
+#: never enumerates the child tables' columns and cannot drift from them.
+#:
+#: Only possible because neither child table has a generated column. The parent
+#: does (`tenant_id_sentinel`), which rules the implicit column list out
+#: entirely: carrying the column over fails with "value specified for generated
+#: column", omitting it fails with "column count doesn't match". That is why
+#: `seed_definition_override` still builds its write from a column list and this
+#: does not.
+#:
+#: One temp-table NAME serves both tables, so every statement that touches only
+#: the copy is shared below and just the three naming a real table differ.
+_CHILD_CLONE_SQL: dict[str, tuple[str, str, str]] = {
+    "metric_definition_inputs": (
+        "CREATE TEMPORARY TABLE seed_child_clone LIKE metric_definition_inputs",
+        "INSERT INTO seed_child_clone SELECT * FROM metric_definition_inputs WHERE metric_definition_id = %s",
+        "REPLACE INTO metric_definition_inputs SELECT * FROM seed_child_clone",
+    ),
+    "metric_definition_dimensions": (
+        "CREATE TEMPORARY TABLE seed_child_clone LIKE metric_definition_dimensions",
+        "INSERT INTO seed_child_clone SELECT * FROM metric_definition_dimensions WHERE metric_definition_id = %s",
+        "REPLACE INTO metric_definition_dimensions SELECT * FROM seed_child_clone",
+    ),
+}
+
+#: Statements that touch only the copy, identical for either table.
+#: `CREATE TEMPORARY TABLE` and `DROP TEMPORARY TABLE` are the documented
+#: exceptions to MySQL's implicit-commit rule, so none of this escapes the
+#: transaction `_connect` opens.
+_CLONE_DROP = "DROP TEMPORARY TABLE IF EXISTS seed_child_clone"
+_CLONE_REKEY_PARENT = "UPDATE seed_child_clone SET metric_definition_id = %s"
+_CLONE_SELECT_IDS = "SELECT id FROM seed_child_clone"
+_CLONE_REKEY_ID = "UPDATE seed_child_clone SET id = %s WHERE id = %s"
+
+
 def _clone_children(cur: pymysql.cursors.Cursor, table: str, src: bytes, dst: bytes) -> int:
-    """Re-key one child table's rows onto the cloned definition."""
-    cols = _writable_columns(cur, table)
-    if not cols:
-        return 0
+    """Re-key one child table's rows onto the cloned definition.
 
-    quoted_table = _quoted(table, allowed=_KNOWN_TABLES)
-    selected = _column_list(cols)
-    cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        f"SELECT {selected} FROM {quoted_table} WHERE metric_definition_id = %s",
-        (src,),
-    )
-    rows = cur.fetchall()
+    Through a temporary copy rather than a read-then-write loop, so the column
+    inventory stays the database's business. The ids are still chosen here —
+    `_child_row_id` keeps them deterministic — and applied as bound UPDATEs.
+    """
+    create, fill, write_back = _CHILD_CLONE_SQL[table]
+    cur.execute(_CLONE_DROP)
+    cur.execute(create)
+    cur.execute(fill, (src,))
+    cur.execute(_CLONE_REKEY_PARENT, (dst,))
 
-    placeholders = ", ".join(["%s"] * len(cols))
-    for row in rows:
-        values = dict(zip(cols, row))  # noqa: B905 — 3.9-compatible, lengths are equal by construction
-        values["metric_definition_id"] = dst
-        if "id" in values and isinstance(values["id"], bytes):
-            values["id"] = _child_row_id(table, values["id"])
-        cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-            f"REPLACE INTO {quoted_table} ({selected}) VALUES ({placeholders})",
-            tuple(values[c] for c in cols),
-        )
-    return len(rows)
+    # Re-keyed one row at a time: the id is derived from the SOURCE id, which
+    # only Python knows how to compute. Safe to do in place because a derived id
+    # never collides with a source id still waiting its turn.
+    cur.execute(_CLONE_SELECT_IDS)
+    child_ids = [row[0] for row in cur.fetchall()]
+    for child_id in child_ids:
+        cur.execute(_CLONE_REKEY_ID, (_child_row_id(table, child_id), child_id))
+
+    cur.execute(write_back)
+    cur.execute(_CLONE_DROP)
+    return len(child_ids)
+
+
+#: WHICH product definition gets overridden. `SELECT *` rather than a column
+#: list because the copy below wants every column anyway, and reading them off
+#: the cursor keeps this statement a plain literal.
+_SELECT_PRODUCT_DEFINITION = (
+    "SELECT * FROM metric_definitions WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
+)
 
 
 def seed_definition_override(
@@ -226,21 +253,16 @@ def seed_definition_override(
     migrations have not run, which is the migrations' problem to report, not
     this seed's to fail on.
     """
-    definitions = _quoted("metric_definitions", allowed=_KNOWN_TABLES)
-    columns = _writable_columns(cur, "metric_definitions")
-    selected = _column_list(columns)
-    # Two rules match this one, unlike its siblings: the statement is a single
-    # f-string, so `formatted-sql-query` fires alongside the sqlalchemy rule.
-    # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query
-    cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        f"SELECT {selected} FROM {definitions} WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
-    )
+    cur.execute(_SELECT_PRODUCT_DEFINITION)
     row = cur.fetchone()
     if row is None:
         LOG.warning("  metric_definitions: no product definitions to override — skipped")
         return None
 
-    values = dict(zip(columns, row))  # noqa: B905 — 3.9-compatible, lengths are equal by construction
+    # Column names off the cursor rather than from a list built for the query:
+    # `SELECT *` means the read no longer has to know them.
+    present = [str(d[0]) for d in cur.description]
+    values = dict(zip(present, row))  # noqa: B905 — 3.9-compatible, lengths are equal by construction
     source_id = values["id"]
     metric_key = str(values["metric_key"])
 
@@ -250,9 +272,19 @@ def seed_definition_override(
     if "origin" in values:
         values["origin"] = "custom"
 
+    # The write cannot use `SELECT *`'s column set: it includes the generated
+    # `tenant_id_sentinel`, which no statement may assign.
+    columns = _writable_columns(cur, "metric_definitions")
+    selected = _column_list(columns)
     placeholders = ", ".join(["%s"] * len(columns))
+    # The one statement in this module still built around a column list, and it
+    # cannot be otherwise. Every implicit-column-list form is closed off by that
+    # generated column: carrying it over gives "value specified for generated
+    # column", omitting it gives "column count doesn't match". Naming the columns
+    # is what is left, and the names come from `information_schema` so the list
+    # cannot go stale the way a hardcoded one would.
     cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        f"REPLACE INTO {definitions} ({selected}) VALUES ({placeholders})",
+        f"REPLACE INTO `metric_definitions` ({selected}) VALUES ({placeholders})",
         tuple(values[c] for c in columns),
     )
 
