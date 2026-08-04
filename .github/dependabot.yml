@@ -34,3 +34,74 @@ updates:
     groups:
       base-images:
         patterns: ["*"]
+
+  # Language ecosystems below run daily, staggered by 30 minutes so the checks
+  # (and any resulting CI runs) do not all land at once. Times are UTC.
+  # One entry per language/service; majors stay as individual PRs, minor+patch
+  # are grouped per entry.
+  - package-ecosystem: cargo
+    directory: /src/backend
+    schedule:
+      interval: daily
+      time: "02:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    groups:
+      rust-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /deploy/seed
+    schedule:
+      interval: daily
+      time: "02:30"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    groups:
+      seed-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # One manifest per connector; grouping applies per directory, so each
+  # connector still gets its own PR.
+  - package-ecosystem: pip
+    directories: ["/src/ingestion/connectors/*/*"]
+    schedule:
+      interval: daily
+      time: "03:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    groups:
+      connector-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /src/ingestion/scripts
+    schedule:
+      interval: daily
+      time: "03:30"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    groups:
+      scripts-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directories: ["/src/ingestion/tests/connectors", "/src/ingestion/tests/e2e"]
+    schedule:
+      interval: daily
+      time: "04:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    groups:
+      tests-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
