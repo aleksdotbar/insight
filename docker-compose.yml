@@ -701,6 +701,13 @@ services:
     build:
       context: deploy/seed
       dockerfile: Dockerfile
+    # The image pins USER 1000. That is unambiguous where it was chosen — as a
+    # k8s Job the seed mounts nothing from a host — but compose bind-mounts the
+    # source below and the seed writes manifest.json back into it, so the
+    # container has to run as whoever owns the checkout. A tree owned by any
+    # other uid is simply not writable by 1000, and the seed dies on its last
+    # step with EACCES after doing all of its work. Still non-root.
+    user: "${SEED_UID:-1000}:${SEED_GID:-1000}"
     depends_on:
       # required: false → seeding an external DB doesn't need the local
       # mariadb/clickhouse profiles to be active.
@@ -730,6 +737,10 @@ services:
       # writable outputs (target/, logs/) to a writable scratch dir.
       DBT_TARGET_PATH: "/tmp/dbt-target"
       DBT_LOG_PATH: "/tmp/dbt-logs"
+      # The `user:` above is the host's uid, which has no /etc/passwd entry in
+      # this image, so Docker leaves HOME at "/" — not writable, and dbt writes
+      # ~/.dbt/.user.yml for its anonymous-usage id before it runs anything.
+      HOME: "/tmp"
       # Seed window. SEED_ANCHOR_DATE is the last day carrying activity — an
       # ISO date pins the dataset reproducibly, the literal `today` (or unset)
       # tracks the calendar. Both are recorded in the emitted manifest.

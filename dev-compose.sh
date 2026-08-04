@@ -24,6 +24,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 COMPOSE_INSTANCE=""
 
+# Who the seed container runs as — see the `user:` key on seed-sample in
+# docker-compose.yml. Whoever runs this script owns the checkout the seed
+# writes its manifest into, so that is the identity the container needs.
+SEED_UID="$(id -u)"
+SEED_GID="$(id -g)"
+export SEED_UID SEED_GID
+
 # ──────────────────────────────────────────────────────────────────────
 # Shared helpers
 # ──────────────────────────────────────────────────────────────────────
