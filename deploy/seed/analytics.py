@@ -27,9 +27,8 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import uuid as uuid_mod
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -102,52 +101,36 @@ def seed_table_columns(cur: pymysql.cursors.Cursor) -> list[dict[str, str]]:
     return rows
 
 
-#: MySQL identifier shape, for the one statement in this module still built
-#: around a column list (`seed_definition_override`'s write — see the comment
-#: there for why it cannot be otherwise). Deliberately narrower than what MySQL
-#: accepts: every column in this schema is snake_case ASCII, so anything else
-#: is either a schema nobody expected or an answer `information_schema` should
-#: not have given.
-_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
+#: MySQL's "The value specified for generated column … has been ignored" — the
+#: only warning the write below is allowed to raise. See `_require_clean_ignore`.
+_GENERATED_COLUMN_IGNORED = 1906
 
 
-def _column_list(columns: Sequence[str]) -> str:
-    """A backtick-quoted column list, every name checked as it goes in.
+def _require_clean_ignore(cur: pymysql.cursors.Cursor, rows: int) -> None:
+    """Check that `INSERT IGNORE` ignored only what it was meant to.
 
-    Values in this module are bound; a column LIST cannot be, because it is not
-    a parameter — so it is validated instead, at the point of use rather than
-    asserted in a comment somewhere above it.
+    The IGNORE exists for exactly one reason: `SELECT *` carries the generated
+    `tenant_id_sentinel` across, no statement may assign a generated column, and
+    IGNORE is what demotes that refusal to a warning so the engine recomputes
+    the value instead. It is a blunt instrument though — it would just as
+    happily turn a duplicate key or a truncated value into a warning and skip
+    the row — so what it swallowed is inspected rather than trusted.
 
-    Not defence against a hostile caller; there is none, the names come from
-    `information_schema`. Defence against a silent schema: an answer this module
-    did not expect should stop the seed with the name in the message, not be
-    pasted into a statement and produce a syntax error three frames away.
+    `rows` is read by the caller before this runs: `SHOW WARNINGS` resets
+    `cur.rowcount`.
     """
-    for column in columns:
-        if not _IDENTIFIER.match(column):
-            raise ValueError(
-                f"refusing to build SQL around {column!r}: information_schema returned "
-                "a column name that is not the snake_case ASCII this schema uses."
-            )
-    return ", ".join(f"`{column}`" for column in columns)
-
-
-def _writable_columns(cur: pymysql.cursors.Cursor, table: str) -> list[str]:
-    """A table's column names, in order, minus the ones the engine computes.
-
-    Read from `information_schema` rather than written down here. A hardcoded
-    column list tracks whatever the schema looked like the day it was typed and
-    silently stops matching after the next migration — the clone below has to
-    copy EVERY column, so it cannot be the thing that knows what they are.
-    """
-    cur.execute(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_schema = DATABASE() AND table_name = %s "
-        "AND (extra IS NULL OR extra NOT LIKE '%%GENERATED%%') "
-        "ORDER BY ordinal_position",
-        (table,),
-    )
-    return [str(r[0]) for r in cur.fetchall()]
+    if rows != 1:
+        raise RuntimeError(
+            f"the definition override wrote {rows} row(s), expected 1 — the INSERT was "
+            "skipped, which IGNORE would otherwise have hidden."
+        )
+    cur.execute("SHOW WARNINGS")
+    unexpected = [w for w in cur.fetchall() if int(w[1]) != _GENERATED_COLUMN_IGNORED]
+    if unexpected:
+        raise RuntimeError(
+            f"the definition override raised warnings beyond the expected generated-column "
+            f"one: {unexpected}"
+        )
 
 
 def _child_row_id(table: str, source_id: bytes) -> bytes:
@@ -164,12 +147,9 @@ def _child_row_id(table: str, source_id: bytes) -> bytes:
 #: `INSERT … SELECT *` copy whatever the schema currently holds, so this module
 #: never enumerates the child tables' columns and cannot drift from them.
 #:
-#: Only possible because neither child table has a generated column. The parent
-#: does (`tenant_id_sentinel`), which rules the implicit column list out
-#: entirely: carrying the column over fails with "value specified for generated
-#: column", omitting it fails with "column count doesn't match". That is why
-#: `seed_definition_override` still builds its write from a column list and this
-#: does not.
+#: Plain `LIKE` works here because neither child table has a generated column.
+#: The parent does, which is why its copy is staged with `AS SELECT` and written
+#: with `INSERT IGNORE` instead — see `_OVERRIDE_STAGE`.
 #:
 #: One temp-table NAME serves both tables, so every statement that touches only
 #: the copy is shared below and just the three naming a real table differ.
@@ -222,12 +202,39 @@ def _clone_children(cur: pymysql.cursors.Cursor, table: str, src: bytes, dst: by
     return len(child_ids)
 
 
-#: WHICH product definition gets overridden. `SELECT *` rather than a column
-#: list because the copy below wants every column anyway, and reading them off
-#: the cursor keeps this statement a plain literal.
-_SELECT_PRODUCT_DEFINITION = (
+#: The override is staged in a temporary copy of the chosen product row, mutated
+#: there, and written back — so this module never enumerates
+#: `metric_definitions`' columns either, and no statement here is composed at
+#: runtime.
+#:
+#: `AS SELECT` rather than `LIKE`: it materialises the generated
+#: `tenant_id_sentinel` as an ordinary column, which is what lets the row go back
+#: with a bare `SELECT *`. `LIKE` would carry the column's GENERATED attribute
+#: over and the staging INSERT would be the statement that failed instead.
+#:
+#: `INSERT IGNORE` because even materialised, `SELECT *` still offers a value for
+#: the target's generated column, and only IGNORE demotes the refusal to a
+#: warning and lets the engine recompute it from the new `tenant_id`.
+#: `_require_clean_ignore` then checks that nothing ELSE was ignored.
+_OVERRIDE_DROP = "DROP TEMPORARY TABLE IF EXISTS seed_definition_override"
+_OVERRIDE_STAGE = (
+    "CREATE TEMPORARY TABLE seed_definition_override AS "
     "SELECT * FROM metric_definitions WHERE tenant_id IS NULL ORDER BY metric_key LIMIT 1"
 )
+_OVERRIDE_SOURCE = "SELECT id, metric_key, updated_at FROM seed_definition_override"
+#: `updated_at` is re-set to the source's own value: `AS SELECT` carries the
+#: column's ON UPDATE clause across too, so without this the UPDATE below would
+#: stamp the copy with the current time and the clone would stop being faithful
+#: in the one column nobody would think to check.
+_OVERRIDE_APPLY = (
+    "UPDATE seed_definition_override "
+    "SET id = %s, tenant_id = %s, label = %s, origin = 'custom', updated_at = %s"
+)
+#: REPLACE's delete half, on its own. The FK from either child table is
+#: ON DELETE CASCADE, so this clears the previous run's children as well —
+#: which is why the clone below runs after it, exactly as it did under REPLACE.
+_OVERRIDE_CLEAR = "DELETE FROM metric_definitions WHERE id = %s"
+_OVERRIDE_WRITE = "INSERT IGNORE INTO metric_definitions SELECT * FROM seed_definition_override"
 
 
 def seed_definition_override(
@@ -252,44 +259,34 @@ def seed_definition_override(
     Returns None when the product has no definitions at all — a stand whose
     migrations have not run, which is the migrations' problem to report, not
     this seed's to fail on.
+
+    Raises if some OTHER row already holds this tenant's (tenant, metric_key):
+    the write clears its own id and nothing else, where REPLACE used to delete
+    whatever stood in the way. Nothing on a seeded stand puts a row there, so
+    finding one means an assumption broke and is worth stopping for.
     """
-    cur.execute(_SELECT_PRODUCT_DEFINITION)
-    row = cur.fetchone()
-    if row is None:
+    cur.execute(_OVERRIDE_DROP)
+    cur.execute(_OVERRIDE_STAGE)
+    cur.execute(_OVERRIDE_SOURCE)
+    staged = cur.fetchone()
+    if staged is None:
+        cur.execute(_OVERRIDE_DROP)
         LOG.warning("  metric_definitions: no product definitions to override — skipped")
         return None
 
-    # Column names off the cursor rather than from a list built for the query:
-    # `SELECT *` means the read no longer has to know them.
-    present = [str(d[0]) for d in cur.description]
-    values = dict(zip(present, row))  # noqa: B905 — 3.9-compatible, lengths are equal by construction
-    source_id = values["id"]
-    metric_key = str(values["metric_key"])
+    source_id, metric_key, source_updated_at = staged[0], str(staged[1]), staged[2]
+    override_id = _bin(DEFINITION_ROW_ID)
 
-    values["id"] = _bin(DEFINITION_ROW_ID)
-    values["tenant_id"] = _bin(tenant_uuid)
-    values["label"] = OVERRIDE_LABEL
-    if "origin" in values:
-        values["origin"] = "custom"
-
-    # The write cannot use `SELECT *`'s column set: it includes the generated
-    # `tenant_id_sentinel`, which no statement may assign.
-    columns = _writable_columns(cur, "metric_definitions")
-    selected = _column_list(columns)
-    placeholders = ", ".join(["%s"] * len(columns))
-    # The one statement in this module still built around a column list, and it
-    # cannot be otherwise. Every implicit-column-list form is closed off by that
-    # generated column: carrying it over gives "value specified for generated
-    # column", omitting it gives "column count doesn't match". Naming the columns
-    # is what is left, and the names come from `information_schema` so the list
-    # cannot go stale the way a hardcoded one would.
-    cur.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-        f"REPLACE INTO `metric_definitions` ({selected}) VALUES ({placeholders})",
-        tuple(values[c] for c in columns),
+    cur.execute(
+        _OVERRIDE_APPLY, (override_id, _bin(tenant_uuid), OVERRIDE_LABEL, source_updated_at)
     )
+    cur.execute(_OVERRIDE_CLEAR, (override_id,))
+    cur.execute(_OVERRIDE_WRITE)
+    _require_clean_ignore(cur, cur.rowcount)
+    cur.execute(_OVERRIDE_DROP)
 
     cloned = {
-        table: _clone_children(cur, table, source_id, values["id"])
+        table: _clone_children(cur, table, source_id, override_id)
         for table in ("metric_definition_inputs", "metric_definition_dimensions")
     }
 
