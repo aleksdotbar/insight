@@ -35,15 +35,15 @@ updates:
       base-images:
         patterns: ["*"]
 
-  # Language ecosystems below run daily, staggered by 30 minutes so the checks
-  # (and any resulting CI runs) do not all land at once. Times are UTC.
+  # Language ecosystems below run daily from 21:00 UTC onward, staggered by
+  # 30 minutes so the checks (and any resulting CI runs) do not all land at once.
   # One entry per language/service; majors stay as individual PRs, minor+patch
   # are grouped per entry.
   - package-ecosystem: cargo
     directory: /src/backend
     schedule:
       interval: daily
-      time: "02:00"
+      time: "21:00"
       timezone: Etc/UTC
     cooldown:
       default-days: 7
@@ -56,7 +56,7 @@ updates:
     directory: /deploy/seed
     schedule:
       interval: daily
-      time: "02:30"
+      time: "21:30"
       timezone: Etc/UTC
     cooldown:
       default-days: 7
@@ -71,7 +71,7 @@ updates:
     directories: ["/src/ingestion/connectors/*/*"]
     schedule:
       interval: daily
-      time: "03:00"
+      time: "22:00"
       timezone: Etc/UTC
     cooldown:
       default-days: 7
@@ -84,7 +84,7 @@ updates:
     directory: /src/ingestion/scripts
     schedule:
       interval: daily
-      time: "03:30"
+      time: "22:30"
       timezone: Etc/UTC
     cooldown:
       default-days: 7
@@ -97,7 +97,7 @@ updates:
     directories: ["/src/ingestion/tests/connectors", "/src/ingestion/tests/e2e"]
     schedule:
       interval: daily
-      time: "04:00"
+      time: "23:00"
       timezone: Etc/UTC
     cooldown:
       default-days: 7
