@@ -79,7 +79,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 secrecy = { version = "0.10", features = ["serde"] }
 
 # HTTP client (for Identity Resolution API)
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 
 # Caching
 redis = { version = "1.5", features = ["tokio-comp", "connection-manager"] }
