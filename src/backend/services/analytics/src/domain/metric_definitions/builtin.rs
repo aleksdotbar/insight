@@ -63,6 +63,7 @@ impl SeedComputation {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceSeed {
     pub key: String,
     pub kind: SourceKind,
@@ -73,41 +74,23 @@ pub struct SourceSeed {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BuiltinSource {
     pub source: SourceSeed,
-    pub measures: Vec<String>,
+    pub measures: Vec<MeasureSeed>,
     #[serde(default)]
     pub dimensions: Vec<String>,
 }
 
-impl BuiltinSource {
-    pub fn evidence_granularity(&self, measure_key: &str) -> EvidenceGranularity {
-        match (self.source.key.as_str(), measure_key) {
-            (
-                "git",
-                "commit_count" | "commit_change_size" | "pr_created" | "pr_created_merged"
-                | "pr_merged" | "pr_cycle_hours" | "pr_change_size",
-            )
-            | (
-                "task",
-                "tasks_closed" | "bugs_fixed" | "due_date_on_time" | "due_date_with_due"
-                | "slip_days_total" | "late_count" | "dev_time_hours" | "resolution_days"
-                | "pickup_days",
-            )
-            | ("wiki", "pages_created") => EvidenceGranularity::Event,
-            ("ai_usage", "active_day")
-            | (
-                "collab",
-                "active_day" | "active_modality" | "meeting_free_day" | "focus_hours"
-                | "working_hours",
-            )
-            | ("task", _) => EvidenceGranularity::DerivedPopulation,
-            _ => EvidenceGranularity::SourceSummary,
-        }
-    }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MeasureSeed {
+    pub key: String,
+    pub evidence_granularity: EvidenceGranularity,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetricSeed {
     pub metric_key: String,
     pub source_key: String,
@@ -138,12 +121,14 @@ pub struct MetricSeed {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InputSeed {
     pub input_role: MetricInputRole,
     pub measure_key: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Registry {
     sources: Vec<BuiltinSource>,
     metrics: Vec<MetricSeed>,
@@ -219,12 +204,23 @@ mod tests {
     }
 
     #[test]
+    fn every_source_declares_at_least_one_measure() {
+        for builtin_source in builtin_sources() {
+            assert!(
+                !builtin_source.measures.is_empty(),
+                "source {} declares no measures",
+                builtin_source.source.key
+            );
+        }
+    }
+
+    #[test]
     fn measure_and_dimension_keys_are_unique_per_source() {
         for builtin_source in builtin_sources() {
             let mut measures = BTreeSet::new();
-            for measure_key in &builtin_source.measures {
-                assert!(is_snake_case(measure_key));
-                assert!(measures.insert(measure_key.as_str()));
+            for measure in &builtin_source.measures {
+                assert!(is_snake_case(&measure.key));
+                assert!(measures.insert(measure.key.as_str()));
             }
             let mut dimensions = BTreeSet::new();
             for dimension_key in &builtin_source.dimensions {
@@ -250,7 +246,11 @@ mod tests {
             .map(|builtin_source| {
                 (
                     builtin_source.source.key.as_str(),
-                    builtin_source.measures.iter().map(String::as_str).collect(),
+                    builtin_source
+                        .measures
+                        .iter()
+                        .map(|measure| measure.key.as_str())
+                        .collect(),
                 )
             })
             .collect();

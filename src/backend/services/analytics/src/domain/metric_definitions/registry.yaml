@@ -5,16 +5,26 @@ sources:
       source_ref: ai_metric_observations
       evidence_ref: ai_metric_evidence
     measures:
-      - accepted_lines
-      - removed_lines
-      - active_day
-      - cost_usd
-      - accepted_edit_actions
-      - tool_use_offered
-      - assistant_messages
-      - assistant_actions
-      - dev_conversations
-      - chat_assistant_conversations
+      - key: accepted_lines
+        evidence_granularity: source_summary
+      - key: removed_lines
+        evidence_granularity: source_summary
+      - key: active_day
+        evidence_granularity: derived_population
+      - key: cost_usd
+        evidence_granularity: source_summary
+      - key: accepted_edit_actions
+        evidence_granularity: source_summary
+      - key: tool_use_offered
+        evidence_granularity: source_summary
+      - key: assistant_messages
+        evidence_granularity: source_summary
+      - key: assistant_actions
+        evidence_granularity: source_summary
+      - key: dev_conversations
+        evidence_granularity: source_summary
+      - key: chat_assistant_conversations
+        evidence_granularity: source_summary
     dimensions:
       - tool
       - surface
@@ -24,17 +34,28 @@ sources:
       source_ref: git_metric_observations
       evidence_ref: git_metric_evidence
     measures:
-      - commit_count
-      - commit_day
-      - commit_change_size
-      - code_lines_added
-      - lines_added
-      - lines_removed
-      - pr_created
-      - pr_created_merged
-      - pr_merged
-      - pr_cycle_hours
-      - pr_change_size
+      - key: commit_count
+        evidence_granularity: event
+      - key: commit_day
+        evidence_granularity: source_summary
+      - key: commit_change_size
+        evidence_granularity: event
+      - key: code_lines_added
+        evidence_granularity: source_summary
+      - key: lines_added
+        evidence_granularity: source_summary
+      - key: lines_removed
+        evidence_granularity: source_summary
+      - key: pr_created
+        evidence_granularity: event
+      - key: pr_created_merged
+        evidence_granularity: event
+      - key: pr_merged
+        evidence_granularity: event
+      - key: pr_cycle_hours
+        evidence_granularity: event
+      - key: pr_change_size
+        evidence_granularity: event
     dimensions:
       - category
       - change_type
@@ -49,27 +70,48 @@ sources:
       source_ref: collab_metric_observations
       evidence_ref: collab_metric_evidence
     measures:
-      - total_chat_messages
-      - channel_posts
-      - direct_and_group_messages
-      - meeting_hours
-      - meetings_attended
-      - meetings_organized
-      - adhoc_meetings_attended
-      - scheduled_meetings_attended
-      - emails_sent
-      - emails_received
-      - emails_read
-      - files_engaged
-      - files_shared_internal
-      - files_shared_external
-      - files_shared
-      - active_day
-      - active_modality
-      - chat_active_day
-      - meeting_free_day
-      - focus_hours
-      - working_hours
+      - key: total_chat_messages
+        evidence_granularity: source_summary
+      - key: channel_posts
+        evidence_granularity: source_summary
+      - key: direct_and_group_messages
+        evidence_granularity: source_summary
+      - key: meeting_hours
+        evidence_granularity: source_summary
+      - key: meetings_attended
+        evidence_granularity: source_summary
+      - key: meetings_organized
+        evidence_granularity: source_summary
+      - key: adhoc_meetings_attended
+        evidence_granularity: source_summary
+      - key: scheduled_meetings_attended
+        evidence_granularity: source_summary
+      - key: emails_sent
+        evidence_granularity: source_summary
+      - key: emails_received
+        evidence_granularity: source_summary
+      - key: emails_read
+        evidence_granularity: source_summary
+      - key: files_engaged
+        evidence_granularity: source_summary
+      - key: files_shared_internal
+        evidence_granularity: source_summary
+      - key: files_shared_external
+        evidence_granularity: source_summary
+      - key: files_shared
+        evidence_granularity: source_summary
+      - key: active_day
+        evidence_granularity: derived_population
+      - key: active_modality
+        evidence_granularity: derived_population
+      - key: chat_active_day
+        evidence_granularity: source_summary
+      - key: meeting_free_day
+        evidence_granularity: derived_population
+      - key: focus_hours
+        evidence_granularity: derived_population
+      - key: working_hours
+        evidence_granularity: derived_population
     dimensions:
       - tool
       - scope
@@ -79,24 +121,42 @@ sources:
       source_ref: task_metric_observations
       evidence_ref: task_metric_evidence
     measures:
-      - tasks_closed
-      - bugs_fixed
-      - due_date_on_time
-      - due_date_with_due
-      - slip_days_total
-      - late_count
-      - estimation_error_pct
-      - estimation_samples
-      - flow_dev_seconds
-      - flow_lead_seconds
-      - close_events
-      - reopened_within_14d
-      - worklog_seconds
-      - in_progress_seconds
-      - stale_in_progress
-      - dev_time_hours
-      - resolution_days
-      - pickup_days
+      - key: tasks_closed
+        evidence_granularity: event
+      - key: bugs_fixed
+        evidence_granularity: event
+      - key: due_date_on_time
+        evidence_granularity: event
+      - key: due_date_with_due
+        evidence_granularity: event
+      - key: slip_days_total
+        evidence_granularity: event
+      - key: late_count
+        evidence_granularity: event
+      - key: estimation_error_pct
+        evidence_granularity: derived_population
+      - key: estimation_samples
+        evidence_granularity: derived_population
+      - key: flow_dev_seconds
+        evidence_granularity: derived_population
+      - key: flow_lead_seconds
+        evidence_granularity: derived_population
+      - key: close_events
+        evidence_granularity: derived_population
+      - key: reopened_within_14d
+        evidence_granularity: derived_population
+      - key: worklog_seconds
+        evidence_granularity: derived_population
+      - key: in_progress_seconds
+        evidence_granularity: derived_population
+      - key: stale_in_progress
+        evidence_granularity: derived_population
+      - key: dev_time_hours
+        evidence_granularity: event
+      - key: resolution_days
+        evidence_granularity: event
+      - key: pickup_days
+        evidence_granularity: event
     dimensions: []
   - source:
       key: wiki
@@ -104,10 +164,14 @@ sources:
       source_ref: wiki_metric_observations
       evidence_ref: wiki_metric_evidence
     measures:
-      - pages_created
-      - edits
-      - pages_edited
-      - comments
+      - key: pages_created
+        evidence_granularity: event
+      - key: edits
+        evidence_granularity: source_summary
+      - key: pages_edited
+        evidence_granularity: source_summary
+      - key: comments
+        evidence_granularity: source_summary
     dimensions: []
 metrics:
   - metric_key: ai.accepted_lines

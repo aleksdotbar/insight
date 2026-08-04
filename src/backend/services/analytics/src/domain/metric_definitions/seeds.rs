@@ -29,7 +29,7 @@ async fn reconcile_source(
     upsert_source(db, builtin_source).await?;
     let source_id = fetch_source_id(db, &builtin_source.source.key).await?;
 
-    for measure_key in &builtin_source.measures {
+    for measure in &builtin_source.measures {
         db.execute(Statement::from_sql_and_values(
             db.get_database_backend(),
             "INSERT INTO metric_source_measures \
@@ -41,8 +41,8 @@ async fn reconcile_source(
             [
                 uuid_value(Uuid::now_v7()),
                 uuid_value(source_id),
-                Value::from(measure_key.as_str()),
-                Value::from(builtin_source.evidence_granularity(measure_key).as_db()),
+                Value::from(measure.key.as_str()),
+                Value::from(measure.evidence_granularity.as_db()),
             ],
         ))
         .await?;
@@ -245,14 +245,18 @@ async fn disable_missing_builtin_rows(db: &DatabaseConnection) -> Result<(), DbE
         let measure_keys = builtin_source
             .measures
             .iter()
-            .map(String::as_str)
+            .map(|measure| measure.key.as_str())
             .collect::<Vec<_>>();
-        let placeholders = vec!["?"; measure_keys.len()].join(", ");
-        let sql = format!(
-            "UPDATE metric_source_measures SET is_enabled = FALSE \
-             WHERE source_id = ? AND is_enabled = TRUE \
-               AND measure_key NOT IN ({placeholders})"
-        );
+
+        let base_sql = "UPDATE metric_source_measures SET is_enabled = FALSE \
+                        WHERE source_id = ? AND is_enabled = TRUE";
+        let sql = if measure_keys.is_empty() {
+            base_sql.to_owned()
+        } else {
+            let placeholders = vec!["?"; measure_keys.len()].join(", ");
+            format!("{base_sql} AND measure_key NOT IN ({placeholders})")
+        };
+
         let mut values = vec![uuid_value(source_id)];
         values.extend(measure_keys.iter().map(|key| Value::from(*key)));
         db.execute(Statement::from_sql_and_values(
