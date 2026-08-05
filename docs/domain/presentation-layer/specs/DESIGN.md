@@ -22,7 +22,7 @@
   - [4.1 Implementation Plan](#41-implementation-plan)
   - [4.2 Promotion Ladder (FE)](#42-promotion-ladder-fe)
   - [4.3 Open Decisions](#43-open-decisions)
-  - [4.4 Out of Scope (Phase B)](#44-out-of-scope-phase-b)
+  - [4.4 Phase B and Out of Scope](#44-phase-b-and-out-of-scope)
 - [5. Traceability](#5-traceability)
 
 <!-- /toc -->
@@ -58,6 +58,8 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-query-console` | Single stable FE app on the saved-query API: author, list, run, render table / auto-chart. Shipped (#1970) |
 | `cpt-presentation-fr-preview-envs` | Path-based `/exp/<name>` on one host, one shared read-only backend, FE-only variation. Per-experiment bundle (`Deployment` + `Service` + one prefix-strip `Ingress`) shipped as the `insight-preview` chart at `deploy/preview/`, applied by hand (#1971). Experiments are a capability gated off on production by default (`cpt-presentation-constraint-experiments-off-prod`, #1973). Shipped |
 | `cpt-presentation-fr-preview-auth` | Single fixed callback with a Redis-backed opaque `state` return path (already stashing `state -> { return_to, pkce_verifier, nonce }`, delete-on-read), extended so `return_to` is validated at store time against a configurable `/exp/` prefix. Shipped (#1972) |
+| `cpt-presentation-fr-metric-registry` | Single declarative `registry.yaml` (a `sources` list and a `metrics` list) embedded at build time and reconciled into the service DB at boot; replaces the code-literal seed with no change to reconcile semantics; invariants pinned by tests that parse the same registry. Shipped (#1974) |
+| `cpt-presentation-fr-metric-passports` | `passport.rs` renders a source/formula/notes passport per metric from the embedded registry; the offline `analytics passports` subcommand emits the document, committed as `passports.md` next to `registry.yaml`. A Rust drift test compares the render against the committed file and fails on divergence, so a metric change without a passport regeneration breaks the build. Shipped (#1975) |
 
 #### NFR Allocation
 
@@ -400,6 +402,58 @@ Serves many experimental FE builds under one host against one shared read-only b
 
 ---
 
+#### Metric Registry
+
+- [x] `p3` - **ID**: `cpt-presentation-component-metric-registry`
+
+##### Why this component exists
+
+Collapses the metric-definition seed into one declarative artifact so a metric can be added or changed without editing Rust, and so Phase B (semantic compiler, passports) has a single source of truth to build on. Shipped (#1974). The detailed metric contract is governed by the metrics DESIGN (`docs/domain/metrics/specs/DESIGN.md`).
+
+##### Responsibility scope
+
+- `registry.yaml` (`domain/metric_definitions/`): one `sources` list and one `metrics` list, embedded at build time (`include_str!`) and deserialized once into the seed types in `builtin.rs`, exposed as `builtin_sources()` / `builtin_metrics()`.
+- The startup reconciler converges the registry into the service DB (`metric_definitions` and its source/measure/dimension/input tables) idempotently: additive upserts plus disable-missing for builtins dropped from the registry; tenant-owned rows untouched. Unchanged from the prior code-literal seed except its source.
+- Registry invariants (key shape and uniqueness, input/measure references, computation field combinations, presentation-complete formats carry no unit) are pinned by tests that parse the same embedded registry, so a malformed or drifted registry fails the build.
+
+##### Responsibility boundaries
+
+- Does NOT define or drive the legacy `metric_catalog`/`metric_threshold` subsystem — that orphaned, frozen path is untouched; its retirement is tracked separately.
+- Does NOT add the semantic raw-to-derived compiler — that is a later Phase B sub-issue (#1976). Metric passports and their drift test ship on top of this registry (#1975); see the Metric Passports component below.
+- Does NOT change reconcile semantics or the metric-result runtime.
+
+##### Related components (by ID)
+
+- `cpt-presentation-component-metric-compiler` — consumes the reconciled definitions
+- `cpt-presentation-component-metric-passports` — renders the human-readable passport from the same registry
+
+---
+
+#### Metric Passports
+
+- [x] `p3` - **ID**: `cpt-presentation-component-metric-passports`
+
+##### Why this component exists
+
+Gives every metric a reviewable, plain-language derivation record — source, formula, notes — that cannot silently drift from the code that computes it, laying a stable, human-facing surface the Phase B semantic compiler and the FE metric rework build on. Shipped (#1975).
+
+##### Responsibility scope
+
+- `passport.rs` (`domain/metric_definitions/`): `render_passports()` folds `builtin_sources()` / `builtin_metrics()` into one Markdown document, one section per metric in registry order — source relation, the measures it reads, a rendered formula (sum/median/distinct-count/scaled ratio plus any affine-clamp transform), the display shape, and the authored notes.
+- The offline `analytics passports` subcommand emits the document (no database, no config, mirroring `analytics openapi`); it is committed as `passports.md` next to `registry.yaml`.
+- A Rust drift test (`metric_definitions::passport`) re-renders from the embedded registry and asserts byte-equality with the committed `passports.md`, failing the standard backend test job when the two disagree. Regenerate: `(cd src/backend && cargo run -p analytics -- passports) > …/passports.md`.
+
+##### Responsibility boundaries
+
+- Does NOT add a new runtime endpoint or change the metric-result path — passports are a build-time, developer-facing artifact.
+- Does NOT author notes independently — it renders the registry's existing labels, computations, and explanations, so the passport stays a projection of the single source of truth rather than a second one.
+
+##### Related components (by ID)
+
+- `cpt-presentation-component-metric-registry` — the single source of truth the passport is rendered from
+
+---
+
 ### 3.3 API Contracts
 
 - [x] `p2` - **ID**: `cpt-presentation-interface-saved-query-endpoints`
@@ -580,9 +634,11 @@ Tiers 1-2 need no deploy — the unit of change is a query row. Tier 3 is the pr
 2. **CI-automated preview provisioning** — whether/when a CI job automates provisioning (best after the nginx-to-Envoy move), and whether tier-3 experiments live on branches of the real FE repo or a prototype repo.
 3. **Read-only on v1** — confirm the presentation layer is strictly read-only for v1 (write-back out of scope).
 
-### 4.4 Out of Scope (Phase B)
+### 4.4 Phase B and Out of Scope
 
-Declarative metric registry (collapse `builtin.rs` + MariaDB `metrics` + FE thresholds into one YAML catalog with passports and a drift test); semantic raw-to-derived compiler; FE metric rework (catalog-driven thresholds, honest NULL-to-ComingSoon). Named here so Phase A does not encode choices that block them.
+The declarative metric registry (`cpt-presentation-component-metric-registry`, #1974) lands as the first Phase B step: one YAML is the source of truth for the sanctioned metric-definition seed. The former "FE thresholds" collapse is already done — the FE renders from the `metric_definitions` catalog API and live peer percentiles, holding no per-metric thresholds.
+
+Metric passports plus their drift test (`cpt-presentation-component-metric-passports`, #1975) land as the next Phase B step on top of the registry: a source/formula/notes document rendered from the same YAML and pinned by a drift test. Still out of scope: the semantic raw-to-derived compiler (#1976); FE metric rework (#1977-#1978). Also deferred: retirement of the orphaned, frozen legacy `metric_catalog`/`metric_threshold` subsystem — no live consumer reads it, so it is left untouched and its removal is tracked separately rather than perpetuated in the new registry.
 
 ## 5. Traceability
 
