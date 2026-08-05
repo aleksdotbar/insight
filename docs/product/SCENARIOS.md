@@ -8,11 +8,12 @@ commitment: personas are the four target user groups of VISION §6.1, and the ma
 nine product capabilities of VISION §8, expressed as scenarios and attributed per persona.
 
 **Why the per-persona split matters.** A capability is not one scenario. "Work with metrics" is a
-single capability, but an individual contributor working with metrics sees themselves against a
-median and never a colleague; a team manager sees their subtree and cohorts recomputed inside it,
-never a peer team outside it; an executive sees the organization but never a named individual. The
-capability is shared; the boundary is not. The **must never** column is the part that is easy to
-lose in implementation, so it is written here as a statement rather than left implied.
+single capability, but an individual contributor working with metrics sees their own work placed
+against a department or cohort median and no team metrics at all; a team manager sees their subtree
+and the people in it by name, with cohorts recomputed inside that scope rather than carried over from
+the organization; an executive sees the whole organization. The capability is shared; the boundary is
+not. The **must never** column is the part that is easy to lose in implementation, so it is written
+here as a statement rather than left implied.
 
 **How this document is used.** It is the level above feature specs: a feature changes, a scenario
 does not. Specs under `docs/components/<area>/specs/` describe how a surface behaves; this document
@@ -39,12 +40,18 @@ in the form they have to hold — not as a description of the current UI.
 | | EXEC | LEAD | IC | ADMIN |
 |---|---|---|---|---|
 | **Scope** | Organization and everything under it | Own subtree | Self | Configuration, not scope |
-| **Aggregation depth** | Organization, function, team | Team, sub-team, cohort within own scope | Self, plus context as a median | n/a |
-| **Named individuals** | No — collective views are anonymous | No — a person is reached by navigation, never as a named row in a cut | Self only | Only in identity resolution, which is about identity, not performance |
-| **Comparison** | Between functions and teams inside the organization | Between cohorts recomputed **inside the active scope** | Against a median, never against a named person | n/a |
+| **Aggregation depth** | Organization, function, team, and the people in them | Team, sub-team, cohort within own scope, and their own reports | Self, with the department or cohort present only as a median | n/a |
+| **Named individuals** | Yes, anywhere in the organization, where person-level access is granted | Yes — a team view names the people reporting to them; that is what a team view is for | Self only | Only in identity resolution, which is about identity, not performance |
+| **Comparison** | Between functions, teams and people inside the organization | Between cohorts recomputed **inside the active scope**, and between their own reports | Against a department or cohort median, never against a named colleague | n/a |
 | **Cost data** | Where granted | Where granted | No | Where granted |
 | **Diagnosis / recommendation** | Reads diagnoses | Reads diagnoses, receives recommendations | Neither | Neither |
-| **Never** | Raw data · default stack ranking · a number without its coverage and confidence | Anything outside the subtree · named rows in collective cuts · cohorts inherited from the organization instead of recomputed in scope | Any other person's raw activity · own position in a ranked list · any team roll-up | Administrative rights do **not** imply data visibility — each data class is granted separately (VISION §9) |
+| **Never** | Raw data · a default view that ranks people against one another · a number without its coverage and confidence | Anything outside the subtree · a default view that ranks their reports against one another · cohorts inherited from the organization instead of recomputed in scope | Any other person's activity · any team metric beyond the median they are placed against · own position in a ranked list | Administrative rights do **not** imply data visibility — each data class is granted separately (VISION §9) |
+
+**On naming and ranking.** These are two different things and only one is restricted. People are
+named wherever person-level access has been granted for them — a manager's team view names their
+reports, and that is the point of it. What VISION §3 rules out is a *default* view that ranks named
+individuals against one another, or an unexplained productivity score. The line is the default
+surface, not the name.
 
 ---
 
@@ -93,9 +100,9 @@ stated limitations, and is computed the same way for every persona and every sco
 
 | Persona | Can | Must never |
 |---|---|---|
-| EXEC | Roll the organization up by function and team, with change over time | See a coverage figure produced by treating missing data as zero, or a named row in a roll-up |
-| LEAD | See their subtree for a period, find where work is blocked, compare cohorts recomputed inside the active scope | Compare against a team outside the subtree; inherit cohorts from the organization; be shown a group small enough to identify an individual; receive a "who is best" ordering |
-| IC | See their own activity, flow and AI usage, with team context as a median | See another person's activity, or their own position in a ranked list |
+| EXEC | Roll the organization up by function, team and person, with change over time | See a coverage figure produced by treating missing data as zero, or a default view that ranks people against one another |
+| LEAD | See their subtree for a period, the people in it by name, where work is blocked, and cohorts recomputed inside the active scope | Compare against a team outside the subtree; inherit cohorts from the organization; be shown a group small enough to identify an individual; be handed a "who is best" ordering as the default view |
+| IC | See their own activity, flow and AI usage, placed against a department or cohort median | See another person's activity, a team metric beyond that median, or their own position in a ranked list |
 | ADMIN | Configure which metrics matter, thresholds, cohorts and comparison groups | Gain data visibility implicitly from administrative rights |
 
 ### S-7 · Configuration and access control · P0 · Service
@@ -108,8 +115,8 @@ recommendation data is role-based and policy-controlled, and the boundary holds 
 |---|---|---|
 | ADMIN | Grant the five data classes independently (VISION §9); adapt roles, metrics and thresholds without engineering involvement | Hold all classes implicitly; have a grant enforced in the interface but not underneath it |
 | LEAD | Reach every depth of their subtree | Reach one node above or sideways — the boundary is structural, not a filter |
-| EXEC | Read organization-wide aggregates | Reach raw data, or a default stack ranking of people |
-| IC | Read themselves | Be reachable as a named row by anyone browsing a collective view |
+| EXEC | Read organization-wide aggregates, and people where person-level access is granted | Reach raw data, or a default view that ranks people against one another |
+| IC | Read themselves | Be named to anyone outside the part of the organization that has been granted person-level access to them |
 
 ### S-1 · Source connection and evidence coverage · P1 · Service
 
@@ -160,7 +167,7 @@ Validation is read from the measured system afterwards, not from self-reporting.
 
 | Persona | Can | Must never |
 |---|---|---|
-| LEAD | Receive an action they can own, with what should move, and when it will be checked | Receive a recommendation about a named individual, or one whose origin is unstated |
+| LEAD | Receive an action they can own, with what should move, and when it will be checked | Receive a recommendation that passes judgement on a named individual rather than on a process, team or cohort, or one whose origin is unstated — a named *owner* is expected, a named *subject* is not |
 | EXEC | Read whether recommendations changed the measured system | Be shown a validation result assembled from metrics chosen after the fact |
 | ADMIN | Configure which recommendation families are enabled, who owns them and how validation windows are defined | — |
 | IC | — | Be the object of a recommendation |
@@ -205,8 +212,9 @@ surface serving any capability.
 2. **Confidence and limitations travel with every conclusion** (§3) — a strong finding, a directional
    signal and an instrumentation problem are distinguishable.
 3. **Lineage before attribution** (§7.3) — untraceable work is a gap, not a quiet claim.
-4. **No default stack ranking or unexplained productivity scores** (§3) — collective views carry no
-   named rows.
+4. **No default stack ranking or unexplained productivity scores** (§3) — people are named where
+   person-level access has been granted; what is ruled out is a default view that ranks them against
+   one another.
 5. **People-level access is role-based and policy-controlled** (§3, §9) — five independently granted
    data classes.
 6. **Cost movement is preserved, not folded away** (§11.4) — a local saving that shifts cost, risk or
