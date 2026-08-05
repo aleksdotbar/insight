@@ -1,10 +1,16 @@
 FROM node:25-bookworm-slim AS builder
 
-RUN corepack enable
-
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# node:25 ships neither corepack nor pnpm. Corepack is not installed to provide
+# it: its package claims the `yarn`/`yarnpkg` bins, which this image already
+# holds, so installing it needs `--force` to clobber them. pnpm is installed
+# directly instead, at the version `packageManager` declares — so package.json
+# stays the single source of truth for it.
+RUN npm install -g "pnpm@$(node -p 'require("/app/package.json").packageManager.split("@")[1]')"
+
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
