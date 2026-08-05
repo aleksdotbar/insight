@@ -57,6 +57,13 @@ export interface MetricGroup {
   collection: MetricCollectionConfig;
   card: { preview: string[] };
   drilldown: DrilldownBlock[];
+  /**
+   * Metrics that are wholes whose parts are also in this collection. They are
+   * fetched and rendered as composition — a total with its parts beneath it —
+   * and kept out of the per-metric standing surfaces, where a whole sitting
+   * beside its own parts reads as a second, independent count of the same work.
+   */
+  totals?: readonly string[];
 }
 
 export type GroupId =
@@ -70,10 +77,18 @@ const TASK_DELIVERY_COLLECTION: MetricCollectionConfig = {
   metrics: [
     {
       key: "tasks.closed",
-      views: [{ view: "period" }, { view: "peer" }],
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "breakdown", dimensions: ["type"] },
+      ],
     },
     {
       key: "tasks.bugs_fixed",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "tasks.closed_non_bug",
       views: [{ view: "period" }, { view: "peer" }],
     },
     {
@@ -323,11 +338,16 @@ export const GROUPS: readonly MetricGroup[] = [
     card: {
       preview: ["tasks.closed", "tasks.resolution_time", "tasks.pickup_time"],
     },
+    totals: ["tasks.closed"],
     drilldown: [
+      { chart: "summary-card", view: "breakdown", metrics: ["tasks.closed"] },
       {
         id: "task-throughput",
         view: "timeseries",
-        metrics: ["tasks.closed", "tasks.bugs_fixed"],
+        // The two type subsets, not the total and one of its parts: a subset
+        // charted against the whole it belongs to reads as two independent
+        // series of different work.
+        metrics: ["tasks.bugs_fixed", "tasks.closed_non_bug"],
         chart: { multiMetric: "combined" },
       },
       {
@@ -466,11 +486,17 @@ export const GROUPS: readonly MetricGroup[] = [
  * column, in display order. Every key exists in a group collection above.
  * The FE owns only the key list and order — each column's label, unit,
  * format, and direction ride the `/v1/metric-results` response.
+ *
+ * The two closed-issue type subsets are adjacent on purpose: they are read
+ * against each other, and a column of unrelated work between them breaks the
+ * comparison. Their total is not a column — a whole beside its own parts reads
+ * as a third, independent count; it is composition, and lives in the group
+ * drilldown.
  */
 export const HEATMAP_METRIC_KEYS: readonly string[] = [
-  "tasks.closed",
-  "tasks.resolution_time",
   "tasks.bugs_fixed",
+  "tasks.closed_non_bug",
+  "tasks.resolution_time",
   "git.prs_merged",
   "git.pr_cycle_time_h",
   "collab.focus_time_pct",
@@ -510,6 +536,20 @@ export const KPI_ROW_COLLECTION: MetricCollectionConfig = {
     views: [{ view: "period" }, { view: "peer" }],
   })),
 };
+
+/**
+ * The group's collection minus its `totals` — the metrics that stand on their
+ * own wherever a surface renders one entry per collection metric (the standings
+ * list, the team grid, attention rows). Fetching still uses the full
+ * collection: a total is requested, then presented as composition.
+ */
+export function standingCollection(def: MetricGroup): MetricCollectionConfig {
+  if (!def.totals?.length) return def.collection;
+  const totals = def.totals;
+  return {
+    metrics: def.collection.metrics.filter((m) => !totals.includes(m.key)),
+  };
+}
 
 /** KPI tiles navigate to the group that owns their metric. */
 export function groupIdForMetricKey(metricKey: string): GroupId | null {

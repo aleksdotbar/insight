@@ -1,6 +1,10 @@
 import { formatMetricValue } from "@/lib/format";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
-import type { MetricGroup, GroupId } from "@/lib/insight/groups";
+import {
+  standingCollection,
+  type MetricGroup,
+  type GroupId,
+} from "@/lib/insight/groups";
 import {
   forEntity,
   type NormalizedMetricResult,
@@ -32,7 +36,7 @@ export function metricAttentionItems(
   entityId: string
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
-  for (const metricConfig of def.collection.metrics) {
+  for (const metricConfig of standingCollection(def).metrics) {
     const metric = byKey.get(metricConfig.key);
     if (!metric || metric.direction === "neutral") continue;
     const data = forEntity(metric, entityId);

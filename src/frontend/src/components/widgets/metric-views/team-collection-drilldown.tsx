@@ -8,7 +8,7 @@ import {
   MembersGrid,
   type MembersGridMember,
 } from "@/components/widgets/dashboard/members-grid";
-import type { MetricGroup } from "@/lib/insight/groups";
+import { standingCollection, type MetricGroup } from "@/lib/insight/groups";
 import type { PeerCohortLabel } from "@/lib/peers";
 import { useMemberGridData } from "@/queries/member-grid";
 import type { PeriodValue } from "@/types/insight";
@@ -52,7 +52,7 @@ export function TeamCollectionDrilldown({
     [members]
   );
   const metricKeys = useMemo(
-    () => def.collection.metrics.map((metric) => metric.key),
+    () => standingCollection(def).metrics.map((metric) => metric.key),
     [def]
   );
   const data = useMemberGridData(

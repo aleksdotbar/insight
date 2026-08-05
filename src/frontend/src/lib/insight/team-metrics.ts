@@ -1,4 +1,4 @@
-import type { MetricGroup } from "@/lib/insight/groups";
+import { standingCollection, type MetricGroup } from "@/lib/insight/groups";
 import {
   forEntity,
   type NormalizedMetricResult,
@@ -50,7 +50,7 @@ export function teamMetricStandings(
   byKey: Map<string, NormalizedMetricResult>,
   memberIds: string[],
 ): TeamMetricStanding[] {
-  return def.collection.metrics.flatMap((metricConfig) => {
+  return standingCollection(def).metrics.flatMap((metricConfig) => {
     const metric = byKey.get(metricConfig.key);
     if (!metric) return [];
     let top = 0;
@@ -109,9 +109,10 @@ export function metricBelowCounts(
   memberIds: string[],
 ): Map<string, number> {
   const out = new Map<string, number>();
+  const standing = standingCollection(def);
   for (const memberId of memberIds) {
     let below = 0;
-    for (const metricConfig of def.collection.metrics) {
+    for (const metricConfig of standing.metrics) {
       const metric = byKey.get(metricConfig.key);
       if (!metric) continue;
       if (memberMetricStanding(metric, memberId) === "bottom") below += 1;

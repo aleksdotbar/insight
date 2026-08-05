@@ -20,7 +20,10 @@
 -- per measure branch (ClickHouse re-inlines every WITH reference).
 --
 -- Lifecycle comes from class_task_statuses.status_category ('done' = closed)
--- joined on the status id — never match status display names. Attribution:
+-- joined on the status id — never match status display names. Issue type is the
+-- same shape: class_task_issuetypes.issue_kind joined on the type id, so a type
+-- absent from the dimension reads 'unknown' rather than being guessed from its
+-- display name. Attribution:
 -- assignee account id → lowercased email via class_task_users; only
 -- email-shaped keys pass (unresolvable accounts are excluded, not carried).
 -- Class reads keep FINAL: RMT parts are not duplicate-immune and argMax over
@@ -47,6 +50,8 @@ issue_pivot AS (
                  field_id = 'assignee' AND delta_action = 'set')             AS assignee_account_id,
         argMaxIf(value_displays[1], (event_at, _version),
                  field_id = 'issuetype' AND delta_action = 'set')            AS issue_type,
+        argMaxIf(value_ids[1], (event_at, _version),
+                 field_id = 'issuetype' AND delta_action = 'set')            AS issue_type_id,
         argMaxIf(value_displays[1], (event_at, _version),
                  field_id = 'duedate' AND delta_action = 'set')              AS due_date_str,
         toFloat64OrNull(argMaxIf(value_displays[1], (event_at, _version),
@@ -83,6 +88,12 @@ SELECT
     p.issue_id                                                               AS issue_id,
     cur.status_category                                                      AS status_category,
     p.issue_type                                                             AS issue_type,
+    ifNull(it.issue_kind, 'unknown')                                         AS issue_kind,
+    -- Stable grouping key vs display label for the type dimension: the
+    -- untranslated name groups the same type across locales, the display name
+    -- is what a reader recognises.
+    coalesce(it.untranslated_name, it.issue_type_name, nullIf(p.issue_type, '')) AS issue_type_key,
+    coalesce(it.issue_type_name, nullIf(p.issue_type, ''))                   AS issue_type_name,
     if(p.due_date_str IS NOT NULL AND p.due_date_str != '',
        toDate(parseDateTimeBestEffortOrNull(p.due_date_str)),
        CAST(NULL AS Nullable(Date)))                                         AS due_date,
@@ -99,3 +110,5 @@ LEFT JOIN issue_close AS c
     ON c.insight_source_id = p.insight_source_id AND c.issue_id = p.issue_id
 LEFT JOIN {{ ref('class_task_statuses') }} AS cur FINAL
     ON cur.insight_source_id = p.insight_source_id AND cur.status_id = p.status_id
+LEFT JOIN {{ ref('class_task_issuetypes') }} AS it FINAL
+    ON it.insight_source_id = p.insight_source_id AND it.issue_type_id = p.issue_type_id
