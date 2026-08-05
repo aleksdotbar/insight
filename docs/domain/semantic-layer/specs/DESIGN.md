@@ -68,6 +68,10 @@ This table maps non-functional requirements from the PRD to specific design resp
 | `cpt-semantic-layer-nfr-executor-consistency` | Cutover parity | Compiler + e2e suite | Shadow-compare per family; divergence classes resolved before flip | 100% of existing e2e expectations green against the compiler |
 | `cpt-semantic-layer-nfr-query-guardrails` | Every query bounded | Compiler | Row caps, timeout classes, memory bounds on every emitted query and cache rebuild | Every compiled query bounded; a pathological definition fails loudly |
 
+#### ADR Links
+
+- `cpt-semantic-layer-adr-adopt-compiler-over-datasets` — records the decision to adopt one compiler over datasets (definitions-as-data) as the Phase B target, over incremental dual-authoring or an external semantic layer, and the per-family shadow-compare-then-delete cutover that governs it.
+
 ### 1.3 Architecture Layers
 
 ```text
