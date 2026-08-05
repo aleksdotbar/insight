@@ -342,7 +342,8 @@ local-wizard:
 # it with the rest — and ensure the sandbox admin/placeholder Secret.
 # No-op unless keycloak.deploy=true.
 keycloak-realm: kube-ctx values-present
-	@if [ "$$(yq -r '.keycloak.deploy // false' $(VALUES))" != "true" ]; then \
+	@set -e; \
+	if [ "$$(yq -r '.keycloak.deploy // false' $(VALUES))" != "true" ]; then \
 	  echo "$(C_YEL)skip$(C_RST) keycloak-realm (keycloak.deploy != true)"; exit 0; fi; \
 	GEN="$$(cd ../.. && pwd)/deploy/compose/keycloak/gen-realm.py"; \
 	DIR=environments/$(ENV)/keycloak/realms; mkdir -p "$$DIR"; \
@@ -356,6 +357,7 @@ keycloak-realm: kube-ctx values-present
 	python3 "$$GEN" --dev-email "$$DEV_EMAIL" \
 	  --authenticator-redirect "$$REDIRECT" \
 	  --authenticator-redirect "$$LB_REDIRECT" \
+	  --authenticator-secret "$$AUTH_SECRET" \
 	  --out "$$OUT"; \
 	kubectl --context $(KUBE_CTX) -n $(NS_APP) create secret generic insight-keycloak-config \
 	  --from-literal=username=admin --from-literal=password=admin \
@@ -363,6 +365,21 @@ keycloak-realm: kube-ctx values-present
 	  --from-literal=INSIGHT_AUTHENTICATOR_REDIRECT_URI="$$REDIRECT" \
 	  --dry-run=client -o yaml | kubectl --context $(KUBE_CTX) -n $(NS_APP) apply -f -; \
 	echo "$(C_GRN)generated$(C_RST) $$OUT + sandbox secret insight-keycloak-config"
+
+.PHONY: keycloak-broker-realms
+# Pack environments/$(ENV)/keycloak/realms/* into the ConfigMap the
+# umbrella's keycloak-config-cli hook Job applies (ADR-0003). Chained into
+# deploy-insight; no-op unless keycloakConfig.enabled=true.
+keycloak-broker-realms: kube-ctx values-present
+	@if [ "$$(yq -r '.keycloakConfig.enabled // false' $(VALUES))" != "true" ]; then \
+	  echo "$(C_YEL)skip$(C_RST) keycloak-broker-realms (keycloakConfig.enabled != true)"; exit 0; fi; \
+	DIR=environments/$(ENV)/keycloak/realms; \
+	ls $$DIR/* >/dev/null 2>&1 \
+	  || { echo "$(C_RED)ERROR$(C_RST): keycloakConfig.enabled=true but no realm files in $$DIR/"; exit 1; }; \
+	kubectl --context $(KUBE_CTX) -n $(NS_APP) create configmap $(RELEASE)-keycloak-config-realms \
+	  --from-file="$$DIR" --dry-run=client -o yaml | \
+	  kubectl --context $(KUBE_CTX) -n $(NS_APP) apply -f -; \
+	echo "$(C_GRN)applied$(C_RST) configmap $(RELEASE)-keycloak-config-realms → $(NS_APP)"
 
 .PHONY: deploy-app
 deploy-app: deploy-insight

@@ -431,8 +431,10 @@ keycloakConfig:
   # allowInsecureUrl=true (in-cluster dev/CI Keycloak only).
   url: ""
   allowInsecureUrl: false
-  # envFrom Secret: KEYCLOAK_USER/KEYCLOAK_PASSWORD + any $(env:VAR) the realm
-  # YAML references. Sealed in gitops — never a value in realm YAML.
+  # envFrom Secret: any $(env:VAR) the realm YAML references; the config-cli
+  # login (KEYCLOAK_USER/KEYCLOAK_PASSWORD) is mapped from the same Secret's
+  # username/password keys via extraEnv. Sealed in gitops — never a value in
+  # realm YAML.
   existingSecret: "insight-keycloak-config"
   # Extra env entries for placeholders resolving from OTHER Secrets (single
   # sealed source of truth; also the only way to reach non-C-identifier keys,

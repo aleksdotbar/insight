@@ -110,10 +110,11 @@ spec:
               {{- end }}
               {{- if $kcdb }}
               KC_DB={{ .Values.keycloak.database.name | quote }}
+              KC_DB_USER={{ required "keycloak.database.username is required" .Values.keycloak.database.username | quote }}
               SQL=$(printf 'CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON `%s`.* TO `%s`@`%%`; FLUSH PRIVILEGES;' \
-                "$KC_DB" "$KC_DB" "$MARIADB_USER")
+                "$KC_DB" "$KC_DB" "$KC_DB_USER")
               mariadb -h"$MARIADB_HOST" -P"$MARIADB_PORT" -uroot -e "$SQL"
-              echo "Provisioned ${KC_DB} (granted to ${MARIADB_USER}@%)."
+              echo "Provisioned ${KC_DB} (granted to ${KC_DB_USER}@%)."
               {{- end }}
               echo "Done."
 {{- end }}
