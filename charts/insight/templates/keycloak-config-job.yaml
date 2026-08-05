@@ -45,6 +45,10 @@ Gated on `keycloakConfig.enabled` (default false — environments opt in as
 they are migrated behind the broker, EPIC #2193 Phase 4).
 */}}
 {{- if .Values.keycloakConfig.enabled }}
+{{- $kcUrl := tpl (required "keycloakConfig.url is required when keycloakConfig.enabled" .Values.keycloakConfig.url) . }}
+{{- if and (not (hasPrefix "https://" $kcUrl)) (not .Values.keycloakConfig.allowInsecureUrl) }}
+{{- fail (printf "keycloakConfig.url %q must be https:// — the Job sends the config-cli admin credentials to it. For an in-cluster dev/CI Keycloak reached over plain HTTP on the cluster network, set keycloakConfig.allowInsecureUrl=true explicitly." $kcUrl) }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -81,7 +85,7 @@ spec:
           imagePullPolicy: {{ .Values.keycloakConfig.image.pullPolicy }}
           env:
             - name: KEYCLOAK_URL
-              value: {{ tpl (required "keycloakConfig.url is required when keycloakConfig.enabled" .Values.keycloakConfig.url) . | quote }}
+              value: {{ $kcUrl | quote }}
             - name: IMPORT_FILES_LOCATIONS
               value: "/config/*.yaml"
             # Substitute $(env:VAR) placeholders from the environment — the

@@ -239,7 +239,11 @@ change is a reviewable pull request, never an admin-UI session.
 
 Flip `keycloakConfig.enabled: true` in the env's `values.yaml` and set
 `keycloakConfig.url` to the Keycloak the realms belong on (the shared
-pre-provisioned stand IdP, or the in-cluster dev subchart). On every
+pre-provisioned stand IdP, or the in-cluster dev subchart). The URL must
+be `https://` — the config-cli Job authenticates to it with admin
+credentials; only an in-cluster dev/CI Keycloak on the cluster network
+may use plain HTTP, behind the explicit
+`keycloakConfig.allowInsecureUrl: true` opt-in. On every
 `make deploy`, the `keycloak-broker-realms` target applies the files as
 the `<release>-keycloak-config-realms` ConfigMap, and the umbrella's
 post-upgrade hook Job runs keycloak-config-cli against that ConfigMap —

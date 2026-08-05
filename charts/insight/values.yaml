@@ -432,9 +432,15 @@ keycloakConfig:
     tag: "6.5.1-26.1.0"
     pullPolicy: IfNotPresent
   # Base URL of the Keycloak the realm YAML is applied to (rendered with
-  # `tpl`), e.g. the in-cluster subchart `http://{{ .Release.Name }}-keycloak:8085/kc`
-  # or a stand's shared Keycloak `https://idp.example.com/kc`.
+  # `tpl`), e.g. a stand's shared Keycloak `https://idp.example.com/kc` or the
+  # in-cluster subchart `http://{{ .Release.Name }}-keycloak:8085/kc`. MUST be
+  # https:// — the Job sends the config-cli admin credentials to it. Rendering
+  # fails on a plain-http URL unless `allowInsecureUrl` is set.
   url: ""
+  # Escape hatch for the in-cluster dev/CI Keycloak, which serves plain HTTP
+  # over the cluster network (like the rest of the local stack). NEVER set
+  # this for a Keycloak reached across the cluster boundary.
+  allowInsecureUrl: false
   # Existing Secret (envFrom) providing KEYCLOAK_USER + KEYCLOAK_PASSWORD (the
   # config-cli login) and every VAR the realm YAML references as $(env:VAR)
   # (client secrets etc.). Sealed in the gitops tree — secret material never
