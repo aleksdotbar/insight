@@ -1,6 +1,9 @@
-# insight-keycloak — a LOCAL/CI-only real-OIDC IdP (the authenticator's IdP when
-# `keycloak.deploy=true`, replacing fakeidp). NEVER enable in production: it runs
-# start-dev with an embedded H2 DB and imports a dev realm with known passwords.
+# insight-keycloak — the stack's Keycloak.
+#   mode: dev        — start-dev, embedded H2, imports the generated dev realm
+#                      with known passwords. LOCAL/CI only.
+#   mode: production — start, MariaDB-backed, admin from a Secret, no realm
+#                      import (realm content via the keycloak-config-cli Job).
+mode: dev
 replicaCount: 1
 
 image:
@@ -23,10 +26,20 @@ hostname: ""
 # The gitops flow generates + applies it before the umbrella deploy.
 realmConfigMap: ""
 
-# Bootstrap admin (dev only; console at {hostname}/admin).
+# Bootstrap admin (console at {hostname}/admin). dev: plaintext below.
+# production: existingSecret with keys `username`/`password`.
 admin:
   username: "admin"
   password: "admin"
+  existingSecret: ""
+
+# production only: MariaDB connection. Password via secretKeyRef.
+database:
+  host: ""
+  port: 3306
+  name: "keycloak"
+  username: ""
+  passwordSecret: {name: "", key: ""}
 
 # Optional ingress. The umbrella enables it so the browser (and the in-cluster
 # authenticator, via the LB IP) reach Keycloak at the /kc prefix. Keycloak serves
