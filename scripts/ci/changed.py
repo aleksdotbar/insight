@@ -51,9 +51,8 @@ def _matrix_entry(comp: dict, *, lint: bool = False, cover: bool = True, test: b
         # a service never counts a library it merely links (each lib self-reports).
         entry["cover_ignore_regex"] = comp.get("cover_ignore_regex", "")
     elif comp["lang"] == "js":
-        # Mirrors the other langs: the gate's --require set is built from the
-        # entries with cover=true, so omitting the flag would let a producer
-        # that emitted an unusable report pass as "component not changed".
+        # The gate's --require set selects on cover, so omitting it would let a
+        # producer that emitted an unusable report pass as "not changed".
         entry["cover"] = comp.get("cover", True)
     elif comp["lang"] == "python":
         entry["cov_package"] = comp.get("cov_package", "")

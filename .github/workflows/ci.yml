@@ -361,13 +361,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.js != '[]' }}
     runs-on: ubuntu-latest
-    # The browser `storybook` vitest project needs chromium and its OS deps; the
-    # official Playwright image bakes both in. Downloading chromium at CI time
-    # stalls the runner indefinitely (the CDN fetch of chromium-linux.zip never
-    # progresses). The tag MUST track `playwright` in the component's
-    # package.json so the pre-installed browser build matches, and the digest is
-    # pinned alongside it because this container executes repository code —
-    # including a fork PR's — and MCR tags are mutable.
+    # Chromium for the browser `storybook` project comes baked in; downloading it
+    # at CI time stalls the runner. The tag MUST track `playwright` in the
+    # component's package.json so the pre-installed build matches.
     container:
       image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
     timeout-minutes: 20
@@ -380,12 +376,9 @@ jobs:
         with:
           persist-credentials: false # don't leave the token in .git/config
 
-      # pnpm is set up before setup-node so the latter's `cache: pnpm` can
-      # resolve the store. Both actions default to the workspace root and this
-      # repository has no root package.json or pnpm-lock.yaml, so both are
-      # pointed at the component root explicitly — without that,
-      # pnpm/action-setup cannot read `packageManager` and setup-node hard-fails
-      # on a missing lock file.
+      # Both actions default to the workspace root, which has no package.json or
+      # lock file — hence the explicit component paths. pnpm first, so
+      # setup-node's `cache: pnpm` can resolve the store.
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           package_json_file: ${{ matrix.entry.root }}/package.json
@@ -396,11 +389,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: ${{ matrix.entry.root }}/pnpm-lock.yaml
 
-      # --ignore-scripts matches the production image build: dependency lifecycle
-      # scripts never run there, so they must not run here either — on a fork PR
-      # the lockfile is attacker-supplied. Nothing in this suite needs them: the
-      # Playwright browsers come from the container image and MSW's worker is
-      # committed under public/.
+      # --ignore-scripts matches the production image: on a fork PR the lockfile is
+      # attacker-supplied, and nothing in this suite needs lifecycle scripts.
       - name: Install dependencies
         working-directory: ${{ matrix.entry.root }}
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -413,38 +403,27 @@ jobs:
         working-directory: ${{ matrix.entry.root }}
         run: pnpm typecheck
 
-      # Runs BOTH vitest projects (unit/jsdom + storybook/browser) in one pass so
-      # their coverage merges into a single Cobertura — a component exercised only
-      # by a story still counts. Story tests are blocking: a failing story fails
-      # this job like a unit test does.
+      # Both vitest projects in one pass, so their coverage merges into a single
+      # Cobertura and a component exercised only by a story still counts.
       - name: Coverage (${{ matrix.entry.name }} -> Cobertura)
         if: ${{ matrix.entry.cover }}
         working-directory: ${{ matrix.entry.root }}
         run: pnpm test:coverage:ci
 
-      # Re-root the report and give it a per-component filename.
-      #
-      # vitest writes an ABSOLUTE project root into <sources>, and this producer
-      # runs in a container (workspace `/__w/<repo>/<repo>`) while coverage-gate
-      # runs on the runner (`/home/runner/work/...`). Neither coverage.py's
-      # _normalize nor diff-cover can resolve that absolute path against the
-      # gate's checkout, so every file would bucket to no component and the
-      # component would silently go unmeasured by BOTH gates. A repo-relative
-      # source root resolves in both.
+      # vitest writes an absolute project root, and this container's workspace
+      # differs from coverage-gate's. Neither gate can resolve it, and both fail
+      # open — the component silently goes unmeasured rather than failing.
       - name: Re-root Cobertura to a repo-relative source path
         if: ${{ matrix.entry.cover }}
         env:
           ENTRY_ROOT: ${{ matrix.entry.root }}
           ENTRY_NAME: ${{ matrix.entry.name }}
         run: |
-          # `set -eu`, not `-euo pipefail`: this job runs in a container, where the
-          # step shell is `sh`, and dash rejects `-o pipefail`. Nothing below relies
-          # on it — the one pipe is tested through `if !`.
+          # No `-o pipefail`: the container's step shell is dash, which rejects it.
           set -eu
-          # Both values come from the component registry, which is repository
-          # content and therefore editable in a fork PR. Reject anything outside
-          # the path charset before it reaches a sed delimiter or an mv
-          # destination.
+          # Registry values are repository content, so fork-PR editable. Reject
+          # anything outside the charset before it reaches a sed delimiter or an
+          # mv destination.
           if ! printf '%s' "$ENTRY_ROOT" | LC_ALL=C grep -Eq '^[A-Za-z0-9._/-]+$'; then
             echo "::error::component root '$ENTRY_ROOT' contains characters outside [A-Za-z0-9._/-]"
             exit 1

@@ -123,11 +123,8 @@ jobs:
               - 'src/backend/docker-entrypoint.sh'
               - 'src/backend/Cargo.toml'
               - 'src/backend/Cargo.lock'
-            # Deliberately includes the subchart under src/frontend/helm/: a
-            # subchart edit rebuilds and republishes here exactly as it does for
-            # the backend services above. The extra image build is the cost of
-            # one uniform rule, and the loop terminates because publish-chart's
-            # commit-back carries [skip ci].
+            # Includes src/frontend/helm/, so a subchart edit rebuilds and
+            # republishes as it does for the services above.
             frontend:
               - 'src/frontend/**'
             toolbox:
@@ -739,20 +736,13 @@ jobs:
           echo '- `${{ env.IMAGE_PREFIX }}/insight-identity-resolution:${{ needs.changes.outputs.build_tag }}`' >> "$GITHUB_STEP_SUMMARY"
 
   # ─── Frontend build ────────────────────────────────────────────────────────
-  # The SPA image (nginx + the Vite bundle). Per-arch on native runners so
-  # `pnpm install` and `pnpm build` never run under QEMU.
+  # Per-arch on native runners so `pnpm build` never runs under QEMU. The image
+  # name stays `insight-front` — every chart, values file and overlay resolves it,
+  # so it must not drift to match the `src/frontend` path.
   #
-  # The image name is spelled out rather than derived from the service directory:
-  # `insight-front` is the published name every chart, values file and
-  # environment overlay already resolves, and it must not drift to match the
-  # `src/frontend` path.
-  #
-  # The workflow_dispatch clause is load-bearing, not defensive. On a manual
-  # dispatch bump-service-appversions.sh pins this subchart's appVersion to this
-  # run's build_tag (FULL_REBUILD=true); if this job did not also build on
-  # dispatch, publish-chart would package a chart referencing an image tag that
-  # was never pushed. The appVersion regex backstop cannot catch that — the tag
-  # is well-formed, just nonexistent.
+  # The workflow_dispatch clause is load-bearing: bump-service-appversions.sh pins
+  # this subchart on dispatch (FULL_REBUILD), so without it publish-chart would
+  # package a chart referencing a tag that was never pushed.
   frontend:
     needs: changes
     if: |
@@ -770,8 +760,7 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    # Narrower than the workflow-level set: this job builds pull-request-authored
-    # source and only needs to push by digest. It must not hold contents: write.
+    # Narrower than the workflow-level set: this job builds PR-authored source.
     permissions:
       contents: read
       packages: write
@@ -786,8 +775,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # No `file:` — the Dockerfile sits at the context root, and every COPY in
-      # it is context-relative, so nothing outside src/frontend is sent.
+      # No `file:` — the Dockerfile is at the context root.
       - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         id: build
         with:
@@ -818,17 +806,15 @@ jobs:
       && needs.frontend.result != 'skipped'
       && needs.changes.outputs.should_push == 'true'
     runs-on: ubuntu-latest
-    # attest-build-provenance needs the OIDC identity and the attestation store;
-    # nothing here writes repository contents.
+    # OIDC identity + attestation store for attest-build-provenance.
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
     steps:
-      # Fail loudly rather than resolving to `skipped`: publish-chart accepts a
-      # skipped merge, so a half-failed arch matrix would otherwise let it pin
-      # this subchart's appVersion to a manifest that was never assembled.
+      # Fail loudly rather than resolving to `skipped` — publish-chart accepts a
+      # skipped merge, and would pin an appVersion to a manifest never assembled.
       - name: Require the platform builds to have passed
         if: needs.frontend.result != 'success'
         run: |
@@ -1456,12 +1442,9 @@ jobs:
 
           # Stage any backend subchart appVersion bumps from the step above.
           # git add of an unchanged file is a harmless no-op.
-          #
-          # The frontend chart belongs in this list: without it, a commit that
-          # touches both a connector and the frontend builds a new frontend
-          # image, bumps the appVersion, then discards it (committed=true defers
-          # publish-chart), and the follow-up run sees no src/frontend/** change
-          # — so the published chart would keep pointing at the previous image.
+          # The frontend chart must be here: otherwise a connector+frontend commit
+          # bumps it, defers publish-chart, and the follow-up run sees no
+          # src/frontend/** change to re-bump from.
           git add src/backend/services/analytics/helm/Chart.yaml \
                   src/backend/services/authenticator/helm/Chart.yaml \
                   src/backend/services/gateway/helm/Chart.yaml \

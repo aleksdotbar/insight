@@ -238,11 +238,8 @@ COMPONENTS = [
         "triggered_by": ["connector-tests-harness"],
         "paths": ["src/ingestion/connectors/task-tracking/jira", "src/ingestion/connectors/ai/claude-admin"],
     },
-    # JS/TS frontend. `pnpm test:coverage:ci` runs BOTH vitest projects (jsdom
-    # `unit` + browser `storybook`) in one pass so their coverage merges into a
-    # single Cobertura — a component exercised only by a story still counts.
-    # `src/frontend/helm` falls under this component's path but contributes no
-    # measured lines, so it never moves either number.
+    # `src/frontend/helm` falls under this path but has no measured lines, so it
+    # never moves the number.
     {
         "name": "frontend",
         "lang": "js",
