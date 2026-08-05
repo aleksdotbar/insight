@@ -106,35 +106,13 @@ UNIVERSAL_BOILERPLATE = frozenset({429})
 _NO_AUTHORIZATION_PATH = frozenset({403})
 
 #: 409 is declared on every route and NO route can send one: `already_exists`,
-#: `aborted` and `conflict` appear nowhere in the service. The one place a
-#: conflict genuinely exists — a duplicate `(metric, tenant, scope)` admin
-#: threshold — violates `uq_metric_threshold_scope_target` and falls through to
-#: the internal-500 alarm instead (#1664), so it is excluded HERE too, tagged
-#: with the bug rather than the absence. When #1664 lands, two things say so
-#: independently: the strict xfail in `test_thresholds.py` starts XPASSing, and
-#: this gate's `blocked-now-observed` advisory names the entry.
+#: `aborted` and `conflict` appear nowhere in the service. A route that grows a
+#: real conflict path makes its entry observable, and this gate's
+#: `blocked-now-observed` advisory names it.
 _NO_CONFLICT_PATH = frozenset({409})
 _NO_AUTHZ_OR_CONFLICT = _NO_AUTHORIZATION_PATH | _NO_CONFLICT_PATH
 
 BLOCKED: dict[str, frozenset[int]] = {
-    # Metrics CRUD + query — no gate of any kind.
-    "GET /v1/metrics": _NO_AUTHZ_OR_CONFLICT,
-    "POST /v1/metrics": _NO_AUTHZ_OR_CONFLICT,
-    "GET /v1/metrics/{id}": _NO_AUTHZ_OR_CONFLICT,
-    "PUT /v1/metrics/{id}": _NO_AUTHZ_OR_CONFLICT,
-    "DELETE /v1/metrics/{id}": _NO_AUTHZ_OR_CONFLICT,
-    "POST /v1/metrics/{id}/query": _NO_AUTHZ_OR_CONFLICT,
-    "POST /v1/metrics/queries": _NO_AUTHZ_OR_CONFLICT,
-    # Legacy per-metric thresholds — the #1663 surface, also ungated.
-    "GET /v1/metrics/{id}/thresholds": _NO_AUTHZ_OR_CONFLICT,
-    "POST /v1/metrics/{id}/thresholds": _NO_AUTHZ_OR_CONFLICT,
-    "PUT /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHZ_OR_CONFLICT,
-    "DELETE /v1/metrics/{id}/thresholds/{tid}": _NO_AUTHZ_OR_CONFLICT,
-    # Admin thresholds: the three WRITES can refuse (a broader scope's lock,
-    # and for the id-taking two, a cross-tenant row). Only the reads are left
-    # with nothing but the stubbed role check.
-    "GET /v1/admin/metric-thresholds": _NO_AUTHZ_OR_CONFLICT,
-    "GET /v1/admin/metric-thresholds/{id}": _NO_AUTHZ_OR_CONFLICT,
     # Saved queries — no owner check and no role check; cross-tenant is 404.
     "GET /v1/queries": _NO_AUTHZ_OR_CONFLICT,
     "POST /v1/queries": _NO_AUTHZ_OR_CONFLICT,
@@ -142,28 +120,13 @@ BLOCKED: dict[str, frozenset[int]] = {
     "PUT /v1/queries/{id}": _NO_AUTHZ_OR_CONFLICT,
     "DELETE /v1/queries/{id}": _NO_AUTHZ_OR_CONFLICT,
     "POST /v1/queries/{id}/run": _NO_AUTHZ_OR_CONFLICT,
-    # Read-only catalogue + drilldown.
-    "GET /v1/columns": _NO_AUTHZ_OR_CONFLICT,
-    "GET /v1/columns/{table}": _NO_AUTHZ_OR_CONFLICT,
-    "POST /v1/catalog/get_metrics": _NO_AUTHZ_OR_CONFLICT,
     # `POST /v1/metric-drilldown` and `GET /v1/metric-definitions` used to sit
     # here. #2134 corrected their declarations, so there is no longer a 403 to
     # subtract — the gate reported both as stale and they came out.
     # `/export` still carries the old boilerplate and the same absent gate.
     "POST /v1/metric-drilldown/export": _NO_AUTHZ_OR_CONFLICT,
-    # Person lookup: `handlers::get_person` parses the id, then delegates. Its
-    # own answers are 200/400/404, and an identity refusal does not pass
-    # through — the delegation's error arm maps EVERYTHING to `internal`, so a
-    # 403 upstream leaves this service as a 500. Keyed by `{person_id}`: the
-    # identity cutover (#2098) renamed the segment, and the gate caught the
-    # stale `{email}` key here on its first run afterwards.
-    "GET /v1/persons/{person_id}": _NO_AUTHZ_OR_CONFLICT,
-    # 403 IS reachable on these three (see above), 409 is not.
     # `POST /v1/metric-results` needs no entry at all: #2134 already removed
     # 409 from its declaration, and this gate said so when it was added here.
-    "POST /v1/admin/metric-thresholds": _NO_CONFLICT_PATH,  # 409 = #1664
-    "PUT /v1/admin/metric-thresholds/{id}": _NO_CONFLICT_PATH,
-    "DELETE /v1/admin/metric-thresholds/{id}": _NO_CONFLICT_PATH,
 }
 
 
@@ -298,7 +261,7 @@ def dump(path: str | Path) -> Path:
 class Operation:
     """One catalogued operation, as the ledger will have seen it.
 
-    `template` is the parameterised form (`/v1/metrics/{id}`); `path` is the
+    `template` is the parameterised form (`/v1/queries/{id}`); `path` is the
     concrete url the catalogue names, with a stand-in substituted. They differ
     for every operation that takes a path parameter, and conflating them is
     what this field exists to stop — see `fold_onto_catalogue`.
@@ -315,7 +278,7 @@ class Operation:
     @property
     def key(self) -> str:
         """How the operation is identified in a report: the template if it has
-        one, so `PUT /v1/metrics/{id}` is one row rather than one per id."""
+        one, so `PUT /v1/queries/{id}` is one row rather than one per id."""
         return f"{self.method} {self.template or self.path}"
 
 
@@ -327,7 +290,7 @@ def fold_onto_catalogue(
     Without this the catalogue half compares literal paths while the spec half
     folds templates, and the two disagree about the same run. A test that
     updates a real threshold records
-    `PUT /api/analytics/v1/admin/metric-thresholds/019fc6c8-…`, which matches
+    `PUT /api/analytics/v1/queries/019fc6c8-…`, which matches
     the catalogue's stand-in id nowhere — so the only call left against the
     catalogued url is the anonymous sweep's, and the operation is reported
     SWEPT ONLY while a passing test is exercising it.
@@ -465,8 +428,8 @@ def match_against_spec(
 ) -> tuple[dict[str, set[int]], list[dict[str, Any]]]:
     """Fold gateway-prefixed observations onto the service's own operations.
 
-    The suite calls `/api/analytics/v1/metrics`; the document describes
-    `/v1/metrics`. `strip_prefix: true` in the gateway's route table is what
+    The suite calls `/api/analytics/v1/queries`; the document describes
+    `/v1/queries`. `strip_prefix: true` in the gateway's route table is what
     makes those the same request, so stripping it here is reading the route
     table, not guessing.
     """

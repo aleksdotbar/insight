@@ -1,12 +1,8 @@
 //! `metric_key` (`table_name.column_name`) parser.
 //!
-//! The DB-side CHECK `chk_metric_catalog_metric_key_shape` constrains the wire
-//! format to `^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$`; this parser is the
-//! application-layer mirror per the dual-validate principle. It rejects every
-//! shape the regex would reject so a row that somehow slipped past the DB CHECK
-//! (a DBA dropping the constraint, a future MariaDB downgrade losing CHECK
-//! enforcement) cannot bypass the validator and reach the ClickHouse query as
-//! an unconstrained string.
+//! The wire format is `^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$`. Request validation
+//! parses every caller-supplied metric key through here, so an unconstrained
+//! string can never reach a ClickHouse query.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ParseError {
@@ -27,19 +23,19 @@ pub enum ParseError {
 }
 
 /// Parsed `metric_key` halves. Both are non-empty, lowercase `snake_case`
-/// starting with `[a-z]` — same alphabet as the DB-side CHECK regex.
+/// starting with `[a-z]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedKey<'a> {
     pub table: &'a str,
     pub column: &'a str,
 }
 
-/// Parse `"table.column"` from a row's `metric_key`.
+/// Parse `"table.column"` from a `metric_key`.
 ///
 /// # Errors
 ///
-/// Returns [`ParseError`] for any shape that would also fail
-/// `chk_metric_catalog_metric_key_shape`.
+/// Returns [`ParseError`] for any shape outside
+/// `^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$`.
 pub fn parse_metric_key(metric_key: &str) -> Result<ParsedKey<'_>, ParseError> {
     if metric_key.is_empty() {
         return Err(ParseError::Empty);
@@ -62,7 +58,7 @@ pub fn parse_metric_key(metric_key: &str) -> Result<ParsedKey<'_>, ParseError> {
 }
 
 fn validate_segment(segment: &str) -> Result<(), ParseError> {
-    // First char `[a-z]`; rest `[a-z0-9_]`. Matches the DB CHECK alphabet exactly.
+    // First char `[a-z]`; rest `[a-z0-9_]`.
     // Caller (`parse_metric_key`) pre-checks `is_empty()` for both halves, so
     // `chars.next()` must yield Some; if a future refactor calls this directly
     // we'd rather panic in dev than return a misleading `EmptyTable` for a
@@ -102,8 +98,7 @@ mod tests {
 
     #[test]
     fn single_char_segments_are_legal() {
-        // Mirrors `live_tests::catalog_schema_end_to_end` invariant 6 (positive case):
-        // the regex `^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$` accepts segments of length ≥ 1.
+        // `^[a-z][a-z0-9_]*[.][a-z][a-z0-9_]*$` accepts segments of length >= 1.
         let p = parse_or_panic("a.b");
         assert_eq!(p.table, "a");
         assert_eq!(p.column, "b");
@@ -136,7 +131,6 @@ mod tests {
 
     #[test]
     fn uppercase_rejected() {
-        // Mirrors `live_tests::catalog_schema_end_to_end` invariant 6 (negative case).
         assert_eq!(
             parse_metric_key("Analytics.tasks"),
             Err(ParseError::BadLeadingChar)
@@ -178,9 +172,7 @@ mod tests {
     #[test]
     fn sql_injection_shaped_input_rejected() {
         // Defense-in-depth: even though every bind is parameterized, the parser
-        // refuses to hand the ClickHouse probe a "table" that contains a quote
-        // or backtick. The probe is the only consumer of these strings and the
-        // bound-parameter path is safe, but rejecting at the source is cheap.
+        // refuses to yield a "table" that contains a quote or backtick.
         assert!(parse_metric_key("a';--.b").is_err());
         assert!(parse_metric_key("a.b`drop").is_err());
     }
