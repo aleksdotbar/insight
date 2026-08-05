@@ -165,6 +165,8 @@ keycloak:
 
 keycloakConfig:
   enabled: true
+  # The roster realm is generated JSON (keycloak-realm target).
+  filesLocations: "/config/*.yaml,/config/*.json"
   # In-cluster hop over plain http — sandbox only.
   url: 'http://{{ .Release.Name }}-keycloak:8085/kc'
   allowInsecureUrl: true
