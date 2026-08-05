@@ -413,6 +413,39 @@ keycloak:
   realmConfigMap: ""
   ingress:
     enabled: false
+# ─── keycloakConfig (broker realms as code — ADR-0003, EPIC #2193) ──────────
+# Applies the environment's versioned broker realm YAML against its Keycloak
+# with keycloak-config-cli, as a post-install/post-upgrade hook Job that
+# re-runs on every deploy (reverting server-side drift). Realm content is
+# configuration-as-code ONLY: no admin-UI channel. The realm YAML lives in the
+# gitops tree (deploy/gitops/environments/<env>/keycloak/realms/) and reaches
+# the Job as a pre-created ConfigMap (gitops `keycloak-broker-realms` target).
+# Independent of `keycloak.deploy`: the target may be the shared
+# pre-provisioned Keycloak of a deployed stand (ADR-0002) or the in-cluster
+# dev subchart.
+keycloakConfig:
+  enabled: false
+  image:
+    repository: adorsys/keycloak-config-cli
+    # config-cli release line must match the Keycloak server major (this tag
+    # is config-cli 6.5.1 built against Keycloak 26.1; server runs 26.x).
+    tag: "6.5.1-26.1.0"
+    pullPolicy: IfNotPresent
+  # Base URL of the Keycloak the realm YAML is applied to (rendered with
+  # `tpl`), e.g. the in-cluster subchart `http://{{ .Release.Name }}-keycloak:8085/kc`
+  # or a stand's shared Keycloak `https://idp.example.com/kc`.
+  url: ""
+  # Existing Secret (envFrom) providing KEYCLOAK_USER + KEYCLOAK_PASSWORD (the
+  # config-cli login) and every VAR the realm YAML references as $(env:VAR)
+  # (client secrets etc.). Sealed in the gitops tree — secret material never
+  # appears in realm YAML or values files.
+  existingSecret: "insight-keycloak-config"
+  # Pre-created ConfigMap holding the realm YAML files (empty =
+  # <release>-keycloak-config-realms).
+  realmsConfigMap: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
 # ─── Analytics ────────────────────────────────────────────────────────────
 analytics:
   replicaCount: 2

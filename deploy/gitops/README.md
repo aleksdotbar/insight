@@ -229,6 +229,28 @@ OIDC IdP (Okta, Entra, Auth0, Keycloak, …), and seal a corresponding
 [`environments/local/sealed-secrets/insight/insight-oidc-sealedsecret.yaml.template`](environments/local/sealed-secrets/insight/insight-oidc-sealedsecret.yaml.template)
 for the seven required keys.
 
+## Keycloak broker realms as code
+
+Environments whose Keycloak realm content is managed as code (ADR-0003,
+EPIC constructorfabric/insight#2193) keep their realm definitions as
+plain [keycloak-config-cli](https://github.com/adorsys/keycloak-config-cli)
+YAML files under `environments/<env>/keycloak/realms/*.yaml` — a realm
+change is a reviewable pull request, never an admin-UI session.
+
+Flip `keycloakConfig.enabled: true` in the env's `values.yaml` and set
+`keycloakConfig.url` to the Keycloak the realms belong on (the shared
+pre-provisioned stand IdP, or the in-cluster dev subchart). On every
+`make deploy`, the `keycloak-broker-realms` target applies the files as
+the `<release>-keycloak-config-realms` ConfigMap, and the umbrella's
+post-upgrade hook Job runs keycloak-config-cli against that ConfigMap —
+idempotently, with the import cache off, so every sync re-asserts the
+versioned content and reverts drift.
+
+Secrets never go in realm YAML: reference them as `$(env:VAR)` and
+provide the values (plus `KEYCLOAK_USER`/`KEYCLOAK_PASSWORD`, the
+config-cli login) through the sealed `insight-keycloak-config` Secret
+(`keycloakConfig.existingSecret`).
+
 ## Secret management
 
 Sealed secrets ([Bitnami sealed-secrets](https://github.com/bitnami-labs/sealed-secrets))
