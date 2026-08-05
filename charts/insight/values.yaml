@@ -191,7 +191,7 @@ ingestion:
   # `serviceaccount "argo-workflow" not found`.
   templates:
     enabled: true
-  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.05.08.11-875e6e1" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
+  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.05.10.51-5290fb8" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
   # airbyte-sync poll-job tunables — see templates/ingestion/airbyte-sync.yaml.
   # The poll loop replaces a wall-clock deadline with a progress watchdog:
   # it tracks (status, bytesEmitted, recordsEmitted, stateMessagesEmitted)
@@ -445,6 +445,10 @@ keycloakConfig:
   # The Job also injects INSIGHT_TENANT_ID from global.tenantDefaultId (set):
   # realm IdP mappers pin the tenant per environment, never from IdP claims.
   extraEnv: []
+  # Glob(s) config-cli imports, comma-separated. config-cli FAILS on any
+  # glob with zero matches — list only patterns the env's realms dir
+  # always contains. Local adds ',/config/*.json' for the generated realm.
+  filesLocations: "/config/*.yaml"
   # Pre-created realms ConfigMap (empty = <release>-keycloak-config-realms).
   realmsConfigMap: ""
   resources:
