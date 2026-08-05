@@ -38,7 +38,6 @@ from lib.enrich import EnrichRunner
 from lib.fixture_loader import TestYaml, discover_tests
 from lib.fixture_loader import load as load_test
 from lib.identity_stub import IdentityStub
-from lib.metric_seed import seed_test_metrics
 from lib.migration_applier import apply_all as apply_ch_migrations
 from lib.worker import WorkerContext
 
@@ -237,8 +236,7 @@ def analytics(
     ch_migrations_applied: SessionConfig, dbt_runner: DbtRunner, worker_ctx: WorkerContext, identity_stub: IdentityStub
 ):
     """Spawn the analytics binary baked into the runner image. Its SeaORM
-    migrations run on startup; we then upsert test-specific metrics from
-    seed/metrics.yaml.
+    migrations run on startup.
 
     If the binary is missing, this is a hard FAIL — identical locally and in CI.
     A skip here would make the whole transformation suite silently green while
@@ -257,7 +255,6 @@ def analytics(
     port = find_free_port()
     proc = AnalyticsProcess(cfg, binary, port, identity_url=identity_stub.url)
     proc.start()
-    seed_test_metrics(cfg)
     yield proc
     try:
         _collect_metrics(cfg)

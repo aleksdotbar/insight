@@ -148,21 +148,6 @@ def render_profile(doc: dict[str, Any]) -> str:
         "here so a test reads the name rather than hardcoding one.",
         "",
     ]
-    if catalogue.get("table_columns"):
-        lines += ["`table_columns` — the universe `/v1/columns/{table}` serves:", ""]
-        lines += _table(
-            ["clickhouse_table", "field_name"],
-            [[f"`{row['table']}`", f"`{row['field']}`"] for row in catalogue["table_columns"]],
-        )
-        lines += [""]
-    else:
-        lines += [
-            "**No `table_columns` rows.** `/v1/columns/{table}` answers an empty",
-            "list for every table, so the per-table filter cannot be asserted",
-            "against data — a broken filter looks exactly like a correct one.",
-            "",
-        ]
-
     override = catalogue.get("definition_override")
     if override:
         lines += [

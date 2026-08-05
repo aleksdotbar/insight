@@ -15,8 +15,9 @@ is empty by design. So every seeded fact
 asserted here is an IDENTITY fact read from the manifest at runtime — who the
 person is, and who the roster places under them.
 
-That the tiles render at all is still checked, by LABEL rather than by value,
-because a view showing the right name and no metrics is a different defect.
+The dashboard coverage checks every KPI and domain card by its visible product
+label. It verifies that seeded domains are populated and that the unseeded Wiki
+domain renders its explicit empty state.
 """
 
 from __future__ import annotations
@@ -66,21 +67,12 @@ def test_the_landing_view_shows_the_persona_and_their_reports(
 
 
 @pytest.mark.requires_seed("dev_lead")
-def test_the_personal_view_renders_metric_tiles_for_the_persona(
+def test_the_personal_dashboard_renders_every_metric_domain(
     page: Page,
     base_url: str,
     session_for: Callable[[str], PersonaSession],
 ) -> None:
-    """The person's own view is populated, not an empty shell.
-
-    Tiles are asserted BY LABEL and never by value. The labels are the product's
-    own copy, so a renamed tile fails here — the correct outcome for a test whose
-    subject is "the view rendered its content".
-
-    Three labels rather than one: a single tile could render from a placeholder,
-    while three distinct sections all populating means the view is wired to real
-    per-person data.
-    """
+    """The person's dashboard renders every KPI and domain in its seeded state."""
     persona = session_for("dev_lead")
 
     sign_in(page, base_url, persona)
@@ -89,8 +81,23 @@ def test_the_personal_view_renders_metric_tiles_for_the_persona(
     view.go(persona.person.uuid)
     expect(view.person_heading(persona.person.display_name)).to_be_visible()
 
-    for label in ("Tasks closed", "Pull requests merged", "AI-added lines"):
-        expect(view.metric_tile(label)).to_be_visible()
+    for label in (
+        "Tasks closed",
+        "Focus Time",
+        "Pull requests merged",
+        "AI active days",
+        "AI-added lines",
+    ):
+        expect(view.kpi_tile(label)).to_be_visible()
+        expect(view.kpi_value(label)).not_to_have_text("—")
+
+    for label in ("Task delivery", "Git output", "Collaboration", "AI adoption"):
+        expect(view.populated_domain_card(label)).to_be_visible()
+
+    wiki = view.empty_domain_card("Wiki")
+    expect(wiki).to_be_visible()
+    expect(wiki.get_by_text("No data", exact=True)).to_be_visible()
+    expect(wiki.get_by_text("No metrics with data for this period.", exact=True)).to_be_visible()
 
 
 @pytest.mark.requires_seed("dev_lead")
@@ -129,8 +136,47 @@ def test_the_team_view_lists_every_report_the_roster_declares(
 
     sign_in(page, base_url, persona)
 
+    personal = PersonView(page)
+    personal.go(lead.uuid)
+    expect(personal.person_heading(lead.display_name)).to_be_visible()
+
+    team_switch = personal.team_view_switch()
+    expect(team_switch).to_be_visible()
+    team_switch.click()
+
     team = TeamView(page)
-    team.go(lead.uuid)
+    expect(page).to_have_url(f"{base_url}{TeamView.path(lead.uuid)}")
     expect(team.team_heading(lead.display_name)).to_be_visible()
+    expect(team.metrics_overview()).to_be_visible()
+
+    # Every member renders a cell for every column (recorded or an honest
+    # "not recorded") and at least one real recorded value — this catches a
+    # dropped member, a blank row, or a truncated column, without demanding
+    # every metric for every person. A member can legitimately close tasks
+    # yet fix no bugs, so "Bugs fixed: not recorded" for one member is data,
+    # not a defect.
     for name in reports:
-        expect(team.member_row(name)).to_be_visible()
+        row = team.member_row(name)
+        expect(row).to_be_visible()
+        for metric_label in (
+            "Tasks closed",
+            "Time to resolution",
+            "Bugs fixed",
+            "Pull requests merged",
+            "PR cycle time",
+            "Focus Time",
+            "Meeting Hours",
+            "AI active days",
+        ):
+            expect(team.metric_cell(name, metric_label)).to_be_visible()
+        expect(team.any_recorded_metric_cell(name)).to_be_visible()
+        expect(team.unrecorded_metric_cell(name, "Page edits")).to_be_visible()
+
+    for label in ("Task delivery", "Git output", "Collaboration", "AI adoption"):
+        card = team.domain_card(label)
+        expect(card).to_be_visible()
+        expect(card).not_to_contain_text("No metrics with peer data for this period.")
+
+    wiki = team.domain_card("Wiki")
+    expect(wiki).to_be_visible()
+    expect(wiki).to_contain_text("No metrics with peer data for this period.")
