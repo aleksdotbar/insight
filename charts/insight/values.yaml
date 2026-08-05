@@ -191,7 +191,7 @@ ingestion:
   # `serviceaccount "argo-workflow" not found`.
   templates:
     enabled: true
-  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.04.14.06-d174090" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
+  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.05.04.41-25ca9bd" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
   # airbyte-sync poll-job tunables — see templates/ingestion/airbyte-sync.yaml.
   # The poll loop replaces a wall-clock deadline with a progress watchdog:
   # it tracks (status, bytesEmitted, recordsEmitted, stateMessagesEmitted)
@@ -413,6 +413,38 @@ keycloak:
   realmConfigMap: ""
   ingress:
     enabled: false
+# ─── keycloakConfig (broker realms as code — ADR-0003, EPIC #2193) ──────────
+# Hook Job applying the env's versioned realm YAML (pre-created ConfigMap from
+# the gitops `keycloak-broker-realms` target) with keycloak-config-cli on every
+# deploy. Independent of `keycloak.deploy`.
+keycloakConfig:
+  enabled: false
+  image:
+    repository: adorsys/keycloak-config-cli
+    # Release line must match the Keycloak server major.
+    tag: "6.5.1-26.1.0"
+    pullPolicy: IfNotPresent
+  # Keycloak base URL (tpl-rendered). Must be https; plain http only with
+  # allowInsecureUrl=true (in-cluster dev/CI Keycloak only).
+  url: ""
+  allowInsecureUrl: false
+  # envFrom Secret: KEYCLOAK_USER/KEYCLOAK_PASSWORD + any $(env:VAR) the realm
+  # YAML references. Sealed in gitops — never a value in realm YAML.
+  existingSecret: "insight-keycloak-config"
+  # Extra env entries for placeholders resolving from OTHER Secrets (single
+  # sealed source of truth; also the only way to reach non-C-identifier keys,
+  # which envFrom drops silently):
+  #   - name: INSIGHT_AUTHENTICATOR_CLIENT_SECRET
+  #     valueFrom:
+  #       secretKeyRef: {name: insight-oidc, key: oidc-client-secret}
+  # The Job also injects INSIGHT_TENANT_ID from global.tenantDefaultId (set):
+  # realm IdP mappers pin the tenant per environment, never from IdP claims.
+  extraEnv: []
+  # Pre-created realms ConfigMap (empty = <release>-keycloak-config-realms).
+  realmsConfigMap: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
 # ─── Analytics ────────────────────────────────────────────────────────────
 analytics:
   replicaCount: 2

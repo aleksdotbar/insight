@@ -49,33 +49,10 @@ SERVER_FAULT_FLOOR = 500
 UNIVERSAL_BOILERPLATE = frozenset({429})
 
 # Per-route declared codes the rig cannot observe, subtracted from `required` on
-# top of UNIVERSAL_BOILERPLATE — tagged per entry: `.standard_errors` boilerplate
-# the handler can't answer (#1669), or a pinned rig/product bug (#1663 legacy-
-# threshold reads 500; #1664 admin duplicate-create 500s not 409). Self-cleaning:
-# an entry that becomes observed or leaves the spec fails the hygiene advisory.
+# top of UNIVERSAL_BOILERPLATE — each entry is `.standard_errors` boilerplate the
+# handler cannot answer (#1669). Self-cleaning: an entry that becomes observed or
+# leaves the spec fails the hygiene advisory.
 BLOCKED: dict[str, frozenset[int]] = {
-    "GET /v1/metrics": frozenset({400, 403, 404, 409}),  # boilerplate: list, no input/lookup/conflict
-    "POST /v1/metrics": frozenset({403, 404, 409}),  # boilerplate
-    "GET /v1/metrics/{id}": frozenset({403, 409}),  # boilerplate
-    "PUT /v1/metrics/{id}": frozenset({403, 409}),  # boilerplate
-    "DELETE /v1/metrics/{id}": frozenset({403, 409}),  # boilerplate
-    "POST /v1/metrics/{id}/query": frozenset({403, 409}),  # boilerplate
-    "POST /v1/metrics/queries": frozenset({403, 404, 409}),  # boilerplate (per-item errors embed in 200)
-    "GET /v1/columns": frozenset({400, 403, 404, 409}),  # boilerplate
-    "GET /v1/columns/{table}": frozenset({400, 403, 404, 409}),  # boilerplate: unknown table → empty 200
-    "POST /v1/catalog/get_metrics": frozenset({403, 404, 409}),  # boilerplate
-    "GET /v1/admin/metric-thresholds": frozenset({403, 404, 409}),  # boilerplate
-    "GET /v1/admin/metric-thresholds/{id}": frozenset({403, 409}),  # boilerplate
-    "PUT /v1/admin/metric-thresholds/{id}": frozenset({409}),  # boilerplate (403 IS reachable: cross-tenant)
-    "DELETE /v1/admin/metric-thresholds/{id}": frozenset({409}),  # boilerplate (403 reachable: cross-tenant)
-    # legacy thresholds: 403/409 boilerplate; the success code is #1663 (500 on read-back)
-    "GET /v1/metrics/{id}/thresholds": frozenset({200, 403, 409}),  # 200=#1663
-    "POST /v1/metrics/{id}/thresholds": frozenset({201, 403, 409}),  # 201=#1663
-    "PUT /v1/metrics/{id}/thresholds/{tid}": frozenset({200, 403, 409}),  # 200=#1663
-    "DELETE /v1/metrics/{id}/thresholds/{tid}": frozenset({204, 403, 409}),  # 204=#1663
-    "POST /v1/admin/metric-thresholds": frozenset({404, 409}),  # 404 boilerplate; 409=#1664
-    # persons 200/404/400 covered via the in-process Identity stub (#1691)
-    "GET /v1/persons/{person_id}": frozenset({403, 409}),
     # saved-query CRUD + run (#1965): 403 (no role gate — cross-tenant is 404 by
     # opacity) and 409 (no conflict path) are `.standard_errors` boilerplate.
     "GET /v1/queries": frozenset({400, 403, 404, 409}),  # boilerplate: list, no input/lookup/conflict

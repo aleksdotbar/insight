@@ -31,11 +31,6 @@ from insight_stand import analytics_path, identity_path
 # authentication, so the gateway never reaches a handler and these are never
 # resolved — they only have to be well-formed enough to route.
 SOME_ID: Final[str] = "01900000-0000-7000-8000-000000000000"
-SOME_TABLE: Final[str] = "gold_metric_values"
-#: Still used by identity's `/internal/persons/by-email/{email}`, which is a
-#: LOOKUP by email rather than a person-keyed route and so was untouched by the
-#: identity cutover (#2098).
-SOME_EMAIL: Final[str] = "nobody@example.com"
 
 #: Stand-in -> the parameter it stands in for. These values are synthetic and
 #: chosen for this purpose, so a path segment equal to one of them IS the
@@ -43,13 +38,11 @@ SOME_EMAIL: Final[str] = "nobody@example.com"
 #: twice per row.
 _PARAMETERS: Final[dict[str, str]] = {
     SOME_ID: "{id}",
-    SOME_TABLE: "{table}",
-    SOME_EMAIL: "{email}",
 }
 
 
 def _templated(path: str) -> str:
-    """`/v1/metrics/01900000-…` -> `/v1/metrics/{id}`."""
+    """`/v1/queries/01900000-…` -> `/v1/queries/{id}`."""
     return "/".join(_PARAMETERS.get(segment, segment) for segment in path.split("/"))
 
 
@@ -59,10 +52,10 @@ class Operation:
 
     Carries BOTH forms. `path` is the concrete url the sweep calls; `template`
     is what the operation is, and it is what the coverage gate groups by. A
-    test updating a real threshold records a url containing that threshold's
-    id, which matches the stand-in nowhere — so without the template the gate
-    sees only the sweep's call against the catalogued url and reports an
-    exercised operation as swept-only.
+    test updating a real saved query records a url containing that query's id,
+    which matches the stand-in nowhere — so without the template the gate sees
+    only the sweep's call against the catalogued url and reports an exercised
+    operation as swept-only.
     """
 
     method: str
@@ -72,7 +65,7 @@ class Operation:
 
     @property
     def label(self) -> str:
-        """`GET /api/analytics/v1/metrics`, for a readable parametrize id."""
+        """`GET /api/analytics/v1/queries`, for a readable parametrize id."""
         return f"{self.method} {self.path}"
 
     @property
@@ -88,33 +81,14 @@ def _i(method: str, suffix: str) -> Operation:
     return Operation(method=method, path=identity_path(suffix), service="identity")
 
 
-#: analytics — 30 operations.
+#: analytics — 10 operations.
 ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
-    _a("GET", "/v1/metrics"),
-    _a("POST", "/v1/metrics"),
-    _a("GET", f"/v1/metrics/{SOME_ID}"),
-    _a("PUT", f"/v1/metrics/{SOME_ID}"),
-    _a("DELETE", f"/v1/metrics/{SOME_ID}"),
-    _a("POST", f"/v1/metrics/{SOME_ID}/query"),
-    _a("POST", "/v1/metrics/queries"),
-    _a("GET", f"/v1/metrics/{SOME_ID}/thresholds"),
-    _a("POST", f"/v1/metrics/{SOME_ID}/thresholds"),
-    _a("PUT", f"/v1/metrics/{SOME_ID}/thresholds/{SOME_ID}"),
-    _a("DELETE", f"/v1/metrics/{SOME_ID}/thresholds/{SOME_ID}"),
-    _a("GET", "/v1/admin/metric-thresholds"),
-    _a("POST", "/v1/admin/metric-thresholds"),
-    _a("GET", f"/v1/admin/metric-thresholds/{SOME_ID}"),
-    _a("PUT", f"/v1/admin/metric-thresholds/{SOME_ID}"),
-    _a("DELETE", f"/v1/admin/metric-thresholds/{SOME_ID}"),
     _a("GET", "/v1/queries"),
     _a("POST", "/v1/queries"),
     _a("GET", f"/v1/queries/{SOME_ID}"),
     _a("PUT", f"/v1/queries/{SOME_ID}"),
     _a("DELETE", f"/v1/queries/{SOME_ID}"),
     _a("POST", f"/v1/queries/{SOME_ID}/run"),
-    _a("POST", "/v1/catalog/get_metrics"),
-    _a("GET", "/v1/columns"),
-    _a("GET", f"/v1/columns/{SOME_TABLE}"),
     _a("GET", "/v1/metric-definitions"),
     _a("POST", "/v1/metric-results"),
     _a("POST", "/v1/metric-drilldown"),
@@ -123,10 +97,9 @@ ANALYTICS_OPERATIONS: Final[tuple[Operation, ...]] = (
     # before content negotiation happens, which is exactly what the sweep
     # asserts about every other one.
     _a("POST", "/v1/metric-drilldown/export"),
-    _a("GET", f"/v1/persons/{SOME_ID}"),
 )
 
-#: identity-resolution — 18 operations. `/health` and `/healthz` are the host
+#: identity-resolution — 17 operations. `/health` and `/healthz` are the host
 #: router's, not the product API, and are deliberately absent: the real probes
 #: address the pod directly rather than passing the gateway.
 IDENTITY_OPERATIONS: Final[tuple[Operation, ...]] = (
@@ -149,7 +122,6 @@ IDENTITY_OPERATIONS: Final[tuple[Operation, ...]] = (
     # `.authenticated()`, not admin-gated — and the substring test below does not
     # catch it, which is correct: `/visible-persons` is not `/visibility`.
     _i("POST", "/v1/visible-persons"),
-    _i("GET", f"/internal/persons/by-email/{SOME_EMAIL}"),
 )
 
 ALL_OPERATIONS: Final[tuple[Operation, ...]] = ANALYTICS_OPERATIONS + IDENTITY_OPERATIONS

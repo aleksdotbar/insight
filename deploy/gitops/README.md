@@ -229,6 +229,31 @@ OIDC IdP (Okta, Entra, Auth0, Keycloak, …), and seal a corresponding
 [`environments/local/sealed-secrets/insight/insight-oidc-sealedsecret.yaml.template`](environments/local/sealed-secrets/insight/insight-oidc-sealedsecret.yaml.template)
 for the seven required keys.
 
+## Keycloak broker realms as code
+
+Realm content is versioned keycloak-config-cli YAML under
+`environments/<env>/keycloak/realms/` (ADR-0003,
+constructorfabric/insight#2193) — a realm change is a pull request,
+never an admin-UI session. With `keycloakConfig.enabled: true` and
+`keycloakConfig.url` set in the env values, every `make deploy` packs
+the files into the `<release>-keycloak-config-realms` ConfigMap and the
+umbrella's hook Job re-applies them (cache off — drift reverts on sync).
+
+Secrets enter only as `$(env:VAR)` placeholders, resolved from the
+sealed `insight-keycloak-config` Secret (shape:
+[`environments/local/sealed-secrets/insight/insight-keycloak-config-sealedsecret.yaml.template`](environments/local/sealed-secrets/insight/insight-keycloak-config-sealedsecret.yaml.template))
+or from other existing Secrets via `keycloakConfig.extraEnv`. Never put
+placeholder syntax in realm YAML comments — config-cli substitution
+scans comments and fails the import.
+
+The tenant is pinned per environment: `global.tenantDefaultId` reaches
+the import as `INSIGHT_TENANT_ID` (e.g.
+`033dcbad-2374-4548-a9fa-04e2d5e0889a`), stamped by each IdP's
+`hardcoded-attribute-idp-mapper` — never derived from upstream claims,
+so an IdP swap or upstream drift cannot change the tenant. Canonical
+realm shape to copy:
+[`environments/local/keycloak/realms/insight-broker.yaml`](environments/local/keycloak/realms/insight-broker.yaml).
+
 ## Secret management
 
 Sealed secrets ([Bitnami sealed-secrets](https://github.com/bitnami-labs/sealed-secrets))
