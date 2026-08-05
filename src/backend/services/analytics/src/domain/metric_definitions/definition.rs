@@ -478,6 +478,13 @@ mod tests {
             .unwrap_or_else(|| panic!("builtin evidence must parse"));
         assert_eq!(evidence.table_ref(), ("insight", "ai_metric_evidence"));
         assert_eq!(evidence.source_ref(), "ai_metric_evidence");
+
+        // The cohort source resolves to the same gold database as observations
+        // and evidence — the single flip point for the #1979 relocation.
+        assert_eq!(
+            CohortSource::MetricEntityCohortsCurrent.table_ref(),
+            (GOLD_DATABASE, "metric_entity_cohorts_current")
+        );
     }
 
     #[test]
