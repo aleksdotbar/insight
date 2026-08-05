@@ -7,9 +7,9 @@
 # `insight` client scope below is the claim allow-list ADR-0003 mandates.
 # Two rules keep it safe and portable:
 #   - No secret material, ever. Credential fields hold environment-variable
-#     placeholders resolved by config-cli at apply time from the sealed
-#     `insight-keycloak-config` Secret (scripts/ci/realm_secret_guard.py
-#     enforces this in CI).
+#     placeholders resolved by config-cli at apply time from sealed Secrets
+#     (the insight-keycloak-config Secret, or another existing Secret mapped
+#     in via the keycloakConfig.extraEnv values).
 #   - No literal placeholder syntax in comments: config-cli variable
 #     substitution scans the whole file INCLUDING comments, and an
 #     unresolvable placeholder anywhere fails the import.

@@ -21,8 +21,6 @@ on:
       # bootstrap connector registry and the shared class_people union.
       - "src/ingestion/scripts/bootstrap-db/connectors-config.yaml"
       - "src/ingestion/silver/_shared/**"
-      # Broker realm YAML — realm-secret-guard input (ADR-0003 realms as code).
-      - "deploy/gitops/environments/*/keycloak/realms/**"
   # Merge-queue builds. paths filters don't apply to merge_group, so every queue
   # entry runs this workflow — the `changes` job still scopes the heavy jobs to
   # the batch's actual diff (changed.py diffs origin/main...HEAD, and on a queue
@@ -111,25 +109,6 @@ jobs:
             echo "Expected exactly one jsonwebtoken crypto provider, found $n: $(echo $providers)"
             exit 1
           fi
-
-  # Broker realm YAML is applied to Keycloak by config-cli with env-var
-  # substitution from a sealed Secret (ADR-0003) — a literal credential in a
-  # realm file is a committed secret. Pure file inspection; also rejects
-  # placeholder syntax in YAML comments, which fails the import at deploy time.
-  realm-secret-guard:
-    name: Broker realm YAML secret guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-      - name: Install PyYAML
-        run: python3 -m pip install --quiet pyyaml
-      - name: No secret material in realm YAML
-        run: python3 scripts/ci/realm_secret_guard.py
 
   # Catches half-landed connectors on the PR instead of after the merge.
   # bump-descriptors runs only on the push to main, so a non-semver

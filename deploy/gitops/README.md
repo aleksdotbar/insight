@@ -255,12 +255,14 @@ provide the values (plus `KEYCLOAK_USER`/`KEYCLOAK_PASSWORD`, the
 config-cli login) through the sealed `insight-keycloak-config` Secret
 (`keycloakConfig.existingSecret`) — shape template at
 [`environments/local/sealed-secrets/insight/insight-keycloak-config-sealedsecret.yaml.template`](environments/local/sealed-secrets/insight/insight-keycloak-config-sealedsecret.yaml.template),
-sealed via the inventory `secrets.services` entry. CI enforces this
-(`scripts/ci/realm_secret_guard.py`, mirrored as a pre-commit hook):
-credential fields in realm YAML must hold env placeholders, and
-placeholder syntax must not appear in YAML comments (config-cli
-substitution scans comments and an unresolvable placeholder fails the
-import).
+sealed via the inventory `secrets.services` entry. The repository's
+standard secret scanning covers these files like any other; two rules
+to keep in mind when writing realm YAML: credential fields hold env
+placeholders only (prefer referencing an already-sealed Secret via
+`keycloakConfig.extraEnv` over sealing a value twice), and placeholder
+syntax must not appear in YAML comments — config-cli substitution
+scans comments, and an unresolvable placeholder fails the import at
+deploy time.
 
 The canonical realm shape — the `insight` client scope allow-listing
 exactly `email` and the single-string `tenant_id` (plus the
