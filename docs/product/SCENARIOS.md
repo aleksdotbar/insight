@@ -43,7 +43,10 @@ implementation. That is why it is written down as a statement rather than left i
 - **Per persona** — what each of them does, and what must never happen to them. Only the personas the
   scenario concerns are listed.
 - **Not this** — what the scenario deliberately does not do, so it is not promised in a demo.
-- **Detail** — the user-scenario IDs from Appendix A that belong here.
+- **Detail** — the user-scenario IDs from Appendix A that belong here. It lists the detailed
+  *questions*, not the source of every persona line: reach comes from VISION §6.1, what an
+  administrator may configure from §9. So a persona can appear in a scenario with no question of its
+  own beneath it — usually stating a limit rather than claiming a need.
 
 ---
 
@@ -75,7 +78,7 @@ The boundary each persona carries into every scenario below.
 | **Comparison** | Between functions, teams and people | Between groups inside their own team, and between their own reports | Against a median, never against a named colleague | n/a |
 | **Cost figures** | Where granted | Where granted | No | Where granted |
 | **Conclusions and advice** | Reads conclusions | Reads conclusions, receives recommendations | Neither | Neither |
-| **Never** | The underlying records · a default view that ranks people against one another · a number with no statement of coverage and confidence | Anything outside their own team · a default view that ranks their reports · group figures carried over from the organization instead of recalculated for the team | Any other person's activity · any team metric beyond the median they are placed against · their own place in a ranking | Administrative rights do **not** carry the right to see data — each kind is granted separately (VISION §9) |
+| **Never** | A default view that ranks people against one another · a number with no statement of coverage and confidence | Anything outside their own team · a default view that ranks their reports · group figures carried over from the organization instead of recalculated for the team | Any other person's activity · any team metric beyond the median they are placed against · their own place in a ranking | Administrative rights do **not** carry the right to see data — each kind is granted separately (VISION §9) |
 
 **Naming and ranking are different things, and only one is restricted.** People are named wherever
 person-level access has been granted: a manager's team view names their reports, and that is the point
@@ -151,9 +154,10 @@ it is measured against belongs to S-8.
 - never a causal claim where the evidence supports a correlation
 - never a forecast presented as a guarantee
 
-**ADMIN** — See which evidence gaps and known defects limit a conclusion.
+**IC** — Not an audience for diagnosis, and never a named example inside one (VISION §6.1).
 
-**IC** — Not an audience for diagnosis, and never a named example inside one.
+What limits a conclusion — which sources are missing, which windows do not overlap, which metric is
+under a known defect — is an administrator's view, and it lives in S-7.
 
 ### Looking forward — the other direction of the same scenario
 
@@ -205,7 +209,7 @@ data, or heuristic. Afterwards the product reads the outcome from the measured s
   is not mistaken for an effect
 
 **ADMIN** — Configure which recommendation families are enabled, who owns them, and how validation
-windows are defined.
+windows are defined (VISION §9).
 
 **IC** — Never the subject of a recommendation.
 
@@ -249,7 +253,7 @@ activity is not.
 
 **IC** — Explore their own context only.
 
-**ADMIN** — Curate what can be built.
+**ADMIN** — Curate what can be built (VISION §9).
 - which metrics and thresholds exist, which cohorts are valid, who may publish a shared view
 
 **Not this.** A view carries the definitions and coverage of the metrics in it, not bare numbers.
@@ -272,7 +276,7 @@ governed data access carry the definition, coverage and confidence with the numb
 - never a number stripped of its definition and confidence, so that outside the product it becomes a
   fact without caveats
 
-**LEAD, EXEC** — Use a conclusion in their own report or review.
+**LEAD** — Use a conclusion in their own report or review.
 
 **Detail.** G2 (use conclusions in another system).
 
@@ -286,7 +290,7 @@ coverage and confidence (VISION §8.9, §12).
 - own history first, which requires sharing nothing
 - peer comparison only where the customer has opted in
 
-**ADMIN** — Turn participation on and off; it is revocable.
+**ADMIN** — Turn participation on and off; it is revocable (VISION §12).
 
 **Not this.** Raw customer data never leaves the customer boundary. Only anonymized aggregates at
 cohort, team or organization level are shared — never individual data, never stack ranking
@@ -346,7 +350,7 @@ under a model that was not valid at the time (VISION §8.2, §7.2).
 - defines roles, several roles per person, and role history
 - never loses a manual correction to the next sync
 
-**LEAD, EXEC** — Trust the tree they roll up into.
+**LEAD, EXEC** — Trust the tree they roll up into (VISION §7.2 — temporal team membership).
 - never a subtree quietly reshaped by re-resolution, with past periods recalculated underneath it
 
 **IC** — Be one person, not four.
@@ -381,7 +385,7 @@ gaps in §5.
 
 **EXEC** — The organization as a whole.
 - aggregates, and people where person-level access is granted
-- never the underlying records
+- the underlying records only where granted — raw access is one of the five grants, not a privilege of rank
 
 **IC** — Themselves.
 - named to their own management chain and to anyone else granted person-level access for their part of
@@ -409,7 +413,7 @@ customer control (VISION §1, §14.1, §15.2).
 - parity stated openly, including what could not be reproduced
 - never a parity claim that quietly omits it
 
-**LEAD, IC** — Keep their history across the change.
+**LEAD, IC** — Keep their history across the change (VISION §7.2 — past periods stay under the model valid at the time).
 - never a past period silently recalculated under a new model
 
 **Not this.** Insight does not require Constructor to have default access to customer data in order to
@@ -446,6 +450,9 @@ From the vision, stated once here instead of repeated in each scenario.
     individual unidentifiable behind a number; the second keeps a claim from resting on a handful.
 11. **A metric with a known defect says so on the metric itself** — and where a conclusion would rest
     on it, the metric is excluded by name rather than quietly included.
+12. **A group figure is computed for the group in view** — never inherited from a wider scope. This is
+    why the same cohort produces different numbers at team level and at organization level, and why
+    that is correct rather than a discrepancy.
 
 ---
 
