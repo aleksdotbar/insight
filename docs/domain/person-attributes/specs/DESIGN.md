@@ -266,7 +266,7 @@ ADR-0002 owns the corrective-assignment constraint.
 | Group Condition | Attribute plus operator and one or more exact value identities. |
 | Named Group Revision | Immutable, tenant-owned condition set behind a stable group ID. |
 | Comparison Selection | Tagged request variant: people-like or named group. |
-| Comparison Result | Tagged available result or typed refusal with safe diagnostics. |
+| Comparison Result | Required tagged variant: `available_full`, `available_partial`, or `refused`. |
 | Revision | Identifier for one immutable policy, assignment, group, or derived-output publication. |
 | Watermark | Latest source or metric input included in an analytical build. |
 
@@ -592,7 +592,13 @@ Returns aggregates and counts, never member identities or inputs for browser-sid
 
 Grouping is distinct from metric-dimension `filters`. `group_by` and `comparison` are mutually exclusive in V1. Grouped responses identify values and labels, periods, people, contributors, missing attributes, and overlapping partitions. The legacy `cohort_key` remains behind a migration adapter.
 
-Every available result includes `group_n`, `measured_n`, `unresolved_source_account_n`, `requested_period`, `covered_period`, and period segment when applicable. The unresolved count is always present, including when zero, and its unit is explicitly accounts rather than people. Policy revision, assignment revision, attribute watermark, and metric identity watermark are logged against the request trace and may appear in an optional diagnostics object; they are not required top-level client fields.
+Every result is one required variant:
+
+- `available_full`: the covered period equals the requested period.
+- `available_partial`: reliable history covers only part of the request; both periods are required and the client must present the limitation.
+- `refused`: no aggregate is returned and a typed reason is required.
+
+Available variants include `group_n`, `measured_n`, `unresolved_source_account_n`, `requested_period`, `covered_period`, and period segment when applicable. The unresolved count is always present, including when zero, and its unit is explicitly accounts rather than people. Policy revision, assignment revision, attribute watermark, and metric identity watermark are logged against the request trace and may appear in optional diagnostics; they are not required top-level client fields.
 
 A refusal echoes normalized conditions and safe counts when available. The caller therefore gets a cause and can offer to remove a condition.
 
@@ -769,7 +775,7 @@ Email resolution remains valid for metric observations that contain only email, 
 
 Attribute intervals are half-open: `[valid_from, valid_to)`. An explicit clear or replacement closes the old interval. Snapshot absence closes an interval only when the connector marks the sync successful and complete; partial, failed, or completeness-unknown runs do not imply a clear.
 
-People-like comparison first intersects the requested period with the common reliable history horizon, then intersects that covered period with the subject's selected attribute histories. It returns maximal intervals in which all selected values are stable. For example, a person who changes from Frontend to Backend midway through 2025 receives a Frontend peer result for the first interval and a Backend result for the second. No overlap returns `history_incomplete`; exceeding the segment cap returns `too_many_segments`.
+People-like comparison first intersects the requested period with the common reliable history horizon, then intersects that covered period with the subject's selected attribute histories. A shorter covered period returns `available_partial`, never an ordinary available result. The response then contains maximal intervals in which all selected values are stable. For example, a person who changes from Frontend to Backend midway through 2025 receives a Frontend peer result for the first interval and a Backend result for the second. No overlap returns `history_incomplete`; exceeding the segment cap returns `too_many_segments`.
 
 A named-group revision is fixed, but membership is temporal. Metric observations contribute only while the person satisfies the fixed conditions. The result reports unique matching linked people and metric contributors for the requested period; it does not substitute current headcount.
 
@@ -813,7 +819,7 @@ Responses never contain peer member identities. Attribute IDs, value IDs, group 
 
 The initial connector scope is the data-minimization boundary. #2028 does not add a pending-classification workflow that withholds discovered values. Policy may record an audited sensitivity class independently of grouping/comparison flags so a denied comparison can return `sensitive_attribute` rather than a generic policy denial. Unclassified discovery does not block publication.
 
-The epic requires sensitive attributes to remain available for grouping while forbidding them as a peer-comparison basis. V1 follows that rule and applies the disclosure minimum to every grouped partition. This does not prevent a permitted grouped metric view from being interpreted as a comparison between sensitive partitions. Default-denying sensitive grouping would contradict the current acceptance criteria, so stronger protection requires an explicit product and privacy decision rather than a silent implementation change.
+The epic requires sensitive attributes to remain available for grouping while forbidding them as a peer-comparison basis. V1 follows that rule but applies the disclosure minimum to every grouped partition, including non-sensitive attributes. Suppressing small partitions deliberately tightens the epic's statement that grouping is free because a one-person grouped median has the same disclosure problem as a one-person peer median. This requires epic-owner sign-off. It still does not prevent a permitted grouped metric view from being interpreted as a comparison between large sensitive partitions. Default-denying sensitive grouping would contradict the current acceptance criteria, so stronger protection requires an explicit product and privacy decision rather than a silent implementation change.
 
 Minimum population suppresses direct small-group disclosure but does not eliminate set-difference inference across several allowed queries. This is an accepted V1 k-anonymity limitation. Existing authorization, tenant isolation, query-rate controls, and repeated-probe monitoring reduce exposure; stronger privacy budgets or query-history-aware denial require a separate design.
 
@@ -850,7 +856,7 @@ Selection Validator, Temporal Membership Builder, and Metric Aggregator are resp
 | Identity | Reassignment without value rebuild, unresolved-account counts, subject included once. |
 | Attribute forms | Account-scoped connector value, person-scoped derived value, exact value, label fallback, missing value, multi-value overlap. |
 | Policy | Current policy over pinned groups, sensitive denial, declared and observed multi-value denial. |
-| Time | History truncation, subject change, segment limit, named-group temporal membership. |
+| Time | Full and partial coverage variants, no-overlap refusal, subject change, segment limit, named-group temporal membership. |
 | Privacy | Small people-like group, small named group, small grouped partition, combined-condition minimum. |
 | Compatibility | Legacy `org_unit` parity and cutover, every consumer using the same server statistics. |
 | Dependencies | Healthy and unavailable hierarchy, independent publication revisions, both tenant-enforcement modes. |
@@ -901,7 +907,7 @@ Infrastructure as code is not applicable because the design adds no deployable u
 | Never turn unavailable data into zero | Met | Available results and typed refusals are distinct response variants. |
 | Make person attributes available in analytics | Met | Account-scoped connector values and person-scoped derived values converge in ClickHouse membership. |
 | Serve the attribute list through an existing API | Met | The catalog extends `/v1/metric-definitions`; no separate catalog endpoint is introduced. |
-| Group every attribute and name comparison refusals | Met | `group_by` accepts governed attributes; policy, cardinality, minimum, history, hierarchy, and data refusals are typed. |
+| Group every attribute and name comparison refusals | Deliberate safety divergence | `group_by` accepts governed attributes, but partitions below `min_peer_n` are suppressed to prevent personal metrics being returned as group statistics. The epic says grouping is free; this tightening needs owner sign-off. |
 | Support several simultaneous conditions | Met | Conditions use AND, selected exact values within a condition use OR, and the minimum applies to the combined population. |
 | Keep manager and manager-subtree deterministic | Dependency-bound | Stable manager person IDs are used; subtree membership depends on the authoritative #1605/#1873 temporal hierarchy. |
 | Keep all statistics and minimum enforcement server-side | Met | The existing analytics query compiler owns aggregation and the single `min_peer_n`; the browser receives results only. |
