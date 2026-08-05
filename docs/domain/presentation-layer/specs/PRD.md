@@ -21,6 +21,7 @@
   - [5.3 Tenant Isolation (p1)](#53-tenant-isolation-p1)
   - [5.4 Contract Stability (p2)](#54-contract-stability-p2)
   - [5.5 FE Loop (p2)](#55-fe-loop-p2)
+  - [5.6 Metric Registry (p3)](#56-metric-registry-p3)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -62,7 +63,7 @@ Phase A draws the contract and makes it safe by construction, so a new analytics
 | The source is safe | **Baseline**: presentation and engineering share one writable surface. **Target**: no presentation-side operation can write, alter, or drop engineering-owned data; worst case is damage to `presentation` scratch. **Timeframe**: end of Phase A. |
 | Self-serve analytics without engineering change | **Baseline**: every new slice needs an engineering change or re-ingest. **Target**: an analyst authors, saves, and runs a new query with no deploy. **Timeframe**: end of Phase A. |
 | Every read is tenant-scoped | **Baseline**: tenant filter is a no-op. **Target**: 100% of contract reads carry a server-injected tenant predicate the client cannot widen. **Timeframe**: end of Phase A. |
-| Isolated FE authoring loop | **Baseline**: no isolated place to build widgets. **Target**: FE developers build and validate widgets on a shared read-only preview backend on synthetic data. **Timeframe**: end of Phase A. |
+| Isolated FE authoring loop | **Baseline**: no isolated place to build widgets. **Target**: FE developers build and validate widgets on a shared read-only preview backend on non-production stands (dev/demo); the experiment capability is disabled on production. **Timeframe**: end of Phase A. |
 
 ### 1.4 Glossary
 
@@ -75,7 +76,7 @@ Phase A draws the contract and makes it safe by construction, so a new analytics
 | Single-SELECT gate | A parse-and-reject check that accepts exactly one `SELECT`/`WITH` statement and rejects everything else. |
 | `presentation_ro` role | A ClickHouse role with `SELECT` on the contract and `CREATE`/`INSERT` only in `presentation`. |
 | Saved query | A stored `SELECT`/`WITH` over the contract with an id, name, and tenant, runnable read-only. |
-| Preview environment | A path-based FE deployment (`/exp/<name>`) against a shared read-only synthetic backend. |
+| Preview environment | A path-based FE deployment (`/exp/<name>`) against a shared read-only backend, enabled only on non-production stands. |
 | Relabel, not migrate | Legacy gold stays read-only in the `insight` DB; only new gold is authored in `presentation`. |
 
 ## 2. Actors
@@ -134,10 +135,12 @@ Phase A draws the contract and makes it safe by construction, so a new analytics
 - Server-injected flat tenant filter replacing the no-op on every contract read.
 - Contract surface documentation and a contract version stamp.
 - A stable query console (FE) and path-based preview environments with an authenticated return path.
+- Declarative metric registry: a single YAML as the source of truth for the sanctioned metric-definition seed (Phase B, #1974).
 
 ### 4.2 Out of Scope
 
-- Declarative metric registry, semantic raw-to-derived compiler, and FE metric rework (Phase B, #1974-#1978).
+- Semantic raw-to-derived compiler, metric passports plus their drift test, and FE metric rework (Phase B, #1975-#1978).
+- Retirement of the orphaned legacy `metric_catalog`/`metric_threshold` subsystem (frozen, no live consumer; tracked separately).
 - Tenant subtree/hierarchy scoping and a row-policy backstop (deferred pending benchmark).
 - Physical relocation of legacy gold from `insight` to `presentation` (deferred, #1979-#1981).
 - Write-back from presentation to the contract (presentation is read-only for v1).
@@ -253,13 +256,13 @@ The system **MUST** provide a single stable FE app (not per-branch stands) where
 
 #### Preview Environments
 
-- [ ] `p2` - **ID**: `cpt-presentation-fr-preview-envs`
+- [x] `p2` - **ID**: `cpt-presentation-fr-preview-envs`
 
-The system **MUST** serve many experimental FE builds under path-based addressing (`/exp/<name>`) on a single host, against one shared read-only backend on synthetic data (never customer production). Only the FE varies per experiment. (#1971, #1973.)
+The system **MUST** serve many experimental FE builds under path-based addressing (`/exp/<name>`) on a single host, against one shared read-only backend. Only the FE varies per experiment. Experiments **MUST** be a capability that is disabled on production by default, so a production stand cannot host experimental frontends against customer data; non-production stands (dev/demo) enable it and run over that stand's own data. (#1971, #1973.)
 
 **Rationale**: FE developers need an isolated tier-3 authoring loop that cannot touch customer data.
 
-**Status**: Serving path shipped (#1971): the `insight-preview` Helm chart (`deploy/preview/`) provisions one experiment per release — `Deployment` + `Service` + one prefix-strip `Ingress` under `/exp/<name>` on the shared host, applied and removed by hand. Pinning the shared backend to synthetic data (#1973) is still open, so this requirement stays open.
+**Status**: Shipped. Serving path (#1971): the `insight-preview` Helm chart (`deploy/preview/`) provisions one experiment per release — `Deployment` + `Service` + one prefix-strip `Ingress` under `/exp/<name>` on the shared host, applied and removed by hand. Experiments-off-on-prod gate (#1973): the authenticator's `experiments_enabled` (default `false`) honors a login return into the `/exp/` subtree only when set, so a production stand cannot host experimental frontends; dev/demo preview hosts opt in. A per-user RBAC capability supersedes this environment-level gate later.
 
 **Actors**: `cpt-presentation-actor-fe-dev`
 
@@ -274,6 +277,32 @@ The system **MUST** authenticate preview environments through a single fixed cal
 **Rationale**: One host means one Entra redirect URI; the return path must be safe with no per-experiment Entra change.
 
 **Actors**: `cpt-presentation-actor-fe-dev`, `cpt-presentation-actor-analytics-svc`
+
+### 5.6 Metric Registry (p3)
+
+#### Declarative Metric Registry
+
+- [x] `p3` - **ID**: `cpt-presentation-fr-metric-registry`
+
+The sanctioned metric definitions **MUST** be declared in a single declarative registry — one YAML document with a `sources` list and a `metrics` list — that is the single source of truth for the metric-definition seed, replacing the former code-literal seed. The registry **MUST** be reconciled into the service database at startup by the existing reconciler, keeping its idempotent, additive-upsert-plus-disable-missing semantics unchanged, and its invariants (key shape and uniqueness, input/measure references, computation field combinations, presentation-complete formats carrying no unit) **MUST** be enforced by tests that parse the same registry, so a malformed or drifted registry fails the build. (#1974.)
+
+**Status**: Shipped for the sanctioned `metric_definitions` seed (#1974): the registry is embedded at build time and loaded once. The orphaned legacy `metric_catalog`/`metric_threshold` subsystem (no live consumer) is untouched; its retirement is tracked separately.
+
+**Rationale**: One declarative source of truth for metric semantics, editable without a code change, is the foundation the Phase B semantic compiler and passports build on.
+
+**Actors**: `cpt-presentation-actor-analytics-svc`, `cpt-presentation-actor-engineering`
+
+#### Metric Passports
+
+- [x] `p3` - **ID**: `cpt-presentation-fr-metric-passports`
+
+Each sanctioned metric **MUST** carry a human-readable passport — its source, formula, and notes — rendered deterministically from the same declarative registry so the passport cannot describe a metric the registry does not define. The rendered passports **MUST** be committed next to the metric code and **MUST** be guarded by a drift test that fails the build when the committed passports and the registry disagree, so a change to a metric's source, formula, or notes cannot land without the passport being regenerated. (#1975.)
+
+**Status**: Shipped (#1975): passports are rendered from the embedded registry by the offline `analytics passports` subcommand, committed as `passports.md` next to `registry.yaml`, and pinned by a Rust drift test (`metric_definitions::passport`) that runs in the standard backend test job.
+
+**Rationale**: A reviewable, always-current derivation record for every metric — kept honest by a drift test rather than by discipline — is what makes the Phase B semantic compiler safe to build on and gives reviewers a stable, plain-language view of what each metric measures.
+
+**Actors**: `cpt-presentation-actor-analytics-svc`, `cpt-presentation-actor-engineering`
 
 ## 6. Non-Functional Requirements
 
@@ -362,22 +391,22 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 
 ### Validate a Widget on a Preview Environment
 
-- [ ] `p2` - **ID**: `cpt-presentation-usecase-preview-widget`
+- [x] `p2` - **ID**: `cpt-presentation-usecase-preview-widget`
 
 **Actor**: `cpt-presentation-actor-fe-dev`
 
 **Preconditions**:
 - A preview route object exists for the experiment (`/exp/<name>`).
-- The shared read-only synthetic backend is available.
+- The stand is non-production with experiments enabled, and its shared read-only backend is available.
 
 **Main Flow**:
 1. FE developer applies the per-experiment bundle (FE image plus route object).
 2. Developer opens `/exp/<name>/` and authenticates through the fixed callback.
 3. System resolves the Redis-backed `state` return path and establishes the session.
-4. Developer exercises the widget against the shared read-only synthetic backend.
+4. Developer exercises the widget against the shared read-only backend on that non-production stand.
 
 **Postconditions**:
-- The widget is validated against synthetic data with no access to customer production.
+- The widget is validated on a non-production stand; production stands do not host experiments, so customer data is never exposed to an experimental frontend.
 
 **Alternative Flows**:
 - **`state` missing or expired**: System rejects the callback; the developer restarts login.
@@ -391,7 +420,7 @@ Contract reads for tenant A **MUST NOT** return rows from tenant B, regardless o
 - [ ] Cross-tenant reads return no rows.
 - [ ] The `presentation` namespace exists and legacy gold remains read-only in `insight`.
 - [ ] The query console runs a saved query and renders the result as a table or auto-chart.
-- [ ] A preview environment serves an FE build under `/exp/<name>` on the shared read-only synthetic backend with an authenticated return path.
+- [x] A preview environment serves an FE build under `/exp/<name>` on the shared read-only backend with an authenticated return path, and the experiment capability is disabled on production by default.
 
 ## 10. Dependencies
 

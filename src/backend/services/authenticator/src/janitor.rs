@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::AppState;
 
-const LEADER_KEY: &str = "asm:leader:janitor";
+const LEADER_KEY: &str = "{asm}:leader:janitor";
 /// A refresh-schedule entry still due after this long has no live owner (the
 /// refresher reschedules live sessions every attempt).
 const ORPHAN_GRACE_SECONDS: u64 = 600;

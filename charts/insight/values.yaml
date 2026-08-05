@@ -191,7 +191,7 @@ ingestion:
   # `serviceaccount "argo-workflow" not found`.
   templates:
     enabled: true
-  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.04.02.23-75c0da1" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
+  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.05.06.56-dad7798" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
   # airbyte-sync poll-job tunables — see templates/ingestion/airbyte-sync.yaml.
   # The poll loop replaces a wall-clock deadline with a progress watchdog:
   # it tracks (status, bytesEmitted, recordsEmitted, stateMessagesEmitted)
@@ -369,6 +369,13 @@ authenticator:
     clientId: "insight-authenticator"
     clientSecret: ""
     redirectUri: "" # browser-facing callback, through the gateway edge
+    # The identity-resolution source_type this IdP is seeded under (e.g.
+    # "ms-entra") — required; the login-bootstrap person lookup is scoped to
+    # it. No default: an empty value fails config validation at boot.
+    sourceType: ""
+    # id_token claim carrying the IdP's stable external user id for
+    # sourceType (e.g. Entra's "oid"). Defaults to "sub".
+    externalIdClaim: "sub"
   # Honor `/auth/login?__override=<email>` (view-as, #1941): the session is
   # minted for that person instead of the authenticated one. Dev/demo
   # environments ONLY — MUST stay false anywhere real users log in.
@@ -406,6 +413,38 @@ keycloak:
   realmConfigMap: ""
   ingress:
     enabled: false
+# ─── keycloakConfig (broker realms as code — ADR-0003, EPIC #2193) ──────────
+# Hook Job applying the env's versioned realm YAML (pre-created ConfigMap from
+# the gitops `keycloak-broker-realms` target) with keycloak-config-cli on every
+# deploy. Independent of `keycloak.deploy`.
+keycloakConfig:
+  enabled: false
+  image:
+    repository: adorsys/keycloak-config-cli
+    # Release line must match the Keycloak server major.
+    tag: "6.5.1-26.1.0"
+    pullPolicy: IfNotPresent
+  # Keycloak base URL (tpl-rendered). Must be https; plain http only with
+  # allowInsecureUrl=true (in-cluster dev/CI Keycloak only).
+  url: ""
+  allowInsecureUrl: false
+  # envFrom Secret: KEYCLOAK_USER/KEYCLOAK_PASSWORD + any $(env:VAR) the realm
+  # YAML references. Sealed in gitops — never a value in realm YAML.
+  existingSecret: "insight-keycloak-config"
+  # Extra env entries for placeholders resolving from OTHER Secrets (single
+  # sealed source of truth; also the only way to reach non-C-identifier keys,
+  # which envFrom drops silently):
+  #   - name: INSIGHT_AUTHENTICATOR_CLIENT_SECRET
+  #     valueFrom:
+  #       secretKeyRef: {name: insight-oidc, key: oidc-client-secret}
+  # The Job also injects INSIGHT_TENANT_ID from global.tenantDefaultId (set):
+  # realm IdP mappers pin the tenant per environment, never from IdP claims.
+  extraEnv: []
+  # Pre-created realms ConfigMap (empty = <release>-keycloak-config-realms).
+  realmsConfigMap: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
 # ─── Analytics ────────────────────────────────────────────────────────────
 analytics:
   replicaCount: 2
@@ -441,14 +480,17 @@ analytics:
 # The persons-store API. Reads from MariaDB `persons` written by the seed
 # pipeline (src/backend/services/identity-resolution/seed/seed-persons-from-identity-input.py)
 # fed off ClickHouse `identity.identity_inputs`. NOT an OIDC provider.
-# Off by default — enable only after at least one connector sync has
-# populated `identity_inputs` and the seed has written `persons` rows.
 # Consumers reach it at `http://<release>-identity-resolution:8082`.
+# `deploy: true` is mandatory: the authenticator's login-bootstrap resolve
+# (GET /internal/persons/by-external-id / by-email-override) lives here
+# (constructorfabric/insight#1960), and the authenticator is always installed
+# (its "no deploy flag" app-service contract); `insight.validate` fails the
+# render otherwise.
 # SCHEMA OWNER: identity-resolution's migrate initContainer applies the
 # migrations + first-admin bootstrap against `databaseName` — see ADR-0006
 # (service-owned migrations).
 identityResolution:
-  deploy: false
+  deploy: true
   replicaCount: 1
   image:
     repository: ghcr.io/constructorfabric/insight-identity-resolution

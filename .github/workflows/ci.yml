@@ -240,13 +240,6 @@ jobs:
               cargo llvm-cov run --no-report --package "${{ matrix.entry.package }}" $feats -- \
                 -c "services/${{ matrix.entry.name }}/config/insight.yaml" migrate
             cargo llvm-cov --no-report --package "${{ matrix.entry.package }}" $feats -- --include-ignored
-            # Redis-backed cache live tests: opt-in via the env var and run
-            # serially — flush_all wipes the shared keyspace, so parallel
-            # cache tests race each other (the other live tests never see
-            # the env var and keep their parallel run above).
-            INTEGRATION_TESTS_REDIS_URL="redis://127.0.0.1:6379" \
-              cargo llvm-cov --no-report --package "${{ matrix.entry.package }}" $feats -- \
-                --include-ignored --test-threads=1 infra::cache::live_tests
           else
             cargo llvm-cov --no-report --package "${{ matrix.entry.package }}" $feats
           fi

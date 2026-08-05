@@ -4,6 +4,7 @@ pub mod error_code;
 pub mod listing;
 #[cfg(test)]
 mod live_tests;
+pub mod passport;
 mod repository;
 mod seeds;
 #[cfg(test)]

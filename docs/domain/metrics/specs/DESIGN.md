@@ -139,6 +139,25 @@ evidence relation per source and one granularity per measure:
 - `source_summary`: the finest summary preserved by silver.
 - `derived_population`: a source entity participating in a derived metric.
 
+All managed evidence and observation tables use the shared
+`metric_evidence_table` and `metric_observations_table` dbt macros. They own
+materialization, storage keys, partitioning, tags, and bounded query settings.
+These settings apply uniformly; model-specific query settings are retained
+only when required by model semantics.
+
+The tables are partitioned by calendar month from `metric_date`. Evidence is
+ordered by tenant, source, entity type, entity, measure, date, and record ID;
+observations omit the final record ID. Monthly partitioning is physical
+storage only: it does not change metric dates, timestamps, row granularity, or
+drilldown results. Each insert block may address at most 512 partitions.
+
+dbt builds a replacement table and exchanges it only after the build
+succeeds. A failed or cancelled build therefore leaves the active table in
+place, and the next build removes abandoned temporary relations. Replacement
+is atomic per table, not across the complete gold DAG. Replacing evidence
+invalidates active evidence cursors through the existing snapshot-expired
+contract.
+
 Definitions do not declare a separate drilldown strategy. The runtime resolves
 the definition's existing input roles and source measures, requires every input
 to use the same evidence relation, and compiles the evidence selection from
@@ -335,10 +354,16 @@ Rules:
 
 ## Builtin Seed Reconciliation
 
-Builtin definitions are declared in one code registry
-(`src/backend/services/analytics/src/domain/metric_definitions/builtin.rs`)
-and converged into the DB by a startup reconciler, not by migrations.
-Migrations own schema only.
+Builtin definitions are declared in one declarative registry
+(`src/backend/services/analytics/src/domain/metric_definitions/registry.yaml`:
+one `sources` list and one `metrics` list) and converged into the DB by a
+startup reconciler, not by migrations. Migrations own schema only. The registry
+is embedded at build time (`include_str!`) and deserialized once into the seed
+types in `builtin.rs`; the reconciler reads it through `builtin_sources()` /
+`builtin_metrics()`. Registry invariants (key shape and uniqueness,
+input/measure references, computation field combinations, presentation-complete
+formats) are pinned by the `builtin.rs` tests, which parse the same embedded
+registry — a malformed or drifted registry fails the build.
 
 Rules:
 
@@ -569,14 +594,14 @@ one that applies.
 ### Case 1: metric over an existing measure
 
 The measure already appears in a managed source. Check the source's `measures`
-list in `builtin.rs`, the emitting evidence model, and the observation model
+list in `registry.yaml`, the emitting evidence model, and the observation model
 derived from it.
 
-1. Add one `MetricSeed` to `BUILTIN_METRICS` in
-   `src/backend/services/analytics/src/domain/metric_definitions/builtin.rs`:
+1. Add one entry to the `metrics` list in
+   `src/backend/services/analytics/src/domain/metric_definitions/registry.yaml`:
    metric key (`namespace.metric_name`, lowercase snake case), label,
-   description, unit, format, direction, entity type, computation type,
-   input role mapping to the measure, allowed dimensions, peer cohort key.
+   description, unit, format, direction, entity type, computation, input role
+   mapping to the measure, allowed dimensions, peer cohort key.
 2. Run `cargo test -p analytics` — the registry invariant tests validate
    key shapes, input/measure references, and computation field combinations.
 
@@ -608,12 +633,12 @@ The source exists but does not emit the measure yet.
    the population that explains it.
 4. Add the `measure_key` to the observation model's `schema.yml`
    `accepted_values` test.
-5. Add the measure key to the source's `measures` list in `builtin.rs` and
+5. Add the measure key to the source's `measures` list in `registry.yaml` and
    classify its evidence granularity.
 6. Add or reuse a source-measure presentation rule when the default
    date-plus-value table is insufficient. Declare detail keys there and add
    explicit column metadata only for fields that are not humanized strings.
-7. Add the `MetricSeed` as in case 1.
+7. Add the metric entry as in case 1.
 8. Validate: `dbt parse` + `cargo test -p analytics` (see Validation
    commands).
 
@@ -629,14 +654,15 @@ The metric family reads data no managed source covers.
    the evidence contract; the observation model derives the aggregate-ready
    observation contract from it. Document both in
    `src/ingestion/gold/schema.yml`.
-2. Add a `BuiltinSource` (source + measures + dimensions) to `builtin.rs`,
-   with `source_ref` and `evidence_ref` set to their relation names and every
-   measure assigned an evidence granularity. No backend enum or table-name
-   code changes are required: relation names are validated data and both
-   contracts are probed by the runtime schema validator.
+2. Add a source entry (source + measures + dimensions) to the `sources` list
+   in `registry.yaml`, with `source_ref` and `evidence_ref` set to their
+   relation names and every measure assigned an evidence granularity. No
+   backend enum or table-name code changes are required: relation names are
+   validated data and both contracts are probed by the runtime schema
+   validator.
 3. Add source-measure presentation rules for event shapes that need
    human-facing detail columns.
-4. Add `MetricSeed`s as in case 1.
+4. Add metric entries as in case 1.
 5. Validate: `dbt parse` + `cargo test -p analytics` (see Validation
    commands). The runtime schema validator probes the new relation at
    startup.
