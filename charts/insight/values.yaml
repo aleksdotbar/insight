@@ -446,6 +446,15 @@ keycloakConfig:
   # (client secrets etc.). Sealed in the gitops tree — secret material never
   # appears in realm YAML or values files.
   existingSecret: "insight-keycloak-config"
+  # Verbatim container env entries, for realm placeholders that resolve from
+  # OTHER existing Secrets — reuse an already-sealed value instead of sealing
+  # it twice, and the only way to consume Secret keys that are not valid
+  # env-var names (envFrom silently drops those, e.g. hyphenated keys):
+  #   extraEnv:
+  #     - name: INSIGHT_AUTHENTICATOR_CLIENT_SECRET
+  #       valueFrom:
+  #         secretKeyRef: {name: insight-oidc, key: oidc-client-secret}
+  extraEnv: []
   # Pre-created ConfigMap holding the realm YAML files (empty =
   # <release>-keycloak-config-realms).
   realmsConfigMap: ""

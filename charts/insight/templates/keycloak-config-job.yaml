@@ -29,12 +29,15 @@ The Keycloak this applies to is selected by `keycloakConfig.url`: the
 shared pre-provisioned Keycloak on deployed stands (ADR-0002), or the
 in-cluster insight-keycloak subchart service where that is deployed.
 
-Credentials and realm-YAML substitution values come from ONE existing
-Secret (`keycloakConfig.existingSecret`, envFrom): it must define
-KEYCLOAK_USER + KEYCLOAK_PASSWORD (the config-cli admin login) and every
-VAR the realm YAML references as $(env:VAR). Secret material never appears
-in realm YAML, values files, or images — the Secret is sealed in the
-gitops tree (SealedSecrets).
+Credentials and realm-YAML substitution values come from the environment:
+`keycloakConfig.existingSecret` (envFrom) must define KEYCLOAK_USER +
+KEYCLOAK_PASSWORD (the config-cli admin login) plus any VAR the realm YAML
+references as $(env:VAR); `keycloakConfig.extraEnv` (verbatim env entries)
+maps values out of OTHER existing Secrets — reuse an already-sealed value
+instead of sealing it twice, and the only way to consume keys that are not
+valid env-var names (envFrom silently drops those, e.g. hyphenated keys).
+Secret material never appears in realm YAML, values files, or images — every
+source Secret is sealed in the gitops tree (SealedSecrets).
 
 Failure behavior: loud. Helm blocks on the hook Job, so a rejected import
 fails `helm upgrade` (and `--atomic` rolls the release back). backoffLimit
@@ -103,6 +106,9 @@ spec:
               value: "true"
             - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
               value: "120s"
+            {{- with .Values.keycloakConfig.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ tpl (required "keycloakConfig.existingSecret is required when keycloakConfig.enabled" .Values.keycloakConfig.existingSecret) . | quote }}
