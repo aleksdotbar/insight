@@ -1,0 +1,82 @@
+# Broker realm for this environment (ADR-0003, EPIC insight#2193) — applied by
+# the umbrella's keycloak-config-cli hook Job from the ConfigMap the
+# `keycloak-broker-realms` Makefile target packs out of this directory.
+# Inert until the env's values set keycloakConfig.enabled=true (Phase 4).
+#
+# This file is the CANONICAL realm shape other environments copy: the
+# `insight` client scope below is the claim allow-list ADR-0003 mandates.
+# Two rules keep it safe and portable:
+#   - No secret material, ever. Credential fields hold environment-variable
+#     placeholders resolved by config-cli at apply time from the sealed
+#     `insight-keycloak-config` Secret (scripts/ci/realm_secret_guard.py
+#     enforces this in CI).
+#   - No literal placeholder syntax in comments: config-cli variable
+#     substitution scans the whole file INCLUDING comments, and an
+#     unresolvable placeholder anywhere fails the import.
+realm: insight-broker
+enabled: true
+
+clientScopes:
+  # The canonical `insight` client scope — the ONLY identity claims a broker
+  # token carries are the ones emitted here plus the protocol-level `sub`:
+  #   - email      (person resolution key at the authenticator)
+  #   - tenant_id  (single string; DD-AUTH-04 — never an array)
+  # Upstream-IdP claims do not pass through: the client below disables
+  # full-scope and assigns exactly this scope, so anything an upstream asserts
+  # dies at the broker unless a mapper here re-emits it. The tenant_id mapper
+  # shape matches the compose realm generator (gen-realm.py): a per-user
+  # attribute stamped by the identity-provider mappers at first broker login
+  # (Phase 3 adds those per provider).
+  - name: insight
+    description: Canonical Insight claim allow-list (email + single-string tenant_id)
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "true"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      - name: email
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: email
+          claim.name: email
+          jsonType.label: String
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+      - name: tenant_id
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: tenant_id
+          claim.name: tenant_id
+          jsonType.label: String
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+
+clients:
+  # The authenticator's confidential client — same registration shape as the
+  # compose realm generator and the Phase-0 PoC, tightened to the allow-list:
+  # fullScopeAllowed off and exactly [basic, insight] assigned, so the token
+  # contains the two claims above and nothing else. `basic` is the Keycloak
+  # built-in that carries the protocol-required `sub` and auth/session claims
+  # in access tokens (Keycloak 24 and later moved them there); it emits no
+  # identity claims.
+  - clientId: insight-authenticator
+    protocol: openid-connect
+    publicClient: false
+    secret: $(env:INSIGHT_AUTHENTICATOR_CLIENT_SECRET)
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    fullScopeAllowed: false
+    defaultClientScopes:
+      - basic
+      - insight
+    optionalClientScopes: []
+    redirectUris:
+      - $(env:INSIGHT_AUTHENTICATOR_REDIRECT_URI)
+    webOrigins: []

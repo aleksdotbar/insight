@@ -64,3 +64,7 @@ secrets:
     # in-cluster fakeidp; its leaf config is composed at deploy time by
     # compose-app-secrets.sh, not sealed here.
     - { name: insight-oidc,                      enabled: false }
+    # keycloak-config-cli login + realm-YAML env-var substitution values for
+    # the broker-realms-as-code flow (ADR-0003). Off until this environment
+    # sets keycloakConfig.enabled=true in its umbrella values.
+    - { name: insight-keycloak-config,           enabled: false }

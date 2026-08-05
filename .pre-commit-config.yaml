@@ -31,6 +31,15 @@ repos:
         entry: cargo clippy --manifest-path src/backend/Cargo.toml --workspace --all-targets -- -D warnings
         files: '^src/backend/(.*\.rs|(.*/)?Cargo\.(toml|lock))$'
         pass_filenames: false
+      # Same check as CI's realm-secret-guard job: broker realm YAML must hold
+      # env placeholders, never literal credentials (ADR-0003).
+      - id: realm-secret-guard
+        name: broker realm YAML secret guard
+        language: python
+        additional_dependencies: [pyyaml]
+        entry: python3 scripts/ci/realm_secret_guard.py
+        files: '^(deploy/gitops/environments/[^/]+/keycloak/realms/.*\.ya?ml|scripts/ci/realm_secret_guard\.py)$'
+        pass_filenames: false
 
   # Python: ruff lints + formats staged Python (it auto-discovers each file's
   # nearest pyproject.toml [tool.ruff], falling back to ruff defaults).

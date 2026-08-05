@@ -253,7 +253,21 @@ versioned content and reverts drift.
 Secrets never go in realm YAML: reference them as `$(env:VAR)` and
 provide the values (plus `KEYCLOAK_USER`/`KEYCLOAK_PASSWORD`, the
 config-cli login) through the sealed `insight-keycloak-config` Secret
-(`keycloakConfig.existingSecret`).
+(`keycloakConfig.existingSecret`) — shape template at
+[`environments/local/sealed-secrets/insight/insight-keycloak-config-sealedsecret.yaml.template`](environments/local/sealed-secrets/insight/insight-keycloak-config-sealedsecret.yaml.template),
+sealed via the inventory `secrets.services` entry. CI enforces this
+(`scripts/ci/realm_secret_guard.py`, mirrored as a pre-commit hook):
+credential fields in realm YAML must hold env placeholders, and
+placeholder syntax must not appear in YAML comments (config-cli
+substitution scans comments and an unresolvable placeholder fails the
+import).
+
+The canonical realm shape — the `insight` client scope allow-listing
+exactly `email` and the single-string `tenant_id` (plus the
+protocol-level `sub`), and the `insight-authenticator` client with
+full-scope off — lives at
+[`environments/local/keycloak/realms/insight-broker.yaml`](environments/local/keycloak/realms/insight-broker.yaml);
+copy it when onboarding an environment.
 
 ## Secret management
 
