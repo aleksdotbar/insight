@@ -111,21 +111,11 @@ ClickHouse owns claims and analytical projections. Identity MariaDB owns editabl
 
 ## More Information
 
-**Scope**: Attribute claims, person-scoped derived values, definitions, policy, analytical values, and their publication boundary. Named-group ownership and account-resolution semantics are covered elsewhere.
-
-**Performance**: The chosen option avoids request-time cross-database joins and supports ClickHouse orderings for account-history and value-membership reads. Cohort queries add a join to the compact current-assignment projection. Persisted catalog-wide population statistics are intentionally omitted unless benchmarks later justify them.
-
-**Security and compliance**: Existing Identity authorization protects governance writes. Existing database encryption, retention, backup, and access controls apply. No authentication mechanism changes. Sensitivity semantics are outside this storage choice; configured classification and comparison eligibility are both part of the published policy.
-
-**Reliability and operations**: Policy, assignment, and attribute publication lag are observable independently. Existing database recovery applies; complete policy and assignment snapshots are rollback units. No new infrastructure or paid service is introduced.
-
-**Integration and compatibility**: Existing connectors and metric APIs gain additive contracts. No external protocol is broken. The legacy cohort path can coexist while new account attribute values are built.
-
-**Maintainability and testing impact**: The split creates explicit owner contracts but avoids a second fact pipeline through Identity and a persisted statistics pipeline. Verification requires contract, account-grain fact, independent-publication, and request-count coverage; test implementation belongs with the code.
-
-**User and business impact**: Users receive fresher and more scalable grouping without seeing storage boundaries. The approach adds publication work but avoids a larger Identity persistence expansion. No user migration or training is required for this decision itself.
-
-**Review trigger**: Revisit if policy requires transactional coupling to source facts, ClickHouse no longer hosts metric facts, or measured catalog statistics become a demonstrated performance requirement.
+- **Scope:** Claims, derived values, policy, analytical values, and publication. Named groups and resolution semantics are separate decisions.
+- **Read path:** ClickHouse serves policy, values, assignment, and metrics without an Identity call. No catalog-wide statistics are persisted.
+- **Operations:** Policy, assignment, and value publication lag independently; complete snapshots are rollback units.
+- **Compatibility:** Connector and metric contracts are additive, and the legacy cohort path remains during migration.
+- **Review trigger:** Policy needs transactional coupling to facts, metrics leave ClickHouse, or benchmarks justify persisted catalog statistics.
 
 ## Traceability
 

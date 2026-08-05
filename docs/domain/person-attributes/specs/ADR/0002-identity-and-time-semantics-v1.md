@@ -119,21 +119,11 @@ The latest source-account decision is joined to all retained account facts at qu
 
 ## More Information
 
-**Scope**: Identity semantics for attribute claims, compatibility with email-only metric observations, and the temporal interpretation of people-like and named-group requests. The identity workflow's admin APIs and merge UX are outside this decision.
-
-**Performance**: A current assignment projection avoids an interval join on identity history. Temporal joins remain limited to attribute values and metric periods. Segments are represented inside one ClickHouse statement; they can multiply query partitions and result rows, so request limits and representative benchmarks remain required.
-
-**Security and compliance**: Tenant travels in every account key and analytical relation. Predicate enforcement remains controlled by `metric_catalog.enforce_tenant_scope` until platform tenant alignment is enabled. No authentication or authorization mechanism changes. Reassignment audit remains owned by Identity.
-
-**Reliability and operations**: Assignment revision, refresh lag, unresolved counts, account-value watermark, and metric identity watermark must be observable. Recovery rebuilds account values from retained claims independently of assignment.
-
-**Integration and compatibility**: Existing email metric models remain valid. The future identity workflow must publish the same typed assignment projection; its internal journal and APIs may differ. No connector API breaks when stable source-account identity is already present.
-
-**Maintainability and testing impact**: Resolution mechanisms remain separate adapters with one canonical output type. Verification requires reassignment, unresolved, email-only metric, account-reuse rejection, temporal boundary, and period-segmentation coverage; test implementation belongs with the code.
-
-**User and business impact**: Corrected identities repair historical metrics, while historical business attributes remain accurate for their periods. Users may see several explicit peer segments instead of one misleading blended result. No direct user migration is required.
-
-**Review trigger**: Revisit if a supported source reuses native account IDs, Identity adopts effective-dated assignment rather than corrective decisions, or all metric producers gain stable source-account identity and the email adapter can be removed.
+- **Scope:** Account resolution, email-only metric compatibility, and temporal comparison semantics. Identity administration is outside this decision.
+- **Read path:** Current assignment avoids an identity-history join; attribute and metric time joins remain in one ClickHouse statement.
+- **Operations:** Assignment revision, lag, unresolved counts, and value/metric watermarks are observable. Values rebuild independently of assignment.
+- **Compatibility:** Email-only metrics keep their adapter; a future identity workflow replaces only the typed assignment producer.
+- **Review trigger:** A source reuses account IDs, Identity adopts effective-dated assignment, or all metric producers gain stable account identity.
 
 ## Traceability
 
