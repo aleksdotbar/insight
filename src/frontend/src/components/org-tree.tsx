@@ -11,6 +11,7 @@ import {
 import {
   usePortalNavActions,
 } from "@/lib/portal/portal-nav";
+import { personIdFromPath } from "@/lib/metrics/entity";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import type { IdentityPerson } from "@/types/insight";
 
@@ -108,8 +109,8 @@ export function OrgTree({ leadsToTeam = false }: { leadsToTeam?: boolean } = {})
   const viewer = viewerQ.data ?? null;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const activePersonId = useMemo(() => {
-    const m = /^\/ic\/([^/]+)/.exec(pathname);
-    if (m) return decodeURIComponent(m[1]!);
+    const fromPath = personIdFromPath(pathname);
+    if (fromPath) return fromPath;
     if (pathname === "/" && viewerPersonId) return viewerPersonId;
     return null;
   }, [pathname, viewerPersonId]);

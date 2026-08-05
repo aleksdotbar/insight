@@ -115,11 +115,11 @@ export function PersonHeader({ person }: { person: string }) {
                 </DropdownMenuLabel>
                 {peers.map((p) => {
                   const active =
-                    p.email.toLowerCase() === data.email.toLowerCase();
+                    p.person_id.toLowerCase() === data.person_id.toLowerCase();
                   return (
                     <DropdownMenuItem
-                      key={p.email}
-                      onClick={() => goPerson(p.email)}
+                      key={p.person_id}
+                      onClick={() => goPerson(p.person_id)}
                       className={cn(active && "font-medium")}
                     >
                       <Check

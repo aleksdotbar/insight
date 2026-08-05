@@ -8,10 +8,14 @@ export interface EventBin {
 
 /**
  * Merge per-entity server histograms into one org event histogram — valid
- * only when every entity shares identical bin edges (design §7 open
- * question). Returns null when edges differ, no data, or an entity has an
- * anomalous bin count; the caller falls back honestly (no chart) rather than
- * summing incomparable bins.
+ * only when every entity that HAS bins shares identical bin edges (design §7
+ * open question). Returns null when edges differ, when an entity has an
+ * anomalous bin count, or when nobody has bins at all; the caller falls back
+ * honestly (no chart) rather than summing incomparable bins.
+ *
+ * A member with no bins is skipped, not a reason to bail: they simply had no
+ * events in the period, which is a normal reading on any real roster. Bailing
+ * would blank the chart for the whole org whenever one person was inactive.
  */
 export function mergeEventHistogram(
   result: NormalizedMetricResult | undefined,

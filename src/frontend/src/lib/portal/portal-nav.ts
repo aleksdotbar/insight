@@ -42,7 +42,13 @@ export function usePortalSlice(): string {
 
 export function usePortalScope(): OrgScope {
   const { scope, direct } = usePortalSearch();
-  return { root: scope ?? null, directOnly: direct ?? false };
+  // Memoised on the primitives: `useOrgScope` lists this object in a dependency
+  // array, and a fresh literal per render would re-walk the whole identity tree
+  // (flattenSubordinates per manager node) on every render of every org zone.
+  return useMemo(
+    () => ({ root: scope ?? null, directOnly: direct ?? false }),
+    [scope, direct],
+  );
 }
 
 export interface PortalNavActions {

@@ -42,9 +42,11 @@ export function usePortalPeriod(): {
       setSearch({ period: next, from: undefined, to: undefined });
     },
     setCustomRange: (range) => {
-      if (range && !validateDateRange(range).valid) {
-        throw new Error(`Invalid date range: from=${range.from} to=${range.to}`);
-      }
+      // Drop an invalid range instead of throwing: this runs in an event
+      // handler, where no error boundary is watching, and the same policy the
+      // URL validator follows (degrade to the preset) has to hold here too.
+      // The picker does its own validation and keeps its own message.
+      if (range && !validateDateRange(range).valid) return;
       setSearch({ from: range?.from, to: range?.to });
     },
   };

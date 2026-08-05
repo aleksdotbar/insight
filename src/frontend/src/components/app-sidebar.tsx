@@ -21,6 +21,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { personIdFromPath } from "@/lib/metrics/entity";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import type { IdentityPerson } from "@/types/insight";
 
@@ -106,8 +107,8 @@ export function AppSidebar() {
   // The URL segment is the person id since the identity cutover; a legacy
   // email URL simply highlights nothing for the moment its redirect takes.
   const activePersonId = useMemo(() => {
-    const m = /^\/ic\/([^/]+)/.exec(pathname);
-    if (m) return decodeURIComponent(m[1]!);
+    const fromPath = personIdFromPath(pathname);
+    if (fromPath) return fromPath;
     if (pathname === "/" && viewerPersonId) return viewerPersonId;
     return null;
   }, [pathname, viewerPersonId]);

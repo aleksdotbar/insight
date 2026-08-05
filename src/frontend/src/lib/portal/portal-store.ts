@@ -42,15 +42,28 @@ export function readPortalEnabled(): boolean {
   return readEnabled();
 }
 
+/**
+ * Reading storage can THROW, not just return null: a sandboxed iframe or
+ * blocked third-party storage raises SecurityError on property access. These
+ * readers run at module scope, so an unguarded throw escapes before any
+ * component mounts and takes the whole bundle down over a preview flag.
+ */
+function readKey(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 function readEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(ENABLED_KEY) === "true";
+  return readKey(ENABLED_KEY) === "true";
 }
 
 /** Absent key = default ON (see `showPlanned`); only an explicit "false" hides. */
 function readShowPlanned(): boolean {
-  if (typeof window === "undefined") return true;
-  return window.localStorage.getItem(SHOW_PLANNED_KEY) !== "false";
+  return readKey(SHOW_PLANNED_KEY) !== "false";
 }
 
 let state: PortalState = {

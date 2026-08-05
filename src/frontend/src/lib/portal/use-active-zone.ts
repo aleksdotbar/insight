@@ -2,6 +2,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { useViewer } from "@/auth";
+import { personIdFromPath } from "@/lib/metrics/entity";
 
 import { usePortalZone } from "./portal-nav";
 
@@ -20,8 +21,7 @@ export function useActiveZone(): { activeZone: string; activePerson: string } {
   return useMemo(() => {
     // The path segment is a person id since the identity cutover, so this is
     // the id every portal surface keys on — not an email.
-    const m = /^\/ic\/([^/]+)/.exec(pathname);
-    const activePerson = m ? decodeURIComponent(m[1]!) : (personId ?? "");
+    const activePerson = personIdFromPath(pathname) ?? personId ?? "";
     // No zone anywhere yet (a bare /portal before the landing pin) → the
     // person view is the only thing that renders without an org rollup.
     return { activeZone: zone ?? "person", activePerson };

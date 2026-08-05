@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { vi } from "vitest";
 
 import type { PortalSearch } from "@/lib/portal/portal-search";
@@ -109,6 +109,14 @@ export function portalRouterMock(): Record<string, unknown> {
         () => portalRouter.search,
       );
       return select({ location: { pathname: path, search } });
+    },
+    // A guard's redirect is a navigation too — recorded so a test can assert
+    // that a disabled preview or an invalid param sends the reader away.
+    Navigate: ({ to, replace }: { to: string; replace?: boolean }) => {
+      useEffect(() => {
+        portalRouter.navigations.push({ to, replace: replace ?? false });
+      }, [to, replace]);
+      return null;
     },
     // A real href, not a bare <a>: without it there is no link role to query,
     // and the point of this migration is that a link CARRIES the state — so a
