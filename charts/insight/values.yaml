@@ -445,6 +445,9 @@ keycloakConfig:
   # The Job also injects INSIGHT_TENANT_ID from global.tenantDefaultId (set):
   # realm IdP mappers pin the tenant per environment, never from IdP claims.
   extraEnv: []
+  # Glob(s) config-cli imports, comma-separated. Each glob MUST match at
+  # least one file. Local adds ',/config/*.json' for the generated realm.
+  filesLocations: "/config/*.yaml"
   # Pre-created realms ConfigMap (empty = <release>-keycloak-config-realms).
   realmsConfigMap: ""
   resources:
