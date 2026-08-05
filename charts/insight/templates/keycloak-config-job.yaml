@@ -48,7 +48,7 @@ spec:
             - name: KEYCLOAK_URL
               value: {{ $kcUrl | quote }}
             - name: IMPORT_FILES_LOCATIONS
-              value: "/config/*.yaml"
+              value: "/config/*.yaml,/config/*.json"
             # Resolves $(env:VAR) placeholders — how secrets reach realms.
             - name: IMPORT_VARSUBSTITUTION_ENABLED
               value: "true"
