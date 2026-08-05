@@ -382,6 +382,9 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
@@ -493,6 +496,9 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
@@ -604,6 +610,9 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
@@ -729,6 +738,9 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
@@ -863,6 +875,9 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
@@ -1039,6 +1054,9 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
@@ -1306,6 +1324,9 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
