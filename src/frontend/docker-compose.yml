@@ -1,0 +1,8 @@
+services:
+  insight-front:
+    # Serves the static SPA only. Auth (/auth/*) and the API (/api/*) are
+    # fronted by the nginx `gateway` in front of this container.
+    build: .
+    ports:
+      - "8080:80"
+    restart: unless-stopped
