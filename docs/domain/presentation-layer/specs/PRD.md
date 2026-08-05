@@ -292,6 +292,18 @@ The sanctioned metric definitions **MUST** be declared in a single declarative r
 
 **Actors**: `cpt-presentation-actor-analytics-svc`, `cpt-presentation-actor-engineering`
 
+#### Metric Passports
+
+- [x] `p3` - **ID**: `cpt-presentation-fr-metric-passports`
+
+Each sanctioned metric **MUST** carry a human-readable passport — its source, formula, and notes — rendered deterministically from the same declarative registry so the passport cannot describe a metric the registry does not define. The rendered passports **MUST** be committed next to the metric code and **MUST** be guarded by a drift test that fails the build when the committed passports and the registry disagree, so a change to a metric's source, formula, or notes cannot land without the passport being regenerated. (#1975.)
+
+**Status**: Shipped (#1975): passports are rendered from the embedded registry by the offline `analytics passports` subcommand, committed as `passports.md` next to `registry.yaml`, and pinned by a Rust drift test (`metric_definitions::passport`) that runs in the standard backend test job.
+
+**Rationale**: A reviewable, always-current derivation record for every metric — kept honest by a drift test rather than by discipline — is what makes the Phase B semantic compiler safe to build on and gives reviewers a stable, plain-language view of what each metric measures.
+
+**Actors**: `cpt-presentation-actor-analytics-svc`, `cpt-presentation-actor-engineering`
+
 ## 6. Non-Functional Requirements
 
 ### 6.1 NFR Inclusions
