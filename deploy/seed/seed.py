@@ -5,7 +5,7 @@ Subcommands:
     identity   Persons, org_chart, account_person_map (MariaDB).
     silver     CREATE silver tables + apply gold view migrations + INSERT
                sample rows (ClickHouse). Phase 2 — placeholder for now.
-    analytics  The catalogue rows no endpoint can create — table_columns and a
+    analytics  The catalogue rows no endpoint can create — a
                tenant metric-definition override (MariaDB, analytics database).
     all        Run every step.
 

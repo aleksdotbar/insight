@@ -79,7 +79,6 @@ LEDGER_NAME = "stand_observed_endpoints.json"
 # a boolean the stand declares about itself — `has_capability` would have to
 # invent a capability name for each one.
 CATALOGUE_PARTS: dict[str, Callable[[Manifest], bool]] = {
-    "table_columns": lambda m: bool(m.catalogue.table_columns),
     "definition_override": lambda m: m.catalogue.definition_override is not None,
 }
 
