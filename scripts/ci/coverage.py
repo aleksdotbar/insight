@@ -4,8 +4,7 @@ component. It runs no tests and does no change detection: collection happens in
 the CI producer jobs, and the changed-component matrix is built by changed.py.
 The component registry lives in components.py (shared SSOT). This script's one
 job is to check already-collected reports against two gates:
-  1. each measured component's overall line coverage >= its registry `overall_min`,
-     defaulting to OVERALL_MIN
+  1. each measured component's overall line coverage >= OVERALL_MIN
   2. new-code (patch) line coverage >= NEW_CODE_MIN  (via diff-cover)
 
 Usage: python3 scripts/ci/coverage.py gate [--no-patch] [--reports-dir D] [--summary F]
@@ -34,15 +33,8 @@ from components import COMPARE_BRANCH, COMPONENTS, ROOT, component_for
 COVERAGE_DIR = ROOT / "coverage"
 
 # The two gate thresholds (percent).
-OVERALL_MIN = 80  # default per-component overall line coverage (registry may lower it)
-NEW_CODE_MIN = 80  # new-code (patch) line coverage — global, never per-component
-
-
-def _min_for(comp: dict) -> int:
-    """The overall-coverage floor for one component: its registry `overall_min`,
-    else OVERALL_MIN. Lets a component whose suite is still being built out gate
-    on new code without hard-failing on its historical total."""
-    return comp.get("overall_min", OVERALL_MIN)
+OVERALL_MIN = 80  # each component's overall line coverage
+NEW_CODE_MIN = 80  # new-code (patch) line coverage
 
 
 # --------------------------------------------------------------------------- #
@@ -128,10 +120,8 @@ def measure(files: dict[str, dict[int, int]], components: list[dict]) -> tuple[d
 # --------------------------------------------------------------------------- #
 # Reporting
 # --------------------------------------------------------------------------- #
-def print_table(measured: dict, components: list[dict]) -> bool:
-    """Print the per-component table against each component's minimum; return True
-    if all pass."""
-    by_name = {c["name"]: c for c in components}
+def print_table(measured: dict) -> bool:
+    """Print the per-component table against OVERALL_MIN; return True if all pass."""
     name_w = max([len("Component")] + [len(n) for n in measured])
     header = f"{'Component':<{name_w}}  {'Lines':>13}  {'Coverage':>9}  {'Min':>5}  Result"
     print(header)  # noqa: T201 — gate report goes to stdout by contract
@@ -139,13 +129,12 @@ def print_table(measured: dict, components: list[dict]) -> bool:
     all_pass = True
     for name in sorted(measured):
         cov, tot, pct = measured[name]
-        minimum = _min_for(by_name[name])
-        ok = pct >= minimum
+        ok = pct >= OVERALL_MIN
         all_pass &= ok
         lines_cell = f"{cov}/{tot}"
         print(  # noqa: T201 — gate report goes to stdout by contract
-            f"{name:<{name_w}}  {lines_cell:>13}  {pct:>8.1f}%  {minimum:>4}%  "
-            f"{'PASS' if ok else 'FAIL'}" + ("" if ok else f"  (< min by {minimum - pct:.1f})")
+            f"{name:<{name_w}}  {lines_cell:>13}  {pct:>8.1f}%  {OVERALL_MIN:>4}%  "
+            f"{'PASS' if ok else 'FAIL'}" + ("" if ok else f"  (< min by {OVERALL_MIN - pct:.1f})")
         )
     print("-" * len(header))  # noqa: T201 — gate report goes to stdout by contract
     return all_pass
@@ -179,7 +168,7 @@ def markdown_report(
         "## Coverage gate",
         "",
         f"**Overall: {_icon(overall)} {'PASS' if overall else 'FAIL'}** — "
-        f"per-component (each ≥ its own Min below) {_icon(comp_pass)}, "
+        f"per-component (≥ {OVERALL_MIN}%) {_icon(comp_pass)}, "
         f"new-code (≥ {NEW_CODE_MIN}%) {patch_state}",
     ]
     if missing:
@@ -194,8 +183,7 @@ def markdown_report(
         rows = ["| Component | Lines | Coverage | Min | Result |", "| --- | ---: | ---: | ---: | :---: |"]
         for name in names:
             cov, tot, pct = measured[name]
-            minimum = _min_for(by_name[name])
-            rows.append(f"| {name} | {cov}/{tot} | {pct:.1f}% | {minimum}% | {_icon(pct >= minimum)} |")
+            rows.append(f"| {name} | {cov}/{tot} | {pct:.1f}% | {OVERALL_MIN}% | {_icon(pct >= OVERALL_MIN)} |")
         return rows
 
     seen_langs = {lang for lang, _ in LANG_SECTIONS}
@@ -359,9 +347,9 @@ def cmd_gate(args) -> int:
     required = [n.strip() for n in (getattr(args, "require", None) or "").split(",") if n.strip()]
     missing = sorted(n for n in required if measured_all.get(n, (0, 0, 0.0))[1] == 0)
 
-    print(f"\n=== Per-component overall coverage gate (default >= {OVERALL_MIN}%) ===\n")  # noqa: T201 — gate report goes to stdout by contract
+    print(f"\n=== Per-component overall coverage gate (>= {OVERALL_MIN}%) ===\n")  # noqa: T201 — gate report goes to stdout by contract
     if measured:
-        comp_pass = print_table(measured, COMPONENTS)
+        comp_pass = print_table(measured)
     else:
         comp_pass = True
         print("No component reports — nothing to gate.")  # noqa: T201 — gate report goes to stdout by contract

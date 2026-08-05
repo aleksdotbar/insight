@@ -83,9 +83,11 @@ jobs:
             changed=$(python3 scripts/ci/changed.py)
           fi
           echo "changed: $changed"
-          echo "rust=$(echo "$changed" | jq -c .rust)" >> "$GITHUB_OUTPUT"
-          echo "python=$(echo "$changed" | jq -c .python)" >> "$GITHUB_OUTPUT"
-          echo "js=$(echo "$changed" | jq -c .js)" >> "$GITHUB_OUTPUT"
+          {
+            echo "rust=$(echo "$changed" | jq -c .rust)"
+            echo "python=$(echo "$changed" | jq -c .python)"
+            echo "js=$(echo "$changed" | jq -c .js)"
+          } >> "$GITHUB_OUTPUT"
 
   # Guard the jsonwebtoken crypto-provider invariant: >1 backend active makes
   # verify() panic on every call (#1725, #1727). cargo tree only reads the

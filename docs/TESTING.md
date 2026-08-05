@@ -51,9 +51,7 @@ A build is **promoted up** (CI → Test → Beta); a proven check is **gated dow
 
 ## 3. Coverage
 
-- Line-coverage threshold is **80 %** per component by default, plus **80 % on new code** (diff-cover). The
-  new-code figure is global; a component may declare a lower overall floor via `overall_min` in
-  `scripts/ci/components.py` (the frontend does, while its suite is built out).
+- Line-coverage threshold is **80 %** per component, plus **80 % on new code** (diff-cover).
 - Enforced by `scripts/ci/coverage.py` over Cobertura reports: per-language jobs upload reports, the `coverage-gate`
   job judges them and writes a job-summary. `coverage-gate` **must** be the required status check.
 - Only **changed** components are measured on a PR (`scripts/ci/changed.py`).
