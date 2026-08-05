@@ -15,14 +15,15 @@ no commitment.
 
 | Tier | What it is | Scenarios |
 |---|---|---|
-| **Main** | Review metrics, analyse them, reach conclusions. This is what the product is for. | S-1, S-2, S-3 |
+| **Main** | Review metrics, analyse them, reach conclusions — and, looking forward, estimate work not yet started. This is what the product is for. | S-1, S-2, S-3 |
 | **Secondary** | Build new views, explore, take the output elsewhere, compare with the outside world. | S-4, S-5, S-6 |
 | **Service** | Set the product up, keep it configured, keep it running. | S-7, S-8, S-9, S-10 |
 
 The order is by importance to the reader, not by build order. Technically the service tier comes
 first — sources and identity have to be right before a metric can be — but a customer does not buy
 setup, and a scenario list that opens with configuration describes an installation rather than a
-product.
+product. **Secondary and service do not mean low priority on a roadmap**; they mean a customer does
+not arrive for them.
 
 **Why split by persona.** A capability is not one scenario. "Review metrics" is a single tier, but it
 means three different things:
@@ -103,7 +104,11 @@ way for every persona and every scope (VISION §8.4).
 **LEAD** — See how their team is doing and where work is stuck.
 - their own team at any depth, and the people in it by name
 - groups recalculated for the team in view, not carried over from the organization
-- a group too small to keep an individual unidentifiable is not shown at all
+- a group of fewer than four people is not shown at all — that is what keeps an individual
+  unidentifiable behind a group figure
+- concentration read with the meaning of its domain: in code and documentation a high top-decile
+  share is a bus-factor risk, in communication it is a load imbalance. Same arithmetic, different
+  conclusion, and the surface says which one it means
 - never a team they do not manage
 
 **IC** — See their own work, with a reference point.
@@ -127,15 +132,18 @@ concentration), B5 (organization roll-up), B6 (AI cost), B8 (cost of coordinatio
 risks, anomalies, cost drivers, quality issues, role and activity mismatches — and says which kind of
 claim it is making, with confidence and limitations (VISION §8.5). It rests on lineage: work is
 followed across the systems it passes through, and **lineage comes before attribution** (VISION §7.3)
-— what cannot be traced is shown as an evidence gap, never converted into a confident claim.
-Forward-looking estimates (feasibility, cost, time, risk) come from the organization's own history and
-are shown as extrapolations, not guarantees.
+— what cannot be traced is shown as an evidence gap, never converted into a confident claim. Where
+observed work diverges from the configured role model, the divergence is surfaced here; the role model
+it is measured against belongs to S-8.
 
 **LEAD** — Understand why, not just what.
 - a conclusion for their team or cohort, with the evidence behind it
 - where the chain of evidence breaks in their own area, and what would repair it
 - never a verdict about a named individual
-- never a conclusion drawn from a group too small to protect one
+- a comparative conclusion needs at least eight people on each side. Below that the surface does not
+  render it, and says why — the threshold is higher than the four that protects a group figure,
+  because a conclusion claims more than a number does
+- never built on a metric known to be defective: it is excluded by name, and the exclusion is stated
 
 **EXEC** — The same at organization level, plus a forecast for proposed work.
 - cost and outcome followed to the function, team, product or service — as far as the trail goes
@@ -147,11 +155,25 @@ are shown as extrapolations, not guarantees.
 
 **IC** — Not an audience for diagnosis, and never a named example inside one.
 
+### Looking forward — the other direction of the same scenario
+
+VISION §1 treats forward-looking work as a direction of its own, not an afterthought to diagnosis:
+looking back, the product improves work that has already happened; looking forward, it helps decide
+what to commit to. Both are analysis, which is why they sit in one scenario — but the questions differ.
+
+**EXEC, LEAD** — Decide what to take on.
+- is this feasible, what will it cost, how long will it take, what are the risks
+- the answer built from the organization's own delivery history, not from generic assumptions
+- ranked opportunities: where the expected effect is larger for less effort
+- the same evidence model, confidence and stated limitations as everything else
+- never a forecast presented as a guarantee — it is an extrapolation, and it strengthens as history
+  and lineage improve
+
 **Not this.** "AI sped up development by X%" is not a claim Insight makes; what it can say is that a
 cohort with high usage differs from one with low usage in stated ways, correlationally — with the word
 said on the surface, not in a footnote. Attribution also has a ceiling, and the ceiling is stated
-rather than worked around: "this change was written by AI" and "this change cost $N" are not claims
-Insight makes.
+rather than worked around: it reaches person × day × tool, and no further, so "this change was written
+by AI" and "this change cost $N" are not claims Insight makes.
 
 **Detail.** C1 (AI gain and price together), C2 (review as a bottleneck), C3 (did quality hold),
 C4 (support load vs release), C5 (sales activity vs pipeline), C6 (cost moved rather than fell),
@@ -165,7 +187,10 @@ follow-up window used to check it. Its origin is declared — evidence-derived f
 data, or heuristic. Afterwards the product reads the outcome from the measured system.
 
 **LEAD** — Get an action, not an observation.
-- one lever they can own, with what should move, which guardrail must not slip, and when it is checked
+- one lever they can own, drawn from a fixed set rather than composed freely — three in the first
+  version: reduce change size, spread review load, raise AI adoption where it is low at comparable load
+- with it: how the lever itself is measured, what should move as a result, which guardrail must not
+  slip, and when it is checked — four weeks, computed automatically
 - never a recommendation that passes judgement on a named individual rather than on a process, team or
   cohort — a named *owner* is expected, a named *subject* is not
 - never a recommendation whose origin is unstated
@@ -174,14 +199,19 @@ data, or heuristic. Afterwards the product reads the outcome from the measured s
 - whether the lever moved, whether the outcome moved, and the honest fourth answer: not enough data
 - never a result assembled from metrics chosen after the fact — they are fixed when the recommendation
   is issued
+- read over a fixed window, four weeks before against four weeks after, rather than by a detector
+  hunting for a shift — on a team of ten a detector finds noise
+- read against a control: a comparable group that received no recommendation, so a company-wide trend
+  is not mistaken for an effect
 
 **ADMIN** — Configure which recommendation families are enabled, who owns them, and how validation
 windows are defined.
 
 **IC** — Never the subject of a recommendation.
 
-**Not this.** No surveys, and no self-reported productivity as an input. Validation is read from the
-measured system. Insight recommends; it does not execute (VISION §13.3).
+**Not this.** No surveys, and no self-reporting of any kind as an input — not because opinions do not
+matter, but because a validation that depends on people filling in a form does not run. Validation is
+read from the measured system. Insight recommends; it does not execute (VISION §13.3).
 
 **Detail.** D1 (a recommendation, not an observation), D2 (did it work, a month later), D3 (context
 the system cannot see).
@@ -195,14 +225,23 @@ Everything here extends the main loop. None of it is where a customer starts.
 ## S-4 · Dashboards, views and exploration · Secondary
 
 **The scenario.** Someone builds a view rather than reading one: composing dashboards from the metric
-and recommendation catalog, slicing by an attribute, defining a cohort, drilling from a figure into
-what produced it, saving the result and sharing it (VISION §8.7, §9). Exploration moves the question,
-never the boundary.
+and recommendation catalog (VISION §8.7, §9), slicing by an attribute, defining a cohort, and following
+a figure back to how it was calculated (VISION §2 — customers can see how metrics are calculated).
+Exploration moves the question, never the boundary.
+
+Two parts of this scenario go beyond what the vision states today and are proposals rather than
+restatements: **saving a composed view and sharing it with someone else**, and the access rule that
+follows from sharing. Both are marked in Appendix C.
+
+**Cohorts appear in two roles, and only one of them is here.** In S-1 a cohort is a fixed backdrop —
+the median an individual is placed against, computed for them. Here a cohort is something a person
+builds: choosing the attribute, the comparison group and the scope. The machinery is shared; the
+activity is not.
 
 **LEAD** — Build the view their team actually needs.
 - compose from the catalog; slice by attribute; define cohorts and comparison groups
-- drill from any figure to what it was computed from
-- groups recalculated for whatever is on screen at the time
+- follow any figure back to how it was calculated
+- groups recalculated for whatever is on screen at the time, and still suppressed below four people
 - never an exploration path that reaches outside their own team
 
 **EXEC** — Build the portfolio view.
@@ -213,9 +252,13 @@ never the boundary.
 **ADMIN** — Curate what can be built.
 - which metrics and thresholds exist, which cohorts are valid, who may publish a shared view
 
-**Not this.** A shared or saved view is not a way around access rules: what a viewer sees is
-re-evaluated for that viewer, so the same saved dashboard shows each person only what they may see. A
-view carries the definitions and coverage of the metrics in it, not bare numbers.
+**Not this.** A view carries the definitions and coverage of the metrics in it, not bare numbers.
+
+**Proposed, and the reason S-4 is worth arguing about.** If a view can be shared, it must not become a
+way around access rules: what a viewer sees would have to be re-evaluated for that viewer, so the same
+saved dashboard shows each person only what they may see. Neither the vision nor the scenario draft
+says this today — which is exactly why it needs deciding before view sharing is built rather than
+after.
 
 **Detail.** B7 (compare cohorts), and the slicing side of B2–B5.
 
@@ -257,16 +300,24 @@ cohort, team or organization level are shared — never individual data, never s
 
 None of this is why anyone buys the product, and all of it has to work before the rest does.
 
+**These four are also a sequence.** A new customer walks them roughly in order — connect the sources
+(S-7), resolve who is who (S-8), configure roles, metrics and access (S-9), with the installation
+itself underneath (S-10) — and only then does the main tier hold anything. VISION §14.1 states the
+same adoption path: connect, configure, run readiness, start with directional insight, improve
+evidence, validate. Listed last by importance; met first in time.
+
 ## S-7 · Sources and evidence coverage · Service
 
 **The scenario.** Whatever the wiring state, the product says so plainly: what is connected, what that
 unlocks, and — where an answer is not possible — the cause and the smallest set of fixes with the
-largest gain in confidence (readiness mode, VISION §7.5). Each source declares its fields, window,
-freshness, blind spots and the level it supports (VISION §10.10).
+largest gain in confidence (readiness mode, VISION §7.5).
 
 **ADMIN** — Know what can be proven.
-- every evidence category as connected, partly connected or absent, and which metrics each unlocks
-- freshness per source
+- all eight evidence categories as connected, partly connected or absent — people, work,
+  communication, delivery, support, sales, cost, AI — and which metrics each one unlocks
+- what each source declares about itself: fields, window, freshness, blind spots, and which level it
+  supports — measurement, diagnosis, recommendation or validation (VISION §10.10)
+- which links between systems are weak or broken, and what would repair them
 - never left to guess why a screen is empty
 
 **LEAD, EXEC** — Meet a gap and know what to do about it.
@@ -316,7 +367,13 @@ recommendation data is role-based and policy-controlled, and the boundary holds 
 - grants the five kinds of data one by one
 - adapts roles, metrics and thresholds without engineering involvement
 - sets language, date, number, currency and timezone rules
-- never holds all five kinds implicitly; a refusal is enforced underneath, not only hidden on screen
+- never holds all five kinds implicitly; a refusal is enforced by the system, not only hidden on screen
+
+**Where a setting cannot yet be honoured, the gap is shown rather than implied.** Timezone is the live
+example: dates are bucketed in UTC while a period is chosen in the viewer's own zone, so an event near
+local midnight can land a day either side. Until sources actually carry people's timezones, the
+divergence is labelled on the surface instead of being quietly absorbed — the same rule as evidence
+gaps in §5.
 
 **LEAD** — Their own team, in full.
 - every depth inside it
@@ -346,8 +403,7 @@ customer control (VISION §1, §14.1, §15.2).
 - install, configure, update and upgrade a customer-operated deployment
 - inventory what exists first, then keep / rename / replace / retire
 - import history where retention allows, and check parity over an agreed period
-- never lose a surface that worked before an upgrade
-- never discover a broken screen from a user
+- never lose a surface that worked before an upgrade — what was live before it is checked after it
 
 **EXEC** — Replace the previous system with confidence.
 - parity stated openly, including what could not be reproduced
@@ -375,7 +431,8 @@ From the vision, stated once here instead of repeated in each scenario.
 4. **No default ranking of named individuals, and no unexplained productivity scores** (§3) — people
    are named where person-level access has been granted; the ranking is what is ruled out.
 5. **People-level access is role-based and policy-controlled** (§3, §9) — five kinds of data, granted
-   separately, enforced where the data is produced rather than on the screen.
+   separately. The scope boundary holds by construction, not as a filter a screen applies: a viewer is
+   handed their own part of the organization and cannot ask for more.
 6. **Cost movement is preserved, not folded away** (§11.4) — a local saving that shifts cost, risk or
    effort downstream is shown as a shift; seat-based and usage-based cost are never one figure.
 7. **Insight observes and advises; people act** (§13.3) — it writes its own configuration and
@@ -384,8 +441,11 @@ From the vision, stated once here instead of repeated in each scenario.
    are shared, opt-in and revocable.
 9. **Role and activity are separate axes** (§7.2) — expected role model and observed activity are
    compared, never conflated; history is kept under the model valid at the time.
-10. **A group too small to keep an individual unidentifiable is not shown** — the threshold protects a
-    person from being identified through a cohort.
+10. **Two group-size thresholds, and they are different** — a group figure is not shown below **four**
+    people, and a comparative conclusion is not drawn below **eight** on each side. The first keeps an
+    individual unidentifiable behind a number; the second keeps a claim from resting on a handful.
+11. **A metric with a known defect says so on the metric itself** — and where a conclusion would rest
+    on it, the metric is excluded by name rather than quietly included.
 
 ---
 
@@ -403,21 +463,21 @@ per customer, since the connected source set differs.
 | B3 | Where is work stalling? | LEAD | S-1 |
 | B4 | What falls apart if a specific person drops out? | LEAD, EXEC | S-1 |
 | B5 | Where are we improving, and where just getting busier? | EXEC | S-1 |
-| B6 | How much does AI cost, who spends it, in what form? | EXEC | S-1 |
+| B6 | How much does AI cost, who spends it, in what form? | EXEC † | S-1 |
 | B8 | How much goes into coordination instead of work? | LEAD | S-1 |
 | C1 | Did throughput rise where AI was adopted, and what did it cost? | LEAD, EXEC | S-2 |
 | C2 | Is speed limited by writing code or by reviewing it? | LEAD | S-2 |
-| C3 | Speed went up — did quality hold? | LEAD | S-2 |
-| C4 | Is this ticket spike caused by what we shipped? | LEAD, EXEC | S-2 |
+| C3 | Speed went up — did quality hold? | LEAD † | S-2 |
+| C4 | Is this ticket spike caused by what we shipped? | LEAD † | S-2 |
 | C5 | Activity rose — did the deals move? | LEAD, EXEC | S-2 |
-| C6 | Development got cheaper — did the cost move somewhere else? | EXEC | S-2 |
-| E1 | Is it feasible, what will it cost, how long, what risks? | EXEC, LEAD | S-2 |
-| E2 | Where is the effect larger for less effort? | EXEC | S-2 |
+| C6 | Development got cheaper — did the cost move somewhere else? | EXEC † | S-2 |
+| E1 | Is it feasible, what will it cost, how long, what risks? | EXEC, LEAD † | S-2 |
+| E2 | Where is the effect larger for less effort? | EXEC † | S-2 |
 | D1 | I can see the problem — what do I do? | LEAD | S-3 |
 | D2 | Was it applied? Did it help? | LEAD, EXEC | S-3 |
 | D3 | We had a reorg that month — how do I say so? | LEAD | S-3 |
 | B7 | How does group A differ from group B in the same scope? | LEAD, EXEC | S-4 |
-| G2 | How do we pull this into our own BI or report? | ADMIN, LEAD | S-5 |
+| G2 | How do we pull this into our BI, a report, or a bot? | ADMIN, LEAD | S-5 |
 | F1 | Our three-day cycle — is that bad? | EXEC | S-6 |
 | A1 | Which questions can I already ask, and which not? | ADMIN | S-7 |
 | A4 | Why is this empty, and what would make it not empty? | ADMIN, LEAD | S-7 |
@@ -429,7 +489,11 @@ per customer, since the connected source set differs.
 | G3 | Can we work in our own language and timezone? | all | S-9 |
 | G4 | How do we replace what we have without losing history? | ADMIN, EXEC | S-10 |
 
-All thirty map to a scenario. S-6 is the only scenario with no surface behind it yet.
+All thirty map to a scenario. S-6 is the only scenario with no concrete question behind it yet.
+
+**†** The source draft tags this question with a persona this document does not keep separate —
+product management or finance. The row shows the persona carrying it here (§1). Six such rows: B6 and
+C6 were finance, C3, C4, E1 and E2 were product management.
 
 ---
 
@@ -443,11 +507,11 @@ deployment comes from elsewhere in the vision.
 |---|---|
 | 8.1 Source connection and evidence coverage | S-7 |
 | 8.2 Identity, role and organization model | S-8 |
-| 8.3 Work, outcome and cost lineage | S-2 (what analysis rests on) |
+| 8.3 Work, outcome and cost lineage | No scenario of its own — nobody opens lineage. It is the rule S-2 and S-3 rest on (§5, rule 3), and repairing it is ADMIN work in S-7 |
 | 8.4 Measurement and metric definitions | S-1 |
 | 8.5 Analysis, diagnosis and forecasting | S-2 |
 | 8.6 Recommendation and validation | S-3 |
-| 8.7 Customer configuration | S-9, and the view-building half in S-4 |
+| 8.7 Customer configuration | S-9 governs it — which metrics, cohorts and views may exist, and who may publish them; S-4 is where people exercise it |
 | 8.8 Exposure and consumption | S-5 |
 | 8.9 Benchmarks and shared intelligence | S-6 |
 | §1, §14.1, §15.2 — deployment models, adoption, migration | S-10 |
@@ -456,13 +520,21 @@ deployment comes from elsewhere in the vision.
 
 ## Appendix C · Open points
 
+Four claims in this document go beyond what VISION.md and the scenario draft state. They are written
+as requirements because the alternative is to leave them undecided, but each needs a decision rather
+than a nod.
+
 - **Administrative rights and data visibility.** §1.1 asserts that ADMIN gains no data visibility
   implicitly. Worth confirming against the access model rather than the interface.
-- **Shared views and access.** S-4 asserts that a saved or shared view re-evaluates what each viewer
-  may see. This is the easiest place for the access boundary to leak, and it needs confirming rather
-  than assuming.
-- **The small-group threshold** is stated per surface today. It protects an individual from being
-  identified through a cohort, so it belongs to §5 with one agreed value.
+- **Saved and shared views** (S-4). Composing a view is in the vision; *saving* it and *sharing* it are
+  not. If sharing exists, the access rule has to come with it — what each viewer sees, re-evaluated for
+  them — and that is far cheaper to decide before the feature than after.
+- **An identity correction surviving the next sync** (S-8). The draft says merges and splits are
+  reversible; neither document says a correction is not undone by re-resolution. Stated here as a
+  requirement, because a correction that does not survive is not a correction.
+- **The two group-size thresholds** (§5, rule 10) are four for a group figure and eight per side for a
+  comparative conclusion. Both come from the scenario draft rather than from the vision, and they are
+  worth confirming as product rules — including whether a customer may configure them.
 - **IC has the narrowest surface and the tightest boundary.** Everything an IC sees is their own or a
   median — the combination that is easiest to get wrong quietly.
 - **S-6 has no surface yet.** Listed so the capability stays planned for, not to imply it exists.
