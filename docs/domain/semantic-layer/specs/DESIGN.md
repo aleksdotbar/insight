@@ -669,6 +669,8 @@ sequenceDiagram
 
 The store rewrite is additive tables plus seed repopulation, never in-place mutation of the old schema; migration burden is near zero because builtin rows are seed-reconciled from code and any `origin = 'custom'` rows get a one-shot mapping. Tables live in the analytics service database (MySQL via sea-orm, forward-only migrations). Column-level types are implementation detail; the tables and their roles are below.
 
+**Implementation status (#2208, Phase 1 slice 1):** the four definition-core tables below — `datasets`, `measures`, `metrics`, `definition_revisions` — are shipped by migration `m20260805_000001_semantic_definition_core`, physically prefixed `semantic_` so the store coexists with the untouched legacy `metric_*` store until cutover. Their key-shape and aggregation/expression CHECK constraints are registered in the startup CHECK probe. This slice is schema only: no entities, seed reconciliation, or serving change yet (later Phase 1 slices), and `measure_cache` is deferred to Phase 2 materialization.
+
 #### Table: `datasets`
 
 **ID**: `cpt-semantic-layer-dbtable-datasets`
