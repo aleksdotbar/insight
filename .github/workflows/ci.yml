@@ -14,6 +14,7 @@ on:
     branches: [main]
     paths:
       - "src/backend/**"
+      - "src/frontend/**"
       - "src/ingestion/connectors/**"
       - "scripts/ci/**"
       - ".github/workflows/ci.yml"
@@ -61,6 +62,7 @@ jobs:
     outputs:
       rust: ${{ steps.detect.outputs.rust }}
       python: ${{ steps.detect.outputs.python }}
+      js: ${{ steps.detect.outputs.js }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -83,6 +85,7 @@ jobs:
           echo "changed: $changed"
           echo "rust=$(echo "$changed" | jq -c .rust)" >> "$GITHUB_OUTPUT"
           echo "python=$(echo "$changed" | jq -c .python)" >> "$GITHUB_OUTPUT"
+          echo "js=$(echo "$changed" | jq -c .js)" >> "$GITHUB_OUTPUT"
 
   # Guard the jsonwebtoken crypto-provider invariant: >1 backend active makes
   # verify() panic on every call (#1725, #1727). cargo tree only reads the
@@ -347,12 +350,129 @@ jobs:
           # A connector with no tests legitimately produces no report (exit 5).
           if-no-files-found: ignore
 
+  # One producer job per changed JS/TS component. Lint, typecheck and the two
+  # vitest projects run as steps of a single job rather than as siblings (as the
+  # rust job does with fmt + clippy + coverage): each extra job would re-pay
+  # `pnpm install`, which dominates their runtime.
+  js:
+    name: Frontend — ${{ matrix.entry.name }}
+    needs: changes
+    if: ${{ needs.changes.outputs.js != '[]' }}
+    runs-on: ubuntu-latest
+    # The browser `storybook` vitest project needs chromium and its OS deps; the
+    # official Playwright image bakes both in. Downloading chromium at CI time
+    # stalls the runner indefinitely (the CDN fetch of chromium-linux.zip never
+    # progresses). The tag MUST track `playwright` in the component's
+    # package.json so the pre-installed browser build matches, and the digest is
+    # pinned alongside it because this container executes repository code —
+    # including a fork PR's — and MCR tags are mutable.
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        entry: ${{ fromJson(needs.changes.outputs.js) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false # don't leave the token in .git/config
+
+      # pnpm is set up before setup-node so the latter's `cache: pnpm` can
+      # resolve the store. Both actions default to the workspace root and this
+      # repository has no root package.json or pnpm-lock.yaml, so both are
+      # pointed at the component root explicitly — without that,
+      # pnpm/action-setup cannot read `packageManager` and setup-node hard-fails
+      # on a missing lock file.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          package_json_file: ${{ matrix.entry.root }}/package.json
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: ${{ matrix.entry.root }}/.nvmrc
+          cache: pnpm
+          cache-dependency-path: ${{ matrix.entry.root }}/pnpm-lock.yaml
+
+      # --ignore-scripts matches the production image build: dependency lifecycle
+      # scripts never run there, so they must not run here either — on a fork PR
+      # the lockfile is attacker-supplied. Nothing in this suite needs them: the
+      # Playwright browsers come from the container image and MSW's worker is
+      # committed under public/.
+      - name: Install dependencies
+        working-directory: ${{ matrix.entry.root }}
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: ESLint (${{ matrix.entry.name }})
+        working-directory: ${{ matrix.entry.root }}
+        run: pnpm lint
+
+      - name: Typecheck (${{ matrix.entry.name }})
+        working-directory: ${{ matrix.entry.root }}
+        run: pnpm typecheck
+
+      # Runs BOTH vitest projects (unit/jsdom + storybook/browser) in one pass so
+      # their coverage merges into a single Cobertura — a component exercised only
+      # by a story still counts. Story tests are blocking: a failing story fails
+      # this job like a unit test does.
+      - name: Coverage (${{ matrix.entry.name }} -> Cobertura)
+        if: ${{ matrix.entry.cover }}
+        working-directory: ${{ matrix.entry.root }}
+        run: pnpm test:coverage:ci
+
+      # Re-root the report and give it a per-component filename.
+      #
+      # vitest writes an ABSOLUTE project root into <sources>, and this producer
+      # runs in a container (workspace `/__w/<repo>/<repo>`) while coverage-gate
+      # runs on the runner (`/home/runner/work/...`). Neither coverage.py's
+      # _normalize nor diff-cover can resolve that absolute path against the
+      # gate's checkout, so every file would bucket to no component and the
+      # component would silently go unmeasured by BOTH gates. A repo-relative
+      # source root resolves in both.
+      - name: Re-root Cobertura to a repo-relative source path
+        if: ${{ matrix.entry.cover }}
+        env:
+          ENTRY_ROOT: ${{ matrix.entry.root }}
+          ENTRY_NAME: ${{ matrix.entry.name }}
+        run: |
+          set -euo pipefail
+          # Both values come from the component registry, which is repository
+          # content and therefore editable in a fork PR. Reject anything outside
+          # the path charset before it reaches a sed delimiter or an mv
+          # destination.
+          if ! printf '%s' "$ENTRY_ROOT" | LC_ALL=C grep -Eq '^[A-Za-z0-9._/-]+$'; then
+            echo "::error::component root '$ENTRY_ROOT' contains characters outside [A-Za-z0-9._/-]"
+            exit 1
+          fi
+          if ! printf '%s' "$ENTRY_NAME" | LC_ALL=C grep -Eq '^[A-Za-z0-9._-]+$'; then
+            echo "::error::component name '$ENTRY_NAME' contains characters outside [A-Za-z0-9._-]"
+            exit 1
+          fi
+          src="$ENTRY_ROOT/coverage/cobertura-coverage.xml"
+          if [ ! -f "$src" ]; then
+            echo "::error::$src was not produced — the cobertura reporter is missing from the vitest config"
+            exit 1
+          fi
+          sed -i "s|<source>[^<]*</source>|<source>${ENTRY_ROOT}</source>|" "$src"
+          mkdir -p "$GITHUB_WORKSPACE/coverage"
+          mv "$src" "$GITHUB_WORKSPACE/coverage/js-${ENTRY_NAME}.cobertura.xml"
+
+      - name: Upload Cobertura
+        if: ${{ matrix.entry.cover }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cobertura-js-${{ matrix.entry.name }}
+          path: coverage/*.xml
+          # The reporter always emits when the suite ran, so a missing file means
+          # something went wrong — fail rather than ignore.
+          if-no-files-found: error
+
   # Single authority: per-component overall + the global new-code gate. Runs even
   # when some producers were skipped (unchanged languages) via `!cancelled()`,
   # and judges only the components that actually produced a report.
   coverage-gate:
     name: Coverage gate
-    needs: [changes, rust, python]
+    needs: [changes, rust, python, js]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -362,9 +482,9 @@ jobs:
       # unchanged language) report 'skipped', not 'failure', so they're fine.
       - name: Guard against incomplete reports
         if: >-
-          needs.changes.result != 'success' || needs.rust.result == 'failure' || needs.python.result == 'failure'
+          needs.changes.result != 'success' || needs.rust.result == 'failure' || needs.python.result == 'failure' || needs.js.result == 'failure'
         run: |
-          echo "changes=${{ needs.changes.result }} rust=${{ needs.rust.result }} python=${{ needs.python.result }}"
+          echo "changes=${{ needs.changes.result }} rust=${{ needs.rust.result }} python=${{ needs.python.result }} js=${{ needs.js.result }}"
           echo "::error::Change detection or a producer job failed — refusing to gate on an incomplete report set."
           exit 1
 
@@ -402,6 +522,7 @@ jobs:
         env:
           RUST_CHANGED: ${{ needs.changes.outputs.rust }}
           PYTHON_CHANGED: ${{ needs.changes.outputs.python }}
+          JS_CHANGED: ${{ needs.changes.outputs.js }}
           FULL: ${{ github.event.inputs.full }}
         run: |
           # Only components that actually produce coverage are "required" —
@@ -409,8 +530,8 @@ jobs:
           # lines that bucket to another component (connector-mock-tests);
           # cover=false filters all of these.
           required=$(jq -rn \
-            --argjson r "$RUST_CHANGED" --argjson p "$PYTHON_CHANGED" \
-            '[($r[] | select(.cover)), ($p[] | select(.cover))] | map(.name) | join(",")')
+            --argjson r "$RUST_CHANGED" --argjson p "$PYTHON_CHANGED" --argjson j "$JS_CHANGED" \
+            '[($r[] | select(.cover)), ($p[] | select(.cover)), ($j[] | select(.cover))] | map(.name) | join(",")')
           echo "required components: ${required:-<none>}"
           # A full/baseline run measures overall coverage; skip the new-code gate
           # (there is no meaningful "patch" for a manual all-components run).

@@ -4,9 +4,12 @@
 the CI matrix). Pure data + lookup: no CLI, no side effects, never runs tests.
 
 Per component: name, lang, root (collection cwd), paths (repo-relative prefixes
-for bucketing), plus per-language extras consumed by the CI producer jobs:
+for bucketing), an optional overall_min (per-component line-coverage floor,
+defaulting to coverage.py's OVERALL_MIN), plus per-language extras consumed by
+the CI producer jobs:
   rust   -> package (cargo package name); all_features (default True)
   python -> cov_package (the source_* package to measure)
+  js     -> none (the package.json scripts under `root` carry the collection)
 
 Nocode (declarative-YAML) connectors are excluded — no first-party code to
 line-cover.
@@ -236,6 +239,21 @@ COMPONENTS = [
         "cover": False,
         "triggered_by": ["connector-tests-harness"],
         "paths": ["src/ingestion/connectors/task-tracking/jira", "src/ingestion/connectors/ai/claude-admin"],
+    },
+    # JS/TS frontend. `pnpm test:coverage:ci` runs BOTH vitest projects (jsdom
+    # `unit` + browser `storybook`) in one pass so their coverage merges into a
+    # single Cobertura — a component exercised only by a story still counts.
+    # overall_min sits below OVERALL_MIN while the suite is built out; the
+    # new-code gate (NEW_CODE_MIN) applies in full, and raising this floor as
+    # that gate pulls the number up is the ratchet.
+    # `src/frontend/helm` falls under this component's path but contributes no
+    # measured lines, so it never moves either number.
+    {
+        "name": "frontend",
+        "lang": "js",
+        "root": "src/frontend",
+        "overall_min": 40,
+        "paths": ["src/frontend"],
     },
 ]
 
