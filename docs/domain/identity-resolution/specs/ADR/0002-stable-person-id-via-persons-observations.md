@@ -6,6 +6,10 @@ date: 2026-04-24
 
 # ADR-0002 — Stable `person_id` via append-only `persons` observations, with `account_person_map` as SCD2 cache
 
+**ID**: `cpt-ir-adr-stable-person-id`
+
+> **Post-acceptance note (2026-08-05)**: later service migrations refined the schema this ADR describes — migration 004 moved the natural-key UNIQUE from `value_hash` to `created_at` and made `value_id` case-insensitive; migration 009 relaxed `reason` to NULL-able and moved timestamps to `DATETIME(6)`. See DESIGN par. 3.7 for the current shape. The decision itself (stable random `person_id`; append-only observations; derived `account_person_map`) is unaffected.
+
 ## Context
 
 The `persons` table (MariaDB, see
