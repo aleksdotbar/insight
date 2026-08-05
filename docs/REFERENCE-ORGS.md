@@ -118,236 +118,101 @@ A 392-person organisation carrying ~12,000 repositories and 17 years of issue hi
 "mid-size" workload in any sense a load test cares about. Record the entity inventory alongside
 the headcount whenever a reference organisation is cited.
 
-## 4. Typical organisation data
+## 4. Typical organisation data, by metric class
 
-Everything an organisation produces, per **active** person, with a 1,000-person column. The range
-is the observed span between two real installations — read it as *"a real organisation lands in
-here"*, never as a mean or a distribution.
+What an organisation produces, one row per **metric class**.
 
-| What | Per active person | At 1,000 active people *(×3 for REF-L)* |
-|---|---|---|
-| **People** | | |
-| Active people (org size) | 1 | 1,000 |
-| Person records incl. terminated | 3.7 – 5.5 | 3,700 – 5,500 |
-| Directory accounts | 1.0 – 2.8 | 1,000 – 2,800 |
-| Identities per metric class | 0.07 – 1.77 | 70 – 1,770 |
-| Identity-store rows | 71 – 146 | 71,000 – 146,000 |
-| **Entities** | | |
-| Repositories | 3.5 – 30.5 | 3,500 – 30,500 |
-| Wiki pages | 2.7 – 38.1 | 2,700 – 38,100 |
-| Work items | 182 – 380 | 182,000 – 380,000 |
-| Connected systems | — | 8 – 11 |
-| Years of history | — | 10.2 – 17.6 |
-| **Daily activity** (logical rows/day) | | |
-| Issue change events | 5.7 – 9.6 | 5,700 – 9,600 |
-| Git file changes | 4.6 – 5.2 | 4,600 – 5,200 |
-| Chat | 0.73 – 1.55 | 730 – 1,550 *(13.9–15.2 messages/person/day)* |
-| Git commits | 0.76 – 1.44 | 760 – 1,440 |
-| Email activity | 0.70 – 1.10 | 700 – 1,100 |
-| Task comments | 0.32 – 0.82 | 320 – 820 |
-| Worklogs | 0.17 – 0.91 | 170 – 910 *(1.81–6.80 h per entry)* |
-| Document activity | 0.50 – 0.66 | 500 – 660 |
-| Meetings | 0.37 – 0.58 | 370 – 580 |
-| Issues created | 0.34 – 0.41 | 340 – 410 |
-| Pull-request comments | 0.22 – 0.49 | 220 – 490 |
-| Pull requests | 0.12 – 0.23 | 120 – 230 |
-| AI dev usage | 0.11 – 0.20 | 110 – 200 *(49–281 accepted lines per adopter-day)* |
-| Wiki edits | 0.08 – 0.17 | 85 – 170 |
-| Wiki pages created | 0.015 – 0.021 | 15 – 21 |
-| AI chat | 0.030 – 0.046 | 30 – 46 |
-| **Volume** | | |
-| Rows/day, all layers | 71.6 – 100.9 | **72,000 – 101,000** |
-| Bytes/day, all layers | 44.3 – 74.7 kB | **42 – 71 MiB** |
-| 12-month dataset (logical) | 15.4 – 26.0 MiB | **26–37 M rows · 15–25 GiB** |
-| What an installation actually holds | 61.7 – 110.7 MiB | **60 – 111 GiB** |
-| Re-emission multiplier (bronze) | — | **1.58× – 8.36×** |
+* **Rows per active person-day** — the observed span between the two installations. Two
+  organisations, not a distribution: read it as *"a real organisation lands in here"*, never as a
+  mean. *(one-sided)* marks a class only one installation populates — a coverage gap, not a zero.
+* **p50 per participant-week** — rows per ISO week for the people who actually appear in the class.
+  Contamination-resistant, so it is the figure to calibrate a generator against.
+* **Adoption** — share of the active roster appearing in the class at all. Above 100 % is correct,
+  not an error: external meeting attendees, service accounts, shared mailboxes, automation and
+  departed employees still attached to history all author rows.
+* **REF-L rows** — the fixture target at 3,000 active people over 365 days, at each class's
+  canonical layer (one layer per class, so the total is not the whole-install figure in §3.1).
 
-**The last two volume rows are the point.** The *logical content* of a 1,000-person organisation is
-15–25 GiB. What its ClickHouse actually stores is 60–111 GiB. The difference is ReplacingMergeTree
-re-emission plus retained history — not user activity. That single gap drives both the TCO figure
-and the soak workload.
+| Metric class | Rows per active person-day | p50 per participant-week | Adoption | REF-L rows (365 d) |
+|---|---|--:|--:|--:|
+| **Git** | | | | |
+| `git_commits` | 0.76 – 1.44 | 7 – 8 | 47 – 84 % | 1,580,852 |
+| `git_file_changes` | 4.62 – 5.22 | 19 – 31 | 43 – 68 % | 5,717,871 |
+| `git_prs` | 0.12 – 0.23 | 3 – 4 | 34 – 36 % | 250,098 |
+| `git_pr_comments` | 0.22 – 0.49 | 6 | 26 – 44 % | 533,046 |
+| `git_pr_reviews` | 0.21 *(one-sided)* | 4 | 30 % | 231,812 |
+| `git_branches` | 0.11 *(one-sided)* | — | — | — |
+| **Task** | | | | |
+| `task_history` | 5.71 – 9.60 | 25 – 30 | 58 – 58 % | 10,513,971 |
+| `task_issues` | 0.34 – 0.41 | 3 – 4 | 52 – 69 % | 453,440 |
+| `task_comments` | 0.32 – 0.82 | 4 | 53 – 58 % | 894,725 |
+| `task_worklogs` | 0.17 – 0.91 | 5 – 13 | 32 – 47 % | 995,793 |
+| `task_sprints` | 0.00 – 0.01 | — | — | — |
+| **Collaboration** | | | | |
+| `collab_chat` | 0.73 – 1.55 | 6 – 7 | 107 – 130 % | 1,694,732 |
+| `collab_email` | 0.70 – 1.10 | 6 – 7 | 89 – 163 % | 1,205,704 |
+| `collab_docs` | 0.50 – 0.66 | 5 – 6 | 73 – 109 % | 721,167 |
+| `collab_meeting` | 0.37 – 0.58 | 4 | 100 – 177 % | 633,895 |
+| **AI** | | | | |
+| `ai_dev` | 0.11 – 0.20 | 4 – 6 | 30 – 36 % | 218,343 |
+| `ai_chat` | 0.03 – 0.05 | 3 – 4 | 9 – 28 % | 50,589 |
+| `ai_cost` | 0.00 – 1.01 | 1 – 40 | 20 – 29 % | — |
+| `ai_api` | — | — | — | — |
+| **Wiki** | | | | |
+| `wiki_edits` | 0.08 – 0.17 | 3 | 33 – 33 % | 187,136 |
+| `wiki_pages` | 0.02 – 0.02 | 0.98 – 1 | 20 – 23 % | 22,995 |
+| `wiki_comments` | 0.00 – 0.01 | 1.76 – 2 | 8 – 9 % | 6,022 |
+| `wiki_engagement` | 0.00 – 0.00 | — | — | 2,190 |
+| **CRM & Support** | | | | |
+| `crm_activities` | 1.39 *(one-sided)* | — | — | 1,523,145 |
+| `crm_contacts` | 0.43 *(one-sided)* | — | — | 475,011 |
+| `crm_accounts` | 0.12 *(one-sided)* | — | — | 128,006 |
+| `crm_deals` | 0.03 *(one-sided)* | — | — | 30,770 |
+| `support_tickets` | 0.03 *(one-sided)* | — | — | 33,178 |
+| `support_events` | — | — | — | — |
+| **HR & Identity** | | | | |
+| `hr_hours` | 0.33 – 0.47 | 4 | 100 – 177 % | 509,941 |
+| `hr_people` | 0.02 – 0.03 | — | — | 31,755 |
+| `hr_events` | 0.07 *(one-sided)* | — | — | 81,030 |
+| `identity_inputs` | — | — | — | — |
+| `identity_aliases` | 0.06 *(one-sided)* | — | — | 68,985 |
+| **total, canonical layer** | | | | **28,796,200** |
 
-## 5. REF-L — the fixture specification
+**Two classes carry most of the volume** — `task_history` and `git_file_changes` are 57 % of the
+canonical-layer rows, and `task_issues` and `task_history` are 82 % of its bytes. An organisation
+that spreads its volume evenly across classes does not exist.
 
-Single-valued. Where the two installations disagreed, REF-L takes the **higher** value: under-
-provisioning makes a P95 budget look achievable when it is not, while over-provisioning only costs
-disk. Where the higher value comes from a **connector artefact** rather than human behaviour, the
-class is sized on the human-rate figure that transfers and the artefact is applied as a named,
-visible multiplier.
+**Some classes do not scale with headcount** and must be set from another input: `git_branches`
+from repository count, `task_sprints` flat (40–500 boards), `crm_contacts` from a customer count
+(they are *external* people), `crm_accounts` and `crm_deals` from the sales sub-roster (7.1 % and
+4.4 % adoption), `support_tickets` as a flat organisation rate, `wiki_engagement` from page count,
+`identity_inputs` from accounts × rows-per-account.
 
-| Dimension | REF-L |
-|---|--:|
-| Active people | **3,000** |
-| Person records incl. terminated | 16,500 |
-| Directory accounts | 8,400 |
-| Repositories | 91,500 |
-| Wiki pages | 114,300 |
-| Work items | 1,140,000 |
-| Connected systems | 10 |
-| History span | 365 days |
-| **Rows (365 d, logical)** | **122,500,947** |
-| **Uncompressed** | **89.43 GiB** |
-| **On ClickHouse disk (LZ4)** | **18.63 GiB** |
-| Rows per active person-day | 111.9 |
-| Identity-store rows (`identity_inputs`) | 438,000 |
-| Identity persons store | 248,000 |
-| Re-emission multiplier, if sync-replayed | 8.36× |
+**Row counts do not transfer between products; human rates do.** Chat row emission differs 2.12×
+between two chat products for message volumes that agree within 9 %; a worklog entry is 1.81 h in
+one organisation and 6.80 h in the other, so the same effort emits 3.8× the rows; the same logical
+issue costs 80.6 kB in one tracker and 19.2 kB in another. Size a class on the human rate, then
+apply the product's emission multiplier explicitly.
 
-**Minimum viable variant — 91 days:** 30,541,332 rows / 22.30 GiB uncompressed / 4.64 GiB on disk
-(bronze 6.69 M · staging 7.81 M · silver 5.94 M · gold 10.09 M · identity 17 k). This is the window
-every coefficient was measured over, so it is the least extrapolated fixture available. Use it when
-regenerating a 365-day fixture is too expensive.
+## 5. Evidence and limits
 
-### 5.1 Connector mix
+Measured on **two production installations** — 392 and 521 active people — with identical SQL and
+matching ClickHouse builds, 2026-08-05.
 
-| # | Slot | Pick | Load-bearing for |
-|--:|---|---|---|
-| 1 | HR system of record | BambooHR | **36 of 49 gold views** resolve through `insight.people`, a view over the HR employees table. Non-negotiable |
-| 2 | Second directory | MS Entra | Produces the people union and the person-in-two-directories case that identity resolution must handle |
-| 3 | Issue tracker | Jira | Largest class either way, and the heavier: **80.6 kB per logical issue vs 19.2 kB** for the alternative. Also the only genuine silver fan-out observed |
-| 4 | Git | GitLab | The only complete git measurement available, and the only source of a PR-review stream |
-| 5 | Wiki | Outline | 2.01× the row emission of the alternative for identical human effort |
-| 6 | Chat | any one, **sized in messages** | Row emission differs 2.12× between products; **message volume agrees within 9 %** |
-| 7 | Email + documents | M365 | The only connector measured identically on both installations |
-| 8 | Meetings | Zoom | Widest identity axis observed (1.77× the roster — external attendees) |
-| 9 | AI dev | Claude Team + Cursor | Higher line volume; Cursor is the only per-call cost event stream |
-| 10 | CRM + support | HubSpot | Without it, 6 gold CRM views and 3 support views scan empty tables |
+Density **per person** transfers across products: issue creation agrees to **1.20×** across two
+different trackers, git file changes to **1.13×** across two git products, chat messages to within
+**9 %**. Of 22 classes measured on both, 15 agree within 2×, median 1.62×. **None of the seven
+disagreements is a difference in how people work** — every one is a property of the connector.
 
-**Deploy the empty bronze schemas too.** A real installation deploys ~25 bronze databases and
-populates ~9. Gold views reference tables that may be empty; a fixture that omits unconfigured
-connectors' schemas fails to resolve views that a real installation resolves-but-returns-nothing.
+Limits, stated rather than implied:
 
-### 5.2 Classes that must not be scaled by headcount
-
-| Class | Scale by instead |
-|---|---|
-| Git branches | repository count (observed 40–380 branches per active person — repo inventory, not headcount) |
-| Sprints / boards | flat, 40–500 |
-| CRM contacts | a target customer count — these are **external** people |
-| CRM accounts, deals | the **sales sub-roster** (measured adoption 7.1 % and 4.4 %) |
-| Support tickets | flat organisation rate — the source has no owner field |
-| Wiki engagement | page count (grain is page × day) |
-| Identity inputs | accounts per person × rows per account |
-| Dimension tables | flat — organisation-shaped, not headcount-shaped; they do **not** shrink in a small fixture |
-
-### 5.3 Coverage gaps — absent, not zero
-
-AI-API usage and support events are **deployed and empty on both** measured installations. No
-coefficient exists for them anywhere in the evidence base; they must not be interpolated. The
-ClickHouse alias table is empty on every installation observed — the live store is the identity
-service's relational alias map.
-
-## 6. Build rules
-
-1. **Logical vs as-stored.** Every figure above is logical: one row per real event. A running
-   installation stores **1.58×–8.36×** more, because ReplacingMergeTree re-emits each logical row
-   on every connector sync. A **bulk-loaded** fixture sees none of that; a **sync-replayed** one
-   sees all of it. State which method the fixture uses and, if replayed, which multiplier it
-   targets. There is no basis for a value in between.
-2. **History ceilings.** Four classes cannot honestly fill 365 days: email and document activity
-   cap at **122–137 days** (usage-report retention at the source), HR events and identity records
-   at the connector install date. Cap the class and document it, or generate the tail and label it
-   synthetic. **Never extend history by linear pro-rata** — activity grows over time, so
-   back-filling early years at today's rate overstates them. Taper.
-3. **Scale down by truncating payloads, not rows.** No gold object reads the dominant bronze table;
-   fitting its JSON blob columns to a realistic length distribution removes **~29 GiB of 89 GiB
-   with zero P95 impact**. Dropping rows is invalid — row count drives the merge and scan cost the
-   P95 budget measures.
-4. **Do not size gold from its disk footprint.** Gold is ~1 % of disk but **2.3 % of everything the
-   server decompresses** (10.4× compression against bronze's 4.4×), and it is the only layer on the
-   request path. Sizing it from disk under-provisions the measured layer by more than 2×.
-5. **Realism markers.** Weekend share must be **1.4–5 %** on event classes; distributions must be
-   heavy-tailed at **p99/p50 of 5–30×**. Flat distributions and 25–31 % weekend share are the
-   signature of un-calibrated synthetic data.
-
-## 7. Soak
-
-At REF-L the connectors add **335,619 logical rows/day (251 MiB/day)** — **+0.27 %/day** against a
-122.5 M-row fixture. **Dataset growth is not the soak workload; merge and deduplication are.** Under
-sync-replay, bronze grows ~432 MiB per 24 h and a 7-day soak adds ~3 GiB of stored bronze for
-~360 MiB of logical content. Instrument part counts, not dataset size.
-
-**Identity.** The identity service's existing NFR specifies a 24 h soak at 100 RPS against a
-**50,000-row** dataset, and separately a p95 bound *"for tenants under 50,000 persons"*. These are
-**not the same scale — they differ 11–17×**. 50,000 rows in the persons store corresponds to
-605–1,246 active people — **only 20–42 % of REF-L**, i.e. mid-size scale. Either resize that dataset
-to **120 k–248 k rows** to match REF-L, or keep 50,000 and re-label it explicitly as a mid-size
-fixture. Separately, *"under 50,000 persons"* implies a **565 k–864 k-row** store, 2.3–4.7× REF-L's
-and a different fixture again. The identity store grows ~63 rows/day at REF-L (0.03 % of itself):
-its soak is a **memory/GC test, not a growth test**.
-
-## 8. Acceptance checks
-
-A REF-L fixture is correct when:
-
-1. The people model holds **3,000 active** and **16,500 total** person rows.
-2. Per-class distinct active identities match the target ratios — **including the classes above
-   1.0** (meetings ≈1.77×, email ≈1.63×).
-3. Per-active-person-week medians land in band: issues created 3–4, git file changes 19–31, email
-   6–7, issue change events 25–30.
-4. Weekend share is 1.4–5 % on event classes.
-5. Distributions are heavy-tailed (p99/p50 of 5–30×), not flat.
-6. 36 of 49 gold views resolve non-empty; unconfigured-connector views resolve and return zero.
-7. Totals land on **122.5 M rows / 89.4 GiB** at 365 days, or **30.5 M rows / 22.3 GiB** at 91 days.
-
-## 9. Confidence and limits
-
-* **Evidence base is two production installations**, of 392 and 521 active people — both within
-  30 % of the mid/large tier boundary. REF-M is near-measured; **REF-L is a 5.8–7.7× extrapolation** and is the largest single source of
-  error in this document; REF-S is an 8–10× extrapolation downward; 5,000 people has no support.
-  A third measured installation above 1,000 active people would reduce the error more than any
-  other work.
-* **Density per person transfers across products; density per table does not.** Issue creation
-  agrees to 1.20× across two different issue trackers, git file changes to 1.13× across two git
-  products, chat messages to within 9 %. Of 22 classes measured on both, 15 agree within 2×, median
-  1.62×. **None of the 7 disagreements is a difference in how people work** — every one is a
-  property of the connector: emission policy, record grain, ingest completeness or automation share.
-* **The transfer test is arithmetically circular.** Both coefficients are per-person-per-day and
+* **REF-L is a 5.8–7.7× extrapolation.** Both installations sit within 30 % of the mid/large tier
+  boundary, so REF-M is near-measured, REF-L is reached by extrapolation and REF-S by extrapolating
+  downward 8–10×. The 5,000-person figures have no support at all. A third measured installation
+  above 1,000 active people would reduce the error more than any other work.
+* **The transfer test is arithmetically circular** — both coefficients are per-person-per-day and
   headcount is the only multiplier, so the prediction error equals the coefficient ratio by
-  construction. It measures transferability, not correctness, and four of the 15 passing classes
-  carry uncorrected asymmetric contamination. Read 1.62× as *"same order of magnitude, connector
-  effects removed"*, not as an error bar.
-* **Concurrency and query mix are not measured at all.** The 100 RPS figure is inherited from an
-  existing NFR and has no evidence behind it for the metric endpoints. This is the largest gap
-  between this document and a runnable performance plan.
-* **Both measured installations are ~80 % one connector and ~50 % four columns.** Any total is
-  dominated by one product's record shape. A fixture that spreads its volume evenly across metric
-  classes models a system that does not exist.
-
-## 10. Open decisions
-
-1. Whether the 5,000-person tier ceiling is gated at all — it needs evidence not yet collected.
-2. The entity inventory per reference organisation (repositories, wiki pages, work items), which
-   headcount does not determine.
-3. Fixture window: 365 days, or the 91-day least-extrapolated variant.
-4. Build method: bulk-load, or sync-replay and which re-emission multiplier.
-5. Whether CRM and support are in scope — decides whether 9 gold views are ever exercised.
-6. Whether the 50,000-*person* identity boundary is gated, which needs a second dataset.
-7. The concurrency profile — still unmeasured, and still the framework's open product input.
-
-## 11. Scan volume per data slice
-
-`TESTING.md` §7 and #1655 both express Performance as latency per **week / month / quarter / year**
-data slice. At REF-L those slices are this much work. Gold is the only layer on the request path;
-silver is shown because some drill-downs reach it.
-
-| Slice | Gold rows | Gold uncompressed | Silver rows | Silver uncompressed |
-|---|--:|--:|--:|--:|
-| Week (7 d) | 775,975 | 189 MiB | 457,048 | 161 MiB |
-| Month (30 d) | 3,325,608 | 810 MiB | 1,958,778 | 689 MiB |
-| Quarter (91 d) | 10,087,677 | 2.40 GiB | 5,941,626 | 2.04 GiB |
-| Year (365 d) | 40,461,562 | 9.63 GiB | 23,831,797 | 8.18 GiB |
-
-Per-day rates behind it, at 3,000 active people: gold 110,854 rows / 27.0 MiB · silver 65,293 /
-23.0 MiB · staging 85,813 / 31.1 MiB · bronze 73,471 / 169.9 MiB.
-
-The **ratio** matters more than the absolute: a year slice is a ~40 M-row / ~9.6 GiB read against a
-**52× smaller** week slice, and that spread is what a per-slice latency budget has to survive. Per
-active person a drill-down is **259 gold rows** for a week and **13,487** for a year.
-
-Slice sizes are stable across a soak: the fixture grows 335,619 logical rows/day (251 MiB/day), only
-**+0.27 %/day**. What moves under sync-replay is part count, not scan volume.
-
-**Not derivable from this data:** request rate, concurrency, query mix, cache-hit behaviour, and how
-many metric calls a dashboard load issues. Those must be set by measurement or by an explicit,
-recorded assumption.
+  construction. It measures transferability, not correctness.
+* **Both installations are ~80 % one connector**, so any total is dominated by one product's record
+  shape.
+* **Concurrency and query mix are not measured**, and cannot be inferred from this data.
