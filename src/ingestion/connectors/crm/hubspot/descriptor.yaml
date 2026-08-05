@@ -1,5 +1,5 @@
 name: hubspot
-version: "2.10.0"
+version: "2.11.0"
 type: cdk
 schedule: "0 6 * * *"
 workflow: sync
