@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::api::error::MetricError;
 use crate::domain::metric_definitions::{ComputationSpec, MetricDefinition, load_definitions};
-use crate::domain::schema_validator::parse::parse_metric_key;
+use crate::domain::metric_key::parse_metric_key;
 
 use super::dto::{
     MetricDimensionFilterRequest, MetricGroupLimitRequest, MetricResultsRequest, MetricViewRequest,
@@ -79,7 +79,7 @@ pub struct ValidatedMetricResultsRequest {
     pub to: NaiveDate,
     pub metrics: Vec<ValidatedMetricRequest>,
     /// Whether the compiler injects the per-tenant observation filter (#1967).
-    /// Set from `metric_catalog.enforce_tenant_scope` by the handler; the
+    /// Set from the `metric_catalog.enforce_tenant_scope` config key by the handler; the
     /// validator defaults it to `false` (see the config knob for why).
     pub enforce_tenant_scope: bool,
 }

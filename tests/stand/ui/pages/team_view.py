@@ -63,5 +63,20 @@ class TeamView:
             exact=True,
         )
 
+    def metric_cell(self, display_name: str, metric_label: str) -> Locator:
+        """That member's cell for a metric, recorded or an honest "not recorded".
+
+        Presence proves the row rendered the column; it does not require a
+        value, so a legitimately unrecorded metric (a member who closed tasks
+        but fixed no bugs) is not a failure.
+        """
+        name = re.compile(rf"^{re.escape(display_name)} — {re.escape(metric_label)}: ")
+        return self.page.get_by_role("button", name=name)
+
+    def any_recorded_metric_cell(self, display_name: str) -> Locator:
+        """Any metric this member has a recorded value for — the row is not blank."""
+        name = re.compile(rf"^{re.escape(display_name)} — .+: (?!not recorded)")
+        return self.page.get_by_role("button", name=name).first
+
     def domain_card(self, label: str) -> Locator:
         return self.page.get_by_role("button", name=f"Open {label} details")

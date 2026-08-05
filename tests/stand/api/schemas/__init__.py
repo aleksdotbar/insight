@@ -7,8 +7,8 @@ Two halves, and a reader should be able to tell which one they are in:
 * `identity.py` — hand-written from the Rust DTOs in
   `src/backend/services/identity-resolution/src/api/`. **Not** generated,
   because the committed contract for that service is still the .NET document:
-  it declares `/v1/persons/{email}` (which identity answers 404 for — the path
-  moved to analytics), declares `POST /v1/persons-seed` (405), spells the
+  it declares `/v1/persons/{email}` (which identity answers 404 for), declares
+  `POST /v1/persons-seed` (405), spells the
   subchart parameter `{personId}` where the service serves `{person_id}`, omits
   both persons-sync operations, and lists only `200` for all 18 operations.
   Generating from it would record every one of those errors as fact.
@@ -41,28 +41,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-# `ListResponse` is aliased on import: the analytics document names the
-# admin-threshold envelope generically, which would shadow the generic
-# `common.ListResponse[T]` that every other listing uses.
 from .analytics import (
-    AdminMetricThresholdView,
-    CatalogResponse,
-    ColumnListResponse,
-    Metric,
     MetricDefinitionListResponse,
-    MetricListResponse,
     MetricResultsResponse,
-    MetricSummary,
-    Person,
-    QueryResponse,
     RunResponse,
     SavedQuery,
     SavedQueryListResponse,
-    Threshold,
-    ThresholdListResponse,
-)
-from .analytics import (
-    ListResponse as AdminMetricThresholdList,
 )
 from .analytics import (
     MetricResultViewDto1 as PeriodView,
@@ -93,26 +77,17 @@ from .identity import (
 __all__: Sequence[str] = (
     "EXTRACTOR_REJECTION_CONTENT_TYPE",
     "PROBLEM_CONTENT_TYPE",
-    "AdminMetricThresholdList",
-    "AdminMetricThresholdView",
-    "CatalogResponse",
-    "ColumnListResponse",
     "IdentityValue",
     "ListResponse",
-    "Metric",
     "MetricDefinitionListResponse",
-    "MetricListResponse",
     "MetricResultsResponse",
-    "MetricSummary",
     "Operation",
     "OperationList",
     "PeriodView",
-    "Person",
     "PersonRole",
     "PersonRoleList",
     "ProblemDocument",
     "Profile",
-    "QueryResponse",
     "Role",
     "RoleList",
     "RunResponse",
@@ -121,8 +96,6 @@ __all__: Sequence[str] = (
     "Subchart",
     "SubchartForest",
     "SubchartNode",
-    "Threshold",
-    "ThresholdListResponse",
     "Visibility",
     "VisibilityList",
     "VisiblePersons",

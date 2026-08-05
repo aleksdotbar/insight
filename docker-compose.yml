@@ -220,7 +220,6 @@ services:
       APP__gears__analytics__config__clickhouse_password: "${CLICKHOUSE_PRESENTATION_PASSWORD:-presentation-local}"
       APP__gears__analytics__config__identity_url: "http://identity-resolution:8082"
       APP__gears__analytics__config__redis_url: "redis://redis:6379"
-      APP__gears__analytics__config__metric_catalog__tenant_default_id: "${TENANT_DEFAULT_ID:-00000000-df51-5b42-9538-d2b56b7ee953}"
       # Gateway-JWT verification (NGINX_BFF R1) is done by the upstream
       # cf-gears-oidc-authn-plugin. Its config is nested/list-shaped (not
       # env-injectable) and resolves the JWKS via OIDC discovery over HTTPS ONLY,
@@ -382,6 +381,12 @@ services:
       APP__gears__authenticator__config__idp__issuer_url: "${AUTHENTICATOR_OIDC_ISSUER:-http://fakeidp:8084}"
       APP__gears__authenticator__config__idp__client_id: "${OIDC_CLIENT_ID:-insight-authenticator}"
       APP__gears__authenticator__config__idp__client_secret: "${OIDC_CLIENT_SECRET:-}"
+      # Required: the identity-resolution source_type the login-bootstrap
+      # lookup is scoped to. fakeidp's `sub` claim IS the stable external id
+      # (external_id_claim defaults to "sub"); deploy/seed/identity.py seeds
+      # the matching value_type='id' row for the dev-lead person under this
+      # same source_type.
+      APP__gears__authenticator__config__idp__source_type: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-fakeidp}"
       # Callback rides the SPA's browser origin (Vite :3000) so the __Host-sid
       # cookie lands where the SPA runs; see .env.compose.example.
       APP__gears__authenticator__config__redirect_uri: "${AUTHENTICATOR_REDIRECT_URI:-http://localhost:3000/auth/callback}"
@@ -718,6 +723,15 @@ services:
       # Identity / persons anchor
       DEV_USER_EMAIL: "${DEV_USER_EMAIL:-}"
       TENANT_DEFAULT_ID: "${TENANT_DEFAULT_ID:-00000000-df51-5b42-9538-d2b56b7ee953}"
+      # Must match the authenticator's idp.source_type (AUTHENTICATOR_IDP_SOURCE_TYPE
+      # above) — the dev-lead's login-bootstrap value_type='id' row is seeded
+      # under this source_type.
+      IDP_SOURCE_TYPE: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-fakeidp}"
+      # Selects which roster personas get a login-id fixture (fakeidp: dev lead
+      # only, its fixed "fakeidp|dev"; keycloak: the whole roster, each on their
+      # own uuid — see deploy/seed/profiles.py's get_login_id_pairs).
+      # dev-compose.sh's --auth flag exports this.
+      AUTH_MODE: "${AUTH_MODE:-fakeidp}"
       # MariaDB — falls back to the local docker service name/port; the
       # wizard rewrites these when external MariaDB is selected.
       MARIADB_HOST: "${MARIADB_HOST:-mariadb}"
@@ -746,10 +760,9 @@ services:
       # tracks the calendar. Both are recorded in the emitted manifest.
       SEED_ANCHOR_DATE: "${SEED_ANCHOR_DATE:-}"
       SEED_DAYS: "${SEED_DAYS:-60}"
-      # Which IdP the stand is running, and the issuer the authenticator
-      # resolved for this run. `test-stand up` persists both after cmd_up so
-      # the manifest records the real IdP instead of assuming the default.
-      AUTH_MODE: "${AUTH_MODE:-fakeidp}"
+      # The issuer the authenticator resolved for this run. `test-stand up`
+      # persists it (with AUTH_MODE, set above) after cmd_up so the manifest
+      # records the real IdP instead of assuming the default.
       AUTHENTICATOR_OIDC_ISSUER: "${AUTHENTICATOR_OIDC_ISSUER:-}"
     volumes:
       # Bind-mount the source so seed.py edits don't need a rebuild.

@@ -28,7 +28,7 @@ from typing import Final
 
 from insight_stand import ANALYTICS_PREFIX, ApiClient, analytics_path, identity_path
 
-from .schemas import ListResponse, Metric, SavedQuery
+from .schemas import ListResponse, SavedQuery
 
 #: A listing reduced to the two fields the sweep needs. Deliberately not the
 #: real per-resource models: this walks four listings across two services
@@ -42,9 +42,9 @@ SCRATCH_PREFIX: Final[str] = "stand-scratch"
 #: One token per session: a leak becomes attributable to the run that made it.
 RUN_TAG: Final[str] = uuid.uuid4().hex[:8]
 
-#: A query_ref the validator accepts (`SELECT … FROM db.table`, no WHERE) that
-#: executes deterministically on ANY ClickHouse — `system.one` has exactly one
-#: row — so `POST /v1/metrics/{id}/query` drives the real engine end to end.
+#: SQL the query gate accepts (a single `SELECT … FROM db.table`) that executes
+#: deterministically on ANY ClickHouse — `system.one` has exactly one row — so
+#: `POST /v1/queries/{id}/run` drives the real engine end to end.
 SCRATCH_QUERY_REF: Final[str] = "SELECT 1 AS one FROM system.one"
 
 #: A well-formed v7 UUID nothing claims, for the unknown-id 404 cases.
@@ -95,27 +95,6 @@ def track(listing_path: str, id_field: str, value: object) -> str:
     return identifier
 
 
-def create_metric(client: ApiClient, tag: str) -> Metric:
-    """`POST /v1/metrics` → 201, validated. The caller soft-deletes it."""
-    name = scratch_name(tag)
-    response = client.post(
-        analytics_path("/v1/metrics"),
-        json_body={
-            "name": name,
-            "description": "stand endpoint-contract scratch metric",
-            "query_ref": SCRATCH_QUERY_REF,
-        },
-    )
-    assert response.status_code == 201, (
-        f"create metric: status={response.status_code} body={response.text[:300]}"
-    )
-    metric = response.parse(Metric)
-    assert metric.name == name
-    assert metric.query_ref == SCRATCH_QUERY_REF
-    assert metric.is_enabled
-    return metric
-
-
 def create_saved_query(client: ApiClient, tag: str, sql: str = SCRATCH_QUERY_REF) -> SavedQuery:
     """`POST /v1/queries` → 201, validated. The caller hard-deletes it.
 
@@ -143,7 +122,6 @@ def create_saved_query(client: ApiClient, tag: str, sql: str = SCRATCH_QUERY_REF
 
 #: Named resources, and the listing that would still show a leaked one.
 _NAMED_LISTINGS: Final[tuple[str, ...]] = (
-    analytics_path("/v1/metrics"),
     analytics_path("/v1/queries"),
     identity_path("/v1/roles"),
 )
@@ -213,7 +191,6 @@ __all__: Sequence[str] = (
     "SCRATCH_PREFIX",
     "SCRATCH_QUERY_REF",
     "UNKNOWN_ID",
-    "create_metric",
     "create_saved_query",
     "issued_names",
     "scratch_name",

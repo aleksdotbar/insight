@@ -5,11 +5,11 @@
 
 Both are properties of the ROUTE TABLE rather than of any handler: every `{id}`
 binds `Path<Uuid>`, whose deserialization failure is a 400 before handler logic
-runs, and every body extractor refuses on media type before it parses. The rig
-states each one per endpoint, which is thirty near-identical tests and a list
-that silently stops matching the router. Here the list IS the assertion — a
-route added to `operations.py` and not to the table below is visible as an
-absence in one place.
+runs, and every body extractor refuses on media type before it parses. Stating
+each one per endpoint is a pile of near-identical tests and a list that silently
+stops matching the router. Here the list IS the assertion — a route added to
+`operations.py` and not to the table below is visible as an absence in one
+place.
 
 Ordering is the substance of both. A 400 that arrived as a 404 would mean the
 path parsed and the lookup ran, and a 415 that arrived as a 422 would mean the
@@ -33,44 +33,19 @@ from .. import scratch
 #: rather than generated from `operations.py`: the point is to state which
 #: segment is under test, and a route with two ids is two different claims.
 NON_UUID_ROUTES: tuple[tuple[str, str], ...] = (
-    ("GET", f"/v1/metrics/{scratch.NON_UUID}"),
-    ("PUT", f"/v1/metrics/{scratch.NON_UUID}"),
-    ("DELETE", f"/v1/metrics/{scratch.NON_UUID}"),
-    ("POST", f"/v1/metrics/{scratch.NON_UUID}/query"),
-    ("GET", f"/v1/metrics/{scratch.NON_UUID}/thresholds"),
-    ("POST", f"/v1/metrics/{scratch.NON_UUID}/thresholds"),
-    ("PUT", f"/v1/metrics/{scratch.NON_UUID}/thresholds/{scratch.UNKNOWN_ID}"),
-    ("PUT", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds/{scratch.NON_UUID}"),
-    ("DELETE", f"/v1/metrics/{scratch.NON_UUID}/thresholds/{scratch.UNKNOWN_ID}"),
-    ("DELETE", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds/{scratch.NON_UUID}"),
-    ("GET", f"/v1/admin/metric-thresholds/{scratch.NON_UUID}"),
-    ("PUT", f"/v1/admin/metric-thresholds/{scratch.NON_UUID}"),
-    ("DELETE", f"/v1/admin/metric-thresholds/{scratch.NON_UUID}"),
     ("GET", f"/v1/queries/{scratch.NON_UUID}"),
     ("PUT", f"/v1/queries/{scratch.NON_UUID}"),
     ("DELETE", f"/v1/queries/{scratch.NON_UUID}"),
     ("POST", f"/v1/queries/{scratch.NON_UUID}/run"),
-    # Person-keyed since the identity cutover (#2098) — it took an email
-    # before, so this row is new coverage rather than a moved one.
-    ("GET", f"/v1/persons/{scratch.NON_UUID}"),
 )
 
 #: Every route that reads a body. Ids are well-formed-but-unknown on purpose:
 #: the path must parse, so that what the response reports is the media type and
 #: not the segment.
 BODY_ROUTES: tuple[tuple[str, str], ...] = (
-    ("POST", "/v1/metrics"),
-    ("PUT", f"/v1/metrics/{scratch.UNKNOWN_ID}"),
-    ("POST", f"/v1/metrics/{scratch.UNKNOWN_ID}/query"),
-    ("POST", "/v1/metrics/queries"),
-    ("POST", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds"),
-    ("PUT", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds/{scratch.UNKNOWN_ID}"),
-    ("POST", "/v1/admin/metric-thresholds"),
-    ("PUT", f"/v1/admin/metric-thresholds/{scratch.UNKNOWN_ID}"),
     ("POST", "/v1/queries"),
     ("PUT", f"/v1/queries/{scratch.UNKNOWN_ID}"),
     ("POST", f"/v1/queries/{scratch.UNKNOWN_ID}/run"),
-    ("POST", "/v1/catalog/get_metrics"),
     ("POST", "/v1/metric-results"),
     ("POST", "/v1/metric-drilldown"),
     ("POST", "/v1/metric-drilldown/export"),
@@ -113,34 +88,19 @@ def test_a_body_with_the_wrong_media_type_is_415(api: ApiClient, method: str, su
     )
 
 
-#: Well-formed JSON that is not the request type, and the code each route
-#: answers. The split is the whole content of #1669's sibling bug #1670:
+#: Well-formed JSON that is not the request type. Every body route answers
+#: Axum's own 422 with a plain-text envelope rather than the canonical 400 its
+#: spec declares — the extractor's default, never chosen. That is #1670, now
+#: uniform: the `CanonicalJson` extractor went with the catalog and admin
+#: surfaces that used it, so closing the bug means reintroducing one here
+#: rather than pointing these routes at an extractor that already exists.
 #:
-#:   CanonicalJson  → canonical 400 with a Problem document, the intended
-#:                    contract and what the spec declares for every route
-#:   axum::Json     → Axum's own 422 with a plain-text envelope, which is the
-#:                    extractor's default and was never chosen
-#:
-#: Read off the handler signatures rather than guessed: `CanonicalJson(req):`
-#: in `api/admin/handlers.rs` and `api/catalog.rs`, plain `Json(req):`
-#: everywhere else. Asserted as it BEHAVES, with the intended contract named
-#: here — a strict xfail would say the same thing, but this way the suite keeps
-#: telling you what a caller actually receives today.
-CANONICAL_400 = 400
+#: Asserted as it BEHAVES, with the intended contract named — a strict xfail
+#: would say the same thing, but this way the suite keeps telling you what a
+#: caller actually receives today.
 LEGACY_422 = 422
 
 OFF_SCHEMA_ROUTES: tuple[tuple[str, str, int], ...] = (
-    # CanonicalJson — the contract as declared.
-    ("POST", "/v1/catalog/get_metrics", CANONICAL_400),
-    ("POST", "/v1/admin/metric-thresholds", CANONICAL_400),
-    ("PUT", f"/v1/admin/metric-thresholds/{scratch.UNKNOWN_ID}", CANONICAL_400),
-    # axum::Json — #1670.
-    ("POST", "/v1/metrics", LEGACY_422),
-    ("PUT", f"/v1/metrics/{scratch.UNKNOWN_ID}", LEGACY_422),
-    ("POST", f"/v1/metrics/{scratch.UNKNOWN_ID}/query", LEGACY_422),
-    ("POST", "/v1/metrics/queries", LEGACY_422),
-    ("POST", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds", LEGACY_422),
-    ("PUT", f"/v1/metrics/{scratch.UNKNOWN_ID}/thresholds/{scratch.UNKNOWN_ID}", LEGACY_422),
     ("POST", "/v1/queries", LEGACY_422),
     ("PUT", f"/v1/queries/{scratch.UNKNOWN_ID}", LEGACY_422),
     ("POST", "/v1/metric-results", LEGACY_422),
@@ -178,22 +138,18 @@ OFF_SCHEMA_BODY: JsonValue = "not the request type"
 def test_an_off_schema_body_is_refused_with_the_code_the_extractor_chooses(
     api: ApiClient, method: str, suffix: str, expected: int
 ) -> None:
-    """The same request shape, two answers, and the reason is which extractor ran.
+    """A body that is valid JSON but not the declared request type.
 
-    A body that is valid JSON but not the declared request type. Every route
-    here DECLARES 400 — `.standard_errors` puts it on all of them — and twelve
-    of the fourteen answer 422 instead, because plain `axum::Json` rejects with
+    Every route here DECLARES 400 — `.standard_errors` puts it on all of them —
+    and every one answers 422 instead, because plain `axum::Json` rejects with
     its own envelope before any of this product's error machinery runs.
 
-    Pinning the split rather than the intent is what makes it actionable: the
-    two canonical routes prove the intended contract is reachable, so the other
-    twelve are a fixable inconsistency rather than a limitation. A route that
-    changes extractor changes this table, and nothing else has to notice.
+    Pinning what it does rather than what it should do is what makes it
+    actionable: a route that changes extractor changes this table, and nothing
+    else has to notice.
     """
     response = api.request(method, analytics_path(suffix), json_body=OFF_SCHEMA_BODY)
     assert response.status_code == expected, (
         f"{method} {suffix} answered {response.status_code} to an off-schema body, "
-        f"expected {expected} "
-        f"({'CanonicalJson' if expected == CANONICAL_400 else 'axum::Json, #1670'}): "
-        f"{response.text[:300]}"
+        f"expected {expected} (axum::Json, #1670): {response.text[:300]}"
     )

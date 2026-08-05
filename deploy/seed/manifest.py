@@ -209,20 +209,6 @@ def _fixtures(personas: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return catalog
 
 
-#: Rows `analytics.py` writes into the analytics database. Declared here, not
-#: there, because `render_profile.py` must import no third-party package and
-#: that module needs pymysql — so the NAMES live with the manifest and the
-#: writing lives with the seed.
-#:
-#: Two DISTINCT tables, because one proves nothing: the per-table filter is only
-#: exercised when asking for A can be shown not to return B's columns. The names
-#: are obviously synthetic so they cannot collide with a real gold table — in
-#: particular not with `gold_metric_values`, which a stand test asserts is EMPTY.
-CATALOGUED_TABLES: tuple[tuple[str, str], ...] = (
-    ("stand_catalog_alpha", "alpha_measure"),
-    ("stand_catalog_beta", "beta_measure"),
-)
-
 #: Label written onto the overridden definition. Distinguishable on sight, so a
 #: listing that served the product default instead is obvious in a failure.
 OVERRIDE_LABEL = "Stand tenant override"
@@ -235,10 +221,7 @@ def canonical_catalogue() -> dict[str, Any]:
     definition gets overridden is resolved against the database at seed time, so
     it stays absent here — a canonical page must not invent a metric_key.
     """
-    return {
-        "table_columns": [{"table": t, "field": f} for t, f in CATALOGUED_TABLES],
-        "definition_override": None,
-    }
+    return {"definition_override": None}
 
 
 def _catalogue(written: dict[str, Any] | None) -> dict[str, Any]:
@@ -249,10 +232,7 @@ def _catalogue(written: dict[str, Any] | None) -> dict[str, Any]:
     is not one a reader should have to infer from a KeyError.
     """
     written = written or {}
-    return {
-        "table_columns": list(written.get("table_columns") or []),
-        "definition_override": written.get("definition_override") or None,
-    }
+    return {"definition_override": written.get("definition_override") or None}
 
 
 def build_manifest(
