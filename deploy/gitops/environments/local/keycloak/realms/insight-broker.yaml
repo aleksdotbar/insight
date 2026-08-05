@@ -10,10 +10,15 @@ realm: insight-broker
 enabled: true
 
 clientScopes:
-  # The claim allow-list: tokens carry exactly email + single-string tenant_id
-  # (plus protocol-level sub). tenant_id is a user attribute stamped per IdP by
-  # a hardcoded-attribute-idp-mapper from the INSIGHT_TENANT_ID placeholder
-  # (global.tenantDefaultId) — pinned per env, never from an upstream claim.
+  # The claim allow-list: tokens carry exactly email, single-string tenant_id,
+  # and idp_sub (plus protocol-level sub). tenant_id comes from a user
+  # attribute OR a tenant group's attribute (aggregation below): fixed
+  # per-registration installs stamp the attribute from INSIGHT_TENANT_ID
+  # (global.tenantDefaultId — pinned per env, never an upstream claim);
+  # single-registration-multi-tenant installs put users in per-tenant groups
+  # via claim-to-group translation (see the gitops README). idp_sub carries
+  # the upstream directory id (e.g. Entra oid) for the login-bootstrap
+  # person lookup, stamped per IdP by an attribute-importer mapper.
   - name: insight
     description: Canonical Insight claim allow-list (email + single-string tenant_id)
     protocol: openid-connect
@@ -40,6 +45,23 @@ clientScopes:
         config:
           user.attribute: tenant_id
           claim.name: tenant_id
+          jsonType.label: String
+          # Aggregate over groups: a tenant group's tenant_id attribute is
+          # emitted when the user carries none. Exactly one tenant group per
+          # user is an invariant (tenant-translation guard).
+          aggregate.attrs: "true"
+          multivalued: "false"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+      # Upstream directory id passthrough (login-bootstrap external id).
+      - name: idp_sub
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: idp_sub
+          claim.name: idp_sub
           jsonType.label: String
           id.token.claim: "true"
           access.token.claim: "true"
