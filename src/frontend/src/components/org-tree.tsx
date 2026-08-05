@@ -1,33 +1,21 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  ChevronRight,
-  User,
-  Users,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, User, Users } from "lucide-react";
 import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
 
 import { useViewer } from "@/auth";
-import { AppSidebarFooter } from "@/components/app-sidebar-footer";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import {
+  usePortalNavActions,
+} from "@/lib/portal/portal-nav";
 import { useIcPerson } from "@/queries/ic-dashboard";
 import type { IdentityPerson } from "@/types/insight";
 
-// The identity contract admits people with no email and no display name (a
-// person whose log carries neither). Their node still has to be clickable.
-const UNNAMED_PERSON = "Unnamed person";
-
+// Person ids, not emails: the identity cutover made the id the key the route
+// segment, `?scope=` and the metric entity ids all carry.
 function personIdEq(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
@@ -41,11 +29,15 @@ function PersonNode({
   node,
   depth,
   activePersonId,
+  leadsToTeam,
 }: {
   node: IdentityPerson;
   depth: number;
   activePersonId: string | null;
+  /** Lead (has reports) links to their team roster instead of their own page. */
+  leadsToTeam: boolean;
 }) {
+  const { setScope } = usePortalNavActions();
   const hasReports = node.subordinates.length > 0;
   const isActive = activePersonId
     ? personIdEq(activePersonId, node.person_id)
@@ -55,17 +47,26 @@ function PersonNode({
       ? node.subordinates.some((s) => containsPerson(s, activePersonId))
       : false;
   const open = depth === 0 || isActive || hasActiveDescendant;
+  // A lead's name lands on their team; an IC's on their own page. (The two
+  // literal `to`s keep the typed router happy vs. a computed path.) Drilling
+  // into a lead also *sets the org scope* (design §6) so the topbar badge and
+  // every org zone follow the node you just clicked.
+  const link =
+    hasReports && leadsToTeam ? (
+      <Link
+        to="/ic/$person/team"
+        params={{ person: node.person_id }}
+        onClick={() => setScope({ root: node.person_id })}
+      />
+    ) : (
+      <Link to="/ic/$person/personal" params={{ person: node.person_id }} />
+    );
   return (
     <>
       <SidebarMenuItem>
         <SidebarMenuButton
           isActive={isActive}
-          render={
-            <Link
-              to="/ic/$person/personal"
-              params={{ person: node.person_id }}
-            />
-          }
+          render={link}
           style={{ paddingLeft: `${0.5 + depth * 0.875}rem` }}
         >
           {hasReports ? (
@@ -78,9 +79,7 @@ function PersonNode({
             <span className="w-4 shrink-0" />
           )}
           {hasReports ? <Users /> : <User />}
-          <span className="truncate">
-            {node.display_name || node.email || UNNAMED_PERSON}
-          </span>
+          <span className="truncate">{node.display_name || node.email}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
       {hasReports && open
@@ -90,6 +89,7 @@ function PersonNode({
               node={sub}
               depth={depth + 1}
               activePersonId={activePersonId}
+              leadsToTeam={leadsToTeam}
             />
           ))
         : null}
@@ -97,14 +97,16 @@ function PersonNode({
   );
 }
 
-export function AppSidebar() {
-  const { t } = useTranslation();
+/**
+ * Recursive org-chart navigation, rooted at the viewer. Extracted from
+ * AppSidebar so the portal shell's context pane can reuse the same tree
+ * without duplicating the traversal / active-node logic.
+ */
+export function OrgTree({ leadsToTeam = false }: { leadsToTeam?: boolean } = {}) {
   const { personId: viewerPersonId } = useViewer();
   const viewerQ = useIcPerson(viewerPersonId ?? "");
   const viewer = viewerQ.data ?? null;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // The URL segment is the person id since the identity cutover; a legacy
-  // email URL simply highlights nothing for the moment its redirect takes.
   const activePersonId = useMemo(() => {
     const m = /^\/ic\/([^/]+)/.exec(pathname);
     if (m) return decodeURIComponent(m[1]!);
@@ -112,32 +114,16 @@ export function AppSidebar() {
     return null;
   }, [pathname, viewerPersonId]);
 
+  if (!viewer) return null;
+
   return (
-    <Sidebar>
-      <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex size-7 items-center justify-center rounded-md bg-sidebar-primary font-semibold text-sidebar-primary-foreground">
-            I
-          </div>
-          <span className="font-semibold tracking-tight text-sidebar-foreground">
-            {t("common.app_name")}
-          </span>
-        </div>
-      </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            {viewer ? (
-              <SidebarMenu>
-                <PersonNode node={viewer} depth={0} activePersonId={activePersonId} />
-              </SidebarMenu>
-            ) : null}
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-      <SidebarFooter>
-        <AppSidebarFooter />
-      </SidebarFooter>
-    </Sidebar>
+    <SidebarMenu>
+      <PersonNode
+        node={viewer}
+        depth={0}
+        activePersonId={activePersonId}
+        leadsToTeam={leadsToTeam}
+      />
+    </SidebarMenu>
   );
 }
