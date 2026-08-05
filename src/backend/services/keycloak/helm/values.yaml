@@ -1,9 +1,7 @@
-# insight-keycloak — the stack's Keycloak.
-#   mode: dev        — start-dev, embedded H2, imports the generated dev realm
-#                      with known passwords. LOCAL/CI only.
-#   mode: production — start, MariaDB-backed, admin from a Secret, no realm
-#                      import (realm content via the keycloak-config-cli Job).
-mode: dev
+# insight-keycloak — the stack's Keycloak (identity broker, ADR-0003).
+# Always production shape: `start`, MariaDB-backed, bootstrap admin from a
+# Secret. Realm content is applied by the umbrella's keycloak-config-cli Job
+# — no realm import, no admin-UI channel.
 replicaCount: 1
 
 image:
@@ -15,25 +13,16 @@ service:
   type: ClusterIP
   port: 8085
 
-# Advertised issuer base (browser- AND authenticator-facing; both resolve the
-# same URL so the id_token `iss` validates). MUST end with the /kc relative path
-# — Keycloak 26 hostname-v2 drops --http-relative-path from the advertised issuer.
-# The umbrella sets this to the ingress LB URL, e.g. http://<lb-ip>/kc.
+# Advertised issuer base (browser- AND authenticator-facing). MUST end with
+# /kc — Keycloak 26 hostname-v2 drops --http-relative-path from the
+# advertised issuer.
 hostname: ""
 
-# Pre-created ConfigMap holding the imported realm JSON (key `realm-insight.json`,
-# produced by deploy/compose/keycloak/gen-realm.py). Empty = "<release>-keycloak-realm".
-# The gitops flow generates + applies it before the umbrella deploy.
-realmConfigMap: ""
-
-# Bootstrap admin (console at {hostname}/admin). dev: plaintext below.
-# production: existingSecret with keys `username`/`password`.
+# Secret with keys `username`/`password` (bootstrap admin).
 admin:
-  username: "admin"
-  password: "admin"
   existingSecret: ""
 
-# production only: MariaDB connection. Password via secretKeyRef.
+# MariaDB connection; password via secretKeyRef.
 database:
   host: ""
   port: 3306
@@ -41,9 +30,8 @@ database:
   username: ""
   passwordSecret: {name: "", key: ""}
 
-# Optional ingress. The umbrella enables it so the browser (and the in-cluster
-# authenticator, via the LB IP) reach Keycloak at the /kc prefix. Keycloak serves
-# under /kc natively (--http-relative-path=/kc), so NO rewrite is needed.
+# Optional ingress at the /kc prefix (Keycloak serves under /kc natively —
+# no rewrite).
 ingress:
   enabled: false
   className: nginx
@@ -53,15 +41,3 @@ ingress:
 resources:
   requests: {cpu: 100m, memory: 384Mi}
   limits: {cpu: "1", memory: 768Mi}
-
-# Keycloak boot is slow; give it generous startup headroom before liveness bites.
-startupProbe:
-  httpGet: {path: /kc/realms/insight, port: http}
-  periodSeconds: 5
-  failureThreshold: 60
-livenessProbe:
-  httpGet: {path: /kc/realms/insight, port: http}
-  periodSeconds: 15
-readinessProbe:
-  httpGet: {path: /kc/realms/insight, port: http}
-  periodSeconds: 10

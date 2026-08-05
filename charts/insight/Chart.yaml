@@ -80,8 +80,7 @@ dependencies:
     version: "0.1.0"
     repository: "file://../../src/backend/services/fakeidp/helm"
     condition: fakeidp.deploy
-  # keycloak — the real-OIDC dev/e2e IdP (heavier counterpart to fakeidp; local
-  # k8s uses it, CI/compose default to fakeidp). LOCAL/CI only; off by default.
+  # keycloak — the stack's identity broker (ADR-0003), MariaDB-backed.
   - name: insight-keycloak
     alias: keycloak
     version: "0.1.0"

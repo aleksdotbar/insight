@@ -394,12 +394,10 @@ fakeidp:
   defaultAudience: "insight-authenticator"
   devUserEmail: "dev@company.nonpresent"
 # ─── keycloak ────────────────────────────────────────────────────────────────
-# mode dev: start-dev + H2 + imported gen-realm.py realm (LOCAL/CI only).
-# mode production: start, MariaDB-backed, admin from a Secret, realm content
-# via keycloakConfig (ADR-0003 broker).
+# The stack's Keycloak (identity broker, ADR-0003): start, MariaDB-backed,
+# admin from a Secret; realm content via keycloakConfig only.
 keycloak:
   deploy: false
-  mode: dev
   image:
     repository: quay.io/keycloak/keycloak
     tag: "26.4"
@@ -407,9 +405,7 @@ keycloak:
   # Advertised issuer BASE (must end in /kc) — the URL browser AND
   # authenticator reach, e.g. https://<host>/kc.
   hostname: ""
-  # dev only: pre-created realm ConfigMap (empty = <release>-keycloak-realm).
-  realmConfigMap: ""
-  # production only: bootstrap-admin Secret (keys username/password) and DB.
+  # Bootstrap-admin Secret (keys username/password) and DB connection.
   admin:
     existingSecret: ""
   database:

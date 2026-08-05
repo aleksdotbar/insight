@@ -33,7 +33,7 @@ gated block below following the identity pattern: read the service's
 The list lives HERE; do not mirror it elsewhere.
 ==============================================================================
 */}}
-{{- $kcdb := and .Values.keycloak.deploy (eq .Values.keycloak.mode "production") }}
+{{- $kcdb := .Values.keycloak.deploy }}
 {{- if or .Values.identityResolution.deploy $kcdb }}
 apiVersion: batch/v1
 kind: Job
