@@ -53,7 +53,7 @@ Chosen option: **Current corrective source-account assignment plus temporal acco
 
 Email resolution remains an adapter for metric observations that do not carry stable source-account identity. Both adapters resolve to the same canonical person ID, but email-resolved metric facts retain their own identity watermark and publication cadence. Cohort responses report the current account-assignment revision and metric identity watermark rather than pretending they update atomically.
 
-When a people-like subject changes a selected attribute during the requested period, analytics returns maximal stable temporal segments. Named-group conditions remain fixed and evaluate changing membership over the period.
+When a people-like subject changes a selected attribute during the common reliable portion of the requested period, analytics returns maximal stable temporal segments and reports the covered period. The comparison subject is excluded from its peer aggregate. Named-group conditions remain fixed and evaluate changing membership over the covered period.
 
 ### Consequences
 
@@ -79,6 +79,8 @@ The decision is confirmed by design and implementation review showing:
 - Refreshing the current assignment projection changes subsequent cohort attribution without rebuilding account values.
 - Email resolution remains isolated to observations that lack stable account identity.
 - People-like results split when selected subject values change inside the period.
+- Results truncate to the common reliable history horizon and identify requested versus covered period.
+- Peer counts and aggregates exclude the comparison subject.
 - Named groups retain fixed conditions while qualifying observations by temporal membership.
 
 ## Pros and Cons of the Options

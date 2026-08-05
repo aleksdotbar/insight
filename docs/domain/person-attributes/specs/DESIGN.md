@@ -88,7 +88,7 @@ The requirements source is [GitHub issue #2028](https://github.com/constructorfa
 |--------|-------------|--------------|-----------------|----------------------|
 | Correctness | Temporal and identity correctness | Assignment projection, account values, membership builder | Account assignment is corrective and joined at query time; attribute facts remain effective-dated and account-scoped. | Boundary, reassignment, clear, and query-time resolution scenarios. |
 | Isolation | Tenant isolation | All storage and query contracts | Every record carries `insight_tenant_id`; predicate enforcement follows the existing analytics flag until tenant alignment is enabled. | Disabled-mode compatibility and enabled-mode cross-tenant checks. |
-| Privacy | Prevent unsafe peer disclosure | Policy snapshot, validator, metric aggregator | Comparison eligibility and `min_peer_n` are server-enforced; member identities are never returned. | Policy-bypass and intersected-small-group scenarios. |
+| Privacy | Prevent unsafe aggregate disclosure | Policy snapshot, validator, metric aggregator | Comparison eligibility and `min_peer_n` are server-enforced for comparisons and grouped partitions; member identities are never returned. | Policy-bypass, small-partition, and intersected-group scenarios. |
 | Performance | Bound analytical cost | ClickHouse projections, request limits, group-first query | Values are ordered for subject and value lookup; membership is built once per request and reused by batched metrics. | Representative warehouse benchmarks and query-plan review. |
 | Reliability | Stable request semantics | Revisioned policy and atomic assignment snapshots | Each request pins policy and assignment revisions while account facts retain their own ingestion watermark. | Concurrent-publication and stale-input scenarios. |
 | Observability | Explain freshness and coverage | Assignment publisher and result diagnostics | Policy revision, assignment revision, attribute watermark, unresolved accounts, and refusal reason are exposed or logged. | Operational dashboard and structured-log review. |
@@ -165,7 +165,7 @@ One ClickHouse query derives a person-grain membership relation from conditions 
 
 - [ ] `p1` - **ID**: `cpt-person-attributes-principle-temporal-segmentation`
 
-When a people-like subject changes selected values during a requested period, the result is split into maximal stable segments. A changing subject is not assigned one blended peer definition.
+When a people-like subject changes selected values during a requested period, the result is split into maximal stable segments. A changing subject is not assigned one blended peer definition. V1 permits at most 32 segments per request and refuses larger results as `too_many_segments`; segments are never merged across different attribute values.
 
 **ADRs**: `cpt-person-attributes-adr-identity-and-time-semantics`
 
@@ -205,7 +205,7 @@ The supported connector descriptor determines which source fields are collected.
 
 - [ ] `p1` - **ID**: `cpt-person-attributes-constraint-history-horizon`
 
-The system cannot reconstruct changes before the first retained snapshot or changes a source never exposed. Every attribute publishes its earliest reliable time and history precision. A request requiring earlier data is refused as `history_incomplete`.
+The system cannot reconstruct changes before the first retained snapshot or changes a source never exposed. Every attribute publishes its earliest reliable time and history precision. The runtime truncates the calculation to the intersection of the requested period and the common reliable attribute horizon, then returns both `requested_period` and `covered_period`. It returns `history_incomplete` only when no usable interval remains.
 
 #### Rename safety requires immutable source IDs
 
@@ -309,7 +309,7 @@ Supported connectors expose different field names, value shapes, snapshot behavi
 
 ##### Responsibility scope
 
-Projects connector field metadata and value observations into a common ClickHouse contract with tenant, source type, source instance, source account ID, field identity, optional immutable value ID, display value, effective time, and clear/delete semantics. Snapshot-only sources use the existing dbt snapshot pattern to derive changes.
+Projects connector field metadata and value observations into a common ClickHouse contract with tenant, source type, source instance, source account ID, field identity, optional immutable value ID, display value, effective time, sync-run identity, snapshot-completeness state, and clear/delete semantics. Snapshot-only sources use the existing dbt snapshot pattern to derive changes. Absence closes a prior value only after a successful snapshot explicitly marked complete; partial or failed snapshots never infer clears.
 
 ##### Responsibility boundaries
 
@@ -456,7 +456,7 @@ Thresholds and rules need a stable population definition independent of the pers
 
 ##### Responsibility scope
 
-Stores tenant-owned named-group IDs and immutable revisions in Analytics MariaDB. Each revision contains a label, normalized condition set, and the policy revision under which its attribute/value references were accepted. Live use resolves the active group revision; stored consumers pin a group revision. Retiring an attribute blocks new ad hoc selection and new group revisions but does not invalidate an existing pinned revision while its source history remains available.
+Stores tenant-owned named-group IDs and immutable revisions in Analytics MariaDB. Each revision freezes its label, normalized condition set, exact attribute/value references, and the definition revision under which those references were accepted. Live use resolves the active group revision; stored consumers pin a group revision. Retiring an attribute blocks new ad hoc selection and new group revisions but does not erase an existing definition. Current sensitivity, grouping/comparison permission, and caller authorization always apply, including to pinned revisions.
 
 ##### Responsibility boundaries
 
@@ -477,7 +477,7 @@ Expected unavailable states must be rejected consistently before SQL compilation
 
 ##### Responsibility scope
 
-Pins the current policy revision, assignment revision, and attribute watermark, then validates tenant ownership, lifecycle, grouping/comparison policy, sensitivity classification, declared value mode, condition limits, named-group revision, history horizon, hierarchy health, and request variant. New selections use current policy. Pinned named-group revisions use their retained policy revision and stored exact value references. The compiled query detects multi-value violations defensively and produces typed refusal reasons.
+Pins the current policy revision, assignment revision, and attribute watermark, then validates tenant ownership, current grouping/comparison permission, current sensitivity classification, caller authorization, declared value mode, condition limits, named-group revision, history horizon, hierarchy health, and request variant. Current lifecycle controls new selections. Pinned named-group revisions may resolve a retired definition for frozen labels and exact references, but they never retain obsolete permission or bypass current authorization. The compiled query detects multi-value violations defensively and produces typed refusal reasons.
 
 ##### Responsibility boundaries
 
@@ -498,7 +498,7 @@ Every grouping and comparison path needs identical person-grain, period-correct 
 
 ##### Responsibility scope
 
-Joins temporal account attribute values to the current source-account assignment projection, applies AND between conditions and OR within multi-value conditions, intersects authorized population, and deduplicates canonical people. People-like requests derive conditions for each stable subject interval. Named groups use fixed conditions while membership may vary over time. Unresolved accounts remain available for request diagnostics but never become members.
+Joins temporal account attribute values to the current source-account assignment projection, applies AND between conditions and OR within multi-value conditions, intersects authorized population, and deduplicates canonical people. People-like requests derive conditions for each stable subject interval. Named groups use fixed conditions while membership may vary over time. The comparison subject is removed from peer membership after resolution; `group_n` and `measured_n` therefore count only peers actually aggregated. Unresolved accounts remain available for request diagnostics but never become members.
 
 ##### Responsibility boundaries
 
@@ -519,7 +519,7 @@ Peer statistics must be computed once, consistently, and with the same minimum-p
 
 ##### Responsibility scope
 
-Extends the existing analytics query compiler to join membership to canonical metric observations and compute count, median, quartiles, minimum, and maximum server-side. It returns `group_n` for matching linked people and `measured_n` for contributors; `min_peer_n` applies to `measured_n`.
+Extends the existing analytics query compiler to join membership to canonical metric observations and compute count, median, quartiles, minimum, and maximum server-side. It returns `group_n` for matching linked peers and `measured_n` for contributors. The server-owned `min_peer_n` disclosure minimum applies to the `measured_n` of every comparison and every `group_by` partition; smaller partitions are suppressed as `group_below_minimum`.
 
 ##### Responsibility boundaries
 
@@ -550,12 +550,12 @@ It does not return member identities or let the browser recompute peer statistic
 
 `POST /v1/metric-results` adds two independent concepts:
 
-- `group_by`: zero or more person-attribute IDs controlling result partitioning. Multi-valued attributes may emit the same person into several value groups; each group deduplicates that person, and overlapping group counts are explicitly non-additive.
+- `group_by`: zero or more person-attribute IDs controlling result partitioning. People missing a selected value are excluded from partitions and counted in `missing_attribute_n`. Multi-valued attributes may emit the same person into several value groups; each group deduplicates that person, and the response sets `partitions_overlap = true` so consumers do not sum non-additive counts. Partitions below `min_peer_n` contributors are suppressed.
 - `comparison`: either `people_like` with subject person ID and one or more attribute IDs, or `named_group` with stable group ID and optional pinned revision.
 
-Grouping is distinct from existing metric-dimension `filters`. Grouped responses include stable attribute/value identity and labels, the covered period, and person count. The existing single `cohort_key` request remains supported through an adapter during migration. New comparison responses return an available comparison or a stable refusal code. Refusal codes include `group_below_minimum`, `sensitive_attribute`, `comparison_not_allowed`, `multi_value_comparison_unsupported`, `history_incomplete`, `no_subject_value`, `no_data`, `hierarchy_unavailable`, `policy_unavailable`, and `identity_resolution_unavailable`.
+Grouping is distinct from existing metric-dimension `filters`. `group_by` and `comparison` are mutually exclusive in V1; a request containing both returns `unsupported_combination`. Grouped responses include stable attribute/value identity and labels, requested and covered periods, person count, contributor count, missing-attribute count, and the overlap flag. The existing single `cohort_key` request remains supported through an adapter during migration. New comparison responses return an available comparison or a stable refusal code. Refusal codes include `group_below_minimum`, `sensitive_attribute`, `comparison_not_allowed`, `multi_value_comparison_unsupported`, `history_incomplete`, `too_many_segments`, `unsupported_combination`, `no_subject_value`, `no_data`, `hierarchy_unavailable`, `policy_unavailable`, and `identity_resolution_unavailable`.
 
-Every available result includes `group_n`, `measured_n`, unresolved source-account count when measurable, policy revision, assignment revision, attribute watermark, and period/segment.
+Every available result includes `group_n`, `measured_n`, unresolved source-account count when measurable, policy revision, assignment revision, attribute watermark, `requested_period`, `covered_period`, and period segment when applicable.
 
 The value-discovery operation is required because metric definitions intentionally do not embed unbounded value lists. It is available only for attributes whose grouping policy permits discovery, applies tenant and caller visibility, returns counts only above the disclosure minimum, and never changes the exact value identity selected by the caller.
 
@@ -709,9 +709,9 @@ Email resolution remains valid for metric observations that contain only email, 
 
 ### 4.2 Temporal Semantics
 
-Attribute intervals are half-open: `[valid_from, valid_to)`. A clear or replacement closes the old interval. Missing data in one incomplete sync does not imply a clear.
+Attribute intervals are half-open: `[valid_from, valid_to)`. An explicit clear or replacement closes the old interval. Snapshot absence closes an interval only when the connector marks the sync successful and complete; partial, failed, or completeness-unknown runs do not imply a clear.
 
-People-like comparison intersects the requested period with the subject's selected attribute histories. It returns maximal intervals in which all selected values are stable. For example, a person who changes from Frontend to Backend midway through 2025 receives a Frontend peer result for the first interval and a Backend result for the second.
+People-like comparison first intersects the requested period with the common reliable history horizon, then intersects that covered period with the subject's selected attribute histories. It returns maximal intervals in which all selected values are stable. For example, a person who changes from Frontend to Backend midway through 2025 receives a Frontend peer result for the first interval and a Backend result for the second. No overlap returns `history_incomplete`; exceeding the segment cap returns `too_many_segments`.
 
 A named-group revision is fixed, but membership is temporal. Metric observations contribute only while the person satisfies the fixed conditions. The result reports unique matching linked people and metric contributors for the requested period; it does not substitute current headcount.
 
@@ -741,10 +741,11 @@ The runtime distinguishes:
 
 - `group_n`: canonical linked people satisfying the conditions.
 - `measured_n`: those people contributing data to the requested metric.
+- `missing_attribute_n`: authorized linked people excluded from `group_by` because at least one selected attribute has no effective value.
 - `unresolved_source_accounts`: source accounts with claims but no usable assignment, when measurable.
 - `unlinked_people`: deliberately not reported as exact because unresolved accounts are not known distinct humans.
 
-`min_peer_n` applies to `measured_n`, because statistics over fewer contributing observations remain unsafe even when the attribute group itself is large.
+For comparisons, `group_n` and `measured_n` exclude the subject. `min_peer_n` applies to every comparison and grouped partition's `measured_n`, because statistics over fewer contributing observations remain unsafe even when the attribute group itself is large.
 
 ### 4.5 Security and Privacy
 
@@ -753,6 +754,8 @@ The existing gateway, tenant context, subject visibility, and metric authorizati
 Responses never contain peer member identities. Attribute IDs, value IDs, group IDs, and revisions are resolved server-side within tenant scope. Source values are bound query parameters, not SQL identifiers. Logs exclude raw attribute values and record policy denials, cross-tenant identifier attempts, repeated small-group probes, projection unavailability, and hierarchy failures.
 
 The initial connector scope is the data-minimization boundary. #2028 does not add a pending-classification workflow that withholds discovered values. Policy may record an audited sensitivity class independently of grouping/comparison flags so a denied comparison can return `sensitive_attribute` rather than a generic policy denial. Unclassified discovery does not block publication.
+
+Minimum population suppresses direct small-group disclosure but does not eliminate set-difference inference across several allowed queries. This is an accepted V1 k-anonymity limitation. Existing authorization, tenant isolation, query-rate controls, and repeated-probe monitoring reduce exposure; stronger privacy budgets or query-history-aware denial require a separate design.
 
 ### 4.6 Performance, Capacity, and Cost
 
@@ -779,9 +782,9 @@ Rollback restores the previous complete policy or assignment snapshot and previo
 
 ### 4.8 Maintainability and Verification Strategy
 
-The architecture has one normalized connector claim contract, one current assignment projection, one account-value model, one minimal policy catalog, one membership builder, and one server-side metric-statistics implementation. Derived producers can later emit the same claim/value contract without special query paths.
+The architecture has one normalized connector claim contract, one current assignment projection, one account-value model, one minimal policy catalog, one membership builder, and one server-side metric-statistics implementation. Selection Validator, Temporal Membership Builder, and Metric Aggregator are logical responsibilities inside the existing analytics request validator and query compiler, not new deployable services. Derived producers can later emit the same claim/value contract without special query paths.
 
-Verification must cover source clears, duplicate snapshots, account reassignment without attribute rebuild, unresolved accounts, non-overlapping value intervals, label fallback, exact-value grouping, several conditions, declared and observed multi-value refusal for comparison, named-group revision pinning, subject segmentation, minimum population, metric coverage, manager hierarchy, independent publication revisions, and both tenant-enforcement modes.
+Verification must cover explicit clears, complete/partial snapshot absence, duplicate snapshots, account reassignment without attribute rebuild, unresolved accounts, non-overlapping value intervals, label fallback, exact-value grouping, missing-value counts, overlapping multi-value partitions, declared and observed multi-value refusal for comparison, current policy over pinned group definitions, subject exclusion, history truncation, segment caps, small comparison and grouped partitions, unsupported combined grouping/comparison, metric coverage, manager hierarchy, independent publication revisions, and both tenant-enforcement modes.
 
 ### 4.9 Scope Boundaries and Known Limitations
 
