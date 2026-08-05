@@ -158,7 +158,11 @@ social (GitHub / Google / Facebook / Apple)┴─brokered──▶ Keycloak real
   demanded for stands, extended to production environments.
 - Two token hops exist upstream of the session (upstream IdP -> broker, broker -> authenticator).
   Session lifetime follows the **broker's** refresh tokens; upstream-IdP revocation reaches us
-  only as fast as the broker learns of it (its own token validation against the upstream).
+  only as fast as the broker learns of it (its own token validation against the upstream). The
+  PoC sharpened this: between Keycloak instances the upstream can push logout into the broker
+  (the `keycloak-oidc` provider's endpoint), but a **non-Keycloak** upstream has no inbound
+  back-channel path into a Keycloak 26 broker at all -- for those, the broker realm's SSO
+  session and token lifetimes bound the revocation delay and become a per-realm tuning knob.
 - Retiring fakeidp deletes a maintained service and the prod-versus-test issuer drift, at the
   cost of Keycloak start-up wherever a live login flow is exercised; the in-process rig keeps
   sub-second tests by mocking at the client seam.
@@ -167,11 +171,37 @@ social (GitHub / Google / Facebook / Apple)┴─brokered──▶ Keycloak real
 
 ### Confirmation
 
-- A proof of concept -- realm defined only in config-cli YAML, brokering one upstream (GitHub or
-  a test OIDC provider) -- logs in through the **unchanged** authenticator and mints a gateway
-  JWT with the single `tenant_id` claim. This validates the two open risks recorded in #1782:
-  refresh-token behaviour through the broker (background refresher, `offline_access`) and logout
-  propagation (upstream back-channel -> broker -> authenticator back-channel).
+The proof of concept ran 2026-08-04 as the adoption EPIC's Phase 0 gate (compose stack; the
+findings notes and the reproducible realm YAML live on the Phase 0 issue, #2194). Verdict:
+**go** -- every gated behaviour passed, with one Keycloak limitation recorded below.
+
+- **Broker login path -- pass.** A broker realm defined only in config-cli YAML, brokering one
+  upstream OIDC provider, logs in through the **unchanged** authenticator (the published image;
+  only `issuerUrl` and client secret re-configured) and mints a gateway JWT carrying the single
+  string `tenant_id`; an API call through the gateway is accepted downstream (that verifier
+  fails closed without `tenant_id`). Single-IdP auto-redirect (identity-provider redirector)
+  and a prompt-free first broker login (upstream-asserted email + name, `trustEmail`) both
+  work declaratively.
+- **Refresh-token passthrough -- pass.** The background refresher rotates broker-issued refresh
+  tokens on schedule under strict rotation (`revokeRefreshToken`, zero reuse); `offline_access`
+  requested via authenticator configuration yields offline tokens that rotate identically. The
+  broker does not background-refresh its stored upstream tokens -- session lifetime follows the
+  broker, as the consequences above record. Revoked sessions fail closed at the next refresh
+  (`invalid_grant` -> session revoked), with no false logouts observed across rotations.
+- **Logout propagation -- pass, with a recorded gap.** Broker-to-authenticator uses spec OIDC
+  Back-Channel Logout (client `backchannel.logout.url`); the authenticator matches `iss`+`sid`
+  and revokes the session. Upstream-to-broker: Keycloak 26's generic `oidc` provider exposes
+  **no inbound back-channel receiver** (a spec logout token from the upstream has nowhere to
+  land); between Keycloak instances, the `keycloak-oidc` provider type plus the upstream
+  client's `adminUrl` (`k_logout` push) delivers the full cascade: upstream logout -> broker
+  session terminated -> back-channel logout -> authenticator session revoked. The gap and its
+  mitigation for non-Keycloak upstreams are recorded in the consequences above.
+- **Config-as-code mechanics -- pass**, with operational notes for the gitops sync job
+  (Phase 1): config-cli skips checksum-unchanged files, so drift reverts only when the file
+  changes unless the import cache is disabled; client-attribute removal needs an explicit empty
+  value (absent keys are merged, not deleted); an identity provider's `providerId` cannot change
+  in place (recreating it drops federated-identity links, forcing an account-relink step on
+  next login); environment-variable substitution also scans YAML comments.
 - `cfs validate --local-only` passes for this ADR, the amended ADR-0002, and the DESIGN.
 - On an environment with a social provider enabled, a login whose email matches no person is
   refused with the unknown-person audit event; other configured providers keep working (#2163
