@@ -894,7 +894,7 @@ traceability = "DOCS-ONLY"
 [[systems.artifacts]]
 kind = "ADR"
 path = "docs/domain/person-attributes/specs/ADR/0001-attribute-data-ownership-v1.md"
-name = "ADR-0001: Keep Person Attribute Facts in ClickHouse and Governance in Identity"
+name = "ADR-0001: Keep Account Attribute Facts in ClickHouse and Governance in Identity"
 traceability = "DOCS-ONLY"
 
 [[systems.artifacts]]

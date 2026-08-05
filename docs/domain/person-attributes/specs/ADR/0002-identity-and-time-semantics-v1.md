@@ -45,13 +45,13 @@ The architecture must decide how current account assignment, historical attribut
 
 - Resolve every attribute and metric observation through the current email snapshot.
 - Introduce effective-dated person assignment and evaluate both assignment and attributes as-of every observation.
-- Use current corrective source-account assignment for attribute claims, keep attribute facts effective-dated, and retain email resolution only for observations without stable account identity.
+- Keep attribute facts source-account-scoped and effective-dated, resolve them through the current corrective assignment during each cohort query, and retain email resolution only for observations without stable account identity.
 
 ## Decision Outcome
 
-Chosen option: **Current corrective source-account assignment plus temporal attribute facts**, because it matches the current and planned identity semantics while preserving the history #2028 actually needs. Attribute claims resolve through `(tenant, source type, source instance, source account ID)`. Reassigning that account to a different canonical person reattributes all retained claims on the next build. The claim's value intervals are not changed.
+Chosen option: **Current corrective source-account assignment plus temporal account facts**, because it matches the current and planned identity semantics while preserving the history #2028 actually needs. Attribute facts remain keyed by `(tenant, source type, source instance, source account ID)` and contain no canonical `person_id`. Every cohort query joins them to the current assignment projection. Reassigning an account therefore changes attribution after that small projection refresh without rebuilding attribute history. The fact's value intervals are not changed.
 
-Email resolution remains an adapter for metric observations that do not carry stable source-account identity. Both adapters resolve to the same canonical person ID and are pinned by the analytical build's identity revision.
+Email resolution remains an adapter for metric observations that do not carry stable source-account identity. Both adapters resolve to the same canonical person ID, but email-resolved metric facts retain their own identity watermark and publication cadence. Cohort responses report the current account-assignment revision and metric identity watermark rather than pretending they update atomically.
 
 When a people-like subject changes a selected attribute during the requested period, analytics returns maximal stable temporal segments. Named-group conditions remain fixed and evaluate changing membership over the period.
 
@@ -59,6 +59,7 @@ When a people-like subject changes a selected attribute during the requested per
 
 - Good, because attribute ingestion does not regress to mutable or shared email identity.
 - Good, because a human correction repairs historical attribution without rewriting source facts.
+- Good, because account reassignment does not wait for the connector/dbt attribute build.
 - Good, because job, office, and hierarchy history remain period-correct.
 - Good, because the future identity workflow can replace the assignment producer behind a stable projection contract.
 - Good, because existing email-only metric models can migrate independently.
@@ -66,7 +67,7 @@ When a people-like subject changes a selected attribute during the requested per
 - Bad, because a long people-like request can return several comparison segments.
 - Bad, because group membership and metric coverage may differ when metric aliases remain unresolved.
 - Risk: a native account ID reused between humans would reattribute earlier claims incorrectly. Supported connectors must treat account IDs as non-reusable; shared and service accounts are excluded. If that invariant fails, a new ADR must introduce effective-dated assignment.
-- Risk: assignment and metric resolution could use different revisions. The active-build manifest pins the identity revision and refuses inconsistent publication.
+- Risk: email-resolved metric facts can lag the current account assignment. Results expose both revisions, and `measured_n` reflects only currently available canonical metric facts.
 
 ### Confirmation
 
@@ -74,7 +75,8 @@ The decision is confirmed by design and implementation review showing:
 
 - Attribute claims join through stable source-account keys and never fall back to email when that key exists.
 - The initial assignment projection derives the latest `value_type = 'id'` record from `identity.identity_persons`.
-- Rebuilding after reassignment changes the canonical person but preserves claim value intervals.
+- Account attribute values contain no canonical `person_id`.
+- Refreshing the current assignment projection changes subsequent cohort attribution without rebuilding account values.
 - Email resolution remains isolated to observations that lack stable account identity.
 - People-like results split when selected subject values change inside the period.
 - Named groups retain fixed conditions while qualifying observations by temporal membership.
@@ -103,12 +105,13 @@ Account-to-person assignment and attribute values both carry historical validity
 
 ### Corrective Account Assignment with Temporal Attributes
 
-The latest source-account decision applies to all retained claims; each claim keeps its own effective-dated business value. Email remains only for observations without a stable account key.
+The latest source-account decision is joined to all retained account facts at query time; each fact keeps its own effective-dated business value. Email remains only for observations without a stable account key.
 
 - Good, because it matches current identity evidence and planned correction behavior.
 - Good, because it preserves the business history needed for peer grouping.
 - Good, because it creates a stable adapter boundary for the future identity workflow.
 - Good, because account and email resolution converge on canonical person IDs before metric aggregation.
+- Good, because identity correction requires no account-attribute rewrite.
 - Bad, because native account reuse cannot be represented safely.
 - Bad, because two resolution adapters coexist during migration.
 
@@ -120,7 +123,7 @@ The latest source-account decision applies to all retained claims; each claim ke
 
 **Security and compliance**: Tenant travels in every account key and analytical relation. Predicate enforcement remains controlled by `metric_catalog.enforce_tenant_scope` until platform tenant alignment is enabled. No authentication or authorization mechanism changes. Reassignment audit remains owned by Identity.
 
-**Reliability and operations**: Assignment revision, unresolved counts, rebuild completion, and publication compatibility must be observable. Recovery rebuilds gold values from retained claims and the chosen assignment revision.
+**Reliability and operations**: Assignment revision, refresh lag, unresolved counts, account-value watermark, and metric identity watermark must be observable. Recovery rebuilds account values from retained claims independently of assignment.
 
 **Integration and compatibility**: Existing email metric models remain valid. The future identity workflow must publish the same typed assignment projection; its internal journal and APIs may differ. No connector API breaks when stable source-account identity is already present.
 
@@ -134,7 +137,7 @@ The latest source-account decision applies to all retained claims; each claim ke
 
 - **Requirements**: [GitHub issue #2028](https://github.com/constructorfabric/insight/issues/2028) — requires period-correct person grouping and comparison.
 - **DESIGN**: [Person Attributes and Cohorting](../DESIGN.md) — defines the assignment projection, temporal values, and membership behavior.
-- **Related ADR**: [ADR-0001](./0001-attribute-data-ownership-v1.md) — defines where the assignment revision and temporal facts are published.
+- **Related ADR**: [ADR-0001](./0001-attribute-data-ownership-v1.md) — defines where current assignment and account-scoped temporal facts are published.
 
 This decision directly constrains:
 
@@ -142,5 +145,5 @@ This decision directly constrains:
 - `cpt-person-attributes-principle-temporal-segmentation`
 - `cpt-person-attributes-constraint-corrective-assignment`
 - `cpt-person-attributes-component-assignment-publisher`
-- `cpt-person-attributes-component-gold-builder`
+- `cpt-person-attributes-component-account-value-builder`
 - `cpt-person-attributes-seq-people-like`

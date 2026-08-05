@@ -4,7 +4,7 @@ date: 2026-08-05
 decision-makers: Insight engineering
 ---
 
-# ADR-0001: Keep Person Attribute Facts in ClickHouse and Governance in Identity
+# ADR-0001: Keep Account Attribute Facts in ClickHouse and Governance in Identity
 
 
 <!-- toc -->
@@ -27,7 +27,7 @@ decision-makers: Insight engineering
 **ID**: `cpt-person-attributes-adr-attribute-data-ownership`
 ## Context and Problem Statement
 
-Person attributes originate in connector data, require temporal analytical joins, and must be governed by tenant admins. The architecture must decide where source claims, editable policy, query-oriented values, and measured catalog statistics are authoritative without creating request-time cross-database joins or duplicate editable state.
+Person attributes originate in connector data, require temporal analytical joins, and must be governed by tenant admins. The architecture must decide where source claims, editable policy, and query-oriented account values are authoritative without creating request-time cross-database joins or duplicate editable state.
 
 This decision affects connector ingestion, Identity, dbt, ClickHouse, and Analytics. It is needed before #2028 implementation because storage ownership determines the publication contract and failure model.
 
@@ -35,10 +35,9 @@ This decision affects connector ingestion, Identity, dbt, ClickHouse, and Analyt
 
 - Analytical grouping must join attributes to ClickHouse metric facts efficiently.
 - Admin policy and audit require transactional writes and clear ownership.
-- Source claim history must remain rebuildable after person-assignment corrections.
+- Source facts must remain independent of corrective person assignment.
 - Analytics reads must not depend on a request-time Identity service or MariaDB call.
-- Curated permission must remain distinct from measured availability.
-- Partial publication must not expose incompatible policy, values, and statistics.
+- Runtime population counts must come from the actual requested period and conditions.
 - The solution should add no new datastore or deployable service.
 
 ## Considered Options
@@ -49,7 +48,7 @@ This decision affects connector ingestion, Identity, dbt, ClickHouse, and Analyt
 
 ## Decision Outcome
 
-Chosen option: **Split ownership**, because each datastore then owns the workload it is designed to serve without duplicating authority. ClickHouse retains connector claims and serves temporal value and statistics queries. Identity MariaDB owns transactional definitions, policy revisions, and audit. Identity publishes complete immutable policy revisions into ClickHouse, and an active-build manifest admits only compatible claim, policy, assignment, values, and statistics revisions.
+Chosen option: **Split ownership**, because each datastore then owns the workload it is designed to serve without duplicating authority. ClickHouse retains connector claims and serves temporal account-value queries. Identity MariaDB owns transactional definitions, policy revisions, and audit. Identity publishes complete immutable policy revisions into ClickHouse. Account values remain independent of current person assignment, which is joined during each cohort query.
 
 Named-group definitions are not part of this decision's Identity boundary. They remain tenant configuration in Analytics MariaDB because their consumers and lifecycle are owned by analytics.
 
@@ -58,12 +57,11 @@ Named-group definitions are not part of this decision's Identity boundary. They 
 - Good, because peer queries read attributes and metrics from one analytical store.
 - Good, because connector history does not take an unnecessary ClickHouse-to-MariaDB-to-ClickHouse round trip.
 - Good, because admin policy has one transactional, audited source of truth.
-- Good, because values and per-attribute statistics can be rebuilt from retained claims after an identity correction.
+- Good, because identity corrections require only the current assignment projection to refresh; attribute history is not rebuilt.
 - Good, because immutable snapshots remove request-time Identity availability from the analytics path.
 - Bad, because the system is eventually consistent across MariaDB and ClickHouse.
-- Bad, because snapshot publishers and a compatibility manifest are required.
-- Bad, because rollback operates by activating a previous compatible build rather than one distributed transaction.
-- Risk: stale policy could be paired with new values. The active-build manifest prevents activation unless source revisions and checksums are compatible.
+- Bad, because policy, assignment, and attribute facts have independent revisions that requests must pin and report.
+- Risk: policy may reference an attribute before its values arrive, or values may arrive before policy enables them. These states produce `no_data` or remain unselectable rather than authorizing a comparison.
 - Risk: ClickHouse could be mistaken for an editable policy source. Analytics treats the projection as immutable and all writes remain in Identity.
 
 ### Confirmation
@@ -72,9 +70,10 @@ The decision is confirmed by design and implementation review showing:
 
 - Connector attribute claims are retained in ClickHouse silver.
 - Identity MariaDB contains definitions, immutable policy revisions, and audit, but no analytical claim history.
-- Analytics query compilation reads active policy, values, and statistics from ClickHouse without an Identity call.
-- A values revision and statistics revision cannot become active against different policy, assignment, or claim revisions.
-- `person_attribute_stats` contains per-attribute metadata only, not requested metric or cohort results.
+- Analytics query compilation reads policy, current assignment, account values, and metrics from ClickHouse without an Identity call.
+- Account values contain source-account identity and no canonical `person_id`.
+- The attribute catalog contains no persisted fill rate, distinct-value count, or largest-group statistics.
+- Value discovery and metric requests calculate the counts required for their actual period and population.
 
 ## Pros and Cons of the Options
 
@@ -90,7 +89,7 @@ Claims, policy, and effective values are persisted in Identity, with query-orien
 
 ### ClickHouse as the Complete Attribute System of Record
 
-Claims, editable policy, audit, values, and statistics are all stored in ClickHouse.
+Claims, editable policy, audit, and values are all stored in ClickHouse.
 
 - Good, because all analytical and governance reads use one database.
 - Good, because no policy publication step exists.
@@ -107,37 +106,37 @@ ClickHouse owns claims and analytical projections. Identity MariaDB owns editabl
 - Good, because each data class has one editable authority.
 - Good, because revisions make freshness and compatibility explicit.
 - Bad, because eventual consistency and publication monitoring are required.
-- Bad, because operators must understand both source ownership and active analytical revision.
+- Bad, because operators must understand source ownership plus independent policy, assignment, and attribute revisions.
 
 ## More Information
 
-**Scope**: Attribute claims, definitions, policy, person-linked values, measured attribute statistics, and their publication boundary. Named-group ownership and account-resolution semantics are covered elsewhere.
+**Scope**: Attribute claims, definitions, policy, account-scoped analytical values, and their publication boundary. Named-group ownership and account-resolution semantics are covered elsewhere.
 
-**Performance**: The chosen option avoids request-time cross-database joins and supports ClickHouse orderings for subject-history and value-membership reads. Publication adds scheduled work but no user-request latency.
+**Performance**: The chosen option avoids request-time cross-database joins and supports ClickHouse orderings for account-history and value-membership reads. Cohort queries add a join to the compact current-assignment projection. Persisted catalog-wide population statistics are intentionally omitted unless benchmarks later justify them.
 
 **Security and compliance**: Existing Identity authorization protects governance writes. Existing database encryption, retention, backup, and access controls apply. No authentication mechanism changes. Sensitivity semantics are outside this storage choice; configured classification and comparison eligibility are both part of the published policy.
 
-**Reliability and operations**: Publication lag and revision mismatch become observable failure modes. Existing database recovery applies; a previous compatible build is the rollback unit. No new infrastructure or paid service is introduced.
+**Reliability and operations**: Policy, assignment, and attribute publication lag are observable independently. Existing database recovery applies; complete policy and assignment snapshots are rollback units. No new infrastructure or paid service is introduced.
 
-**Integration and compatibility**: Existing connectors and metric APIs gain additive contracts. No external protocol is broken. The legacy cohort path can coexist while new gold values are built.
+**Integration and compatibility**: Existing connectors and metric APIs gain additive contracts. No external protocol is broken. The legacy cohort path can coexist while new account attribute values are built.
 
-**Maintainability and testing impact**: The split creates explicit owner contracts but avoids a second fact pipeline through Identity. Verification requires contract, rebuild, interrupted-publication, and revision-compatibility coverage; test implementation belongs with the code.
+**Maintainability and testing impact**: The split creates explicit owner contracts but avoids a second fact pipeline through Identity and a persisted statistics pipeline. Verification requires contract, account-grain fact, independent-publication, and request-count coverage; test implementation belongs with the code.
 
 **User and business impact**: Users receive fresher and more scalable grouping without seeing storage boundaries. The approach adds publication work but avoids a larger Identity persistence expansion. No user migration or training is required for this decision itself.
 
-**Review trigger**: Revisit if policy requires transactional coupling to source facts, ClickHouse no longer hosts metric facts, or publication lag cannot meet the accepted catalog freshness objective.
+**Review trigger**: Revisit if policy requires transactional coupling to source facts, ClickHouse no longer hosts metric facts, or measured catalog statistics become a demonstrated performance requirement.
 
 ## Traceability
 
-- **Requirements**: [GitHub issue #2028](https://github.com/constructorfabric/insight/issues/2028) — requires attributes in analytics plus a curated and measured attribute list.
+- **Requirements**: [GitHub issue #2028](https://github.com/constructorfabric/insight/issues/2028) — requires governed attributes in analytics for grouping and comparison.
 - **DESIGN**: [Person Attributes and Cohorting](../DESIGN.md) — applies this ownership and publication boundary.
-- **Related ADR**: [ADR-0002](./0002-identity-and-time-semantics-v1.md) — defines the assignment revision consumed by the active build.
+- **Related ADR**: [ADR-0002](./0002-identity-and-time-semantics-v1.md) — defines query-time resolution through the current assignment projection.
 
 This decision directly constrains:
 
 - `cpt-person-attributes-principle-analytical-facts-in-clickhouse`
-- `cpt-person-attributes-principle-curated-and-measured`
+- `cpt-person-attributes-principle-request-scoped-measurement`
 - `cpt-person-attributes-component-claim-store`
 - `cpt-person-attributes-component-policy-publisher`
-- `cpt-person-attributes-component-publication-manifest`
+- `cpt-person-attributes-component-account-value-builder`
 - `cpt-person-attributes-db-storage`
