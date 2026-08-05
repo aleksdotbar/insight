@@ -27,7 +27,7 @@ decision-makers: Insight engineering
 **ID**: `cpt-person-attributes-adr-attribute-data-ownership`
 ## Context and Problem Statement
 
-Person attributes originate in connector data, require temporal analytical joins, and must be governed by tenant admins. The architecture must decide where source claims, editable policy, and query-oriented account values are authoritative without creating request-time cross-database joins or duplicate editable state.
+Person attributes originate in connector data or person-scoped derivations, require temporal analytical joins, and must be governed by tenant admins. The architecture must decide where source claims, derived values, editable policy, and query-oriented values are authoritative without creating request-time cross-database joins or duplicate editable state.
 
 This decision affects connector ingestion, Identity, dbt, ClickHouse, and Analytics. It is needed before #2028 implementation because storage ownership determines the publication contract and failure model.
 
@@ -48,7 +48,7 @@ This decision affects connector ingestion, Identity, dbt, ClickHouse, and Analyt
 
 ## Decision Outcome
 
-Chosen option: **Split ownership**, because each datastore then owns the workload it is designed to serve without duplicating authority. ClickHouse retains connector claims and serves temporal account-value queries. Identity MariaDB owns transactional definitions, policy revisions, and audit. Identity publishes complete immutable policy revisions into ClickHouse. Account values remain independent of current person assignment, which is joined during each cohort query.
+Chosen option: **Split ownership**, because each datastore then owns the workload it is designed to serve without duplicating authority. ClickHouse retains connector claims, person-scoped derived values, and query-oriented temporal values. Identity MariaDB owns transactional definitions, policy revisions, and audit. Identity publishes complete immutable policy revisions into ClickHouse. Account values remain independent of current person assignment, which is joined during each cohort query; derived producers publish directly against canonical people without synthetic accounts.
 
 Named-group definitions are not part of this decision's Identity boundary. They remain tenant configuration in Analytics MariaDB because their consumers and lifecycle are owned by analytics.
 
@@ -60,7 +60,7 @@ Named-group definitions are not part of this decision's Identity boundary. They 
 - Good, because identity corrections require only the current assignment projection to refresh; attribute history is not rebuilt.
 - Good, because immutable snapshots remove request-time Identity availability from the analytics path.
 - Bad, because the system is eventually consistent across MariaDB and ClickHouse.
-- Bad, because policy, assignment, and attribute facts have independent revisions that requests must pin and report.
+- Bad, because policy, assignment, and attribute facts have independent revisions that requests must pin and expose through diagnostics.
 - Risk: policy may reference an attribute before its values arrive, or values may arrive before policy enables them. These states produce `no_data` or remain unselectable rather than authorizing a comparison.
 - Risk: ClickHouse could be mistaken for an editable policy source. Analytics treats the projection as immutable and all writes remain in Identity.
 
@@ -69,6 +69,7 @@ Named-group definitions are not part of this decision's Identity boundary. They 
 The decision is confirmed by design and implementation review showing:
 
 - Connector attribute claims are retained in ClickHouse silver.
+- Person-scoped derived values are retained in ClickHouse without synthetic source-account identity.
 - Identity MariaDB contains definitions, immutable policy revisions, and audit, but no analytical claim history.
 - Analytics query compilation reads policy, current assignment, account values, and metrics from ClickHouse without an Identity call.
 - Account values contain source-account identity and no canonical `person_id`.
@@ -110,7 +111,7 @@ ClickHouse owns claims and analytical projections. Identity MariaDB owns editabl
 
 ## More Information
 
-**Scope**: Attribute claims, definitions, policy, account-scoped analytical values, and their publication boundary. Named-group ownership and account-resolution semantics are covered elsewhere.
+**Scope**: Attribute claims, person-scoped derived values, definitions, policy, analytical values, and their publication boundary. Named-group ownership and account-resolution semantics are covered elsewhere.
 
 **Performance**: The chosen option avoids request-time cross-database joins and supports ClickHouse orderings for account-history and value-membership reads. Cohort queries add a join to the compact current-assignment projection. Persisted catalog-wide population statistics are intentionally omitted unless benchmarks later justify them.
 

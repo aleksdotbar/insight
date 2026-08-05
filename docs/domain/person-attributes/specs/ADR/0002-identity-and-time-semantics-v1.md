@@ -51,9 +51,9 @@ The architecture must decide how current account assignment, historical attribut
 
 Chosen option: **Current corrective source-account assignment plus temporal account facts**, because it matches the current and planned identity semantics while preserving the history #2028 actually needs. Attribute facts remain keyed by `(tenant, source type, source instance, source account ID)` and contain no canonical `person_id`. Every cohort query joins them to the current assignment projection. Reassigning an account therefore changes attribution after that small projection refresh without rebuilding attribute history. The fact's value intervals are not changed.
 
-Email resolution remains an adapter for metric observations that do not carry stable source-account identity. Both adapters resolve to the same canonical person ID, but email-resolved metric facts retain their own identity watermark and publication cadence. Cohort responses report the current account-assignment revision and metric identity watermark rather than pretending they update atomically.
+Email resolution remains an adapter for metric observations that do not carry stable source-account identity. Both adapters resolve to the same canonical person ID, but email-resolved metric facts retain their own identity watermark and publication cadence. The current account-assignment revision and metric identity watermark are recorded in request diagnostics rather than pretending the two paths update atomically.
 
-When a people-like subject changes a selected attribute during the common reliable portion of the requested period, analytics returns maximal stable temporal segments and reports the covered period. The comparison subject is excluded from its peer aggregate. Named-group conditions remain fixed and evaluate changing membership over the covered period.
+When a people-like subject changes a selected attribute during the common reliable portion of the requested period, analytics returns maximal stable temporal segments and reports the covered period. The comparison subject remains in the matching aggregate, consistent with the epic's worked example, and person-grain membership prevents double counting. Named-group conditions remain fixed and evaluate changing membership over the covered period.
 
 ### Consequences
 
@@ -67,7 +67,7 @@ When a people-like subject changes a selected attribute during the common reliab
 - Bad, because a long people-like request can return several comparison segments.
 - Bad, because group membership and metric coverage may differ when metric aliases remain unresolved.
 - Risk: a native account ID reused between humans would reattribute earlier claims incorrectly. Supported connectors must treat account IDs as non-reusable; shared and service accounts are excluded. If that invariant fails, a new ADR must introduce effective-dated assignment.
-- Risk: email-resolved metric facts can lag the current account assignment. Results expose both revisions, and `measured_n` reflects only currently available canonical metric facts.
+- Risk: email-resolved metric facts can lag the current account assignment. Request diagnostics record both revisions, and `measured_n` reflects only currently available canonical metric facts.
 
 ### Confirmation
 
@@ -80,7 +80,7 @@ The decision is confirmed by design and implementation review showing:
 - Email resolution remains isolated to observations that lack stable account identity.
 - People-like results split when selected subject values change inside the period.
 - Results truncate to the common reliable history horizon and identify requested versus covered period.
-- Peer counts and aggregates exclude the comparison subject.
+- Peer counts and aggregates include the comparison subject once.
 - Named groups retain fixed conditions while qualifying observations by temporal membership.
 
 ## Pros and Cons of the Options

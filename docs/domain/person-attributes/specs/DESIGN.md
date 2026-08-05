@@ -39,7 +39,7 @@ prd: pending
   - [4.8 Maintainability and Verification Strategy](#48-maintainability-and-verification-strategy)
   - [4.9 Scope Boundaries and Known Limitations](#49-scope-boundaries-and-known-limitations)
   - [4.10 Applicability Notes](#410-applicability-notes)
-  - [4.11 Traceability](#411-traceability)
+  - [4.11 Epic Acceptance Traceability](#411-epic-acceptance-traceability)
 
 <!-- /toc -->
 
@@ -52,7 +52,7 @@ prd: pending
 
 ### 1.1 Architectural Vision
 
-The subsystem makes identity attributes usable by analytics without turning Identity into an analytical datastore. Connector-provided attribute claims and their history remain source-account-scoped in ClickHouse, where ingestion already lands source data. Identity MariaDB owns the tenant-curated attribute definition and comparison policy. A versioned policy snapshot and the current source-account-to-person assignment snapshot are published into ClickHouse. Cohort queries join temporal account attributes to the current assignment projection and deduplicate canonical people before aggregating metrics.
+The subsystem makes identity attributes usable by analytics without turning Identity into an analytical datastore. Connector-provided attribute claims and their history remain source-account-scoped in ClickHouse, where ingestion already lands source data. Person-scoped derived producers publish temporal values against canonical person IDs. Both forms normalize into one person-grain membership relation before metrics are aggregated. Identity MariaDB owns the tenant-curated attribute definition and comparison policy. A versioned policy snapshot and the current source-account-to-person assignment snapshot are published into ClickHouse.
 
 A cohort is evaluated at query time as `GROUP BY` over one or more governed attributes. The runtime first finds matching canonical people for the requested period, then aggregates their metrics. It does not materialize every possible attribute combination. A people-like comparison derives conditions from the selected person's values. A named group stores fixed, immutable condition revisions so thresholds and other consumers can refer to a stable definition.
 
@@ -72,6 +72,7 @@ The requirements source is [GitHub issue #2028](https://github.com/constructorfa
 | Requirement | Design Response |
 |-------------|-----------------|
 | Discover attributes from supported connectors | Connector models emit field metadata and temporal source-account claims into a common silver contract. |
+| Accept derived attributes through the same analytical path | Derived producers publish the same attribute and value semantics against canonical person IDs; only subject resolution differs before the shared membership relation. |
 | Present usable names rather than source keys | Server labels resolve from tenant override, connector field label, known product label, then deterministic humanization. |
 | Group by one or several attributes | One temporal membership builder applies AND between conditions and OR between selected exact values within a condition. |
 | Compare people with peers | The subject's values become period-correct group conditions; server-side aggregation returns statistics only when policy and minimum population allow it. |
@@ -98,6 +99,7 @@ The requirements source is [GitHub issue #2028](https://github.com/constructorfa
 ```mermaid
 flowchart LR
     HR["HR and directory connectors"] --> CLAIMS["ClickHouse silver attribute claims"]
+    DERIVED["Derived attribute producers"] --> DERIVEDVALUES["ClickHouse person-derived attribute values"]
     ID["Identity MariaDB assignments"] --> IDSNAP["ClickHouse assignment snapshot"]
     POLICY["Identity MariaDB attribute policy"] --> POLICYSNAP["ClickHouse policy snapshot"]
     CLAIMS --> VALUES["ClickHouse account attribute values"]
@@ -105,6 +107,8 @@ flowchart LR
     POLICYSNAP --> CATALOG["Attribute catalog"]
     POLICYSNAP --> MEMBERSHIP
     VALUES --> MEMBERSHIP
+    DERIVEDVALUES --> MEMBERSHIP
+    HIERARCHY["Org hierarchy temporal contract"] --> MEMBERSHIP
     GROUPS["Analytics MariaDB named groups"] --> MEMBERSHIP
     CATALOG --> API["Analytics API"]
     MEMBERSHIP --> METRICS["Metric aggregation"]
@@ -117,7 +121,7 @@ flowchart LR
 |-------|----------------|------------|
 | Source ingestion | Extract field metadata, values, stable source-account identity, and changes | Airbyte, connector normalization, dbt staging/silver |
 | Identity governance | Own curated definitions, policy versions, audit, and current person assignment | Identity service, MariaDB |
-| Analytical transformation | Publish assignments and policy; build temporal account values and account-level hierarchy closure | dbt, ClickHouse |
+| Analytical transformation | Publish assignments and policy; build temporal account values and consume the org-hierarchy temporal contract | dbt, ClickHouse |
 | Analytics application | Expose catalog, validate selections, resolve named groups, compile membership, aggregate metrics | Analytics service, Rust |
 | Configuration | Store stable named groups and immutable revisions | Analytics service, MariaDB |
 
@@ -211,7 +215,7 @@ The system cannot reconstruct changes before the first retained snapshot or chan
 
 - [ ] `p1` - **ID**: `cpt-person-attributes-constraint-stable-value-identity`
 
-Stored conditions survive display-value renames only when the source provides an immutable value ID. Label-only data, including the current Bamboo department projection, cannot promise rename-safe references.
+Stored conditions survive display-value renames only when the source provides an immutable value ID. Label-only data, including the current Bamboo department projection, cannot promise rename-safe references. The epic's rename-safety acceptance criterion is therefore not achievable for that projection until Bamboo ingestion exposes and retains a stable department identifier. The system refuses to manufacture identity from a mutable label.
 
 #### Account assignment is currently corrective
 
@@ -231,7 +235,7 @@ All new contracts carry `insight_tenant_id`. While `metric_catalog.enforce_tenan
 
 - [ ] `p1` - **ID**: `cpt-person-attributes-constraint-manager-authority`
 
-`manager` and `manager_subtree` are different keys based on canonical manager person IDs. A tenant designates one authoritative source instance for manager edges. Subtree use additionally requires temporal closure without cycles or ambiguous active parents.
+`manager` and `manager_subtree` are different keys based on canonical manager person IDs. A tenant designates one authoritative source instance for manager edges. #2028 owns these attribute contracts but does not build hierarchy closure. `manager_subtree` consumes the authoritative temporal hierarchy from #1605/#1873 and returns `hierarchy_unavailable` until that dependency can provide cycle-free, unambiguous membership.
 
 ## 3. Technical Architecture
 
@@ -250,6 +254,7 @@ All new contracts carry `insight_tenant_id`. While `metric_catalog.enforce_tenan
 | Attribute Claim | Effective-dated source assertion for one source account, field, and value. |
 | Person Assignment | Current resolution of one stable source account to a canonical person, or an unresolved/excluded state. |
 | Account Attribute Value | Effective-dated, query-oriented source-account fact that remains independent of canonical person assignment. |
+| Derived Person Attribute Value | Effective-dated assertion emitted by a derived producer directly against a canonical person. |
 | Group Condition | Attribute plus operator and one or more exact value identities. |
 | Named Group Revision | Immutable, tenant-owned condition set behind a stable group ID. |
 | Comparison Selection | Tagged request variant: people-like or named group. |
@@ -269,6 +274,8 @@ Relationships:
 - One attribute definition has many immutable policy revisions and source claims.
 - One source-account assignment can resolve many historical account attribute values at query time.
 - One claim produces zero or one account-scoped analytical value without copying `person_id`.
+- One derived assertion produces a person-scoped analytical value without inventing a synthetic source account.
+- Account-scoped and person-scoped values converge only in the transient person-grain membership relation.
 - One named group has many immutable revisions; each revision has one condition set.
 - A people-like selection creates transient conditions and is never stored as a named group.
 
@@ -287,13 +294,15 @@ Principal invariants:
 ```mermaid
 flowchart TB
     NORMALIZER["Connector Attribute Normalizer"] --> CLAIMSTORE["Attribute Claim Store"]
+    DERIVED["Derived Attribute Publishers"] --> MEMBERSHIP["Temporal Membership Builder"]
     REGISTRY["Attribute Registry"] --> POLPUB["Policy Snapshot Publisher"]
     PERSONS["Identity Person Journal"] --> ASSIGNPUB["Assignment Snapshot Publisher"]
     CLAIMSTORE --> VALUEBUILDER["Account Attribute Builder"]
     POLPUB --> CATALOG["Attribute Catalog Reader"]
     POLPUB --> SELECTOR["Selection Validator"]
-    ASSIGNPUB --> MEMBERSHIP["Temporal Membership Builder"]
+    ASSIGNPUB --> MEMBERSHIP
     VALUEBUILDER --> MEMBERSHIP
+    HIERARCHY["Org Hierarchy Contract"] --> MEMBERSHIP
     GROUPREG["Named Group Registry"] --> SELECTOR
     SELECTOR --> MEMBERSHIP
     MEMBERSHIP --> AGG["Metric Aggregator"]
@@ -414,7 +423,7 @@ Peer queries need one long-form temporal relation across connector-specific clai
 
 ##### Responsibility scope
 
-Builds effective-dated `account_attribute_values`, direct source-account manager edges, and account-level temporal ancestor closure from connector claims. It retains optional immutable value IDs, exact labels, source provenance, history horizon, and ingestion watermark. It does not copy canonical `person_id`; identity corrections therefore require no attribute rebuild.
+Builds effective-dated `account_attribute_values` from connector claims. It retains optional immutable value IDs, exact labels, source provenance, history horizon, and ingestion watermark. It does not copy canonical `person_id`; identity corrections therefore require no attribute rebuild.
 
 ##### Responsibility boundaries
 
@@ -424,6 +433,27 @@ It does not edit assignments or policy, resolve people, infer value equivalence,
 
 - `cpt-person-attributes-component-claim-store` — claim input.
 - `cpt-person-attributes-component-membership-builder` — resolves account facts during queries.
+
+#### Derived Attribute Publisher Contract
+
+- [ ] `p1` - **ID**: `cpt-person-attributes-component-derived-publisher`
+
+##### Why this component exists
+
+Function, behavioral role, and metric-derived levels are computed after canonical identity resolution and therefore have no native source account.
+
+##### Responsibility scope
+
+Defines the producer contract for effective-dated person-scoped values: tenant, canonical person ID, attribute definition, exact value identity and label, validity interval, producer identity, derivation revision, and input watermark. The attribute registry and policy path are shared with connector attributes. The membership builder unions these values with resolved account-scoped values at person grain before applying conditions.
+
+##### Responsibility boundaries
+
+This epic defines and consumes the contract but does not implement the future producers. A producer does not create a synthetic source account, write connector claims, bypass attribute policy, or introduce a special metric aggregation path.
+
+##### Related components (by ID)
+
+- `cpt-person-attributes-component-registry` — governs the derived attribute definition.
+- `cpt-person-attributes-component-membership-builder` — consumes person-scoped values.
 
 #### Attribute Catalog Reader
 
@@ -498,7 +528,7 @@ Every grouping and comparison path needs identical person-grain, period-correct 
 
 ##### Responsibility scope
 
-Joins temporal account attribute values to the current source-account assignment projection, applies AND between conditions and OR within multi-value conditions, intersects authorized population, and deduplicates canonical people. People-like requests derive conditions for each stable subject interval. Named groups use fixed conditions while membership may vary over time. The comparison subject is removed from peer membership after resolution; `group_n` and `measured_n` therefore count only peers actually aggregated. Unresolved accounts remain available for request diagnostics but never become members.
+Joins temporal account attribute values to the current source-account assignment projection, unions person-scoped derived values, applies AND between conditions and OR within multi-value conditions, intersects authorized population, and deduplicates canonical people. People-like requests derive conditions for each stable subject interval. Named groups use fixed conditions while membership may vary over time. The comparison subject remains in matching membership, as required by the epic's worked example; person-grain deduplication ensures the subject and every other person contribute at most once. Unresolved accounts remain available for request diagnostics but never become members.
 
 ##### Responsibility boundaries
 
@@ -553,13 +583,13 @@ It does not return member identities or let the browser recompute peer statistic
 - `group_by`: zero or more person-attribute IDs controlling result partitioning. People missing a selected value are excluded from partitions and counted in `missing_attribute_n`. Multi-valued attributes may emit the same person into several value groups; each group deduplicates that person, and the response sets `partitions_overlap = true` so consumers do not sum non-additive counts. Partitions below `min_peer_n` contributors are suppressed.
 - `comparison`: either `people_like` with subject person ID and one or more attribute IDs, or `named_group` with stable group ID and optional pinned revision.
 
-Grouping is distinct from existing metric-dimension `filters`. `group_by` and `comparison` are mutually exclusive in V1; a request containing both returns `unsupported_combination`. Grouped responses include stable attribute/value identity and labels, requested and covered periods, person count, contributor count, missing-attribute count, and the overlap flag. The existing single `cohort_key` request remains supported through an adapter during migration. New comparison responses return an available comparison or a stable refusal code. Refusal codes include `group_below_minimum`, `sensitive_attribute`, `comparison_not_allowed`, `multi_value_comparison_unsupported`, `history_incomplete`, `too_many_segments`, `unsupported_combination`, `no_subject_value`, `no_data`, `hierarchy_unavailable`, `policy_unavailable`, and `identity_resolution_unavailable`.
+Grouping is distinct from existing metric-dimension `filters`. `group_by` and `comparison` are mutually exclusive in V1; a request containing both returns `unsupported_combination`. Grouped responses include stable attribute/value identity and labels, requested and covered periods, person count, contributor count, missing-attribute count, and the overlap flag. The existing single `cohort_key` request remains supported through an adapter during migration. New comparison responses return an available comparison or a stable refusal code. A refusal echoes the normalized selected conditions and returns safe matching counts when available, allowing the client to explain which condition can be removed without inventing a result. Refusal codes include `group_below_minimum`, `sensitive_attribute`, `comparison_not_allowed`, `multi_value_comparison_unsupported`, `history_incomplete`, `too_many_segments`, `unsupported_combination`, `no_subject_value`, `no_data`, `hierarchy_unavailable`, `policy_unavailable`, and `identity_resolution_unavailable`.
 
-Every available result includes `group_n`, `measured_n`, unresolved source-account count when measurable, policy revision, assignment revision, attribute watermark, `requested_period`, `covered_period`, and period segment when applicable.
+Every available result includes `group_n`, `measured_n`, `unresolved_source_account_n`, `requested_period`, `covered_period`, and period segment when applicable. The unresolved count is always present, including when zero, and its unit is explicitly accounts rather than people. Policy revision, assignment revision, attribute watermark, and metric identity watermark are logged against the request trace and may appear in an optional diagnostics object; they are not required top-level client fields.
 
 The value-discovery operation is required because metric definitions intentionally do not embed unbounded value lists. It is available only for attributes whose grouping policy permits discovery, applies tenant and caller visibility, returns counts only above the disclosure minimum, and never changes the exact value identity selected by the caller.
 
-The API never reports unresolved source accounts as exact unlinked people.
+The API never reports unresolved source accounts as exact unlinked people. One human may own several unresolved accounts, and an unresolved account may not represent a human.
 
 ### 3.4 Internal Dependencies
 
@@ -568,7 +598,9 @@ The API never reports unresolved source accounts as exact unlinked people.
 | Connector ingestion | Normalized attribute claim contract | Discover source fields and temporal values. |
 | Identity service | Definitions, policy revisions, audit, current person journal | Govern use and resolve source accounts. |
 | persons-sync | `identity.identity_persons` atomic snapshot | Publish the current account assignment journal to ClickHouse. |
-| dbt ingestion | Silver/gold models | Build temporal account values and account-level hierarchy closure from connector claims. |
+| dbt ingestion | Silver/gold models | Build temporal account attribute values. |
+| Derived producers (#1455/#1617 and metric derivations) | Person-scoped derived-value contract | Publish temporal values after canonical identity resolution. |
+| Org hierarchy (#1605/#1873) | Authoritative temporal direct-manager and subtree membership | Supply manager semantics without a second hierarchy implementation. |
 | Analytics metric catalog | Existing metric-definition response | Publish the client-readable attribute list. |
 | Analytics metric results | Existing request validator and query compiler | Build groups and calculate statistics. |
 | API gateway | Existing security context | Authenticate, authorize, and provide tenant context. |
@@ -589,7 +621,7 @@ Supported systems must provide a stable source-account identifier and field meta
 
 #### MariaDB and ClickHouse
 
-Identity MariaDB provides transactional definitions, policy versions, and audit. Analytics MariaDB provides named-group identity and immutable revisions. ClickHouse stores source claims, published assignments and policy, temporal account values, account-level manager closure, and metric observations.
+Identity MariaDB provides transactional definitions, policy versions, and audit. Analytics MariaDB provides named-group identity and immutable revisions. ClickHouse stores source claims, published assignments and policy, temporal account values, person-scoped derived values, and metric observations. The org-hierarchy domain owns its temporal closure.
 
 #### Non-applicable dependencies
 
@@ -613,7 +645,7 @@ sequenceDiagram
     S->>I: Reconcile discovered field metadata
     I->>I: Register definition and policy revision
     S->>D: Temporal claims and watermark
-    D->>D: Build temporal account values and hierarchy closure
+    D->>D: Build temporal account values
     P->>P: Publish policy and atomic assignment revisions
 ```
 
@@ -676,18 +708,18 @@ Two clients using the same named-group revision, period, policy revision, assign
 | ClickHouse identity | `person_account_assignments_current` | Stable source-account key | Current canonical person assignment and resolution state. |
 | ClickHouse policy | `person_attribute_policy_snapshot` | Attribute and policy revision | Immutable analytical policy projection. |
 | ClickHouse gold | `account_attribute_values` | Source account, attribute, value, interval | Query-oriented temporal values without canonical person ownership. |
-| ClickHouse gold | `account_manager_ancestors` | Manager account, descendant account, interval | Temporal source-account subtree membership. |
+| ClickHouse gold | `person_derived_attribute_values` | Canonical person, attribute, value, interval | Query-oriented values emitted after identity resolution. |
 
-The logical claim and account-value key contains tenant, source type, source instance, source account, source field identity, value identity, and validity interval. Values retain both optional immutable `value_id` and `value_label`; conditions prefer the ID. Neither relation stores canonical `person_id`.
+The logical claim and account-value key contains tenant, source type, source instance, source account, source field identity, value identity, and validity interval. Derived values instead contain tenant, canonical person ID, producer, attribute, value identity, derivation revision, and validity interval. Both retain `value_id` and `value_label`; conditions prefer the ID. Connector claim and account-value relations do not store canonical `person_id`.
 
 `account_attribute_values` supports two read patterns:
 
 - Account history ordered by tenant, source, source account, attribute, and validity.
 - Group candidates ordered or projected by tenant, attribute, value, validity, and source account.
 
-There is no persisted `person_attribute_stats` relation in V1. Catalog-level fill rate, distinct-value count, and largest-group size are not required for grouping or comparison correctness. Value discovery calculates exact values and disclosure-safe counts for the requested attribute and period. Metric requests calculate `group_n`, `measured_n`, unresolved-account count, and observed multi-value conflicts from the actual query population.
+There is no persisted `person_attribute_stats` relation in V1. Catalog-level fill rate, distinct-value count, and largest-group size are not required for grouping or comparison correctness. Value discovery calculates exact values and disclosure-safe counts for the requested attribute and period. Metric requests calculate `group_n`, `measured_n`, `unresolved_source_account_n`, and observed multi-value conflicts from the actual query population.
 
-Policy and assignment snapshots publish complete revisions independently of account-value ingestion. A request pins the current policy revision, atomic assignment revision, and attribute watermark before compilation. Because canonical ownership is joined in the request, reassignment becomes visible after the assignment snapshot refresh and does not wait for dbt.
+Policy and assignment snapshots publish complete revisions independently of account-value ingestion. A request pins the current policy revision, atomic assignment revision, and attribute watermark before compilation. Because canonical ownership is joined in the request, reassignment becomes visible after the assignment snapshot refresh and does not wait for dbt. Derived person values retain their producer revision and are recomputed by their owning producer when its canonical-person inputs change.
 
 ### 3.8 Deployment Topology
 
@@ -702,6 +734,8 @@ The read path is Analytics API to Analytics MariaDB for a named-group revision w
 ### 4.1 Identity Integration and Transition
 
 The existing `identity.identity_persons` ClickHouse snapshot contains the full person journal copied from Identity MariaDB. The current identity-resolution code already derives known account bindings from the latest `value_type = 'id'` observation per tenant, source type, source instance, and source account ID. #2028 formalizes that shape as the `PersonAssignment` projection.
+
+Identity's existing job title, department, division, and manager fields remain operational person-profile data during migration; they are not a second analytical fallback once the new attribute is enabled. Connector claims and their temporal projections become authoritative for cohort membership. Before each attribute cuts over, the rollout compares current values and coverage against `class_people`. The legacy `cohort_key = 'org_unit'` adapter continues to read `class_people` until department parity is accepted, then resolves through the new attribute path. A tenant cannot mix both membership sources in one request, and retirement of the legacy path follows parity monitoring rather than an inferred date.
 
 The separate WIP identity redesign can later become the assignment producer without changing claims, account values, or analytics requests. Its human decisions remain corrective: rebinding an account changes the current assignment projection, and every subsequent query resolves all retained account history to the corrected person. The projection contract, not the current resolver implementation, is the dependency boundary.
 
@@ -742,10 +776,10 @@ The runtime distinguishes:
 - `group_n`: canonical linked people satisfying the conditions.
 - `measured_n`: those people contributing data to the requested metric.
 - `missing_attribute_n`: authorized linked people excluded from `group_by` because at least one selected attribute has no effective value.
-- `unresolved_source_accounts`: source accounts with claims but no usable assignment, when measurable.
+- `unresolved_source_account_n`: source accounts matching the request conditions but having no usable assignment; always returned, including zero.
 - `unlinked_people`: deliberately not reported as exact because unresolved accounts are not known distinct humans.
 
-For comparisons, `group_n` and `measured_n` exclude the subject. `min_peer_n` applies to every comparison and grouped partition's `measured_n`, because statistics over fewer contributing observations remain unsafe even when the attribute group itself is large.
+For people-like comparisons, `group_n` and `measured_n` include the subject when the subject contributes to the metric, matching the epic's worked example. `min_peer_n` applies to every comparison and grouped partition's `measured_n`, because statistics over fewer contributing observations remain unsafe even when the attribute group itself is large.
 
 ### 4.5 Security and Privacy
 
@@ -754,6 +788,8 @@ The existing gateway, tenant context, subject visibility, and metric authorizati
 Responses never contain peer member identities. Attribute IDs, value IDs, group IDs, and revisions are resolved server-side within tenant scope. Source values are bound query parameters, not SQL identifiers. Logs exclude raw attribute values and record policy denials, cross-tenant identifier attempts, repeated small-group probes, projection unavailability, and hierarchy failures.
 
 The initial connector scope is the data-minimization boundary. #2028 does not add a pending-classification workflow that withholds discovered values. Policy may record an audited sensitivity class independently of grouping/comparison flags so a denied comparison can return `sensitive_attribute` rather than a generic policy denial. Unclassified discovery does not block publication.
+
+The epic requires sensitive attributes to remain available for grouping while forbidding them as a peer-comparison basis. V1 follows that rule and applies the disclosure minimum to every grouped partition. This does not prevent a permitted grouped metric view from being interpreted as a comparison between sensitive partitions. Default-denying sensitive grouping would contradict the current acceptance criteria, so stronger protection requires an explicit product and privacy decision rather than a silent implementation change.
 
 Minimum population suppresses direct small-group disclosure but does not eliminate set-difference inference across several allowed queries. This is an accepted V1 k-anonymity limitation. Existing authorization, tenant isolation, query-rate controls, and repeated-probe monitoring reduce exposure; stronger privacy budgets or query-history-aware denial require a separate design.
 
@@ -782,9 +818,9 @@ Rollback restores the previous complete policy or assignment snapshot and previo
 
 ### 4.8 Maintainability and Verification Strategy
 
-The architecture has one normalized connector claim contract, one current assignment projection, one account-value model, one minimal policy catalog, one membership builder, and one server-side metric-statistics implementation. Selection Validator, Temporal Membership Builder, and Metric Aggregator are logical responsibilities inside the existing analytics request validator and query compiler, not new deployable services. Derived producers can later emit the same claim/value contract without special query paths.
+The architecture has one normalized connector claim contract, one person-scoped derived-value contract, one current assignment projection, one minimal policy catalog, one membership builder, and one server-side metric-statistics implementation. Selection Validator, Temporal Membership Builder, and Metric Aggregator are logical responsibilities inside the existing analytics request validator and query compiler, not new deployable services. Connector and derived values use different subject keys but converge before conditions or metrics are evaluated.
 
-Verification must cover explicit clears, complete/partial snapshot absence, duplicate snapshots, account reassignment without attribute rebuild, unresolved accounts, non-overlapping value intervals, label fallback, exact-value grouping, missing-value counts, overlapping multi-value partitions, declared and observed multi-value refusal for comparison, current policy over pinned group definitions, subject exclusion, history truncation, segment caps, small comparison and grouped partitions, unsupported combined grouping/comparison, metric coverage, manager hierarchy, independent publication revisions, and both tenant-enforcement modes.
+Verification must cover explicit clears, complete/partial snapshot absence, duplicate snapshots, account reassignment without attribute rebuild, unresolved account counts, non-overlapping value intervals, person-scoped derived values, label fallback, exact-value grouping, missing-value counts, overlapping multi-value partitions, declared and observed multi-value refusal for comparison, current policy over pinned group definitions, single subject inclusion, history truncation, segment caps, small comparison and grouped partitions, unsupported combined grouping/comparison, legacy `org_unit` parity and cutover, metric coverage, external manager hierarchy, independent publication revisions, and both tenant-enforcement modes.
 
 ### 4.9 Scope Boundaries and Known Limitations
 
@@ -803,9 +839,10 @@ Known data limitations:
 
 - Historical accuracy begins at retained source evidence.
 - Exact unlinked-person counts are impossible from unresolved accounts.
-- Rename-safe conditions require immutable source value IDs.
+- The rename-safety acceptance criterion is unmet for label-only sources, including the current Bamboo department projection, until ingestion provides immutable source value IDs.
 - Corrective account assignment assumes native IDs are not reused across people.
-- `manager_subtree` requires authoritative temporal hierarchy closure.
+- `manager_subtree` depends on authoritative temporal hierarchy closure from #1605/#1873.
+- Sensitive grouping remains allowed by the epic and can expose differences between disclosure-safe partitions even though sensitive peer comparison is refused.
 - Multi-tenant enforcement is not delivered while `metric_catalog.enforce_tenant_scope` remains false; tenant plumbing is present so the existing flag can govern the transition.
 
 Unavailable capabilities return typed states. They are not replaced by current values, label hashes, guessed people, zeros, or silent best effort.
@@ -814,18 +851,33 @@ Unavailable capabilities return typed states. They are not replaced by current v
 
 Infrastructure as code is not applicable because the design adds no deployable unit or infrastructure resource. Frontend layout, offline behavior, and progressive enhancement are not applicable because #2028 is a DB/API epic. A new authentication or consent system is not applicable because existing platform controls and tenant governance remain authoritative.
 
-### 4.11 Traceability
+### 4.11 Epic Acceptance Traceability
 
-| Design Element | Issue #2028 scope |
-|----------------|-------------------|
-| Connector normalizer and claim store | Attributes from supported sources, provenance, clears, and history. |
-| Registry and policy publisher | Label, source, grouping/comparison policy, retirement, versioning, and audit. |
-| Assignment publisher and account-value builder | Current canonical person linkage and query-oriented temporal account values. |
-| Catalog reader | Minimal allowed-attribute metadata without persisted population statistics. |
-| Selection validator and membership builder | One or several conditions, people-like selection, named groups, and period correctness. |
-| Metric aggregator | Server-side statistics, population minimum, counts, and typed refusals. |
-| Named-group registry | Stable references for thresholds, rules, recommendations, and recorded outcomes. |
-| Manager hierarchy contract | Separate direct-manager and subtree semantics. |
+| Issue #2028 acceptance criterion | Status | Design coverage or explicit gap |
+|-----------------------------------|--------|---------------------------------|
+| Pick one or several comparison attributes | Met | Catalog IDs feed the `people_like` selection on `POST /v1/metric-results`. |
+| Show the person's value, group median, and group size | Met at DB/API boundary | Metric aggregation returns the subject metric, server-computed aggregate, `group_n`, and `measured_n`; portal rendering remains #221. |
+| Describe the group in words | Met at DB/API boundary | Results return resolved attribute and exact value labels for every condition. |
+| Newly ingested attributes appear without frontend changes | Met | Field reconciliation registers definitions and `/v1/metric-definitions` carries the active catalog. |
+| Explain a group below the minimum and allow widening | Met at DB/API boundary | `group_below_minimum` returns the safe count and normalized conditions; the client can remove a condition. |
+| Sensitive attributes group but refuse peer comparison | Met with accepted risk | Group partitions enforce disclosure minimum; comparison policy is enforced in the query compiler. Cross-partition interpretation remains the documented privacy ambiguity. |
+| Explain missing attribute values | Met | Grouping returns `missing_attribute_n`; comparisons distinguish missing subject values and incomplete coverage. |
+| Explain unlinked coverage | Met with corrected unit | Every result returns `unresolved_source_account_n`. Exact unlinked-person count is impossible before resolution and is not fabricated. |
+| Keep people-like and named-group semantics distinct | Met | Tagged request variants and immutable named-group revisions have separate response identity. |
+| Use period-correct grouping | Met | Effective-dated values, covered periods, and stable subject segments prevent current-membership substitution. |
+| Never turn unavailable data into zero | Met | Available results and typed refusals are distinct response variants. |
+| Make person attributes available in analytics | Met | Account-scoped connector values and person-scoped derived values converge in ClickHouse membership. |
+| Serve the attribute list through an existing API | Met | The catalog extends `/v1/metric-definitions`; no separate catalog endpoint is introduced. |
+| Group every attribute and name comparison refusals | Met | `group_by` accepts governed attributes; policy, cardinality, minimum, history, hierarchy, and data refusals are typed. |
+| Support several simultaneous conditions | Met | Conditions use AND, selected exact values within a condition use OR, and the minimum applies to the combined population. |
+| Keep manager and manager-subtree deterministic | Dependency-bound | Stable manager person IDs are used; subtree membership depends on the authoritative #1605/#1873 temporal hierarchy. |
+| Keep all statistics and minimum enforcement server-side | Met | The existing analytics query compiler owns aggregation and the single `min_peer_n`; the browser receives results only. |
+| Use derived attributes without downstream special cases | Met by contract | Person-scoped derived values and resolved account values share policy, conditions, membership, refusals, and aggregation. Producer implementations remain in their own epics. |
+| Return the same median to every consumer | Met | Portal, diagnosis, rules, and outcome consumers call the same server-side aggregation path. |
+| Preserve stored references across a department rename | Partially impossible | Works with immutable source value IDs. It cannot be guaranteed for the current label-only Bamboo department projection. |
+| Resolve stored membership for its own period | Met | Named-group revisions fix conditions while temporal values determine membership for the covered period. |
+| Avoid materialized attribute combinations | Met | Membership is built at query time in one ClickHouse statement. |
+| Provide observed catalog statistics in gold | Deliberate simplification | No `person_attribute_stats` is persisted. Discovery and metric requests compute current values, cardinality, coverage, group sizes, and disclosure eligibility for their actual period and assignment. |
 
 Related decisions and designs:
 
