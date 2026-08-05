@@ -34,9 +34,11 @@ clientScopes:
       include.in.token.scope: "true"
       display.on.consent.screen: "false"
     protocolMappers:
+      # Property mapper, not attribute mapper: email is a built-in
+      # UserModel property (same mapper the stock `email` client scope uses).
       - name: email
         protocol: openid-connect
-        protocolMapper: oidc-usermodel-attribute-mapper
+        protocolMapper: oidc-usermodel-property-mapper
         consentRequired: false
         config:
           user.attribute: email
