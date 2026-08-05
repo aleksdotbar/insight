@@ -75,48 +75,82 @@ number and the framework text needs updating to match (tracked in #2215).
 REF-L, and no evidence in this study reaches either point directly. Figures for 5,000 people appear
 below as an informational extrapolation only — not a defined reference organisation.
 
-### 3.1 Volume per reference organisation
+### 3.1 The approximation — headcount × organisation age
 
-Logical rows and uncompressed bytes — what a generator must emit. The two figures are the observed
-range between the two measured installations, which differ in connector mix; they are not
-competing estimates of one quantity.
+**Insight is installed into brownfield organisations**, so the sizing assumes accumulated history by
+default. A greenfield year of flow is the *floor*, not the target.
 
-| Reference org | Active people | Window | Rows | GiB uncompressed | GiB on disk (LZ4) |
+    TOTAL(N, A)  =  N × 365 × Σ_families [ ρ_f × M_f(A) ]  +  STOCK(N)
+
+`N` = active people · `A` = organisation age in years · `ρ_f` = the family's rows per active person
+per day · `M_f(A)` = how many years of *today's* activity the accumulated corpus is worth.
+
+**`M` is far below `A`, and that is the central finding.** A constant-rate organisation would give
+`M = A`. Measured, an 18-year-old tracker corpus is worth **4.2 years** of today's volume, not 18 —
+two unrelated installs converge on **17 %** per year of age for task classes. Activity compounds, so
+the early years are thin; and several sources refuse to serve old data at all.
+
+| Family | ρ (rows/a-p-d) | M(A) | M(5) | M(10) | M(20) | Why |
+|---|--:|---|--:|--:|--:|---|
+| Task | 49.95 | 1 + 0.17(A−1) | 1.68 | 2.53 | 4.23 | measured on 2 trackers, ages 10.8 y and 18.3 y |
+| Git | 32.30 | 1 + 0.17(A−1), capped 3.4 | 1.68 | 2.53 | 3.40 | τ **inherited from task** — see limits |
+| Collaboration | 16.53 | **1.00, constant** | 1.00 | 1.00 | 1.00 | source serves 27 d (M365) / 150 d (Zoom): **no brownfield exists** |
+| CRM & Support | 8.51 | 1 + 0.44(min(A,6)−1) | 2.76 | 3.20 | 3.20 | bounded by CRM-platform adoption age, not org age |
+| HR & Identity | 2.69 | **1.00, constant** | 1.00 | 1.00 | 1.00 | no history at all — starts at connector install |
+| AI | 1.04 | **1.00, constant** | 1.00 | 1.00 | 1.00 | vendor floor 203–299 d; day-one arrival 0.56–0.82 y |
+| Wiki | 0.85 | 1 + 0.55(A−1) | 3.20 | 5.95 | 11.45 | flattest accumulator — pages persist as content |
+
+Three of the seven families **do not accumulate at all**. Collaboration, AI and HR are bounded by
+what the source will serve, not by how old the organisation is: a twenty-year-old company and a
+two-year-old one arrive with **identical** email, chat, meeting and AI corpora.
+
+**Volume per reference organisation.** `A = 10` is the default — mid-range of the two measured
+installs and where the model is best anchored. `A = 0` is the greenfield flow-only floor.
+
+| Reference org | Active people | A = 0 *(floor)* | A = 5 | **A = 10** *(default)* | A = 20 |
 |---|--:|---|---|---|---|
-| **REF-S** | 50 | 91 days | 0.33 – 0.46 M | 0.19 – 0.32 | 0.04 – 0.07 |
-| | | 365 days | 1.3 – 1.8 M | 0.75 – 1.27 | 0.17 – 0.28 |
-| **REF-M** | 500 | 91 days | 3.3 – 4.6 M | 1.9 – 3.2 | 0.42 – 0.70 |
-| | | 365 days | 13 – 18 M | 7.5 – 12.7 | 1.7 – 2.8 |
-| **REF-L** | 3,000 | 91 days | 19.5 – 27.6 M | 11.3 – 19.0 | 2.5 – 4.2 |
-| | | 365 days | 78 – 111 M | 45 – 76 | 8.7 – 17.0 |
-| *(informational)* | 5,000 | 365 days | 131 – 184 M | 75 – 127 | 17 – 28 |
+| **REF-S** | 50 | 2.0 M · 1.5 GiB | 3.4 M · 2.5 GiB | **4.8 M · 3.7 GiB** | 6.9 M · 6.1 GiB |
+| **REF-M** | 500 | 20.4 M · 14.9 GiB | 33.7 M · 25.2 GiB | **47.6 M · 37.5 GiB** | 69.0 M · 61.1 GiB |
+| **REF-L** | 3,000 | 122.5 M · 89.4 GiB | 202.2 M · 150.9 GiB | **285.4 M · 224.8 GiB** | 414.3 M · 366.5 GiB |
+| *(informational)* | 5,000 | 204.2 M · 149.1 GiB | 337.0 M · 251.5 GiB | *475.7 M · 374.7 GiB* | 690.5 M · 610.8 GiB |
 
-Scaling is linear in active headcount. Both coefficients, all layers combined:
-**71.6–100.9 logical rows** and **44.3–74.7 kB uncompressed** per active person per day.
+Rows are logical (dedup-free); bytes are uncompressed. Scaling is linear in `N`. **Bytes grow faster
+than rows** — 4.10× versus 3.38× at `A = 20` — because 89.5 % of the bytes are the task family, the
+second-steepest accumulator. Any storage or cost-of-ownership figure is therefore more sensitive to
+the brownfield correction than any row count or query-latency figure.
 
-### 3.2 Size is not only headcount
+**This is a bracket, not a point estimate.** The upper bound is an established enterprise that did
+*not* grow into its headcount — its history is thin only because tools got chattier, measured at
+**1.13×/yr** per-author intensity growth. At `A = 20` that is **1.9× the central figure**. Use the
+central column as the sizing target and the upper bracket as the soak and headroom target.
 
-[`product/VISION.md`](product/VISION.md) §6.4.2 states it directly: *"Scale is defined not only by employee count, but also by
-number of connected systems, repositories, work items, events, products, services, roles, teams,
-and years of retained history."* The measurements bear this out sharply — the two installations
-differ by up to **14× per active person** on entity inventory while their activity **rates** agree
-within 1.62×.
+| Scenario | A = 5 | A = 10 | A = 20 |
+|---|--:|--:|--:|
+| As-configured *(what the measured installs actually ingest)* | 192 M · 149 GiB | 244 M · 218 GiB | 337 M · 354 GiB |
+| **Central** *(above)* | **202 M · 151 GiB** | **285 M · 225 GiB** | **414 M · 366 GiB** |
+| Mature, flat headcount | 421 M · 350 GiB | 622 M · 536 GiB | 790 M · 691 GiB |
 
-**Headcount predicts event volume well and entity inventory badly.** Entity counts are therefore
-fixture **inputs**, chosen and recorded, not derived from headcount:
+**Plus STOCK — what arrives whole.** Inventory, not flow: it lands complete on day one and has no
+taper. It is **0.4–2.0 % of the rows** but it is what stresses joins, identity resolution and
+dimension lookups. Each entry is a **fixture input to be recorded**, never derived from headcount —
+the two installations differ by up to **14× per active person** here while their activity *rates*
+agree within 1.62×.
 
-| Entity | Observed per active person | REF-L (3,000) |
-|---|---|--:|
-| Repositories | 3.5 – 30.5 | 10,500 – 91,500 |
-| Wiki pages | 2.7 – 38.1 | 8,100 – 114,300 |
-| Work items (issues) | 182 – 380 | 546,000 – 1,140,000 |
-| Agile boards / sprints | no person axis | 40 – 500 |
-| Connected systems | — | 8 – 11 |
-| Years of retained history | — | 10.2 – 17.6 (real installs) |
+| Stock | Scales with | Per active person | REF-L (3,000) |
+|---|---|--:|--:|
+| Git repositories | estate age, M&A, monorepo policy | 3.5 – 30.5 | 10,500 – 91,500 |
+| Git branches | **repository count** (12–16 per repo) | 40 – 380 | 127,000 – 1,470,000 |
+| Wiki pages | age — the *flow* is edits; pages accumulate | 2.7 – 38.1 | 8,100 – 114,300 |
+| Work items | age + tracker adoption | 182 – 380 | 546,000 – 1,140,000 |
+| Boards / sprints | teams and projects, no person axis | — | 40–500 boards · 1,800–22,500 sprints |
+| Tracker + directory accounts | **lifetime** headcount × connected tools | 5.8 – 20.2 | 17,400 – 60,600 |
+| HR roster incl. terminated | lifetime employees, capped at HRIS adoption | 2.0 – 3.6 × active | 6,000 – 10,800 |
+| Identity inputs / persons | **accounts × tools** (~7.6 rows/account), not age | 111 – 229 | 334,000 – 686,000 |
+| **Total stock** | | | **0.5 – 2.5 M rows · 0.2 – 1.5 GiB** |
 
-A 392-person organisation carrying ~12,000 repositories and 17 years of issue history is not a
-"mid-size" workload in any sense a load test cares about. Record the entity inventory alongside
-the headcount whenever a reference organisation is cited.
+Repository inventory is the sharpest illustration: one install carries 10,548 repositories against
+392 active people — **27 per person** — and 71 % of them were created in a single month by a
+platform migration that rewrote their creation dates. It is a sizing input, never an organic rate.
 
 ## 4. Typical organisation data, by metric class
 
@@ -130,10 +164,12 @@ What an organisation produces, one row per **metric class**.
 * **Adoption** — share of the active roster appearing in the class at all. Above 100 % is correct,
   not an error: external meeting attendees, service accounts, shared mailboxes, automation and
   departed employees still attached to history all author rows.
-* **REF-L rows** — the fixture target at 3,000 active people over 365 days, at each class's
-  canonical layer (one layer per class, so the total is not the whole-install figure in §3.1).
+* **REF-L annual flow** — one year of rows at 3,000 active people, at each class's canonical layer
+  (one layer per class, so the total is not the whole-install figure in §3.1). For a brownfield
+  organisation multiply by that family's `M(A)` from §3.1 — ×2.53 for task and git at `A = 10`,
+  ×5.95 for wiki, ×1.00 for collaboration, AI and HR.
 
-| Metric class | Rows per active person-day | p50 per participant-week | Adoption | REF-L rows (365 d) |
+| Metric class | Rows per active person-day | p50 per participant-week | Adoption | REF-L annual flow |
 |---|---|--:|--:|--:|
 | **Git** | | | | |
 | `git_commits` | 0.76 – 1.44 | 7 – 8 | 47 – 84 % | 1,580,852 |
@@ -178,6 +214,9 @@ What an organisation produces, one row per **metric class**.
 | `identity_aliases` | 0.06 *(one-sided)* | — | — | 68,985 |
 | **total, canonical layer** | | | | **28,796,200** |
 
+At the default `A = 10` the same classes carry roughly **2.5×** this in task and git, **6×** in wiki
+and **1×** in collaboration, AI and HR — see §3.1.
+
 **Two classes carry most of the volume** — `task_history` and `git_file_changes` are 57 % of the
 canonical-layer rows, and `task_issues` and `task_history` are 82 % of its bytes. An organisation
 that spreads its volume evenly across classes does not exist.
@@ -216,3 +255,19 @@ Limits, stated rather than implied:
 * **Both installations are ~80 % one connector**, so any total is dominated by one product's record
   shape.
 * **Concurrency and query mix are not measured**, and cannot be inferred from this data.
+* **The git taper is inherited, not measured.** Both installations bound their git history with an
+  operator-configured backfill floor — one has **zero** rows before 2025-01-01, the other before
+  2026-01-05 — so neither can show how git accumulates. Git sources retain everything forever, so
+  this is under-collection by configuration, not a source limit: an operator who changes that
+  setting changes the volume. Its τ is borrowed from the task family and capped by a growth
+  decomposition. Git is **28.9 % of the rows**, so this is the largest unmeasured term.
+* **CRM and support are one-sided** — measured on one installation only; the other has the connector
+  provisioned and never synced.
+* **The wiki taper rests on two products that disagree 1.4×** (τ 0.41 vs 0.56), and the older one is
+  corrected upward for truncation. Wiki is the steepest accumulator, so `A = 20` is where this
+  matters.
+* **Both readings of the taper are real, and which one dominates is a property of the connector.**
+  Compounding is *demonstrated* for task and wiki — every year present and non-zero, no
+  zero-then-jump anywhere. Truncation is *demonstrated* for git and collaboration — hard floors in
+  the connector configuration and the vendor API. The model fits the observable either way, but a
+  fixture built on the truncation classes is sensitive to settings an operator can change.
