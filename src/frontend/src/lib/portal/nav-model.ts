@@ -81,6 +81,7 @@ export const ZONES: readonly Zone[] = [
   { id: "manage", label: "Manage", icon: Settings2, kind: "manage" },
 ];
 
+/** The zone a URL names, or undefined for an id no longer in the rail. */
 export function zoneById(id: string | null): Zone | undefined {
   if (!id) return undefined;
   return ZONES.find((z) => z.id === id);

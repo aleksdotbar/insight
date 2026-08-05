@@ -43,6 +43,7 @@ function getServerSnapshot(): ShellLayout {
   return "wide";
 }
 
+/** The layout tier the shell is in — one source, so rail and pane agree. */
 export function useShellLayout(): ShellLayout {
   return React.useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

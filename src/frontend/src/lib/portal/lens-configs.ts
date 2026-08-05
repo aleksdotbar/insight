@@ -49,8 +49,10 @@ export interface LensRoadmap {
   readiness: Readiness;
 }
 
+/** Either a lens we render or one we only name — the pane treats the two differently. */
 export type LensEntry = LensConfig | LensRoadmap;
 
+/** The registry entry for a direction's lens — a config, a roadmap note, or nothing. */
 export function lensEntry(dir: string, lens: string): LensEntry | undefined {
   return DIRECTION_LENSES[dir]?.[lens];
 }

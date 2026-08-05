@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 
+/** One plotted series: its metric key, its label, and how to draw it. */
 export type SectionTrendSeries = {
   key: string;
   label: string;
@@ -30,6 +31,10 @@ export type SectionTrendSeries = {
   yAxisId?: "left" | "right";
 };
 
+/**
+ * One bucket. A series key is ABSENT when that series has no reading for the
+ * bucket — never zero, so the line shows a gap instead of a measurement.
+ */
 export type SectionTrendPoint = {
   date: string;
   [seriesKey: string]: number | string;
@@ -55,6 +60,7 @@ export interface SectionTrendProps {
 
 const DEFAULT_CHART_KEYS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"];
 
+/** The shared trend card: one chart, the same states, wherever a trend appears. */
 export function SectionTrend({
   title,
   description,

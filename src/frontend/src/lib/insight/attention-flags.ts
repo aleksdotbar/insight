@@ -5,6 +5,7 @@ import {
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
 
+/** Why a person was flagged: apart from their cohort, moving adversely, or at zero. */
 export type FlagKind = "outlier" | "decline" | "collapse";
 
 export interface AttentionFlag {

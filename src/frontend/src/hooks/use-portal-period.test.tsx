@@ -16,11 +16,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { portalRouter } from "@/test/portal-router";
 
+import { writePeriodPreference } from "./use-period";
 import { usePortalPeriod } from "./use-portal-period";
 
 beforeEach(() => {
-  act(() => portalRouter.reset());
   window.localStorage.clear();
+  act(() => {
+    portalRouter.reset();
+    // The preference is an in-memory store as well as a storage key, so
+    // clearing localStorage alone leaves the previous test's choice behind and
+    // the next test inherits it as the default for a URL naming no period.
+    writePeriodPreference("week");
+  });
 });
 
 describe("usePortalPeriod", () => {

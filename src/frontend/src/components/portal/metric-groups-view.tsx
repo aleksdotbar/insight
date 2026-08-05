@@ -41,6 +41,7 @@ const CLOSED_DRILLDOWN_DATA = {
   refetch: () => {},
 } as const;
 
+/** The person and catalogue slice a metric-groups screen renders. */
 export interface MetricGroupsViewProps {
   /** Person id the lens is scoped to (org-level rollup is a backend follow-up). */
   personId: string;

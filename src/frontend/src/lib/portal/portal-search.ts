@@ -102,6 +102,7 @@ export const PORTAL_SEARCH_KEYS = [
   "to",
 ] satisfies Array<keyof PortalSearch>;
 
+/** The validated portal params for the current route. */
 export function usePortalSearch(): PortalSearch {
   // `strict: false` so the same hook serves both portal route families
   // (/portal and /ic/$person/*) without a per-route generic.

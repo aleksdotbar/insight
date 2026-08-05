@@ -22,6 +22,7 @@ export interface SliceAttr {
   value: string;
 }
 
+/** A sliceable dimension the roster actually supports (see `availableSlices`). */
 export interface SliceDim {
   key: string;
   label: string;

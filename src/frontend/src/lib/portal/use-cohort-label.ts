@@ -29,6 +29,10 @@ function midSentence(label: string): string {
   return /^[A-Z][a-z]*$/.test(label) ? label.toLowerCase() : label;
 }
 
+/**
+ * The noun every peer comparison uses: the slice's own dimension when one is
+ * active, "team" otherwise. One source, so no two surfaces name it differently.
+ */
 export function useCohortLabel(): string {
   const slice = usePortalSlice();
   const { personId } = useViewer();

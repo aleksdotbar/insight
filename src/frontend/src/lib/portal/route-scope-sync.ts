@@ -4,7 +4,12 @@
  * Module-scoped, deliberately NOT a ref: the guard has to outlive the People
  * view. A per-mount ref would re-fire the sync every time the reader leaves the
  * zone and comes back, silently reverting a scope they had picked in the topbar.
- * Keyed by person, so an actual route change still syncs.
+ * Keyed by the LATEST person, not by a set of every person ever seen: arriving
+ * at a person's team is a navigation, and the reader who clicks "A's team"
+ * after visiting B has to get A's roster. Remembering every person would leave
+ * the scope on B while the route said A — a disagreement between the address
+ * and the screen, which is what this whole migration was about avoiding. The
+ * guard's job is narrower: absorb re-renders and remounts of the SAME person.
  *
  * It lives in its own module for two reasons: a component file cannot export
  * helpers without breaking fast refresh, and tests need the reset — vitest gives

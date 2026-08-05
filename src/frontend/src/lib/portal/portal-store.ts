@@ -93,18 +93,21 @@ function persist(key: string, value: string): void {
   }
 }
 
+/** Turn the portal preview on or off for this reader. */
 export function setPortalEnabled(enabled: boolean): void {
   state = { ...state, enabled };
   persist(ENABLED_KEY, enabled ? "true" : "false");
   emit();
 }
 
+/** Show or hide the not-yet-built sections for this reader. */
 export function setPortalShowPlanned(show: boolean): void {
   state = { ...state, showPlanned: show };
   persist(SHOW_PLANNED_KEY, show ? "true" : "false");
   emit();
 }
 
+/** Whether this reader has the portal preview on. */
 export function usePortalEnabled(): boolean {
   return useSyncExternalStore(
     subscribe,
@@ -113,6 +116,7 @@ export function usePortalEnabled(): boolean {
   );
 }
 
+/** Whether this reader wants planned sections listed. */
 export function usePortalShowPlanned(): boolean {
   return useSyncExternalStore(
     subscribe,

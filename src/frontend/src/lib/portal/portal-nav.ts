@@ -25,22 +25,27 @@ export function usePortalZone(): string | null {
   return zone ?? null;
 }
 
+/** The selected item within a zone; null when the zone shows its default. */
 export function usePortalItem(): string | null {
   return usePortalSearch().item ?? null;
 }
 
+/** The expanded direction, or "" when none is open. */
 export function usePortalDir(): string {
   return usePortalSearch().dir ?? "";
 }
 
+/** The active lens inside the open direction, or "" before one is picked. */
 export function usePortalLens(): string {
   return usePortalSearch().lens ?? "";
 }
 
+/** The active slice attribute, or "" when the roster is one undivided cohort. */
 export function usePortalSlice(): string {
   return usePortalSearch().slice ?? "";
 }
 
+/** The org scope the URL names: a root person id (absent = the viewer) + direct-only. */
 export function usePortalScope(): OrgScope {
   const { scope, direct } = usePortalSearch();
   // Memoised on the primitives: `useOrgScope` lists this object in a dependency
@@ -52,6 +57,10 @@ export function usePortalScope(): OrgScope {
   );
 }
 
+/**
+ * Writers for the navigation state. `set*` pushes a history entry (a reader
+ * moved); `replace*` corrects the URL without one (an effect did).
+ */
 export interface PortalNavActions {
   /** Correct the URL without adding a history entry (effects, not clicks). */
   replaceZone: (zone: string | null) => void;
@@ -64,6 +73,7 @@ export interface PortalNavActions {
   setScope: (patch: Partial<OrgScope>) => void;
 }
 
+/** Stable navigation writers — safe to list in an effect's dependencies. */
 export function usePortalNavActions(): PortalNavActions {
   const setSearch = useSetPortalSearch();
   // Memoised so callers can list these in effect dependencies: a fresh object

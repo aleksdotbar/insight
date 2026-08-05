@@ -17,6 +17,7 @@ import {
 import { useIcPerson } from "@/queries/ic-dashboard";
 import type { IdentityPerson } from "@/types/insight";
 
+/** One option in the scope picker: a manager, their depth, and their team size. */
 export interface ManagerNode {
   /** Canonical person id — what links, `?scope=` and metric ids all carry. */
   person_id: string;
@@ -25,6 +26,7 @@ export interface ManagerNode {
   teamSize: number;
 }
 
+/** The scope resolved against the viewer's own subtree — the permission boundary. */
 export interface ResolvedScope {
   /** The scope pivot (root manager node); null while the tree loads. */
   pivot: IdentityPerson | null;

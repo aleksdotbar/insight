@@ -66,6 +66,10 @@ function subscribe(cb: () => void): () => void {
   return () => listeners.delete(cb);
 }
 
+/**
+ * The router module replacement: subscribed hooks, a `Link` that emits a real
+ * href, and a `Navigate` that records the redirect a guard fires.
+ */
 export function portalRouterMock(): Record<string, unknown> {
   const navigate = vi.fn((opts: Record<string, unknown>) => {
     portalRouter.navigations.push(opts);

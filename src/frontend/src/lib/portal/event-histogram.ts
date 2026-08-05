@@ -1,5 +1,6 @@
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
 
+/** One merged histogram bar: a half-open [lo, hi) band and how many events fell in it. */
 export interface EventBin {
   lo: number;
   hi: number;

@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { CenteredSpinner } from "@/components/widgets/centered-spinner";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 
+/** What the gate needs to decide between loading, empty, failed, and ready. */
 export interface OrgScopeGateArgs {
   /** Viewer identity query — `isLoading` (not `isPending`), so a disabled query
    * (viewer email still unresolved) doesn't spin forever. */
