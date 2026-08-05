@@ -33,7 +33,7 @@ dbg_macro = "deny"
 
 [workspace.dependencies]
 # ClickHouse client
-clickhouse = { version = "0.14", features = ["uuid", "chrono"] }
+clickhouse = { version = "0.15", features = ["uuid", "chrono"] }
 
 sqlparser = "0.62"
 

@@ -21,6 +21,7 @@
   - [5.3 Tenant Isolation (p1)](#53-tenant-isolation-p1)
   - [5.4 Contract Stability (p2)](#54-contract-stability-p2)
   - [5.5 FE Loop (p2)](#55-fe-loop-p2)
+  - [5.6 Metric Registry (p3)](#56-metric-registry-p3)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -134,10 +135,12 @@ Phase A draws the contract and makes it safe by construction, so a new analytics
 - Server-injected flat tenant filter replacing the no-op on every contract read.
 - Contract surface documentation and a contract version stamp.
 - A stable query console (FE) and path-based preview environments with an authenticated return path.
+- Declarative metric registry: a single YAML as the source of truth for the sanctioned metric-definition seed (Phase B, #1974).
 
 ### 4.2 Out of Scope
 
-- Declarative metric registry, semantic raw-to-derived compiler, and FE metric rework (Phase B, #1974-#1978).
+- Semantic raw-to-derived compiler, metric passports plus their drift test, and FE metric rework (Phase B, #1975-#1978).
+- Retirement of the orphaned legacy `metric_catalog`/`metric_threshold` subsystem (frozen, no live consumer; tracked separately).
 - Tenant subtree/hierarchy scoping and a row-policy backstop (deferred pending benchmark).
 - Physical relocation of legacy gold from `insight` to `presentation` (deferred, #1979-#1981).
 - Write-back from presentation to the contract (presentation is read-only for v1).
@@ -274,6 +277,32 @@ The system **MUST** authenticate preview environments through a single fixed cal
 **Rationale**: One host means one Entra redirect URI; the return path must be safe with no per-experiment Entra change.
 
 **Actors**: `cpt-presentation-actor-fe-dev`, `cpt-presentation-actor-analytics-svc`
+
+### 5.6 Metric Registry (p3)
+
+#### Declarative Metric Registry
+
+- [x] `p3` - **ID**: `cpt-presentation-fr-metric-registry`
+
+The sanctioned metric definitions **MUST** be declared in a single declarative registry — one YAML document with a `sources` list and a `metrics` list — that is the single source of truth for the metric-definition seed, replacing the former code-literal seed. The registry **MUST** be reconciled into the service database at startup by the existing reconciler, keeping its idempotent, additive-upsert-plus-disable-missing semantics unchanged, and its invariants (key shape and uniqueness, input/measure references, computation field combinations, presentation-complete formats carrying no unit) **MUST** be enforced by tests that parse the same registry, so a malformed or drifted registry fails the build. (#1974.)
+
+**Status**: Shipped for the sanctioned `metric_definitions` seed (#1974): the registry is embedded at build time and loaded once. The orphaned legacy `metric_catalog`/`metric_threshold` subsystem (no live consumer) is untouched; its retirement is tracked separately.
+
+**Rationale**: One declarative source of truth for metric semantics, editable without a code change, is the foundation the Phase B semantic compiler and passports build on.
+
+**Actors**: `cpt-presentation-actor-analytics-svc`, `cpt-presentation-actor-engineering`
+
+#### Metric Passports
+
+- [x] `p3` - **ID**: `cpt-presentation-fr-metric-passports`
+
+Each sanctioned metric **MUST** carry a human-readable passport — its source, formula, and notes — rendered deterministically from the same declarative registry so the passport cannot describe a metric the registry does not define. The rendered passports **MUST** be committed next to the metric code and **MUST** be guarded by a drift test that fails the build when the committed passports and the registry disagree, so a change to a metric's source, formula, or notes cannot land without the passport being regenerated. (#1975.)
+
+**Status**: Shipped (#1975): passports are rendered from the embedded registry by the offline `analytics passports` subcommand, committed as `passports.md` next to `registry.yaml`, and pinned by a Rust drift test (`metric_definitions::passport`) that runs in the standard backend test job.
+
+**Rationale**: A reviewable, always-current derivation record for every metric — kept honest by a drift test rather than by discipline — is what makes the Phase B semantic compiler safe to build on and gives reviewers a stable, plain-language view of what each metric measures.
+
+**Actors**: `cpt-presentation-actor-analytics-svc`, `cpt-presentation-actor-engineering`
 
 ## 6. Non-Functional Requirements
 

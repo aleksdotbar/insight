@@ -9,6 +9,7 @@ rather than as a bad URL.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import quote
 
 from playwright.sync_api import Locator, Page
@@ -22,9 +23,6 @@ class TeamView:
     def path(person_id: str) -> str:
         return f"/ic/{quote(person_id, safe='')}/team"
 
-    def go(self, person_id: str) -> None:
-        self.page.goto(self.path(person_id), wait_until="domcontentloaded")
-
     def team_heading(self, display_name: str) -> Locator:
         """The heading naming whose team this is.
 
@@ -33,6 +31,9 @@ class TeamView:
         would put the product's copy in the test.
         """
         return self.page.get_by_role("heading").filter(has_text=display_name).first
+
+    def metrics_overview(self) -> Locator:
+        return self.page.get_by_text(re.compile(r"^Members . metrics$"))
 
     def member_row(self, display_name: str) -> Locator:
         """That member's row in the team table.
@@ -48,3 +49,34 @@ class TeamView:
         only if the table rendered, which is what a caller actually means.
         """
         return self.page.get_by_role("row").filter(has_text=display_name)
+
+    def recorded_metric_cell(self, display_name: str, metric_label: str) -> Locator:
+        name = re.compile(
+            rf"^{re.escape(display_name)} — {re.escape(metric_label)}: (?!not recorded)"
+        )
+        return self.page.get_by_role("button", name=name)
+
+    def unrecorded_metric_cell(self, display_name: str, metric_label: str) -> Locator:
+        return self.page.get_by_role(
+            "button",
+            name=f"{display_name} — {metric_label}: not recorded",
+            exact=True,
+        )
+
+    def metric_cell(self, display_name: str, metric_label: str) -> Locator:
+        """That member's cell for a metric, recorded or an honest "not recorded".
+
+        Presence proves the row rendered the column; it does not require a
+        value, so a legitimately unrecorded metric (a member who closed tasks
+        but fixed no bugs) is not a failure.
+        """
+        name = re.compile(rf"^{re.escape(display_name)} — {re.escape(metric_label)}: ")
+        return self.page.get_by_role("button", name=name)
+
+    def any_recorded_metric_cell(self, display_name: str) -> Locator:
+        """Any metric this member has a recorded value for — the row is not blank."""
+        name = re.compile(rf"^{re.escape(display_name)} — .+: (?!not recorded)")
+        return self.page.get_by_role("button", name=name).first
+
+    def domain_card(self, label: str) -> Locator:
+        return self.page.get_by_role("button", name=f"Open {label} details")

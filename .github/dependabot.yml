@@ -34,6 +34,11 @@ updates:
     groups:
       base-images:
         patterns: ["*"]
+    ignore:
+      # dbt's dependency chain (dbt-common -> mashumaro) does not import on
+      # Python 3.14 yet; deploy/seed stays on 3.13 until it does.
+      - dependency-name: python
+        versions: [">=3.14"]
 
   - package-ecosystem: cargo
     directory: /src/backend
@@ -47,6 +52,12 @@ updates:
       rust-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+    # reqwest 0.13 breaks the authenticator: openidconnect 4 / oauth2 5 implement
+    # their HTTP-client traits only for reqwest 0.12. Lift when a released
+    # openidconnect supports reqwest 0.13.
+    ignore:
+      - dependency-name: reqwest
+        versions: [">=0.13"]
 
   - package-ecosystem: pip
     directory: /deploy/seed
@@ -99,3 +110,16 @@ updates:
       tests-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+
+  # Frontend package tree. Grouped so a week's worth of bumps arrives as one
+  # reviewable change rather than one pull request per package.
+  - package-ecosystem: npm
+    directory: /src/frontend
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ["*"]

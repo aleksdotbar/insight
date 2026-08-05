@@ -1,0 +1,86 @@
+{{/*
+Applies the versioned broker realm YAML (gitops environments/<env>/keycloak/
+realms/, packed into the <release>-keycloak-config-realms ConfigMap by the
+gitops `keycloak-broker-realms` target) against `keycloakConfig.url` with
+keycloak-config-cli — ADR-0003: realm content is config-as-code only.
+
+Runs as a post-install/post-upgrade hook, i.e. on every sync; with the
+import cache off (below) that reverts server-side drift. A failed import
+fails the helm upgrade. Gated on keycloakConfig.enabled.
+*/}}
+{{- if .Values.keycloakConfig.enabled }}
+{{- $kcUrl := tpl (required "keycloakConfig.url is required when keycloakConfig.enabled" .Values.keycloakConfig.url) . }}
+{{- if and (not (hasPrefix "https://" $kcUrl)) (not .Values.keycloakConfig.allowInsecureUrl) }}
+{{- fail (printf "keycloakConfig.url %q must be https:// — the Job sends the config-cli admin credentials to it. For an in-cluster dev/CI Keycloak reached over plain HTTP on the cluster network, set keycloakConfig.allowInsecureUrl=true explicitly." $kcUrl) }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "insight.fullname" . }}-keycloak-config
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  labels:
+    {{- include "insight.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak-config
+spec:
+  # Import errors are deterministic; retries only delay the failure.
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "insight.fullname" . }}-keycloak-config
+        app.kubernetes.io/component: keycloak-config
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: keycloak-config-cli
+          image: "{{ .Values.keycloakConfig.image.repository }}:{{ .Values.keycloakConfig.image.tag }}"
+          imagePullPolicy: {{ .Values.keycloakConfig.image.pullPolicy }}
+          env:
+            - name: KEYCLOAK_URL
+              value: {{ $kcUrl | quote }}
+            - name: IMPORT_FILES_LOCATIONS
+              value: "/config/*.yaml,/config/*.json"
+            # Resolves $(env:VAR) placeholders — how secrets reach realms.
+            - name: IMPORT_VARSUBSTITUTION_ENABLED
+              value: "true"
+            # Without this, unchanged files are checksum-skipped and drift
+            # survives (#2194 finding).
+            - name: IMPORT_CACHE_ENABLED
+              value: "false"
+            - name: KEYCLOAK_AVAILABILITYCHECK_ENABLED
+              value: "true"
+            - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
+              value: "120s"
+            {{- with (default "" (default dict .Values.global).tenantDefaultId) }}
+            # Env tenant pin for realm IdP mappers (never claim-derived).
+            - name: INSIGHT_TENANT_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.keycloakConfig.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ tpl (required "keycloakConfig.existingSecret is required when keycloakConfig.enabled" .Values.keycloakConfig.existingSecret) . | quote }}
+          volumeMounts:
+            - name: realms
+              mountPath: /config
+              readOnly: true
+          {{- with .Values.keycloakConfig.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: realms
+          configMap:
+            name: {{ default (printf "%s-keycloak-config-realms" (include "insight.fullname" .)) .Values.keycloakConfig.realmsConfigMap | quote }}
+{{- end }}

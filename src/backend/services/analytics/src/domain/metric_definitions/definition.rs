@@ -1,6 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+/// ClickHouse database holding the legacy gold serving relations (observations,
+/// evidence, entity cohorts). Single source of truth for the read side so the
+/// deferred `insight` -> `presentation` relocation (#1979) is one atomic flip.
+pub(crate) const GOLD_DATABASE: &str = "insight";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricDirection {
     HigherIsBetter,
@@ -8,7 +13,7 @@ pub enum MetricDirection {
     Neutral,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricFormat {
     Integer,
@@ -26,7 +31,7 @@ pub enum MetricComputation {
     DistinctCount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricInputRole {
     Value,
@@ -34,7 +39,7 @@ pub enum MetricInputRole {
     Denominator,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceGranularity {
     Event,
@@ -61,7 +66,8 @@ impl EvidenceGranularity {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceKind {
     ManagedObservation,
     CustomObservationSql,
@@ -114,7 +120,8 @@ pub struct MetricDefinition {
 /// Affine + clamp shaping for a computed metric value:
 /// `y = clamp(clamp_min, clamp_max, multiplier * x + offset)`.
 /// Absent fields are identity (multiplier 1, offset 0, no bound).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct ValueTransform {
     pub multiplier: Option<f64>,
     pub offset: Option<f64>,
@@ -242,7 +249,7 @@ impl MetricDefinition {
 }
 
 impl ObservationRelation {
-    pub const DATABASE: &'static str = "insight";
+    pub const DATABASE: &'static str = GOLD_DATABASE;
 
     /// Accepts exactly the managed-observation naming shape:
     /// lowercase `snake_case` ending in `_metric_observations`, with a
@@ -263,7 +270,7 @@ impl ObservationRelation {
 }
 
 impl EvidenceRelation {
-    pub const DATABASE: &'static str = "insight";
+    pub const DATABASE: &'static str = GOLD_DATABASE;
 
     pub fn parse(value: &str) -> Option<Self> {
         parse_relation(value, "_metric_evidence").map(Self)
@@ -289,7 +296,7 @@ fn parse_relation(value: &str, suffix: &str) -> Option<String> {
 impl CohortSource {
     pub fn table_ref(self) -> (&'static str, &'static str) {
         match self {
-            Self::MetricEntityCohortsCurrent => ("insight", "metric_entity_cohorts_current"),
+            Self::MetricEntityCohortsCurrent => (GOLD_DATABASE, "metric_entity_cohorts_current"),
         }
     }
 }
@@ -471,6 +478,13 @@ mod tests {
             .unwrap_or_else(|| panic!("builtin evidence must parse"));
         assert_eq!(evidence.table_ref(), ("insight", "ai_metric_evidence"));
         assert_eq!(evidence.source_ref(), "ai_metric_evidence");
+
+        // The cohort source resolves to the same gold database as observations
+        // and evidence — the single flip point for the #1979 relocation.
+        assert_eq!(
+            CohortSource::MetricEntityCohortsCurrent.table_ref(),
+            (GOLD_DATABASE, "metric_entity_cohorts_current")
+        );
     }
 
     #[test]

@@ -16,9 +16,8 @@ NOT here: `/v1/persons/{email}`. The committed contract at
 `docs/components/backend/identity-resolution/openapi.json` still declares it on
 this service, but identity-resolution answers 404 — only
 `/internal/persons/by-email/{email}` (service principals) survived the port.
-The capability itself is not gone: **analytics** serves `/v1/persons/{email}`
-and returns 200, so it belongs in an analytics module when one grows to
-cover it.
+Analytics no longer offers a person facade either; `POST /v1/profiles` is the
+one way to resolve a person.
 
 Every PERSON below was logged in by driving the deployed OIDC chain against
 Keycloak; no token is minted anywhere in this suite. The one non-person caller

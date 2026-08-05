@@ -243,21 +243,6 @@ class Tenants:
 
 
 @dataclass(frozen=True)
-class CataloguedTable:
-    """One `table_columns` row the seed wrote: a table and a column in it."""
-
-    table: str
-    field: str
-
-    @classmethod
-    def parse(cls, doc: Mapping[str, Any], where: str) -> CataloguedTable:
-        return cls(
-            table=_require(doc, "table", str, where),
-            field=_require(doc, "field", str, where),
-        )
-
-
-@dataclass(frozen=True)
 class DefinitionOverride:
     """The product definition the seed re-labelled for this tenant."""
 
@@ -276,28 +261,19 @@ class DefinitionOverride:
 class Catalogue:
     """Rows no endpoint creates, seeded by `deploy/seed/analytics.py`.
 
-    Both halves are optional and a test must treat absence as "cannot assert"
-    rather than as failure: a stand seeded without the `analytics` step is a
-    real state. `tests/stand/conftest.py`'s `requires_catalogue` marker is how a
-    test declares it needs them, so the skip carries a reason instead of the
-    test quietly asserting against an empty universe.
+    It is optional and a test must treat absence as "cannot assert" rather than
+    as failure: a stand seeded without the `analytics` step is a real state.
+    `tests/stand/conftest.py`'s `requires_catalogue` marker is how a test
+    declares it needs it, so the skip carries a reason instead of the test
+    quietly asserting against an empty universe.
     """
 
-    table_columns: tuple[CataloguedTable, ...]
     definition_override: DefinitionOverride | None
 
     @classmethod
     def parse(cls, doc: Mapping[str, Any], where: str) -> Catalogue:
-        rows = _require(doc, "table_columns", list, where)
         override = doc.get("definition_override")
         return cls(
-            table_columns=tuple(
-                CataloguedTable.parse(
-                    _as_mapping(entry, f"{where}.table_columns[{i}]"),
-                    f"{where}.table_columns[{i}]",
-                )
-                for i, entry in enumerate(rows)
-            ),
             definition_override=(
                 None
                 if override is None
@@ -307,10 +283,6 @@ class Catalogue:
                 )
             ),
         )
-
-    @property
-    def tables(self) -> tuple[str, ...]:
-        return tuple(row.table for row in self.table_columns)
 
 
 @dataclass(frozen=True)
@@ -408,7 +380,7 @@ class Manifest:
         # analytics seed step existed is still readable, and reports an empty
         # catalogue rather than failing to parse.
         catalogue = Catalogue.parse(
-            _as_mapping(doc.get("catalogue") or {"table_columns": []}, f"{where}.catalogue"),
+            _as_mapping(doc.get("catalogue") or {}, f"{where}.catalogue"),
             f"{where}.catalogue",
         )
 
@@ -509,7 +481,6 @@ __all__: Sequence[str] = (
     "SUPPORTED_MANIFEST_VERSION",
     "Capabilities",
     "Catalogue",
-    "CataloguedTable",
     "DefinitionOverride",
     "GoldenMetric",
     "Manifest",

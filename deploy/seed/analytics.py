@@ -1,25 +1,20 @@
 """
 MariaDB analytics seed: the catalogue rows no endpoint can create.
 
-Two tables the product provisions by operator or migration rather than through
-its API, so a suite has nothing to create them with:
+One table the product provisions by migration rather than through its API, so a
+suite has nothing to create it with:
 
-  table_columns       the drilldown column catalogue `/v1/columns/{table}`
-                      serves. Empty on a fresh stand, which makes the per-table
-                      filter untestable — every table answers `{"items": []}`
-                      and a broken filter looks identical to a correct one.
   metric_definitions  a TENANT-scoped row overriding a product default. The
                       listing is supposed to resolve the tenant's label over the
                       product's; with no tenant row anywhere, nothing proves it.
 
 Seeded here rather than inserted by a test fixture on purpose. The compose-stand
 suite holds no database connection — that would hand every test a back door
-around the deployed path it exists to exercise (see
-tests/stand/api/analytics/test_columns.py) — so anything a test needs and no
+around the deployed path it exists to exercise — so anything a test needs and no
 endpoint creates has to be seeded, and then NAMED IN THE MANIFEST. A test reads
 the name from there; it never hardcodes one.
 
-Runs after analytics has migrated: these tables are created by its SeaORM
+Runs after analytics has migrated: the table is created by its SeaORM
 migrations at startup, not by this seed.
 """
 
@@ -36,19 +31,14 @@ import pymysql
 
 LOG = logging.getLogger("seed.analytics")
 
-#: Deterministic ids, so re-seeding an un-torn-down stand replaces its own rows
-#: instead of accumulating a new pair every run.
-COLUMN_ROW_IDS = (
-    "e1e1e1e1-0000-4000-8000-000000000001",
-    "e1e1e1e1-0000-4000-8000-000000000002",
-)
+#: Deterministic id, so re-seeding an un-torn-down stand replaces its own row
+#: instead of accumulating a new one every run.
 DEFINITION_ROW_ID = "e1e1e1e1-0000-4000-8000-000000000010"
 
-#: The table/label constants live in `manifest` rather than here: `PROFILE.md`
-#: is rendered by a tool that must import no third-party package, and this
-#: module needs pymysql. The manifest owns the NAMES; this module owns writing
-#: the rows.
-from manifest import CATALOGUED_TABLES, OVERRIDE_LABEL  # noqa: E402
+#: The label constant lives in `manifest` rather than here: `PROFILE.md` is
+#: rendered by a tool that must import no third-party package, and this module
+#: needs pymysql. The manifest owns the NAMES; this module owns writing the rows.
+from manifest import OVERRIDE_LABEL  # noqa: E402
 
 
 def _bin(u: str) -> bytes:
@@ -77,28 +67,6 @@ def _connect() -> Iterator[pymysql.connections.Connection]:
         raise
     finally:
         conn.close()
-
-
-def seed_table_columns(cur: pymysql.cursors.Cursor) -> list[dict[str, str]]:
-    """Two platform-visible column rows, in two distinct tables.
-
-    `insight_tenant_id` NULL means platform-visible: the handler shows a
-    NULL-tenant row to every tenant (`InsightTenantId.is_null()` OR equals the
-    caller's). Seeding them tenant-less keeps the fixture usable from any
-    persona, which is what a catalogue is for.
-    """
-    rows = []
-    for row_id, (table, field) in zip(COLUMN_ROW_IDS, CATALOGUED_TABLES, strict=True):
-        cur.execute(
-            "REPLACE INTO table_columns "
-            "(id, insight_tenant_id, clickhouse_table, field_name, created_at, updated_at) "
-            "VALUES (%s, NULL, %s, %s, UTC_TIMESTAMP(), UTC_TIMESTAMP())",
-            (_bin(row_id), table, field),
-        )
-        rows.append({"table": table, "field": field})
-
-    LOG.info("  table_columns%s", "".join(f"\n    {r['table']}.{r['field']}" for r in rows))
-    return rows
 
 
 #: MySQL's "The value specified for generated column … has been ignored" — the
@@ -315,7 +283,6 @@ def run() -> dict[str, Any]:
     LOG.info("analytics catalogue seed (tenant %s)", tenant)
     with _connect() as conn:
         cur = conn.cursor()
-        columns = seed_table_columns(cur)
         override = seed_definition_override(cur, tenant)
 
-    return {"table_columns": columns, "definition_override": override}
+    return {"definition_override": override}
