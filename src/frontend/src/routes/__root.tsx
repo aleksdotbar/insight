@@ -1,4 +1,4 @@
-import { Outlet, createRootRoute } from "@tanstack/react-router";
+import { Outlet, createRootRoute, useRouterState } from "@tanstack/react-router";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getPerson } from "@/api/identity-client";
@@ -9,6 +9,8 @@ import { CenteredSpinner } from "@/components/widgets/centered-spinner";
 import { MockBanner } from "@/components/mock-banner";
 import { ViewAsBanner } from "@/components/view-as-banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { PortalLayout } from "@/components/portal/portal-layout";
+import { usePortalEnabled } from "@/lib/portal/portal-store";
 import { normalizePersonId } from "@/lib/metrics/entity";
 import { queryClient } from "@/query-client";
 import { MetricEvidenceDialogProvider } from "@/components/metric-evidence-dialog-provider";
@@ -51,18 +53,34 @@ function RootPending() {
 }
 
 function RootLayout() {
+  const portal = usePortalEnabled();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The portal is a ROUTE now, so it renders through the Outlet like anything
+  // else — otherwise its navigation could never live in the URL. It still owns
+  // the whole shell on the routes it claims (/portal and the person pages);
+  // everywhere else (/metrics, /whats-new) the app chrome stays, which the
+  // old "portal replaces the app" branch used to swallow.
+  const portalRoute =
+    pathname === "/portal" || /^\/ic\/[^/]+\/(personal|team)\/?$/.test(pathname);
   return (
     <TooltipProvider>
+      {/* Upstream's evidence-dialog provider wraps everything; the portal
+          branch lives inside it, so a drilldown opened from a portal surface
+          finds the same provider the legacy screens use. */}
       <MetricEvidenceDialogProvider>
         <AuthGate>
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarInset className="min-w-0 overflow-x-clip">
-              <MockBanner />
-              <ViewAsBanner />
-              <Outlet />
-            </SidebarInset>
-          </SidebarProvider>
+          {portal && portalRoute ? (
+            <PortalLayout />
+          ) : (
+            <SidebarProvider>
+              <AppSidebar />
+              <SidebarInset className="min-w-0 overflow-x-clip">
+                <MockBanner />
+                <ViewAsBanner />
+                <Outlet />
+              </SidebarInset>
+            </SidebarProvider>
+          )}
         </AuthGate>
       </MetricEvidenceDialogProvider>
     </TooltipProvider>
