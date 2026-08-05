@@ -75,56 +75,59 @@ number and the framework text needs updating to match (tracked in #2215).
 REF-L, and no evidence in this study reaches either point directly. Figures for 5,000 people appear
 below as an informational extrapolation only — not a defined reference organisation.
 
-### 3.1 The approximation — headcount × organisation age
+### 3.1 How much data a reference organisation holds
 
-**Insight is installed into brownfield organisations**, so the sizing assumes accumulated history by
-default. A greenfield year of flow is the *floor*, not the target.
+Two inputs: **how many active people**, and **how old the organisation is**. Insight is installed
+into brownfield organisations, so accumulated history is the default — one year of activity is the
+*floor*, not the target.
 
-    TOTAL(N, A)  =  N × 365 × Σ_families [ ρ_f × M_f(A) ]  +  STOCK(N)
+**Step 1 — one year of activity.** Active people × 365 days × **112 rows / 88 kB per person per
+day**. At REF-L that is 122.5 M rows and 89.4 GiB.
 
-`N` = active people · `A` = organisation age in years · `ρ_f` = the family's rows per active person
-per day · `M_f(A)` = how many years of *today's* activity the accumulated corpus is worth.
+**Step 2 — multiply each family by its age factor.** Older organisations hold more, but far less
+than you would expect: if activity were flat, a 10-year-old organisation would hold 10 years of
+data. It does not. An 18-year-old tracker corpus is worth **4.2 years** of today's volume, because
+activity compounds — the early years are thin — and several sources refuse to serve old data at all.
 
-**`M` is far below `A`, and that is the central finding.** A constant-rate organisation would give
-`M = A`. Measured, an 18-year-old tracker corpus is worth **4.2 years** of today's volume, not 18 —
-two unrelated installs converge on **17 %** per year of age for task classes. Activity compounds, so
-the early years are thin; and several sources refuse to serve old data at all.
+| Family | Share of a year's rows | at 5 years | at 10 years | at 20 years | What limits it |
+|---|--:|--:|--:|--:|---|
+| Task | 45 % *(and 90 % of bytes)* | ×1.7 | ×2.5 | ×4.2 | nothing — trackers keep everything |
+| Git | 29 % | ×1.7 | ×2.5 | ×3.4 | nothing at source; see limits |
+| Collaboration | 15 % | **×1** | **×1** | **×1** | source serves 27 days (M365), 150 (Zoom) |
+| CRM & support | 8 % | ×2.8 | ×3.2 | ×3.2 | when the CRM was adopted, not the org's age |
+| HR & identity | 2 % | **×1** | **×1** | **×1** | no history — starts at connector install |
+| AI | 1 % | **×1** | **×1** | **×1** | vendor keeps 7–10 months |
+| Wiki | 1 % | ×3.2 | ×6.0 | ×11.5 | nothing — pages persist as content |
 
-| Family | ρ (rows/a-p-d) | M(A) | M(5) | M(10) | M(20) | Why |
-|---|--:|---|--:|--:|--:|---|
-| Task | 49.95 | 1 + 0.17(A−1) | 1.68 | 2.53 | 4.23 | measured on 2 trackers, ages 10.8 y and 18.3 y |
-| Git | 32.30 | 1 + 0.17(A−1), capped 3.4 | 1.68 | 2.53 | 3.40 | τ **inherited from task** — see limits |
-| Collaboration | 16.53 | **1.00, constant** | 1.00 | 1.00 | 1.00 | source serves 27 d (M365) / 150 d (Zoom): **no brownfield exists** |
-| CRM & Support | 8.51 | 1 + 0.44(min(A,6)−1) | 2.76 | 3.20 | 3.20 | bounded by CRM-platform adoption age, not org age |
-| HR & Identity | 2.69 | **1.00, constant** | 1.00 | 1.00 | 1.00 | no history at all — starts at connector install |
-| AI | 1.04 | **1.00, constant** | 1.00 | 1.00 | 1.00 | vendor floor 203–299 d; day-one arrival 0.56–0.82 y |
-| Wiki | 0.85 | 1 + 0.55(A−1) | 3.20 | 5.95 | 11.45 | flattest accumulator — pages persist as content |
+Between those columns the factors grow by a fixed amount per year, so interpolate linearly.
 
-Three of the seven families **do not accumulate at all**. Collaboration, AI and HR are bounded by
-what the source will serve, not by how old the organisation is: a twenty-year-old company and a
+**Three of the seven families do not accumulate at all.** Collaboration, AI and HR are capped by
+what the source will serve, not by the organisation's age — a twenty-year-old company and a
 two-year-old one arrive with **identical** email, chat, meeting and AI corpora.
 
-**Volume per reference organisation.** `A = 10` is the default — mid-range of the two measured
-installs and where the model is best anchored. `A = 0` is the greenfield flow-only floor.
+**Step 3 — add the stock**, the inventory that arrives whole (below): 0.5–2.5 M rows.
 
-| Reference org | Active people | A = 0 *(floor)* | A = 5 | **A = 10** *(default)* | A = 20 |
+**The result.** **Ten years is the default** — mid-range of the two measured installs, and where
+the model is best anchored. The *no history* column is the one-year-of-flow floor.
+
+| Reference org | Active people | No history *(floor)* | 5 years old | **10 years old** *(default)* | 20 years old |
 |---|--:|---|---|---|---|
 | **REF-S** | 50 | 2.0 M · 1.5 GiB | 3.4 M · 2.5 GiB | **4.8 M · 3.7 GiB** | 6.9 M · 6.1 GiB |
 | **REF-M** | 500 | 20.4 M · 14.9 GiB | 33.7 M · 25.2 GiB | **47.6 M · 37.5 GiB** | 69.0 M · 61.1 GiB |
 | **REF-L** | 3,000 | 122.5 M · 89.4 GiB | 202.2 M · 150.9 GiB | **285.4 M · 224.8 GiB** | 414.3 M · 366.5 GiB |
 | *(informational)* | 5,000 | 204.2 M · 149.1 GiB | 337.0 M · 251.5 GiB | *475.7 M · 374.7 GiB* | 690.5 M · 610.8 GiB |
 
-Rows are logical (dedup-free); bytes are uncompressed. Scaling is linear in `N`. **Bytes grow faster
-than rows** — 4.10× versus 3.38× at `A = 20` — because 89.5 % of the bytes are the task family, the
+Rows are logical (dedup-free); bytes are uncompressed. Double the people, double the numbers. **Bytes grow faster
+than rows** — 4.1× versus 3.4× at twenty years — because 89.5 % of the bytes are the task family, the
 second-steepest accumulator. Any storage or cost-of-ownership figure is therefore more sensitive to
 the brownfield correction than any row count or query-latency figure.
 
 **This is a bracket, not a point estimate.** The upper bound is an established enterprise that did
 *not* grow into its headcount — its history is thin only because tools got chattier, measured at
-**1.13×/yr** per-author intensity growth. At `A = 20` that is **1.9× the central figure**. Use the
+**1.13× a year** in per-author intensity. At twenty years that is **1.9× the central figure**. Use the
 central column as the sizing target and the upper bracket as the soak and headroom target.
 
-| Scenario | A = 5 | A = 10 | A = 20 |
+| Scenario | 5 years | 10 years | 20 years |
 |---|--:|--:|--:|
 | As-configured *(what the measured installs actually ingest)* | 192 M · 149 GiB | 244 M · 218 GiB | 337 M · 354 GiB |
 | **Central** *(above)* | **202 M · 151 GiB** | **285 M · 225 GiB** | **414 M · 366 GiB** |
@@ -166,8 +169,8 @@ What an organisation produces, one row per **metric class**.
   departed employees still attached to history all author rows.
 * **REF-L annual flow** — one year of rows at 3,000 active people, at each class's canonical layer
   (one layer per class, so the total is not the whole-install figure in §3.1). For a brownfield
-  organisation multiply by that family's `M(A)` from §3.1 — ×2.53 for task and git at `A = 10`,
-  ×5.95 for wiki, ×1.00 for collaboration, AI and HR.
+  organisation multiply by that family's age factor from §3.1 — ×2.5 for task and git at ten years,
+  ×6.0 for wiki, ×1 for collaboration, AI and HR.
 
 | Metric class | Rows per active person-day | p50 per participant-week | Adoption | REF-L annual flow |
 |---|---|--:|--:|--:|
@@ -214,7 +217,7 @@ What an organisation produces, one row per **metric class**.
 | `identity_aliases` | 0.06 *(one-sided)* | — | — | 68,985 |
 | **total, canonical layer** | | | | **28,796,200** |
 
-At the default `A = 10` the same classes carry roughly **2.5×** this in task and git, **6×** in wiki
+At the ten-year default the same classes carry roughly **2.5×** this in task and git, **6×** in wiki
 and **1×** in collaboration, AI and HR — see §3.1.
 
 **Two classes carry most of the volume** — `task_history` and `git_file_changes` are 57 % of the
@@ -259,13 +262,12 @@ Limits, stated rather than implied:
   operator-configured backfill floor — one has **zero** rows before 2025-01-01, the other before
   2026-01-05 — so neither can show how git accumulates. Git sources retain everything forever, so
   this is under-collection by configuration, not a source limit: an operator who changes that
-  setting changes the volume. Its τ is borrowed from the task family and capped by a growth
-  decomposition. Git is **28.9 % of the rows**, so this is the largest unmeasured term.
+  setting changes the volume. Its age factor is borrowed from the task family and capped by a
+  growth decomposition. Git is **28.9 % of the rows**, so this is the largest unmeasured term.
 * **CRM and support are one-sided** — measured on one installation only; the other has the connector
   provisioned and never synced.
-* **The wiki taper rests on two products that disagree 1.4×** (τ 0.41 vs 0.56), and the older one is
-  corrected upward for truncation. Wiki is the steepest accumulator, so `A = 20` is where this
-  matters.
+* **The wiki age factor rests on two products that disagree 1.4×**, and the older one is corrected
+  upward for truncation. Wiki is the steepest accumulator, so twenty years is where this matters.
 * **Both readings of the taper are real, and which one dominates is a property of the connector.**
   Compounding is *demonstrated* for task and wiki — every year present and non-zero, no
   zero-then-jump anywhere. Truncation is *demonstrated* for git and collaboration — hard floors in
