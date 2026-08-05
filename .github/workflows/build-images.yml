@@ -382,6 +382,12 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Fail on a fixable critical before any tag points here
+        uses: ./.github/actions/image-cve-gate
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/insight-analytics
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
         working-directory: /tmp/digests
         run: |
@@ -487,6 +493,12 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Fail on a fixable critical before any tag points here
+        uses: ./.github/actions/image-cve-gate
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/insight-authenticator
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
         working-directory: /tmp/digests
         run: |
@@ -592,6 +604,12 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Fail on a fixable critical before any tag points here
+        uses: ./.github/actions/image-cve-gate
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/insight-gateway
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
         working-directory: /tmp/digests
         run: |
@@ -711,6 +729,12 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Fail on a fixable critical before any tag points here
+        uses: ./.github/actions/image-cve-gate
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/insight-identity-resolution
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
         working-directory: /tmp/digests
         run: |
@@ -839,6 +863,12 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Fail on a fixable critical before any tag points here
+        uses: ./.github/actions/image-cve-gate
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/insight-front
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
         working-directory: /tmp/digests
         run: |
@@ -1009,6 +1039,12 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Fail on a fixable critical before any tag points here
+        uses: ./.github/actions/image-cve-gate
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/insight-toolbox
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
         working-directory: /tmp/digests
         run: |
@@ -1270,6 +1306,12 @@ jobs:
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Fail on a fixable critical before any tag points here
+        uses: ./.github/actions/image-cve-gate
+        with:
+          image: ${{ env.IMAGE_PREFIX }}/${{ matrix.entry.name }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
         working-directory: /tmp/digests
         run: |
