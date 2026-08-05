@@ -3,16 +3,16 @@ import { useSyncExternalStore } from "react";
 /**
  * Portal PREFERENCES (feature-flagged behind `insight.portal`).
  *
- * `enabled` persists to localStorage (mirrors the metrics-v2 flag pattern in
- * feature-flags.ts). `zone` is in-memory navigation state: `null` means "follow
- * the route" (the entity lenses — Person / People — render the existing
- * dashboard `<Outlet/>`); a zone id means an org-level lens is selected and the
- * content area shows its scaffold.
+ * `enabled` and `showPlanned` persist to localStorage (mirroring the metrics-v2
+ * flag pattern in feature-flags.ts). Nothing else lives here: every piece of
+ * navigation state — zone, item, scope, slice, period — rides in the URL
+ * (`portal-search.ts`, `portal-nav.ts`), because it describes the view rather
+ * than the reader.
  */
 
 /**
  * Org scope — WHO is counted in every org zone (design §6). `root` is the
- * email of a manager node inside the viewer's subtree (null = the viewer's
+ * person id of a manager node inside the viewer's subtree (null = the viewer's
  * whole org); `directOnly` narrows to direct reports. Phase 2 reserves
  * `attrFilter` (attribute-value cut across the tree) — no UI yet.
  */

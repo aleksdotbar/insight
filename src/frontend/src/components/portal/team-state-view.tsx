@@ -88,9 +88,9 @@ export function TeamStateView() {
 
   // Headline metrics only (card.preview): the set a lead scans, and — crucially —
   // small enough to stay under the API's 50-metrics-per-request cap when the full
-  // metric catalog across every group would blow past it. `GROUPS` is
-  // called INSIDE the memo — it returns a fresh array per call, and a fresh
-  // dependency would defeat the memo and re-key the grid query every render.
+  // metric catalog across every group would blow past it. `GROUPS` is a module
+  // constant, so it is read inside the memo and left out of the dependency
+  // list — listing it would be noise, not safety.
   const headlineKeys = useMemo(() => headlineMetricKeys(), []);
   const gridCollection = useMemo<MetricCollectionConfig>(() => {
     const want = new Set(headlineKeys);
@@ -256,7 +256,7 @@ export function TeamStateView() {
               metricKeys={shownKeys}
               byKey={heatByKey}
               previousByKey={grid.previousByKey}
-              caption={`${teamName} — members × metrics`}
+              caption={`${teamName || "Team"} — members × metrics`}
               cohortLabel={cohortLabel}
             />
           </CardContent>

@@ -202,6 +202,11 @@ export function computeAttentionFlags({
   return [...best.values()].sort((a, b) => b.severity - a.severity);
 }
 
+/** "1 person" / "3 people" — a scope of one is a real case (a lead with one report). */
+function people(n: number): string {
+  return `${n} ${n === 1 ? "person" : "people"}`;
+}
+
 /** Deterministic one-liner over the flag set — placeholder for a future AI insight. */
 export function attentionSummary(
   flags: AttentionFlag[],
@@ -209,10 +214,10 @@ export function attentionSummary(
   teamSize: number,
 ): string {
   if (flags.length === 0)
-    return `All ${teamSize} people are within their usual range this period.`;
+    return `All ${people(teamSize)} are within their usual range this period.`;
   const byMetric = new Map<string, number>();
   for (const f of flags) byMetric.set(f.metricLabel, (byMetric.get(f.metricLabel) ?? 0) + 1);
   const top = [...byMetric.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2);
   const themes = top.map(([label, n]) => `${label} (${n})`).join(", ");
-  return `${flaggedPeople} of ${teamSize} people need a look — most flags on ${themes}.`;
+  return `${flaggedPeople} of ${people(teamSize)} need a look — most flags on ${themes}.`;
 }

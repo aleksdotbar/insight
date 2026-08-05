@@ -39,6 +39,7 @@ const person = (
 ): IdentityPerson => identityPerson(label, over, subs);
 
 beforeEach(() => {
+  mocks.ic.refetch.mockClear();
   mocks.personId = pid("boss");
   mocks.ic.isPending = false;
   mocks.ic.isError = false;

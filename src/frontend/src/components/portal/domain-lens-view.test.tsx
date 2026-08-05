@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     isError: false,
     refetch: vi.fn(),
   },
+  call: 0,
   collections: [] as Array<{
     byKey: Map<string, NormalizedMetricResult>;
     isPending: boolean;
@@ -58,16 +59,15 @@ vi.mock("@/queries/member-grid", () => ({
   useMemberGridData: () => mocks.grid,
 }));
 // DomainLensView calls useMetricCollection three times (trend, composition,
-// event-histogram) in that order on every render.
+// event-histogram) in that order on every render. The counter is reset per test
+// (see beforeEach): left running, each caller's slot would depend on how many
+// renders every earlier test happened to do.
 vi.mock("@/queries/metric-results", () => ({
-  useMetricCollection: (() => {
-    let call = 0;
-    return () => {
-      const r = mocks.collections[call % 3] ?? emptyCollection();
-      call += 1;
-      return r;
-    };
-  })(),
+  useMetricCollection: () => {
+    const r = mocks.collections[mocks.call % 3] ?? emptyCollection();
+    mocks.call += 1;
+    return r;
+  },
 }));
 vi.mock("@/hooks/use-portal-period", () => ({
   usePortalPeriod: () => ({
@@ -155,6 +155,7 @@ const HEADLINE_CONFIG: LensConfig = {
 };
 
 beforeEach(() => {
+  mocks.call = 0;
   seedHappyOrg();
   mocks.grid.isPending = false;
   mocks.grid.isError = false;

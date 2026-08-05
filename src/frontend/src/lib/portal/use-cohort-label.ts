@@ -19,6 +19,16 @@ import { useIcPerson } from "@/queries/ic-dashboard";
  * Derived from the viewer's whole org, like the slice control itself, so every
  * surface says the same thing about the same slice.
  */
+/**
+ * The label reads mid-sentence ("above the division median"), so a plain
+ * capitalised word is lowered. Anything else is left as authored: identity
+ * attribute labels are becoming generic (constructorfabric/insight#1881), and
+ * lowering them blindly turns "R&D area" into "r&d area".
+ */
+function midSentence(label: string): string {
+  return /^[A-Z][a-z]*$/.test(label) ? label.toLowerCase() : label;
+}
+
 export function useCohortLabel(): string {
   const slice = usePortalSlice();
   const { personId } = useViewer();
@@ -28,5 +38,5 @@ export function useCohortLabel(): string {
     [tree],
   );
   if (!slice) return "team";
-  return (dims.find((d) => d.key === slice)?.label ?? "cohort").toLowerCase();
+  return midSentence(dims.find((d) => d.key === slice)?.label ?? "cohort");
 }

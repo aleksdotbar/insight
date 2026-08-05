@@ -278,16 +278,21 @@ function ItemsNav({
   const { live, planned } = partitionByReadiness(items, showPlanned);
   return (
     <>
-      <SidebarGroup>
-        <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            {live.map((it) => (
-              <ItemButton key={it.id} item={it} active={active === it.id} />
-            ))}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+      {/* Skipped when empty, as ThemeNav does: with planned items hidden a
+          zone can have no live items, and a bare heading reads as a load
+          failure rather than as a filter. */}
+      {live.length ? (
+        <SidebarGroup>
+          <SidebarGroupLabel>{groupLabel}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {live.map((it) => (
+                <ItemButton key={it.id} item={it} active={active === it.id} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      ) : null}
       {planned.length ? (
         <SidebarGroup>
           <SidebarGroupLabel>{PLANNED_GROUP_LABEL}</SidebarGroupLabel>

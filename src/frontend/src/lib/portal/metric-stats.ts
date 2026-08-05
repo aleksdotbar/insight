@@ -89,7 +89,10 @@ export function distribution(
   const nBins = Math.max(1, Math.ceil(max / step));
   const counts = new Array(nBins).fill(0) as number[];
   for (const v of values) {
-    counts[Math.min(nBins - 1, Math.floor(v / step))] += 1;
+    // Clamped at both ends: a negative value (a delta-shaped metric, a bad
+    // row) would index counts[-1], which lands on a property outside the array
+    // and drops the person from the distribution silently.
+    counts[Math.min(nBins - 1, Math.max(0, Math.floor(v / step)))] += 1;
   }
   if (counts.filter((c) => c > 0).length < 2) return [];
   return counts.map((count, i) => ({
@@ -122,12 +125,23 @@ export function topDecileShare(values: readonly number[]): number | null {
   return top / total;
 }
 
-/** Compact axis number: 1500 → "1.5k", 10 → "10", 2.5 → "2.5". */
+/**
+ * Compact bin label: 1500 → "1.5k", 1_500_000 → "1.5M", 10 → "10", 2.5 → "2.5".
+ *
+ * Deliberately NOT `formatAxisTick`, which only abbreviates from 10k: a tick
+ * marks a gridline, so "1.5k" there would name a position the line is not
+ * exactly on. A bin edge is an exact value off the 1/2/5 ladder, so abbreviating
+ * from a thousand loses nothing. The million step exists because without it a
+ * million-level bin read "1000k".
+ */
 export function fmtCompact(n: number): string {
-  if (Math.abs(n) >= 1000) {
-    const k = n / 1000;
-    return `${Number.isInteger(k) ? k : k.toFixed(1)}k`;
-  }
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${trim(n / 1_000_000)}M`;
+  if (abs >= 1000) return `${trim(n / 1000)}k`;
+  return trim(n);
+}
+
+function trim(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 

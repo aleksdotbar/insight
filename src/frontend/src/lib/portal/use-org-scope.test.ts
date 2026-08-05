@@ -77,4 +77,23 @@ describe("resolveScopeRoster", () => {
     ]);
     expect(s.managerNodes.map((m) => m.teamSize)).toEqual([5, 3, 1]);
   });
+
+  it("keeps the picker in outline order across branches, not by depth", () => {
+    // Two leads at the same level, each with a lead under them: the picker is
+    // read as an org chart, so a lead's own leads follow it rather than all
+    // depth-1 nodes coming before all depth-2 nodes.
+    const tree = person("p-top", "Top", [
+      person("p-l1", "Lead 1", [person("p-l1a", "Lead 1A", [person("p-x", "X")])]),
+      person("p-l2", "Lead 2", [person("p-l2a", "Lead 2A", [person("p-y", "Y")])]),
+    ]);
+    const s = resolveScopeRoster(tree, "p-top", { root: null, directOnly: false });
+    expect(s.managerNodes.map((m) => m.person_id)).toEqual([
+      "p-top",
+      "p-l1",
+      "p-l1a",
+      "p-l2",
+      "p-l2a",
+    ]);
+    expect(s.managerNodes.map((m) => m.teamSize)).toEqual([6, 2, 1, 2, 1]);
+  });
 });

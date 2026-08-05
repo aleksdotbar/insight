@@ -99,6 +99,12 @@ function trimTrailingZero(s: string): string {
 export function formatAxisTick(v: number): string {
   const abs = Math.abs(v);
   if (abs >= 1_000_000) return `${trimTrailingZero((v / 1_000_000).toFixed(1))}M`;
-  if (abs >= 10_000) return `${Math.round(v / 1000)}k`;
+  if (abs >= 10_000) {
+    const k = Math.round(v / 1000);
+    // 999_600 rounds to 1000k — a tick that names a magnitude the scale below
+    // it already covers. Roll it over rather than print a fourth digit.
+    if (Math.abs(k) >= 1000) return `${trimTrailingZero((k / 1000).toFixed(1))}M`;
+    return `${k}k`;
+  }
   return trimTrailingZero((Math.round(v * 10) / 10).toFixed(1));
 }

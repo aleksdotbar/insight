@@ -38,9 +38,6 @@ vi.mock("@/components/view-as-banner", () => ({
   ViewAsBanner: () => <div data-testid="view-as-banner" />,
 }));
 vi.mock("@/components/portal/zone-content", () => ({ ZoneContent: () => <div /> }));
-vi.mock("@/lib/portal/use-viewer-is-manager", () => ({
-  useViewerIsManager: () => ({ isManager: true, isPending: false }),
-}));
 vi.mock("@/components/portal/scope-select", () => ({ ScopeSelect: () => <div /> }));
 vi.mock("@/components/portal/slice-select", () => ({ SliceSelect: () => <div /> }));
 vi.mock("@/components/widgets/period-selector-bar", () => ({

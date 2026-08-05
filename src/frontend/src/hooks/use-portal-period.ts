@@ -1,10 +1,12 @@
+import { useCallback, useMemo } from "react";
+
 import {
   resolveDateRange,
   validateDateRange,
   type DateRange,
 } from "@/api/period-to-date-range";
 import { usePortalSearch, useSetPortalSearch } from "@/lib/portal/portal-search";
-import { readPeriodPreference, writePeriodPreference } from "@/hooks/use-period";
+import { usePeriodPreference, writePeriodPreference } from "@/hooks/use-period";
 import type { CustomRange, PeriodValue } from "@/types/insight";
 
 /**
@@ -26,22 +28,31 @@ export function usePortalPeriod(): {
 } {
   const search = usePortalSearch();
   const setSearch = useSetPortalSearch();
+  const preference = usePeriodPreference();
 
-  const period = search.period ?? readPeriodPreference();
-  const customRange =
-    search.from && search.to ? { from: search.from, to: search.to } : null;
+  const period = search.period ?? preference;
+  // Memoised: these land in the dependency arrays of every metric query, so a
+  // fresh object per render re-keys the queries on an unrelated re-render.
+  const customRange = useMemo(
+    () => (search.from && search.to ? { from: search.from, to: search.to } : null),
+    [search.from, search.to],
+  );
+  const dateRange = useMemo(
+    () => resolveDateRange(period, customRange),
+    [period, customRange],
+  );
 
-  return {
-    period,
-    customRange,
-    dateRange: resolveDateRange(period, customRange),
-    setPeriod: (next) => {
+  const setPeriod = useCallback(
+    (next: PeriodValue) => {
       // Remember the choice as the default for a link that names no period,
       // then put it in the URL where it belongs.
       writePeriodPreference(next);
       setSearch({ period: next, from: undefined, to: undefined });
     },
-    setCustomRange: (range) => {
+    [setSearch],
+  );
+  const setCustomRange = useCallback(
+    (range: CustomRange | null) => {
       // Drop an invalid range instead of throwing: this runs in an event
       // handler, where no error boundary is watching, and the same policy the
       // URL validator follows (degrade to the preset) has to hold here too.
@@ -49,5 +60,11 @@ export function usePortalPeriod(): {
       if (range && !validateDateRange(range).valid) return;
       setSearch({ from: range?.from, to: range?.to });
     },
-  };
+    [setSearch],
+  );
+
+  return useMemo(
+    () => ({ period, customRange, dateRange, setPeriod, setCustomRange }),
+    [period, customRange, dateRange, setPeriod, setCustomRange],
+  );
 }

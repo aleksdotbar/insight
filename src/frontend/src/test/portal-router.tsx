@@ -69,14 +69,18 @@ function subscribe(cb: () => void): () => void {
 export function portalRouterMock(): Record<string, unknown> {
   const navigate = vi.fn((opts: Record<string, unknown>) => {
     portalRouter.navigations.push(opts);
+    // Routed through `set` so a cleared key is DELETED rather than left as
+    // `undefined`: the real router drops it from the URL, and a fake that keeps
+    // it makes `toEqual` assertions disagree with what a shared link contains.
     if (typeof opts.search === "function") {
-      portalRouter.search = (
-        opts.search as (p: unknown) => Record<string, unknown>
-      )(portalRouter.search) as PortalSearch;
-      emit();
+      const next = (opts.search as (p: unknown) => Record<string, unknown>)(
+        portalRouter.search,
+      );
+      portalRouter.search = {} as PortalSearch;
+      portalRouter.set(next as Partial<PortalSearch>);
     } else if (opts.search) {
-      portalRouter.search = opts.search as PortalSearch;
-      emit();
+      portalRouter.search = {} as PortalSearch;
+      portalRouter.set(opts.search as Partial<PortalSearch>);
     }
     if (typeof opts.to === "string" && opts.to !== ".") {
       const params = (opts.params ?? {}) as Record<string, string>;

@@ -104,6 +104,12 @@ describe("medianAcross", () => {
 describe("fmtCompact", () => {
   it("abbreviates thousands", () => expect(fmtCompact(1500)).toBe("1.5k"));
   it("keeps small integers", () => expect(fmtCompact(10)).toBe("10"));
+  // Without the million step a large bin edge read "1000k", which names a
+  // magnitude the reader has to decode.
+  it("abbreviates millions", () => {
+    expect(fmtCompact(1_500_000)).toBe("1.5M");
+    expect(fmtCompact(2_000_000)).toBe("2M");
+  });
 });
 
 describe("groupCoverage", () => {

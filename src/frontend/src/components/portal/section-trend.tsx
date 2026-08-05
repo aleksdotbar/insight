@@ -41,6 +41,11 @@ export interface SectionTrendProps {
   series: SectionTrendSeries[];
   data: SectionTrendPoint[];
   targetLine?: { value: number; label: string };
+  /**
+   * Force the right axis on. Normally unnecessary — it is rendered whenever a
+   * series asks for it — but a caller can pin it so the plot area does not
+   * shift when a right-axis series drops out of the data.
+   */
   rightAxis?: boolean;
   height?: number;
   isPending?: boolean;
@@ -100,6 +105,11 @@ export function SectionTrend({
     return next;
   });
 
+  // Derived, not just taken from the prop: a series with `yAxisId: "right"`
+  // and no right YAxis rendered is dropped by recharts without a word.
+  const needsRightAxis =
+    rightAxis || safeSeries.some((s) => s.yAxisId === "right");
+
   const config: ChartConfig = Object.fromEntries(
     safeSeries.map((s, i) => [
       s.key,
@@ -136,7 +146,7 @@ export function SectionTrend({
               tickLine={false}
               axisLine={false}
             />
-            {rightAxis ? (
+            {needsRightAxis ? (
               <YAxis
                 yAxisId="right"
                 orientation="right"

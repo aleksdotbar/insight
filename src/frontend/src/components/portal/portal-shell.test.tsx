@@ -10,6 +10,8 @@ vi.mock("@tanstack/react-router", async () => {
   return portalRouterMock();
 });
 
+import { resetRouteScopeSync } from "@/lib/portal/route-scope-sync";
+import { pid } from "@/test/identity";
 import { portalRouter } from "@/test/portal-router";
 
 import { act, render, screen } from "@testing-library/react";
@@ -17,13 +19,15 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  email: "boss@x" as string | null,
+  personId: null as string | null,
   isManager: true,
   isPending: false,
-  zone: { activeZone: "overview", activePerson: "boss@x" },
+  zone: { activeZone: "overview", activePerson: "" },
 }));
 
-vi.mock("@/auth", () => ({ useViewer: () => ({ email: mocks.email }) }));
+vi.mock("@/auth", () => ({
+  useViewer: () => ({ email: "boss@x", personId: mocks.personId }),
+}));
 vi.mock("@/lib/portal/use-viewer-is-manager", () => ({
   useViewerIsManager: () => ({ isManager: mocks.isManager, isPending: mocks.isPending }),
 }));
@@ -108,7 +112,9 @@ beforeEach(() => {
   })) as unknown as typeof window.matchMedia;
   mocks.isManager = true;
   mocks.isPending = false;
-  mocks.zone = { activeZone: "overview", activePerson: "boss@x" };
+  mocks.personId = pid("boss");
+  resetRouteScopeSync();
+  mocks.zone = { activeZone: "overview", activePerson: pid("boss") };
   act(() => {
     portalRouter.set({ zone: undefined });
     portalRouter.set({ item: undefined });
@@ -129,13 +135,13 @@ describe("ZoneContent routing", () => {
     ["manage", "manage"],
   ];
   it.each(cases)("zone %s renders its view", (zone, testid) => {
-    mocks.zone = { activeZone: zone, activePerson: "boss@x" };
+    mocks.zone = { activeZone: zone, activePerson: pid("boss") };
     render(<ZoneContent />);
     expect(screen.getByTestId(testid)).toBeInTheDocument();
   });
 
   it("scorecard renders an honest scaffold, not a fake dashboard", () => {
-    mocks.zone = { activeZone: "scorecard", activePerson: "boss@x" };
+    mocks.zone = { activeZone: "scorecard", activePerson: pid("boss") };
     render(<ZoneContent />);
     expect(screen.getByText("Scorecard")).toBeInTheDocument();
     expect(screen.getByText(/org snapshots/)).toBeInTheDocument();
@@ -189,14 +195,14 @@ describe("OverviewView", () => {
 
 describe("PersonView", () => {
   it("defaults to the at-a-glance dashboard with the person's header", () => {
-    render(<PersonView person="a@x" />);
-    expect(screen.getByTestId("person-header")).toHaveTextContent("a@x");
-    expect(screen.getByTestId("metric-groups")).toHaveTextContent("a@x");
+    render(<PersonView person={pid("a")} />);
+    expect(screen.getByTestId("person-header")).toHaveTextContent(pid("a"));
+    expect(screen.getByTestId("metric-groups")).toHaveTextContent(pid("a"));
   });
 
   it("expands a selected metric group inline", () => {
     act(() => portalRouter.set({ item: "git_output" }));
-    render(<PersonView person="a@x" />);
+    render(<PersonView person={pid("a")} />);
     expect(screen.getByTestId("single-group")).toHaveTextContent("git_output");
     expect(screen.queryByTestId("metric-groups")).not.toBeInTheDocument();
   });
@@ -204,23 +210,25 @@ describe("PersonView", () => {
 
 describe("PeopleView", () => {
   it("routes items: roster (default), employees, median-by-role scaffold", () => {
-    const { rerender } = render(<PeopleView person="p1@x" item={null} />);
+    const { rerender } = render(<PeopleView person={pid("p1")} item={null} />);
     expect(screen.getByTestId("team-state")).toBeInTheDocument();
-    rerender(<PeopleView person="p1@x" item="employees" />);
+    rerender(<PeopleView person={pid("p1")} item="employees" />);
     expect(screen.getByTestId("employees")).toBeInTheDocument();
-    rerender(<PeopleView person="p1@x" item="median-by-role" />);
+    rerender(<PeopleView person={pid("p1")} item="median-by-role" />);
     expect(screen.getByText(/Cohort role medians/)).toBeInTheDocument();
   });
 
   it("syncs the route person into the org scope ONCE, then defers to the user", () => {
     const scope = renderHook(() => usePortalScope());
-    render(<PeopleView person="p2@x" item={null} />);
-    expect(scope.result.current.root).toBe("p2@x");
+    const first = render(<PeopleView person={pid("p2")} item={null} />);
+    expect(scope.result.current.root).toBe(pid("p2"));
     // The user re-picks a scope from the topbar…
-    act(() => portalRouter.set({ scope: "other@x" }));
-    // …and a remount for the SAME person must NOT revert it.
-    render(<PeopleView person="p2@x" item={null} />);
-    expect(scope.result.current.root).toBe("other@x");
+    act(() => portalRouter.set({ scope: pid("other") }));
+    // …and leaving the zone and coming back must NOT revert it. Unmounted for
+    // real, so this is the remount case and not two live instances.
+    first.unmount();
+    render(<PeopleView person={pid("p2")} item={null} />);
+    expect(scope.result.current.root).toBe(pid("other"));
   });
 });
 

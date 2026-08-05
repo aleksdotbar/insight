@@ -337,7 +337,11 @@ export function AiCostView({ item }: { item: string | null }) {
         />
         <Tile
           label="Avg cost / active user"
-          value={formatMetricValue(avgCost, "currency", "USD")}
+          value={formatMetricValue(
+            avgCost,
+            costR?.format ?? "currency",
+            costR?.unit ?? null,
+          )}
           sub="Claude Code"
         />
       </div>

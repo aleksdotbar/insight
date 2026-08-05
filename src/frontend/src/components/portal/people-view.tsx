@@ -3,17 +3,11 @@ import { useEffect } from "react";
 import { EmployeesView } from "@/components/portal/employees-view";
 import { TeamStateView } from "@/components/portal/team-state-view";
 import { ComingSoon } from "@/components/widgets/coming-soon";
+import { normalizePersonId } from "@/lib/metrics/entity";
 import {
   usePortalNavActions,
 } from "@/lib/portal/portal-nav";
-
-/**
- * Module-scoped, deliberately NOT a ref: the guard must outlive this component.
- * A per-mount ref would re-fire the route sync every time the user leaves the
- * People zone and comes back, silently reverting a scope they picked in the
- * topbar. Keyed by person, so an actual route change still syncs.
- */
-let lastRouteSync: string | null = null;
+import { claimScopeSync } from "@/lib/portal/route-scope-sync";
 
 /**
  * People zone content, driven by the selected pane item. The roster is a
@@ -37,10 +31,11 @@ export function PeopleView({
   // Sync route → scope once per person, not on every render or remount: the
   // effect must not fight a scope the user then changes from the topbar.
   useEffect(() => {
-    if (person && lastRouteSync !== person) {
-      lastRouteSync = person;
-      replaceScope({ root: person });
-    }
+    // Normalised before the guard sees it: the same person arrives from a link,
+    // an identity record or a hand-edited URL in either case, and an
+    // unnormalised compare re-syncs the scope on a casing difference alone.
+    const id = person ? normalizePersonId(person) : "";
+    if (claimScopeSync(id)) replaceScope({ root: id });
   }, [person, replaceScope]);
 
   if (item === "median-by-role") {

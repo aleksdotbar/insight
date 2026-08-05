@@ -49,11 +49,17 @@ export function ZoneContent() {
   }
 }
 
+const PENDING_BY_ZONE: Record<string, string> = {
+  scorecard: "org snapshots + unit × quarter aggregation",
+  reports: "diagnosis circuit + report builder",
+};
+
 function ZoneScaffold({ zone }: { zone: string }) {
+  // Keyed, not defaulted: an unrecognised zone from the URL used to read
+  // "pending: diagnosis circuit + report builder", which names work that has
+  // nothing to do with it.
   const pending =
-    zone === "scorecard"
-      ? "org snapshots + unit × quarter aggregation"
-      : "diagnosis circuit + report builder";
+    PENDING_BY_ZONE[zone] ?? "this lens";
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
       <div className="flex flex-col items-center gap-1 text-center">

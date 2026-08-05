@@ -62,16 +62,27 @@ export function resolveScopeRoster(
   const roster = scopeRosterToDirectReports(full, canDirectOnly && scope.directOnly);
 
   const managerNodes: ManagerNode[] = [];
-  const walk = (node: IdentityPerson, depth: number): void => {
-    if (node.subordinates.length > 0) {
-      managerNodes.push({
-        person_id: node.person_id,
-        name: node.display_name || node.email,
-        depth,
-        teamSize: flattenSubordinates(node).length,
-      });
-    }
-    for (const sub of node.subordinates) walk(sub, depth + 1);
+  // One pass: each call returns its own subtree size, so a team size costs one
+  // visit per node. Flattening per manager node re-walked that manager's whole
+  // subtree — O(n · depth), which degrades on a deep reporting chain.
+  //
+  // The entry is pushed BEFORE recursing and its size filled in after, so the
+  // picker keeps its depth-first outline order (a lead, then that lead's leads).
+  const walk = (node: IdentityPerson, depth: number): number => {
+    const entry =
+      node.subordinates.length > 0
+        ? {
+            person_id: node.person_id,
+            name: node.display_name || node.email,
+            depth,
+            teamSize: 0,
+          }
+        : null;
+    if (entry) managerNodes.push(entry);
+    let size = 0;
+    for (const sub of node.subordinates) size += 1 + walk(sub, depth + 1);
+    if (entry) entry.teamSize = size;
+    return size;
   };
   walk(viewerNode, 0);
 

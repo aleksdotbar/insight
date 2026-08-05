@@ -1,6 +1,7 @@
 import { useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
+import { normalizePersonId } from "@/lib/metrics/entity";
 import type { OrgScope } from "@/lib/portal/portal-store";
 import { usePortalSearch, useSetPortalSearch } from "@/lib/portal/portal-search";
 
@@ -93,7 +94,8 @@ export function usePortalNavActions(): PortalNavActions {
           // the root itself moves and the caller did not say otherwise.
           ...("root" in patch &&
           !("directOnly" in patch) &&
-          patch.root !== prev.scope
+          normalizePersonId(patch.root ?? "") !==
+            normalizePersonId(prev.scope ?? "")
             ? { direct: undefined }
             : {}),
         })),

@@ -17,9 +17,12 @@ import {
 /**
  * "No slice" — the whole roster is one cohort and views stay per-person. The
  * store keeps this as `""`; the Select uses a non-empty sentinel because Base
- * UI treats an empty-string value as "no selection" (blank trigger).
+ * UI treats an empty-string value as "no selection" (blank trigger). The
+ * sentinel is underscored so a roster attribute literally named `team` cannot
+ * collide with it — that collision duplicated a React key and made the real
+ * dimension unselectable, because picking it read as "no slice".
  */
-const TEAM_KEY = "team";
+const TEAM_KEY = "__team__";
 const TEAM_SLICE = { key: TEAM_KEY, label: "Team (all)" };
 
 /**
@@ -52,7 +55,7 @@ export function SliceSelect({ dims }: { dims: SliceDim[] }) {
             Slice by
           </SelectLabel>
           {all.map((d) => (
-            <SelectItem key={d.key || "team"} value={d.key}>
+            <SelectItem key={d.key} value={d.key}>
               {d.label}
             </SelectItem>
           ))}

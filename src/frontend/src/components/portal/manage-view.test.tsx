@@ -47,6 +47,7 @@ function def(over: Partial<MetricDefinition>): MetricDefinition {
 }
 
 beforeEach(() => {
+  mocks.q.refetch.mockClear();
   mocks.q.isLoading = false;
   mocks.q.isError = false;
   mocks.q.data = [

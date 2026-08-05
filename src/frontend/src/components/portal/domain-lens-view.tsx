@@ -440,28 +440,36 @@ function ParticipationSection({
       return r != null && (forEntity(r, id).value ?? 0) > 0;
     });
 
-  const active = memberIds.filter((id) => isActive(grid.byKey, id)).length;
-  const prevActive = memberIds.filter((id) => isActive(grid.previousByKey, id)).length;
-  if (memberIds.length === 0) return null;
-
   // Active people per trend bucket (client count over the fetched timeseries).
-  const byDate = new Map<string, Set<string>>();
-  for (const key of spec.metrics) {
-    const r = trend.byKey.get(key);
-    if (!r) continue;
-    for (const id of memberIds) {
-      for (const s of forEntity(r, id).series) {
-        for (const p of s.points) {
-          if ((p.value ?? 0) > 0) {
-            (byDate.get(p.bucket_start) ?? byDate.set(p.bucket_start, new Set()).get(p.bucket_start)!).add(id);
+  // Memoised: the scan is metrics × roster × buckets, and at org scope every
+  // parent re-render — a slice or period change — repeated all of it.
+  const data = useMemo(() => {
+    const byDate = new Map<string, Set<string>>();
+    for (const key of spec.metrics) {
+      const r = trend.byKey.get(key);
+      if (!r) continue;
+      for (const id of memberIds) {
+        for (const s of forEntity(r, id).series) {
+          for (const p of s.points) {
+            if ((p.value ?? 0) > 0) {
+              let ids = byDate.get(p.bucket_start);
+              if (!ids) byDate.set(p.bucket_start, (ids = new Set()));
+              ids.add(id);
+            }
           }
         }
       }
     }
-  }
-  const data = [...byDate.entries()]
-    .map(([date, ids]) => ({ date, active: ids.size }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    return [...byDate.entries()]
+      .map(([date, ids]) => ({ date, active: ids.size }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [spec.metrics, trend.byKey, memberIds]);
+
+  const active = memberIds.filter((id) => isActive(grid.byKey, id)).length;
+  const prevActive = memberIds.filter((id) => isActive(grid.previousByKey, id)).length;
+  // After the hook: an early return above it would make the hook conditional.
+  if (memberIds.length === 0) return null;
+
 
   return (
     <section className="flex flex-col gap-3">

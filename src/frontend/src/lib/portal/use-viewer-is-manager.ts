@@ -25,5 +25,8 @@ export function useViewerIsManager(): { isManager: boolean; isPending: boolean }
     return (node.subordinates?.length ?? 0) > 0;
   }, [q.data, personId]);
 
-  return { isManager, isPending: q.isPending };
+  // `q.data == null` covers the error case too: with no tree we do not know,
+  // and callers treat unresolved as "assume manager" so the org zone can show
+  // the identity failure instead of the shell quietly demoting the viewer.
+  return { isManager, isPending: q.isPending || q.data == null };
 }
