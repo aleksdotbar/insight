@@ -141,3 +141,6 @@ gears:
       identity_url: ""
       redis_url: ""
       metric_catalog:
+        # Per-tenant observation filter on metric reads. Off until the ingest
+        # tenant is aligned with the session tenant.
+        enforce_tenant_scope: false
