@@ -56,12 +56,12 @@ Aligned to the company-size tiers in [`product/VISION.md`](product/VISION.md) §
 organisation per tier, placed at the tier ceiling so that passing at the reference covers the tier
 below it.
 
-| Tier | Span (people) | Reference org | Active people | Confidence |
-|---|---|---|--:|---|
-| Small teams | 5–50 | **REF-S** | 50 | extrapolated **down** 8–10× |
-| Mid-size organizations | 50–500 | **REF-M** | 500 | **near-measured** |
-| Large organizations | 500–5,000 | **REF-L** | **3,000** | extrapolated 5.8–7.7× |
-| Enterprise organizations | 5,000+ | *not defined* | — | outside the evidence base |
+| Tier | Span (people) | Reference org | Active people |
+|---|---|---|--:|
+| Small teams | 5–50 | **REF-S** | 50 |
+| Mid-size organizations | 50–500 | **REF-M** | 500 |
+| Large organizations | 500–5,000 | **REF-L** | **3,000** |
+| Enterprise organizations | 5,000+ | *not defined* | — |
 
 **REF-L is the primary fixture.** At 78 % into the Large band it represents the tier's upper half
 rather than its floor, and it matches the 3,000-user dataset already scoped for the shared load
