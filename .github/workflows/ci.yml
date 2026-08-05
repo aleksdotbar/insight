@@ -437,7 +437,10 @@ jobs:
           ENTRY_ROOT: ${{ matrix.entry.root }}
           ENTRY_NAME: ${{ matrix.entry.name }}
         run: |
-          set -euo pipefail
+          # `set -eu`, not `-euo pipefail`: this job runs in a container, where the
+          # step shell is `sh`, and dash rejects `-o pipefail`. Nothing below relies
+          # on it — the one pipe is tested through `if !`.
+          set -eu
           # Both values come from the component registry, which is repository
           # content and therefore editable in a fork PR. Reject anything outside
           # the path charset before it reaches a sed delimiter or an mv
