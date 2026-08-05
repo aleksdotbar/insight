@@ -64,6 +64,7 @@ trufflehog-findings.jsonl
 __pycache__/
 *.pyc
 
-# Cypilot
-cypilot.*.backup/
-cypilot/.plans/
+
+# Tracked despite the repo-root `.env.*` rule — the root negation
+# `!.env.*.example` does not match this name.
+!.env.example

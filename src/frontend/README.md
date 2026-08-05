@@ -4,11 +4,9 @@ Frontend application for **Insight** — a decision intelligence platform for en
 
 Single-page application built on React 19 + TanStack Router + TanStack Query + shadcn/ui. Uses MSW for offline / demo mocking; talks to the Insight backend in production.
 
-- [Insight monorepo](https://github.com/constructorfabric/insight) (backend, infra, Helm charts)
-- [Insight spec](https://github.com/constructorfabric/insight-spec) (connector specs, API contracts)
-
-<!-- CI rebuild marker — bumped to retrigger the frontend image build on
-the constructorfabric/* namespace flip (2026-06-09). -->
+Part of the [Insight](https://github.com/constructorfabric/insight) monorepo — the backend, ingestion
+and Helm charts live alongside this directory. Connector specs and API contracts are in
+[insight-spec](https://github.com/constructorfabric/insight-spec).
 
 
 ## Tech Stack
@@ -37,8 +35,8 @@ the constructorfabric/* namespace flip (2026-06-09). -->
 ## Quick Start
 
 ```bash
-git clone https://github.com/constructorfabric/insight-front.git
-cd insight-front
+git clone https://github.com/constructorfabric/insight.git
+cd insight/src/frontend
 pnpm install
 pnpm dev
 ```
@@ -166,7 +164,7 @@ docker compose up -d --build
 
 ### With Insight Backend (Kind cluster)
 
-From the [insight monorepo](https://github.com/constructorfabric/insight):
+From the repository root:
 
 ```bash
 ./up.sh frontend    # builds image + deploys to Kind via Helm
