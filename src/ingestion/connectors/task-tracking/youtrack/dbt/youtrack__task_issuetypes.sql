@@ -36,7 +36,7 @@ SELECT
     CAST(NULL AS Nullable(String))                              AS untranslated_name,
     {{ task_issue_kind("JSONExtractString(val_raw, 'name')") }} AS issue_kind,
     toDateTime64(tf._airbyte_extracted_at, 3)                   AS collected_at,
-    toUnixTimestamp64Milli(tf._airbyte_extracted_at)            AS _version
+    toUnixTimestamp64Milli(now64(3))                            AS _version
 FROM type_fields tf
 ARRAY JOIN JSONExtractArrayRaw(ifNull(tf.bundle_values_json, '[]')) AS val_raw
 WHERE JSONExtractString(val_raw, 'id') != ''

@@ -420,8 +420,10 @@ cases:
         period: { from: "2025-01-01", to: "2025-01-31" }
         metrics:
           - { metric_key: tasks.bugs_fixed, views: [{ view: period }] }
+          - { metric_key: tasks.closed_non_bug, views: [{ view: period }] }
           - { metric_key: tasks.bugs_ratio, views: [{ view: period }] }
     expect:
       - assert: "status == 200"
       - { metric: tasks.bugs_fixed, view: period, find: { entity_id: erin@example.com }, equal: { value: null } }
+      - { metric: tasks.closed_non_bug, view: period, find: { entity_id: erin@example.com }, equal: { value: null } }
       - { metric: tasks.bugs_ratio, view: period, find: { entity_id: erin@example.com }, equal: { value: null } }

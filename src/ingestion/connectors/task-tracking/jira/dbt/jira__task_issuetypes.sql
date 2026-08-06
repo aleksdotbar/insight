@@ -24,6 +24,9 @@ SELECT
     {{ task_issue_kind("coalesce(nullIf(toString(s.untranslatedName), ''), toString(s.name))") }}
                                                                 AS issue_kind,
     toDateTime64(s._airbyte_extracted_at, 3)                    AS collected_at,
-    toUnixTimestamp64Milli(s._airbyte_extracted_at)             AS _version
+    -- Refreshed per run, not per sync: the kind comes from configured name
+    -- lists, so a classification change must reach silver's incremental filter
+    -- without waiting for the connector to re-sync bronze.
+    toUnixTimestamp64Milli(now64(3))                            AS _version
 FROM {{ source('bronze_jira', 'jira_issuetypes') }} s
 -- `jira_issuetypes` bronze = MergeTree (full_refresh + overwrite), FINAL not supported.

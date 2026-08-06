@@ -253,11 +253,7 @@ LEFT JOIN silver.class_task_issuetypes FINAL it
 --       countIf(it.issue_kind = 'other')    -> closed_non_bug
 ```
 
-**Gaps**:
-- The issuetype lookup `silver.class_task_issuetypes` doesn't currently
-  exist as a silver model (it's only in bronze). Either add a silver model, or
-  filter by `delta_value_display = 'Bug'` as a v1 hack and plan to swap in the
-  lookup table later.
+**Gaps**: none — computable today.
 
 ### 3. `task_dev_time` (hours in In-Progress-category statuses)
 
