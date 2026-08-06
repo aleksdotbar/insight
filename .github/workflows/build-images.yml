@@ -52,10 +52,12 @@ on:
         default: false
 
 # One in-flight chart-publish per branch. Prevents two merges from racing
-# the auto-commit-back step.
+# the auto-commit-back step. PR builds have no publish to protect, and a new
+# push obsoletes the matrix in flight — cancel it rather than let a stale
+# build keep burning runners next to the fresh one it queues behind.
 concurrency:
   group: build-images-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io

@@ -70,10 +70,18 @@ const TASK_DELIVERY_COLLECTION: MetricCollectionConfig = {
   metrics: [
     {
       key: "tasks.closed",
-      views: [{ view: "period" }, { view: "peer" }],
+      views: [
+        { view: "period" },
+        { view: "peer" },
+        { view: "breakdown", dimensions: ["type"] },
+      ],
     },
     {
       key: "tasks.bugs_fixed",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
+      key: "tasks.closed_non_bug",
       views: [{ view: "period" }, { view: "peer" }],
     },
     {
@@ -324,11 +332,24 @@ export const GROUPS: readonly MetricGroup[] = [
       preview: ["tasks.closed", "tasks.resolution_time", "tasks.pickup_time"],
     },
     drilldown: [
+      { chart: "summary-card", view: "breakdown", metrics: ["tasks.closed"] },
       {
-        id: "task-throughput",
+        id: "closed-by-type",
         view: "timeseries",
-        metrics: ["tasks.closed", "tasks.bugs_fixed"],
-        chart: { multiMetric: "combined" },
+        metrics: ["tasks.closed"],
+        table: {
+          columns: [{ metric: "tasks.closed" }],
+        },
+        groupBy: {
+          default: "type",
+          limits: {
+            type: {
+              count: 10,
+              rankBy: "tasks.closed",
+              includeRemainder: true,
+            },
+          },
+        },
       },
       {
         chart: "histogram",
@@ -469,8 +490,9 @@ export const GROUPS: readonly MetricGroup[] = [
  */
 export const HEATMAP_METRIC_KEYS: readonly string[] = [
   "tasks.closed",
-  "tasks.resolution_time",
   "tasks.bugs_fixed",
+  "tasks.closed_non_bug",
+  "tasks.resolution_time",
   "git.prs_merged",
   "git.pr_cycle_time_h",
   "collab.focus_time_pct",

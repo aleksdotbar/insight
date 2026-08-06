@@ -8,13 +8,20 @@ name: Functional K3s Smoke
 
 on:
   workflow_dispatch:
+  # Merge-queue builds are where the cluster actually comes up. The
+  # pull_request trigger stays so the check reports on every PR — the job
+  # below skips there, and branch protection counts a skipped job as a pass —
+  # but the deploy smoke itself runs once per queue batch, not on every push.
+  merge_group:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
 
+# One run per PR; merge-queue builds get a unique group so a queue rebuild
+# can never cancel a batch mid-run.
 concurrency:
-  group: functional-k3s-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: functional-k3s-${{ github.event_name == 'merge_group' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: read
@@ -38,6 +45,8 @@ env:
 jobs:
   cluster-smoke:
     name: K3s GitOps Deploy
+    # Skipped on pull_request by design — see the trigger comment above.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

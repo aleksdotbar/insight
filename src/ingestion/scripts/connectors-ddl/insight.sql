@@ -1,5 +1,23 @@
 CREATE DATABASE IF NOT EXISTS `insight`;
 
+CREATE TABLE IF NOT EXISTS insight.account_attribute_values
+(
+    `insight_tenant_id` String,
+    `insight_source_type` String,
+    `insight_source_id` String,
+    `source_account_id` String,
+    `field_id` String,
+    `value_id` Nullable(String),
+    `value_label` String,
+    `valid_from` DateTime64(3),
+    `valid_to` Nullable(DateTime64(3)),
+    `ingested_at` DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY (insight_tenant_id, insight_source_type, insight_source_id, source_account_id, field_id, valid_from)
+SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
+;
+
 CREATE TABLE IF NOT EXISTS insight.ai_metric_evidence
 (
     `tenant_id` String,
@@ -184,6 +202,9 @@ CREATE TABLE IF NOT EXISTS insight.task_issue_state
     `issue_id` String,
     `status_category` String,
     `issue_type` String,
+    `issue_kind` String,
+    `issue_type_key` Nullable(String),
+    `issue_type_name` Nullable(String),
     `due_date` Nullable(Date),
     `time_estimate_seconds` Nullable(Float64),
     `time_spent_seconds` Nullable(Float64),
