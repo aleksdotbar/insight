@@ -135,7 +135,7 @@ cargo build --release --bin authenticator
 # Wait for an HTTP endpoint to answer, or fail loudly. Tries default to 30.
 wait_ready() { # name url [tries]
   for _ in $(seq 1 "${3:-30}"); do
-    curl -fsS -o /dev/null "$2" && return 0
+    curl --connect-timeout 2 --max-time 5 -fsS -o /dev/null "$2" && return 0
     sleep 1
   done
   echo "ERROR: $1 did not become ready ($2)" >&2

@@ -245,15 +245,36 @@ pub async fn set_user_enabled(email: &str, enabled: bool) {
     );
 }
 
-/// Freeze / thaw the IdP container: requests hang until the client's own
-/// timeout and fail as transport errors — a transient outage, the
-/// real-IdP equivalent of fakeidp's `/_control/outage` hook.
-pub fn set_idp_outage(outage: bool) {
+/// Freeze the IdP container until the returned guard drops: requests hang
+/// until the client's own timeout and fail as transport errors — a transient
+/// outage, the real-IdP equivalent of fakeidp's `/_control/outage` hook.
+/// The guard thaws on drop, panic included, so a failed assertion mid-outage
+/// cannot leave the shared container paused for whoever runs next.
+pub fn idp_outage() -> IdpOutage {
     let container = env("E2E_KC_CONTAINER", "authenticator-e2e-keycloak");
-    let action = if outage { "pause" } else { "unpause" };
     let status = Command::new("docker")
-        .args([action, &container])
+        .args(["pause", &container])
         .status()
         .expect("docker must be runnable");
-    assert!(status.success(), "docker {action} {container} must succeed");
+    assert!(status.success(), "docker pause {container} must succeed");
+    IdpOutage { container }
+}
+
+pub struct IdpOutage {
+    container: String,
+}
+
+impl Drop for IdpOutage {
+    fn drop(&mut self) {
+        // Best effort only: this runs during unwinding, where a panic aborts.
+        let thawed = Command::new("docker")
+            .args(["unpause", &self.container])
+            .status()
+            .is_ok_and(|status| status.success());
+        assert!(
+            thawed || std::thread::panicking(),
+            "docker unpause {} must succeed",
+            self.container
+        );
+    }
 }

@@ -76,7 +76,8 @@ async fn refresher_outage_survives_and_invalid_grant_kills() {
     // 1. Outage: the IdP container is paused, so refresh attempts hang until
     //    the OIDC client's own timeout and fail TRANSIENTLY for ~12 s (several
     //    due cycles at the fast lifecycle) — nobody may be logged out by a blip.
-    common::kc::set_idp_outage(true);
+    //    The guard unpauses on drop even if an assertion fails mid-outage.
+    let outage = common::kc::idp_outage();
     tokio::time::sleep(Duration::from_secs(12)).await;
     assert_eq!(
         authz_status(&http, &auth_base, &victim_token).await,
@@ -84,7 +85,7 @@ async fn refresher_outage_survives_and_invalid_grant_kills() {
         "an IdP outage must not log users out (fail open on transport)"
     );
     assert_eq!(authz_status(&http, &auth_base, &survivor_token).await, 200);
-    common::kc::set_idp_outage(false);
+    drop(outage);
 
     // 2. Definitive verdict: disable the victim at the IdP. The next scheduled
     //    refresh gets invalid_grant and the session dies through the standard
