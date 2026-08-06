@@ -395,52 +395,11 @@ write_compose() {
   ask_shared
 
   # ── Frontend mode (compose-only) ──────────────────────────────────
-  # Both modes read src/frontend from this checkout, so there is no path to
-  # ask for and nothing to clone.
-  local fe_mode
-  if [[ "$NO_FRONTEND" == "true" ]]; then
-    fe_mode="ghcr"
-  else
-    echo "--- Frontend ---" >&2
-    echo "  How should the frontend run?" >&2
-    echo "    1) ghcr   — pull the pre-built image (nothing built locally)" >&2
-    echo "    2) dev    — Vite + HMR against src/frontend" >&2
-    local fe_choice
-    while true; do
-      fe_choice=$(ask "  Choice" "1")
-      case "$fe_choice" in
-        1|ghcr)
-          fe_mode="ghcr"
-          break ;;
-        2|dev|local)
-          fe_mode="dev"
-          break ;;
-        *) echo "  Please answer 1 or 2." >&2 ;;
-      esac
-    done
-    echo "" >&2
-  fi
-
-  # ── Auth mode (compose-only) ──────────────────────────────────────
-  echo "--- Auth ---" >&2
-  local auth_mode
-  echo "  Which auth backend should the authenticator log in against?" >&2
-  echo "    1) fakeidp   — no login screen, binds to DEV_USER_EMAIL (default)" >&2
-  echo "    2) keycloak  — real Keycloak login form + custom claims (:8085)" >&2
-  local auth_choice
-  while true; do
-    auth_choice=$(ask "  Choice" "1")
-    case "$auth_choice" in
-      1|fakeidp)
-        auth_mode="fakeidp"
-        break ;;
-      2|keycloak)
-        auth_mode="keycloak"
-        break ;;
-      *) echo "  Please answer 1 or 2." >&2 ;;
-    esac
-  done
-  echo "" >&2
+  # The frontend lives in this checkout (src/frontend), so nothing to ask:
+  # it runs from source (Vite + HMR). `up --frontend-mode=built|ghcr`
+  # overrides per run.
+  local fe_mode="dev"
+  [[ "$NO_FRONTEND" == "true" ]] && fe_mode="ghcr"
 
   # ── Seeding decision for external DBs ─────────────────────────────
   local seed_external=false
@@ -471,7 +430,6 @@ write_compose() {
   update_env_var "$env_file" TENANT_DEFAULT_ID             "$TENANT_DEFAULT_ID"
   update_env_var "$env_file" DEV_USER_EMAIL                "$DEV_USER_EMAIL"
   update_env_var "$env_file" FRONTEND_MODE                 "$fe_mode"
-  update_env_var "$env_file" AUTH_MODE                     "$auth_mode"
 
   # SEEDED_LOCAL_* gates the first-run auto-seed in dev-compose.sh.
   if [[ "$MARIADB_EXTERNAL" == "true" && "$seed_external" != "true" ]]; then

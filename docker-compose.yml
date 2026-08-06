@@ -187,9 +187,10 @@ services:
 
   # (The legacy Rust api-gateway is gone — the nginx `gateway` below is the sole
   # :8080 entry, doing full auth via the authenticator, NGINX_BFF #1583 step 09.)
-  # AUTH_MODE selects the authenticator's IdP: `fakeidp` (default, fast) or
-  # `keycloak` (real login form + pre-seeded realm). Both are full cookie/BFF
-  # auth — only the IdP differs; the authenticator does the OIDC flow either way.
+  # Auth runs via Keycloak (real login form + generated realm): full cookie/BFF
+  # auth, the authenticator does the OIDC flow. fakeidp is retired — its
+  # service lingers below only until its removal lands; dev-compose.sh never
+  # starts it.
 
   analytics:
     !!merge <<: *backend-common
@@ -364,7 +365,7 @@ services:
     depends_on:
       redis: {condition: service_healthy}
       # required: false → compose skips this dependency when the fakeidp
-      # profile is inactive (--auth=keycloak runs auth-keycloak instead).
+      # profile is inactive (it always is — dev-compose.sh runs auth-keycloak).
       fakeidp: {condition: service_started, required: false}
       identity-resolution: {condition: service_started}
     environment:
@@ -727,8 +728,8 @@ services:
       # Selects which roster personas get a login-id fixture (fakeidp: dev lead
       # only, its fixed "fakeidp|dev"; keycloak: the whole roster, each on their
       # own uuid — see deploy/seed/profiles.py's get_login_id_pairs).
-      # dev-compose.sh's --auth flag exports this.
-      AUTH_MODE: "${AUTH_MODE:-fakeidp}"
+      # dev-compose.sh exports this; keycloak is the only mode it runs.
+      AUTH_MODE: "${AUTH_MODE:-keycloak}"
       # MariaDB — falls back to the local docker service name/port; the
       # wizard rewrites these when external MariaDB is selected.
       MARIADB_HOST: "${MARIADB_HOST:-mariadb}"
@@ -758,7 +759,7 @@ services:
       SEED_ANCHOR_DATE: "${SEED_ANCHOR_DATE:-}"
       SEED_DAYS: "${SEED_DAYS:-60}"
       # The issuer the authenticator resolved for this run. `test-stand up`
-      # persists it (with AUTH_MODE, set above) after cmd_up so the manifest
+      # persists it after cmd_up so the manifest
       # records the real IdP instead of assuming the default.
       AUTHENTICATOR_OIDC_ISSUER: "${AUTHENTICATOR_OIDC_ISSUER:-}"
     volumes:
