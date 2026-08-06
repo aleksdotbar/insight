@@ -42,6 +42,11 @@ OTHER_TENANT = uuid.UUID("22222222-2222-2222-2222-222222222222")
 SOURCE_TYPE = "bamboohr"
 SOURCE_ID = uuid.UUID("33333333-3333-3333-3333-333333333333")
 
+# The persons-seed stamps its rows with the nil author (`seed_runner::SYSTEM_AUTHOR`);
+# the service reads ANY non-nil author as an operator decision, so fixture
+# observations must carry nil or every binding would count as operator-settled.
+SYSTEM_AUTHOR = uuid.UUID(int=0)
+
 ADMIN_ROLE_ID = uuid.UUID("a4d11000-0000-4000-8000-000000000001")
 
 ALICE = uuid.UUID("aaaaaaaa-0000-4000-8000-000000000001")
@@ -132,7 +137,16 @@ def _observation_rows(
         ("status", None, "Active"),
     ]
     return [
-        (value_type, SOURCE_TYPE, SOURCE_ID.bytes, tenant.bytes, value_id, value_full_text, person.bytes, ALICE.bytes)
+        (
+            value_type,
+            SOURCE_TYPE,
+            SOURCE_ID.bytes,
+            tenant.bytes,
+            value_id,
+            value_full_text,
+            person.bytes,
+            SYSTEM_AUTHOR.bytes,
+        )
         for (value_type, value_id, value_full_text) in rows
     ]
 
@@ -148,7 +162,16 @@ def _emailless_observation_rows(tenant: uuid.UUID, person: uuid.UUID) -> list[Ob
         ("status", None, "Active"),
     ]
     return [
-        (value_type, SOURCE_TYPE, SOURCE_ID.bytes, tenant.bytes, value_id, value_full_text, person.bytes, ALICE.bytes)
+        (
+            value_type,
+            SOURCE_TYPE,
+            SOURCE_ID.bytes,
+            tenant.bytes,
+            value_id,
+            value_full_text,
+            person.bytes,
+            SYSTEM_AUTHOR.bytes,
+        )
         for (value_type, value_id, value_full_text) in rows
     ]
 
@@ -160,7 +183,17 @@ def seed(cfg: SessionConfig) -> None:
         with conn.cursor() as cur:
             # Idempotent re-seed for local re-runs against a kept stack.
             for table in ("visibility", "person_roles", "org_chart", "account_person_map", "persons"):
-                cur.execute(f"DELETE FROM {table} WHERE reason = 'e2e-seed'")  # noqa: S608 — fixed table names
+                cur.execute(f"DELETE FROM {table} WHERE reason = 'e2e-seed'")
+            # Correction tests append journal rows under 'operator-%' reasons
+            # and rebuild the derived caches (whose rows carry copied or empty
+            # reasons); on a kept stack all of it is fixture residue. The
+            # caches are derived per tenant, so wiping the tenant is exact.
+            cur.execute(
+                "DELETE FROM persons WHERE reason LIKE 'operator-%%' AND insight_tenant_id = %s",
+                (TEST_TENANT_ID.bytes,),
+            )
+            for table in ("org_chart", "account_person_map"):
+                cur.execute(f"DELETE FROM {table} WHERE insight_tenant_id = %s", (TEST_TENANT_ID.bytes,))
 
             observation_sql = (
                 "INSERT INTO persons (value_type, insight_source_type, insight_source_id,"
@@ -176,6 +209,29 @@ def seed(cfg: SessionConfig) -> None:
             cur.executemany(
                 observation_sql,
                 _observation_rows(OTHER_TENANT, EVE, EVE_EMAIL, "acc-eve", "Eve Else", "Legal", "Counsel"),
+            )
+
+            # org_chart is a DERIVED cache: every seed run and every operator
+            # correction rebuilds it for the tenant FROM THE JOURNAL. The tree
+            # must therefore live in the journal too (parent_person_id
+            # observations), or the first correction test would rebuild the
+            # fixture tree away for the rest of the session.
+            cur.executemany(
+                observation_sql,
+                [
+                    (
+                        "parent_person_id",
+                        SOURCE_TYPE,
+                        SOURCE_ID.bytes,
+                        TEST_TENANT_ID.bytes,
+                        str(parent),
+                        None,
+                        child.bytes,
+                        SYSTEM_AUTHOR.bytes,
+                    )
+                    for child, parent in ORG_EDGES.items()
+                    if parent is not None
+                ],
             )
 
             org_sql = (
