@@ -340,7 +340,7 @@ dependencies = [
  "openidconnect",
  "opentelemetry",
  "p256 0.14.0",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rdkafka",
  "redis",
  "reqwest 0.12.28",
@@ -929,7 +929,7 @@ dependencies = [
  "jsonwebtoken",
  "opentelemetry",
  "parking_lot",
- "rand 0.10.1",
+ "rand 0.10.2",
  "regex",
  "reqwest 0.13.4",
  "secrecy",
@@ -1219,7 +1219,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "pin-project-lite",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
@@ -1298,7 +1298,7 @@ checksum = "66f6c0dc95df1ffea29417dcd0c30918a2114d8cdd7578e8fcd5a11eceedff61"
 dependencies = [
  "anyhow",
  "cf-gears-toolkit-security",
- "rand 0.10.1",
+ "rand 0.10.2",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -2235,7 +2235,7 @@ dependencies = [
  "axum",
  "base64 0.23.0",
  "jsonwebtoken",
- "rand 0.10.1",
+ "rand 0.10.2",
  "reqwest 0.12.28",
  "rsa",
  "serde",
@@ -3797,7 +3797,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "chrono",
  "getrandom 0.2.17",
  "http",
@@ -4598,7 +4598,7 @@ dependencies = [
  "bytes",
  "getrandom 0.4.2",
  "lru-slab",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rand_pcg",
  "ring",
  "rustc-hash",
@@ -4675,9 +4675,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
+checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
 dependencies = [
  "chacha20",
  "getrandom 0.4.2",
@@ -5629,7 +5629,7 @@ checksum = "546b4da4f679832602a8f8ab8ddc10b6b1d2e1a13b4f9dddcaee499436fa06ad"
 dependencies = [
  "ahash 0.8.12",
  "annotate-snippets",
- "base64 0.21.7",
+ "base64 0.22.1",
  "encoding_rs_io",
  "getrandom 0.3.4",
  "nohash-hasher",
@@ -5649,7 +5649,7 @@ checksum = "f83ad47c2f14654528a89495f8d0dbc64173176f8512c7c72386cbe81009f661"
 dependencies = [
  "ahash 0.8.12",
  "annotate-snippets",
- "base64 0.21.7",
+ "base64 0.22.1",
  "encoding_rs_io",
  "getrandom 0.3.4",
  "nohash-hasher",
