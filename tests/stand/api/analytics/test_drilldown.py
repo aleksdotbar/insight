@@ -32,6 +32,7 @@ import warnings
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import assert_never
 from xml.etree import ElementTree
 
 import pytest
@@ -130,7 +131,9 @@ def _request_for(
         "metric_key": metric_key,
         "entity": {
             "type": "person",
-            "id": entity_id or manifest.fixture("dev_lead").uuid,
+            # Not `or`: an empty id is a case a caller may want to send, and
+            # falling back to a real person would quietly test something else.
+            "id": manifest.fixture("dev_lead").uuid if entity_id is None else entity_id,
         },
         "period": {"from": start, "to": end},
         "filters": list(filters),
@@ -352,6 +355,9 @@ def _assert_shape(walk: _Walk, expectation: Expectation, person_id: str) -> None
             | Tier.STRUCTURAL_ONLY
         ):
             assert "value" in keys, f"{expectation.metric_key}: no value column in {keys}"
+        case unhandled:
+            # A tier added without a shape rule would otherwise assert nothing.
+            assert_never(unhandled)
 
 
 def _assert_median(period: float | None, values: Sequence[float], metric_key: str) -> None:
@@ -453,6 +459,9 @@ def _reconcile(period: float | None, walk: _Walk, expectation: Expectation) -> N
                 f"{metric_key}: a distinct count over {len(walk.rows)} evidence rows cannot "
                 f"be {period}"
             )
+        case unhandled:
+            # A tier added without a reconciliation would otherwise pass silently.
+            assert_never(unhandled)
 
 
 def _assert_evidence_unavailable(

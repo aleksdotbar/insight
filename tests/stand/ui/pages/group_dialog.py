@@ -44,6 +44,9 @@ class MetricEvidenceDialog:
     def copy_ref(self) -> Locator:
         return self.dialog.get_by_role("button", name=re.compile(r"^Copy "))
 
+    def close(self) -> Locator:
+        return self.dialog.get_by_role("button", name="Close")
+
     def metric_selector(self) -> Locator:
         """Present only when the caller opened more than one metric at once."""
         return self.dialog.get_by_role("combobox", name="Metric")
@@ -108,6 +111,12 @@ class GroupDialog:
 
     def block_table(self) -> Locator:
         return self.timeseries_block().get_by_role("table")
+
+    def open_bucket_evidence(self, metric: str) -> MetricEvidenceDialog:
+        """Evidence behind the table's first body row — one time bucket."""
+        body = self.block_table().get_by_role("rowgroup").nth(1)
+        body.get_by_role("row").first.get_by_role("button").first.click()
+        return MetricEvidenceDialog(self.page, metric)
 
     def open_total_row_evidence(self, metric: str) -> MetricEvidenceDialog:
         """Evidence behind the table's Total row — the whole period, not a bucket.

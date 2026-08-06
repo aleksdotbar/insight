@@ -1,7 +1,7 @@
 # The compose-stand suite
 
-Deployed-stand tests for Insight: a real Keycloak login, four browser
-journeys against the SPA, and an API-contract suite — all run against a local
+Deployed-stand tests for Insight: a real Keycloak login, browser journeys
+against the SPA, and an API-contract suite — all run against a local
 `docker-compose` stand seeded deterministically for tests (`deploy/seed`).
 
 This suite assumes an **already-running, already-seeded** stand. It never

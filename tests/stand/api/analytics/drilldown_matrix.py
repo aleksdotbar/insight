@@ -185,8 +185,6 @@ MATRIX: Sequence[Expectation] = (
     Expectation("wiki.pages_edited", "wiki", Tier.EXACT_SUM),
 )
 
-BY_KEY = {expectation.metric_key: expectation for expectation in MATRIX}
-
 #: One metric per distinct evidence presentation, plus the capable-but-empty
 #: case. A presentation is all an export can differ by — the column set and the
 #: header labels are everything it serializes — and every other metric in the

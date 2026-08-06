@@ -22,6 +22,7 @@ import pytest
 from insight_stand import Manifest, PersonaSession
 from playwright.sync_api import Page, expect
 
+from .evidence_requests import evidence_selection
 from .flows import sign_in
 from .pages.person_view import PersonView
 from .pages.team_view import TeamView
@@ -37,7 +38,8 @@ def test_team_heatmap_cell_opens_that_members_supporting_data(
     persona = session_for("dev_lead")
     lead = persona.person
     reports = sorted(
-        p.display_name for p in stand_manifest.personas if p.team == lead.team and p.role == "ic"
+        (p for p in stand_manifest.personas if p.team == lead.team and p.role == "ic"),
+        key=lambda p: p.display_name,
     )
     assert reports, (
         f"the manifest places nobody under {lead.display_name} on team {lead.team!r}, "
@@ -56,10 +58,16 @@ def test_team_heatmap_cell_opens_that_members_supporting_data(
     expect(page).to_have_url(f"{base_url}{TeamView.path(lead.uuid)}")
     expect(team.metrics_overview()).to_be_visible()
 
-    cell = team.any_recorded_metric_cell(member)
+    cell = team.any_recorded_metric_cell(member.display_name)
     expect(cell).to_be_visible()
-    evidence = team.open_cell_evidence(cell, member)
+    with evidence_selection(page) as selection:
+        evidence = team.open_cell_evidence(cell, member.display_name)
     expect(evidence.dialog).to_be_visible()
+
+    assert selection["entity"]["id"] == member.uuid, (
+        f"the cell belongs to {member.display_name}, and the request asked about "
+        f"{selection['entity']}"
+    )
 
     table = evidence.table()
     expect(table).to_be_visible()

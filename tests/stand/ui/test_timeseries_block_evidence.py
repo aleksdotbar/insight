@@ -22,6 +22,7 @@ import pytest
 from insight_stand import PersonaSession
 from playwright.sync_api import Page, expect
 
+from .evidence_requests import evidence_selection
 from .flows import sign_in
 from .pages.person_view import PersonView
 
@@ -49,7 +50,8 @@ def test_multi_metric_block_offers_every_metric_in_one_dialog(
 
     tasks = person.open_domain("Task delivery")
     expect(tasks.dialog).to_be_visible()
-    tasks.evidence_button().click()
+    with evidence_selection(page) as opened_selection:
+        tasks.evidence_button().click()
 
     evidence = tasks.evidence_for(_JOINED_TITLE)
     expect(evidence.dialog).to_be_visible()
@@ -64,10 +66,16 @@ def test_multi_metric_block_offers_every_metric_in_one_dialog(
     assert len(labels) > 1, f"a joined dialog must list every metric it was opened for: {labels}"
     other = next(label for label in labels if label != opened_with)
 
-    page.get_by_role("option", name=other, exact=True).click()
+    with evidence_selection(page) as switched_selection:
+        page.get_by_role("option", name=other, exact=True).click()
     expect(selector).to_contain_text(other)
     expect(evidence.table()).to_be_visible()
     expect(evidence.column_header("Date")).to_be_visible()
+
+    assert switched_selection["metric_key"] != opened_selection["metric_key"], (
+        f"choosing {other} left the dialog querying {opened_selection['metric_key']}, so the "
+        "table below the selector is the previous metric's"
+    )
 
 
 @pytest.mark.requires_seed("dev_lead")
@@ -106,6 +114,12 @@ def test_table_total_opens_supporting_data_for_the_whole_period(
     base_url: str,
     session_for: Callable[[str], PersonaSession],
 ) -> None:
+    """A total is the one cell whose period is the block's, not a row's.
+
+    Asserted against a body row from the same table rather than against a date
+    typed here: the total's period has to contain the bucket's and to be wider
+    than it, which is exactly what sending a bucket for the total would break.
+    """
     persona = session_for("dev_lead")
     sign_in(page, base_url, persona)
 
@@ -118,7 +132,14 @@ def test_table_total_opens_supporting_data_for_the_whole_period(
     tasks.table_view().click()
     expect(tasks.block_table()).to_be_visible()
 
-    evidence = tasks.open_total_row_evidence(TASKS_CLOSED)
+    with evidence_selection(page) as bucket_selection:
+        bucket = tasks.open_bucket_evidence(TASKS_CLOSED)
+    expect(bucket.dialog).to_be_visible()
+    bucket.close().click()
+    expect(bucket.dialog).not_to_be_visible()
+
+    with evidence_selection(page) as total_selection:
+        evidence = tasks.open_total_row_evidence(TASKS_CLOSED)
     expect(evidence.dialog).to_be_visible()
 
     table = evidence.table()
@@ -126,3 +147,11 @@ def test_table_total_opens_supporting_data_for_the_whole_period(
     expect(evidence.column_header("Ref")).to_be_visible()
     expect(evidence.column_header("Date")).to_be_visible()
     expect(table).to_have_attribute("aria-rowcount", re.compile(r"^[1-9]\d*$"))
+
+    total_period = total_selection["period"]
+    bucket_period = bucket_selection["period"]
+    assert total_period["from"] <= bucket_period["from"], (total_period, bucket_period)
+    assert total_period["to"] >= bucket_period["to"], (total_period, bucket_period)
+    assert total_period != bucket_period, (
+        f"the Total row asked for {total_period}, the same period as a single bucket"
+    )
