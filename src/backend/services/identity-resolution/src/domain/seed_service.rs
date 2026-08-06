@@ -80,6 +80,9 @@ pub struct SeedSummary {
     pub operator_settled_groups: usize,
     /// Unbound accounts whose e-mail is contested between persons (not linked).
     pub skipped_contested_email: usize,
+    /// Accounts bound to the excluded person (nothing re-emitted, values link
+    /// nobody).
+    pub skipped_excluded: usize,
 }
 
 /// Run one persons-seed over an already-read input: fold to per-account
@@ -146,6 +149,7 @@ where
         known_binding_conflicts: outcome.known_binding_conflicts,
         operator_settled_groups: outcome.operator_settled_groups,
         skipped_contested_email: outcome.skipped_contested_email,
+        skipped_excluded: outcome.skipped_excluded,
     })
 }
 

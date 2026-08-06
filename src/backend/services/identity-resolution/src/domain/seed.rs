@@ -11,6 +11,7 @@ use sea_orm::prelude::DateTime;
 use uuid::Uuid;
 
 use super::observation_slot::SlotAllocator;
+use super::resolution::EXCLUDED_PERSON;
 
 /// Identifies one source-native account: the source instance (`source_type` +
 /// `source_id`) plus the account's native id within it.
@@ -125,6 +126,10 @@ pub struct ResolveOutcome {
     /// Unbound accounts inside a divergent e-mail group: their e-mail is
     /// contested evidence, so they are not auto-linked to anyone.
     pub skipped_contested_email: usize,
+    /// Accounts bound to the excluded person (ADR-0003). They are not persons:
+    /// nothing is re-emitted for them, and their values link nobody —
+    /// automation may not spread an operator's exclusion to new accounts.
+    pub skipped_excluded: usize,
 }
 
 /// Case-fold an email for grouping / lookup (ADR-0011: matched
@@ -185,13 +190,26 @@ pub fn resolve_assignments(
     let mut out = ResolveOutcome::default();
 
     for group in groups {
+        // 0. Excluded accounts (bound to the sentinel) are not persons: they
+        //    contribute no new observations, and they leave the group before
+        //    any linking decision so their values claim nobody. The exclusion
+        //    itself stays in force — its journal row is already the latest.
+        let (excluded, remaining): (Vec<_>, Vec<_>) = group.profiles.into_iter().partition(|p| {
+            known
+                .get(&p.account)
+                .is_some_and(|b| b.person_id == EXCLUDED_PERSON)
+        });
+        out.skipped_excluded += excluded.len();
+        if remaining.is_empty() {
+            continue;
+        }
+
         // 1. Known bindings win — and each bound account keeps its own person.
         //    A group whose accounts are bound to different persons is an
         //    intentional split when any binding is operator-authored (ADR-0003);
         //    otherwise it is a conflict to surface. Either way the e-mail is
         //    contested evidence, so unbound group members are not auto-linked.
-        let (bound, unbound): (Vec<_>, Vec<_>) = group
-            .profiles
+        let (bound, unbound): (Vec<_>, Vec<_>) = remaining
             .into_iter()
             .partition(|p| known.contains_key(&p.account));
         if !bound.is_empty() {
@@ -263,8 +281,14 @@ pub fn resolve_assignments(
             continue;
         };
 
-        // 2. Email matches an existing person → link.
-        if let Some(&pid) = email_to_person.get(&email) {
+        // 2. Email matches an existing person → link. A map entry naming the
+        //    excluded sentinel (legacy rows from before exclusions stopped
+        //    re-emitting) is no person and links nobody — fall through to mint.
+        let linked = email_to_person
+            .get(&email)
+            .copied()
+            .filter(|pid| *pid != EXCLUDED_PERSON);
+        if let Some(pid) = linked {
             out.linked_by_email += group.profiles.len();
             out.assignments.push(PersonAssignment {
                 person_id: pid,
@@ -686,6 +710,84 @@ mod tests {
         assert_eq!(out.reused_known, 2, "bound accounts keep their persons");
         let assigned: usize = out.assignments.iter().map(|a| a.profiles.len()).sum();
         assert_eq!(assigned, 2, "the newcomer is in no assignment");
+    }
+
+    fn excluded_bound() -> KnownBinding {
+        KnownBinding {
+            person_id: EXCLUDED_PERSON,
+            author_person_id: Uuid::from_u128(0xAD_1119),
+        }
+    }
+
+    #[test]
+    fn excluded_accounts_are_skipped_and_their_email_links_nobody() {
+        // A bot was excluded by an operator. The seed must not re-emit its
+        // observations under the sentinel, and a new account sharing the bot's
+        // e-mail must not inherit the exclusion — automation may not decide
+        // "not a person". The newcomer is its own fresh person.
+        let bot = prof("github", "gh-bot", Some("ci@corp.com"), false);
+        let newcomer = prof("jira", "jr-1", Some("ci@corp.com"), false);
+        let mut known = HashMap::new();
+        known.insert(bot.account.clone(), excluded_bound());
+
+        let out = resolve_assignments(
+            group_by_email(vec![bot, newcomer]),
+            &known,
+            &HashMap::new(),
+            counter(),
+        );
+
+        assert_eq!(out.skipped_excluded, 1, "the bot contributes nothing");
+        assert_eq!(out.minted, 1, "the newcomer is a fresh person");
+        assert_eq!(out.assignments.len(), 1);
+        assert_ne!(out.assignments[0].person_id, EXCLUDED_PERSON);
+        assert_eq!(out.assignments[0].profiles[0].account.account_id, "jr-1");
+    }
+
+    #[test]
+    fn an_exclusion_does_not_settle_someone_elses_divergence() {
+        // Two automation bindings disagree AND a third account of the group is
+        // excluded. The exclusion is an operator decision about the BOT, not
+        // about the 5/6 split — the conflict must still surface (the review
+        // queue classifies it the same way).
+        let acc_a = prof("slack", "U1", Some("team@corp.com"), false);
+        let acc_b = prof("github", "gh1", Some("team@corp.com"), false);
+        let bot = prof("zoom", "Z9", Some("team@corp.com"), false);
+        let mut known = HashMap::new();
+        known.insert(acc_a.account.clone(), seed_bound(5));
+        known.insert(acc_b.account.clone(), seed_bound(6));
+        known.insert(bot.account.clone(), excluded_bound());
+
+        let out = resolve_assignments(
+            group_by_email(vec![acc_a, acc_b, bot]),
+            &known,
+            &HashMap::new(),
+            counter(),
+        );
+
+        assert_eq!(out.known_binding_conflicts, 1, "the split still surfaces");
+        assert_eq!(out.operator_settled_groups, 0);
+        assert_eq!(out.skipped_excluded, 1);
+    }
+
+    #[test]
+    fn a_legacy_email_map_entry_naming_the_sentinel_links_nobody() {
+        // Seeds that ran before exclusions stopped re-emitting may have left
+        // e-mail rows under the sentinel; such a map entry is not a person.
+        let newcomer = prof("jira", "jr-1", Some("ci@corp.com"), false);
+        let mut email_map = HashMap::new();
+        email_map.insert("ci@corp.com".to_owned(), EXCLUDED_PERSON);
+
+        let out = resolve_assignments(
+            group_by_email(vec![newcomer]),
+            &HashMap::new(),
+            &email_map,
+            counter(),
+        );
+
+        assert_eq!(out.linked_by_email, 0, "the sentinel links nobody");
+        assert_eq!(out.minted, 1);
+        assert_ne!(out.assignments[0].person_id, EXCLUDED_PERSON);
     }
 
     fn input(

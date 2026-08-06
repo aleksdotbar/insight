@@ -12,7 +12,6 @@ import uuid
 import httpx
 import pymysql
 import pytest
-
 from lib import identity_seed
 from lib.config import SessionConfig
 from lib.identity import IDENTITY_DATABASE
@@ -23,23 +22,22 @@ pytestmark = [pytest.mark.identity, pytest.mark.mutating]
 
 
 def _account(account_id: str) -> dict[str, object]:
-    return {
-        "source": identity_seed.SOURCE_TYPE,
-        "source_id": str(identity_seed.SOURCE_ID),
-        "id": account_id,
-    }
+    return {"source": identity_seed.SOURCE_TYPE, "source_id": str(identity_seed.SOURCE_ID), "id": account_id}
 
 
 def _binding_rows(cfg: SessionConfig, account_id: str) -> list[tuple[str, str]]:
     """(person_id, author_person_id) of every binding observation for one
     account, newest first — read straight from the journal, not the API."""
-    with pymysql.connect(
-        host=cfg.mariadb_host,
-        port=cfg.mariadb_port,
-        user=cfg.mariadb_user,
-        password=cfg.mariadb_password,
-        database=IDENTITY_DATABASE,
-    ) as conn, conn.cursor() as cur:
+    with (
+        pymysql.connect(
+            host=cfg.mariadb_host,
+            port=cfg.mariadb_port,
+            user=cfg.mariadb_user,
+            password=cfg.mariadb_password,
+            database=IDENTITY_DATABASE,
+        ) as conn,
+        conn.cursor() as cur,
+    ):
         cur.execute(
             """
             SELECT LOWER(HEX(person_id)), LOWER(HEX(author_person_id))
@@ -94,23 +92,18 @@ def test_confirming_an_automatic_binding_records_the_operator(
 
 
 @pytest.mark.parametrize("verb", ["detach", "exclude"])
-def test_verbs_refuse_an_account_nothing_has_observed(
-    identity_svc, api: httpx.Client, verb: str
-) -> None:
+def test_verbs_refuse_an_account_nothing_has_observed(identity_svc, api: httpx.Client, verb: str) -> None:
     """Pre-registration is a bind-only affordance: minting a person, or an
     excluded binding, for an account nobody has ever seen is a typo."""
     response = api.post(
-        f"/v1/resolution/{verb}",
-        json={"account": _account(f"ghost-{uuid.uuid4().hex[:8]}"), "comment": "e2e"},
+        f"/v1/resolution/{verb}", json={"account": _account(f"ghost-{uuid.uuid4().hex[:8]}"), "comment": "e2e"}
     )
 
     assert response.status_code == 404, response.text
     problem(response)
 
 
-def test_a_bulk_call_naming_one_account_twice_is_rejected(
-    identity_svc, api: httpx.Client
-) -> None:
+def test_a_bulk_call_naming_one_account_twice_is_rejected(identity_svc, api: httpx.Client) -> None:
     """Which person wins is the caller's contradiction to resolve."""
     account = _account(identity_seed.ALICE_ACCOUNT_ID)
     response = api.post(
@@ -136,10 +129,7 @@ def test_detach_moves_the_account_and_names_the_person_it_reached(
     account_id = "acc-carol"  # a leaf of the fixture tree, safe to move
     before = _binding_rows(compose_stack, account_id)
 
-    response = api.post(
-        "/v1/resolution/detach",
-        json={"account": _account(account_id), "comment": "e2e: detach"},
-    )
+    response = api.post("/v1/resolution/detach", json={"account": _account(account_id), "comment": "e2e: detach"})
     assert response.status_code == 200, response.text
 
     body = response.json()
@@ -152,9 +142,43 @@ def test_detach_moves_the_account_and_names_the_person_it_reached(
     assert after[0][0] == uuid.UUID(new_person).hex, "the account reached the reported person"
 
 
-def test_the_queue_reports_items_and_rates_over_observed_accounts(
-    identity_svc, api: httpx.Client
+def test_an_excluded_account_no_longer_resolves_at_login(
+    identity_svc, api: httpx.Client, service_api: httpx.Client
 ) -> None:
+    """Excluding an account makes it nobody everywhere: the login bootstrap
+    must answer not-found rather than hand every excluded account the same
+    shared sentinel identity."""
+    account_id = f"acc-bot-{uuid.uuid4().hex[:8]}"
+
+    bound = api.post(
+        "/v1/resolution/bind",
+        json={
+            "bindings": [{"account": _account(account_id), "person_id": str(identity_seed.BOB)}],
+            "comment": "e2e: pre-register the bot before excluding it",
+        },
+    )
+    assert bound.status_code == 200, bound.text
+    assert bound.json()["applied"] == 1, bound.json()
+
+    resolves = service_api.get(
+        "/internal/persons/by-external-id", params={"source_type": identity_seed.SOURCE_TYPE, "external_id": account_id}
+    )
+    assert resolves.status_code == 200, "a bound account resolves before the exclusion"
+
+    excluded = api.post(
+        "/v1/resolution/exclude", json={"account": _account(account_id), "comment": "e2e: not a person"}
+    )
+    assert excluded.status_code == 200, excluded.text
+    assert excluded.json()["applied"] == 1, excluded.json()
+
+    gone = service_api.get(
+        "/internal/persons/by-external-id", params={"source_type": identity_seed.SOURCE_TYPE, "external_id": account_id}
+    )
+    assert gone.status_code == 404, gone.text
+    problem(gone)
+
+
+def test_the_queue_reports_items_and_rates_over_observed_accounts(identity_svc, api: httpx.Client) -> None:
     """The queue answers with the two things an operator needs: what to decide,
     and how much is already resolved. Every item names one of the three
     conditions, and the rates cover the accounts the evidence knows."""
