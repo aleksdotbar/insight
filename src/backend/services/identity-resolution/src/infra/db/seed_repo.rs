@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait, Value};
 use uuid::Uuid;
 
-use crate::domain::seed::{SeedObservationRow, SourceAccountKey, normalize_email};
+use crate::domain::seed::{KnownBinding, SeedObservationRow, SourceAccountKey, normalize_email};
 use crate::domain::seed_service::{ApplyCounts, SeedStore};
 
 /// MariaDB-backed [`SeedStore`] — wraps a connection so the persons-seed service
@@ -39,7 +39,7 @@ impl SeedStore for MariaDbSeedStore<'_> {
     async fn known_account_bindings(
         &self,
         tenant_id: Uuid,
-    ) -> anyhow::Result<HashMap<SourceAccountKey, Uuid>> {
+    ) -> anyhow::Result<HashMap<SourceAccountKey, KnownBinding>> {
         known_account_bindings(self.db, tenant_id).await
     }
 
@@ -132,9 +132,9 @@ pub async fn tenant_presence(
     })
 }
 
-/// Current `source_account_id → person_id` bindings for the tenant — the latest
-/// `value_type='id'` observation per account. Feeds the known-account branch of
-/// the resolver. Ported from `SqlPersonsSeed.KnownAccountBindings`.
+/// Current bindings for the tenant — the latest `value_type='id'` observation
+/// per account, with the row's author (seed sentinel vs operator UUID) so the
+/// resolver can classify divergence. Feeds the known-account branch.
 ///
 /// # Errors
 ///
@@ -142,7 +142,7 @@ pub async fn tenant_presence(
 pub async fn known_account_bindings(
     db: &DatabaseConnection,
     tenant_id: Uuid,
-) -> anyhow::Result<HashMap<SourceAccountKey, Uuid>> {
+) -> anyhow::Result<HashMap<SourceAccountKey, KnownBinding>> {
     const SQL: &str = r"
         WITH ranked AS (
             SELECT
@@ -150,6 +150,7 @@ pub async fn known_account_bindings(
                 insight_source_id,
                 value_id AS source_account_id,
                 person_id,
+                author_person_id,
                 ROW_NUMBER() OVER (
                     PARTITION BY insight_tenant_id, insight_source_type, insight_source_id, value_id
                     ORDER BY created_at DESC, id DESC
@@ -159,7 +160,7 @@ pub async fn known_account_bindings(
               AND value_id IS NOT NULL
               AND insight_tenant_id = ?
         )
-        SELECT insight_source_type, insight_source_id, source_account_id, person_id
+        SELECT insight_source_type, insight_source_id, source_account_id, person_id, author_person_id
         FROM ranked
         WHERE rn = 1
     ";
@@ -177,13 +178,17 @@ pub async fn known_account_bindings(
         let source_id: Vec<u8> = row.try_get("", "insight_source_id")?;
         let account_id: String = row.try_get("", "source_account_id")?;
         let person_id: Vec<u8> = row.try_get("", "person_id")?;
+        let author_person_id: Vec<u8> = row.try_get("", "author_person_id")?;
         map.insert(
             SourceAccountKey {
                 source_type,
                 source_id: Uuid::from_slice(&source_id)?,
                 account_id,
             },
-            Uuid::from_slice(&person_id)?,
+            KnownBinding {
+                person_id: Uuid::from_slice(&person_id)?,
+                author_person_id: Uuid::from_slice(&author_person_id)?,
+            },
         );
     }
     Ok(map)
