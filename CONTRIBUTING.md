@@ -54,7 +54,7 @@ First-run wizard prompts (Enter accepts defaults):
 | Use local MariaDB? | Y | Compose starts mariadb on :3306 |
 | Use local ClickHouse? | Y | Compose starts clickhouse on :8123 |
 | `DEV_USER_EMAIL` | `dev@company.nonpresent` | FakeIdP login and dev-team lead in the seed roster |
-| Frontend mode | `1` (ghcr) | Pulls the published `insight-front:latest` image |
+| Frontend mode | `1` (ghcr) | Pulls the published `insight-frontend:latest` image |
 
 Then the script builds host artefacts, brings up the stack, auto-seeds
 the demo dataset (25 persons + ~24k ClickHouse rows across 16 silver
@@ -89,7 +89,7 @@ builder container.
 **K8s path** — also `kubectl`, `helm`, `kubeseal`, `yq`, `jq`, plus a
 local cluster (OrbStack with Kubernetes / k3d / kind / minikube). No
 frontend checkout needed — the umbrella chart pulls
-`ghcr.io/constructorfabric/insight-front:<tag>` from GHCR.
+`ghcr.io/constructorfabric/insight-frontend:<tag>` from GHCR.
 
 **Frontend checkout** — only needed for compose with
 `FRONTEND_MODE=dev` (Vite HMR) or `built` (host-built dist). The
