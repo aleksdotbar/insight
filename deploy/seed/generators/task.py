@@ -153,6 +153,17 @@ def seed_task_users(
 
 
 _ISSUE_TYPES = ("Bug", "Task", "Story", "Improvement")
+
+# Issue-type dimension. issuetype field-history events MUST carry an issue type
+# id (value_ids[1]) matching a seeded row, or gold reads every issue as an
+# unclassified type.
+_ISSUE_TYPE_DIM = {
+    # issue_type_name: (issue_type_id, issue_kind)
+    "Bug": ("10004", "bug"),
+    "Task": ("10001", "other"),
+    "Story": ("10002", "other"),
+    "Improvement": ("10003", "other"),
+}
 _PRIORITIES = ("Highest", "High", "Medium", "Medium", "Low")
 _CLOSE_STATUSES = ("Closed", "Resolved", "Verified")
 
@@ -303,7 +314,7 @@ def seed_task_field_history(
                 base_fields = [
                     ("status", "Status", _STATUS_DIM["To Do"][0], "To Do"),
                     ("assignee", "Assignee", p.email, p.email),
-                    ("issuetype", "Issue Type", None, issue_type),
+                    ("issuetype", "Issue Type", _ISSUE_TYPE_DIM[issue_type][0], issue_type),
                     ("priority", "Priority", None, priority),
                     ("duedate", "Due Date", None, due_date),
                     ("timeoriginalestimate", "Original Estimate", None, str(int(est_seconds))),
@@ -401,6 +412,48 @@ def seed_class_task_statuses(
     return bulk_insert(client, "silver", "class_task_statuses", cols, rows)
 
 
+def seed_class_task_issuetypes(
+    client: clickhouse_connect.driver.client.Client,
+    roster: Sequence[Person],
+) -> int:
+    """Issue-type dimension: one row per (source, issue type) mapping an
+    issue_type_id to its reconciled issue_kind. Gold joins this on
+    (insight_source_id, issue_type_id); without it every closed issue reads as
+    an unclassified type and the bug / non-bug measures stay empty."""
+    truncate(client, "silver", "class_task_issuetypes")
+    cols = [
+        "unique_key",
+        "insight_source_id",
+        "data_source",
+        "issue_type_id",
+        "issue_type_name",
+        "untranslated_name",
+        "issue_kind",
+        "collected_at",
+        "_version",
+    ]
+    now = anchor_datetime()
+    rows: list[tuple[object, ...]] = []
+    for p in _task_persons(roster):
+        src_id = deterministic_uuid("task.source", p.uuid)
+        data_source = _task_data_source(p.team)
+        for name, (issue_type_id, kind) in _ISSUE_TYPE_DIM.items():
+            rows.append(
+                (
+                    deterministic_uuid("task.issuetype", src_id, issue_type_id),
+                    src_id,
+                    data_source,
+                    issue_type_id,
+                    name,
+                    name,
+                    kind,
+                    now,
+                    1,
+                )
+            )
+    return bulk_insert(client, "silver", "class_task_issuetypes", cols, rows)
+
+
 # Refreshable materialized views that derive from class_task_field_history.
 # Listed explicitly so a CH version mismatch errors loudly here rather than
 # leaving downstream metrics stale until the scheduled refresh tick.
@@ -439,4 +492,5 @@ def generate(
             client, roster, tenant_uuid, days
         ),
         "silver.class_task_statuses": seed_class_task_statuses(client, roster),
+        "silver.class_task_issuetypes": seed_class_task_issuetypes(client, roster),
     }

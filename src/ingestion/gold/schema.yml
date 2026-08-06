@@ -425,6 +425,7 @@ models:
                 values:
                   - tasks_closed
                   - bugs_fixed
+                  - closed_non_bug
                   - due_date_on_time
                   - due_date_with_due
                   - slip_days_total
@@ -452,8 +453,11 @@ models:
         description: "Unused by this family (no distinct-count measure); always NULL."
       - name: dimensions
         description: >
-          Array(Tuple(key, value, label)). Empty for every task measure — the
-          family carries no breakdown dimension.
+          Array(Tuple(key, value, label)). Per-issue count measures carry `type`
+          — the issue type, keyed on its locale-independent name and labelled
+          with its display name, so the closed-issue total splits into parts that
+          add back up to it. An issue whose type is not reported at all falls in
+          `__unknown__`. Empty for the day-grain and duration measures.
 
   - name: task_issue_state
     description: >
