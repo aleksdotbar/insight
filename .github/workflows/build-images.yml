@@ -784,7 +784,7 @@ jobs:
 
   # ─── Frontend build ────────────────────────────────────────────────────────
   # Per-arch on native runners so `pnpm build` never runs under QEMU. The image
-  # is `insight/frontend` — a package created and owned by THIS repository.
+  # is `insight-frontend` — a package created and owned by THIS repository.
   # The old `insight-front` package belongs to the retired insight-front
   # repo's Actions ACL, so this repo's GITHUB_TOKEN cannot push it (#2247).
   #
@@ -829,7 +829,7 @@ jobs:
         with:
           context: src/frontend
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight/frontend,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-frontend,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=frontend-${{ matrix.arch }}
           cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=frontend-{0},ignore-error=true', matrix.arch) || '' }}
       - name: Export digest
@@ -883,7 +883,7 @@ jobs:
       - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         id: meta
         with:
-          images: ${{ env.IMAGE_PREFIX }}/insight/frontend
+          images: ${{ env.IMAGE_PREFIX }}/insight-frontend
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -893,7 +893,7 @@ jobs:
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
-          image: ${{ env.IMAGE_PREFIX }}/insight/frontend
+          image: ${{ env.IMAGE_PREFIX }}/insight-frontend
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
@@ -901,24 +901,24 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.IMAGE_PREFIX }}/insight/frontend@sha256:%s ' *)
+            $(printf '${{ env.IMAGE_PREFIX }}/insight-frontend@sha256:%s ' *)
       - name: Inspect manifest digest
         id: inspect
         run: |
           DIGEST=$(docker buildx imagetools inspect \
-            ${{ env.IMAGE_PREFIX }}/insight/frontend:${{ needs.changes.outputs.build_tag }} \
+            ${{ env.IMAGE_PREFIX }}/insight-frontend:${{ needs.changes.outputs.build_tag }} \
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-name: ${{ env.IMAGE_PREFIX }}/insight/frontend
+          subject-name: ${{ env.IMAGE_PREFIX }}/insight-frontend
           subject-digest: ${{ steps.inspect.outputs.digest }}
           push-to-registry: true
       # Copy-pastable pushed ref on the run's Summary page (#1994).
       - name: Report pushed image
         run: |
-          echo '- `${{ env.IMAGE_PREFIX }}/insight/frontend:${{ needs.changes.outputs.build_tag }}`' >> "$GITHUB_STEP_SUMMARY"
+          echo '- `${{ env.IMAGE_PREFIX }}/insight-frontend:${{ needs.changes.outputs.build_tag }}`' >> "$GITHUB_STEP_SUMMARY"
 
   # ─── Toolbox build (with dbt parse smoke) ──────────────────────────────────
   # Toolbox is special — it bakes every connector's descriptor.yaml and dbt

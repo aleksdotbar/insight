@@ -63,7 +63,7 @@ concurrency:
 
 permissions:
   contents: read
-  packages: read # pulls insight/frontend (via compose) and insight-ui-tests
+  packages: read # pulls insight-frontend (via compose) and insight-ui-tests
 
 env:
   # Built and published by build-images.yml's ui-tests job. Pulled here, never

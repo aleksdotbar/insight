@@ -6,8 +6,7 @@ name: GHCR cleanup
 #     weeks on a daily schedule, keeping the 15 newest per package as a
 #     backstop. `latest` and the branch-suffixed tags never match the glob,
 #     and `image-names: insight-*` never matches the `charts/insight`
-#     package, so charts are untouched. The frontend package `insight/frontend`
-#     is nested, so it is listed by exact name next to the glob.
+#     package, so charts are untouched.
 #   • branch tags (`…-sha7.<sanitized-branch>`, #1994) — deleted when their
 #     branch is deleted. `release-*` branches are excluded: their images are
 #     kept forever (customer-release pins).
@@ -44,7 +43,7 @@ jobs:
         with:
           account: constructorfabric
           token: ${{ secrets.GITHUB_TOKEN }}
-          image-names: "insight-* insight/frontend"
+          image-names: "insight-*"
           # Fixed-length trunk format only: branch tags carry a `.suffix`
           # (longer), `latest` doesn't match either.
           image-tags: "2???.??.??.??.??-???????"
@@ -74,7 +73,7 @@ jobs:
         with:
           account: constructorfabric
           token: ${{ secrets.GITHUB_TOKEN }}
-          image-names: "insight-* insight/frontend"
+          image-names: "insight-*"
           image-tags: "*.${{ steps.suffix.outputs.safe }}"
           cut-off: 0s
           dry-run: true
