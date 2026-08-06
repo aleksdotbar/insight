@@ -11,13 +11,8 @@
     }
 ) }}
 
--- Effective-dated source-account attribute values with half-open validity
--- [valid_from, valid_to); valid_to IS NULL = currently effective. Each claim
--- closes the previous interval of its (account, field); 'clear' claims close
--- without opening, so a cleared attribute has no current row rather than an
--- empty-string value. Deliberately carries NO canonical person_id: account
--- facts stay independent of person assignment, which is joined at query time,
--- so an identity correction never requires rebuilding this relation.
+-- 'clear' claims participate in the window as interval closers, then drop in
+-- the final filter — a cleared attribute has no current row, not an empty one.
 
 WITH claims AS (
     SELECT

@@ -205,9 +205,8 @@ models:
       Typed person-attribute claims from the workday__workers_snapshot SCD2 history via the
       attribute_claims macro. Emits the class_person_attribute_claims contract;
       unioned into silver by the silver:class_person_attribute_claims tag.
-      Custom-field claims (track_raw_data) surface only when the snapshot
-      versions on them - keep the workday_custom_fields var aligned with the
-      report's extra columns.
+      Custom fields claim via the same workday_custom_fields var that drives
+      snapshot versioning; keep it aligned with the report's extra columns.
     columns:
       - name: unique_key
         tests:

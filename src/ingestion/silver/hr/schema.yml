@@ -73,10 +73,7 @@ models:
         tests:
           - not_null
       - name: value_id
-        description: >
-          Immutable source value identifier when the source exposes one.
-          NULL for all current HR sources — conditions prefer this ID over
-          value_label once ingestion can provide it.
+        description: "Immutable source value identifier when the source exposes one; NULL for all current HR sources"
       - name: value_label
         description: "Exact source value; empty string on clear claims"
       - name: claim_action

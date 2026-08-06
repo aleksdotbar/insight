@@ -573,9 +573,8 @@ models:
       effective value; a cleared attribute has no current row. Carries NO
       canonical person_id by design: account facts stay independent of person
       assignment, which is joined at query time, so identity corrections never
-      rebuild this relation. Interval invariants (no overlap, single open
-      interval, strict half-open bounds, clear closes) are asserted by
-      tests/hr/assert_account_attribute_values_*.sql.
+      rebuild this relation. Interval disjointness is asserted by
+      tests/hr/assert_account_attribute_values_no_overlap.sql.
     columns:
       - name: insight_tenant_id
         description: "Tenant isolation field"
@@ -598,9 +597,7 @@ models:
         tests:
           - not_null
       - name: value_id
-        description: >
-          Immutable source value identifier when available; NULL for all
-          current HR sources. Group conditions prefer this over value_label.
+        description: "Immutable source value identifier when available; NULL for all current HR sources"
       - name: value_label
         description: "Exact source value effective over the interval"
         tests:

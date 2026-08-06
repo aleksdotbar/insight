@@ -17,11 +17,5 @@
         'Supervisory_Organization',
         'Location', 'Country', 'City'
     ],
-    track_raw_data=true,
-    raw_data_exclude=[
-        'Display_Name', 'First_Name', 'Last_Name', 'Work_Email',
-        'Manager_Employee_ID', 'Manager_Work_Email',
-        'Hire_Date', 'Original_Hire_Date', 'Termination_Date',
-        'Scheduled_Weekly_Hours', 'Last_Functionally_Updated'
-    ]
+    fields_raw_data=var('workday_custom_fields', [])
 ) }}

@@ -1,47 +1,39 @@
-{% macro attribute_claims(snapshot_ref, entity_id_col, source_type, fields, track_raw_data=false, raw_data_exclude=[]) %}
+{% macro attribute_claims(snapshot_ref, entity_id_col, source_type, fields, fields_raw_data=[]) %}
 {#
   Typed person-attribute claims from an SCD2 snapshot model.
   One row per (source account, field, transition): claim_action='set' when a
   field acquires or changes a non-empty value, 'clear' when it becomes empty.
 
-  NULL and '' both normalize to '' (value absent). This differs from
-  fields_history's bare toString(), which NULL-propagates through `!=` and
-  silently drops any transition into or out of NULL — a claim stream cannot
-  afford that: a lost 'x'→NULL transition leaves a stale open value forever.
+  NULL and '' both normalize to '' (value absent), so transitions into and out
+  of NULL are recorded like any other change.
 
-  A 'clear' is emitted only when a delivered record carries an empty value for
-  the field. Absence of the whole record from a sync never closes values:
-  no sync-completeness signal exists in the warehouse, and closing values on
-  possibly-partial snapshots would fabricate end dates.
+  A field emits claims only if the snapshot versions on it: keep `fields` and
+  `fields_raw_data` within the snapshot's check_cols / check_raw_data_cols, or
+  a change lands with the observed_at of the next tracked change instead of
+  its own.
 
-  Claim visibility is gated by snapshot versioning: a change appends a claim
-  only when it also appends a snapshot version. For track_raw_data producers
-  that means the snapshot's check_raw_data_cols var (<conn>_custom_fields)
-  must list every custom field the deployment extracts — a raw_data key
-  outside that list changes without a snapshot version, so its claim arrives
-  late (with the next tracked change) or not at all.
+  A 'clear' is emitted only when a delivered record carries an empty value.
+  Absence of the whole record from a sync never closes values: no
+  sync-completeness signal exists, and closing values on possibly-partial
+  snapshots would fabricate end dates.
 
   Args:
-    snapshot_ref:      ref() to the SCD2 snapshot (output of the snapshot macro)
-    entity_id_col:     source-account identifier column in the snapshot
-    source_type:       insight_source_type literal (e.g. 'bamboohr')
-    fields:            top-level columns that become attribute claims
-    track_raw_data:    also emit claims for every key found in the raw_data
-                       JSON column (arbitrary custom fields, no config list)
-    raw_data_exclude:  raw_data keys to skip; `fields` and entity_id_col are
-                       always skipped. JSONExtractString yields '' for
-                       non-string values, so missing key and empty string are
-                       indistinguishable inside raw_data.
+    snapshot_ref:     ref() to the SCD2 snapshot (output of the snapshot macro)
+    entity_id_col:    source-account identifier column in the snapshot
+    source_type:      insight_source_type literal (e.g. 'bamboohr')
+    fields:           top-level columns that become attribute claims
+    fields_raw_data:  keys inside the raw_data JSON column to claim
+                      (JSONExtractString: missing key, non-string value and
+                      empty string are indistinguishable)
 
   Output columns match the class_person_attribute_claims contract:
     unique_key, insight_tenant_id, insight_source_type, insight_source_id,
     source_account_id, field_id, value_id, value_label, claim_action,
     observed_at, ingested_at, _version
 
-  value_id is reserved for immutable source value identifiers; no current
-  HR source exposes them, so it is emitted as NULL.
+  value_id is reserved for immutable source value identifiers (NULL until a
+  source provides them).
 #}
-{% set raw_excluded = fields + [entity_id_col] + raw_data_exclude %}
 
 WITH versioned AS (
     SELECT
@@ -52,22 +44,14 @@ WITH versioned AS (
         toDateTime64(_tracked_at, 3)                     AS observed_at,
         _airbyte_extracted_at                            AS ingested_at,
         CAST(
-            arrayConcat(
-                [
-                    {% for f in fields %}
-                    ('{{ f }}', ifNull(toString({{ f }}), '')){{ ',' if not loop.last }}
-                    {% endfor %}
-                ]
-                {% if track_raw_data %},
-                arrayMap(
-                    k -> (k, JSONExtractString(ifNull(toString(raw_data), '{}'), k)),
-                    arrayFilter(
-                        k -> k NOT IN ({% for e in raw_excluded %}'{{ e }}'{{ ', ' if not loop.last }}{% endfor %}),
-                        JSONExtractKeys(ifNull(toString(raw_data), '{}'))
-                    )
-                )
-                {% endif %}
-            ),
+            [
+                {% for f in fields %}
+                ('{{ f }}', ifNull(toString({{ f }}), '')){{ ',' if not loop.last or fields_raw_data }}
+                {% endfor %}
+                {% for f in fields_raw_data %}
+                ('{{ f }}', JSONExtractString(ifNull(toString(raw_data), '{}'), '{{ f }}')){{ ',' if not loop.last }}
+                {% endfor %}
+            ],
             'Map(String, String)'
         )                                                AS attrs
     FROM {{ snapshot_ref }}
@@ -75,7 +59,7 @@ WITH versioned AS (
 
 -- lagInFrame's out-of-frame default is an empty Map, so the first snapshot
 -- version compares against all-absent: every non-empty initial value emits a
--- set and no initial clear is possible — no separate first-version branch.
+-- set and no initial clear is possible.
 with_previous AS (
     SELECT
         insight_tenant_id,

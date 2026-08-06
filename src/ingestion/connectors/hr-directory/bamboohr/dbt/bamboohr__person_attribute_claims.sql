@@ -17,11 +17,5 @@
         'status', 'employmentHistoryStatus',
         'location', 'country', 'city'
     ],
-    track_raw_data=true,
-    raw_data_exclude=[
-        'displayName', 'firstName', 'lastName', 'workEmail',
-        'employeeNumber', 'supervisor', 'supervisorEId', 'supervisorEmail',
-        'hireDate', 'originalHireDate', 'terminationDate',
-        'lastChanged', 'standardHoursPerWeek'
-    ]
+    fields_raw_data=var('bamboohr_custom_fields', [])
 ) }}

@@ -1,18 +1,8 @@
-{{ config(
-    tags=['data_quality'],
-    severity='warn',
-    store_failures=true,
-    meta={
-        'title': 'Account attribute intervals do not overlap',
-        'domain': 'hr',
-        'category': 'consistency',
-        'tier': 'error',
-        'remediation': 'account_attribute_values intervals for one (tenant, source type, source instance, account, field) must be disjoint half-open ranges. An overlap means the gold interval builder paired claims across a broken ordering — check claim grain uniqueness first (same-instant claims), then the leadInFrame partition in gold/account_attribute_values.sql.'
-    }
-) }}
--- Open intervals participate via a far-future sentinel: two open intervals or
--- an open interval preceding a later valid_from must both fail here rather
--- than NULL-propagate to a silent pass.
+-- Build-integrity guard on the gold interval builder: intervals for one
+-- (tenant, source type, source instance, account, field) must be disjoint.
+-- Open intervals participate via a far-future sentinel so two open intervals,
+-- or an open interval preceding a later valid_from, fail here rather than
+-- NULL-propagate to a silent pass.
 SELECT *
 FROM (
     SELECT
