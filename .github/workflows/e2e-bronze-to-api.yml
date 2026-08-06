@@ -126,7 +126,19 @@ jobs:
             echo "no base sha — running"
             exit 0
           fi
-          changed="$(git diff --name-only "$BASE" "$HEAD")"
+          # Diff from the MERGE BASE, not from the base branch's tip. A two-dot
+          # `git diff BASE HEAD` reports every file that differs between the
+          # two commits, which includes everything that landed on the base
+          # branch since this branch forked — attributed to this PR. Any branch
+          # not freshly rebased would then look like it touched the data path
+          # and the gate would never skip anything.
+          base_point="$(git merge-base "$BASE" "$HEAD" 2>/dev/null || true)"
+          if [ -z "$base_point" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "no merge base between $BASE and $HEAD — running"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base_point" "$HEAD")"
           echo "$changed" | sed 's/^/  /'
           if echo "$changed" | grep -qE '^(src/ingestion/|src/backend/|\.github/workflows/e2e-bronze-to-api\.yml|\.github/workflows/build-images\.yml)'; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
