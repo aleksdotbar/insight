@@ -1,7 +1,7 @@
 # The compose-stand suite
 
-Deployed-stand tests for Insight: a real Keycloak login, four browser
-journeys against the SPA, and an API-contract suite — all run against a local
+Deployed-stand tests for Insight: a real Keycloak login, browser journeys
+against the SPA, and an API-contract suite — all run against a local
 `docker-compose` stand seeded deterministically for tests (`deploy/seed`).
 
 This suite assumes an **already-running, already-seeded** stand. It never
@@ -20,7 +20,7 @@ persona resolution) lives in `../lib`; both are one uv project
 | `api/analytics/` | The `/api/analytics` prefix, one module per path group. |
 | `api/identity/` | The `/api/identity` prefix, one module per concern. |
 | `api/test_gateway.py` | Neither service — the edge, sweeping 401 over every catalogued operation at once. |
-| `ui/` | The four browser journeys, plus `ui/pages/` (page objects). |
+| `ui/` | The browser journeys, plus `ui/pages/` (page objects). |
 
 Split by service because that is the axis along which a test's setup
 differs: identity's answers depend on **who is asking** (the org chart, the
@@ -76,6 +76,13 @@ disagree. Before adding a test, read it for:
   test here asserts a metric's exact value, and none should until the table
   has entries — reading a number off a running stand and asserting it back
   only proves that the code which produced it produced it.
+
+  What `api/analytics/test_drilldown.py` does is a different thing and is
+  allowed: it asks two independent serving relations the same question — the
+  evidence rows behind a metric, and the metric's own value — and requires them
+  to agree. Neither side is a number typed into the test, so the seed can change
+  underneath it, and a disagreement is a real defect rather than a stale
+  expectation. `drilldown_matrix.py` states what "agree" means per metric.
 - **capabilities** — e.g. `ingestion`, which this stand does not have
   (compose seeds silver/gold directly). A test that needs a capability the
   stand may lack should carry the matching marker (below), not assume it.
@@ -118,7 +125,7 @@ more API test than one more browser test whenever the two would prove the
 same thing.
 
 State the reason as a paragraph in the test module's docstring, in the
-shape the four shipped journeys already use — for example
+shape the shipped journeys already use — for example
 `ui/test_logged_out_access_refused.py`:
 
 > Why this is a browser test and not an API test, measured rather than
