@@ -8,9 +8,19 @@
 
 use std::collections::HashSet;
 
-use chrono::TimeDelta;
+use chrono::{TimeDelta, Timelike};
 use sea_orm::prelude::DateTime;
 use uuid::Uuid;
+
+/// Truncate an instant to whole microseconds — the finest step `DATETIME(6)`
+/// stores. The write path compares its in-memory rows against what the
+/// database returns to tell landed rows from refused ones; an instant carrying
+/// sub-microsecond nanoseconds (any OS clock read) would never compare equal
+/// to its own stored row, and the recovery would re-insert rows that landed.
+#[must_use]
+pub fn truncate_to_micros(at: DateTime) -> DateTime {
+    at - TimeDelta::nanoseconds(i64::from(at.nanosecond() % 1_000))
+}
 
 /// The natural-key columns a writer controls; the tenant is bound once per
 /// operation by the caller.
@@ -66,6 +76,18 @@ mod tests {
 
     fn ts() -> DateTime {
         chrono::DateTime::UNIX_EPOCH.naive_utc() + TimeDelta::days(20_000)
+    }
+
+    #[test]
+    fn sub_microsecond_instants_truncate_to_what_the_database_stores() {
+        let clean = ts() + TimeDelta::microseconds(3);
+
+        assert_eq!(
+            truncate_to_micros(clean + TimeDelta::nanoseconds(999)),
+            clean,
+            "sub-microsecond nanoseconds are dropped"
+        );
+        assert_eq!(truncate_to_micros(clean), clean, "a clean instant is kept");
     }
 
     #[test]

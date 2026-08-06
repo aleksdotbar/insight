@@ -7,7 +7,7 @@
 use sea_orm::prelude::DateTime;
 use uuid::Uuid;
 
-use super::observation_slot::SlotAllocator;
+use super::observation_slot::{self, SlotAllocator};
 use super::seed::{KnownBinding, SourceAccountKey};
 
 /// The reserved person meaning "not a human". Bots, CI and service accounts
@@ -83,8 +83,10 @@ pub struct Target {
 }
 
 /// Build the rows one correction appends, skipping targets whose decision is
-/// already recorded. `at` is the operation's instant; rows that would collide
-/// inside the natural key are nudged forward (see [`SlotAllocator`]).
+/// already recorded. `at` is the operation's instant, truncated to whole
+/// microseconds (`DATETIME(6)` stores nothing finer, and the write path
+/// compares its rows against the stored ones); rows that would collide inside
+/// the natural key are nudged forward (see [`SlotAllocator`]).
 ///
 /// The whole operation shares one allocator — a bulk call may name several
 /// persons, and two of its rows can still collide on the same key.
@@ -95,6 +97,7 @@ pub fn build_rows<'a>(
     verb: Verb,
     at: DateTime,
 ) -> Vec<BindingRow> {
+    let at = observation_slot::truncate_to_micros(at);
     let mut slots = SlotAllocator::new();
     let mut rows = Vec::new();
 
@@ -130,6 +133,7 @@ pub fn build_rows<'a>(
 /// recovers the dropped row instead of losing a binding.
 #[must_use]
 pub fn restamp(rows: &[BindingRow], after: DateTime) -> Vec<BindingRow> {
+    let after = observation_slot::truncate_to_micros(after);
     let mut slots = SlotAllocator::new();
 
     rows.iter()
@@ -273,6 +277,24 @@ mod tests {
 
         assert_eq!(rows[0].created_at, ts());
         assert_eq!(rows[1].created_at, ts() + TimeDelta::microseconds(1));
+    }
+
+    #[test]
+    fn an_os_clock_instant_is_stamped_at_database_precision() {
+        // `Utc::now()` carries nanoseconds; the journal stores DATETIME(6).
+        // Rows must be built at microsecond precision or the write path could
+        // never match them against what the database returns.
+        let target = Target {
+            account: account("slack", "U1"),
+            person_id: Uuid::from_u128(5),
+        };
+        let os_clock = ts() + TimeDelta::nanoseconds(1_999);
+
+        let rows = build_rows([(&target, None)], Uuid::from_u128(42), Verb::Bind, os_clock);
+        let retried = resolution_restamp(&rows, os_clock + TimeDelta::nanoseconds(2_500));
+
+        assert_eq!(rows[0].created_at, ts() + TimeDelta::microseconds(1));
+        assert_eq!(retried[0].created_at, ts() + TimeDelta::microseconds(4));
     }
 
     #[test]
