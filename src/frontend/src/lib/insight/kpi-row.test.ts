@@ -95,8 +95,8 @@ describe("metricKpiTiles", () => {
   it("gives no slot to a metric this person is not measured on", () => {
     // A null peer target means no connector feeds this metric for them. It used
     // to render "—" over one of five slots in the most valuable space on the
-    // page; a VP of Engineering lost two slots that way while the 7k messages
-    // that WERE their month sat further down the screen.
+    // page, while the metrics the person's work does register sit further
+    // down the screen.
     const result = metricResult("ai.active_days", 0);
     const peerView = result.views[1];
     if (peerView?.view === "peer" && peerView.values[0]) {
@@ -151,7 +151,7 @@ describe("one finding, one mark", () => {
   it("leaves the gap line neutral while the value carries the verdict", () => {
     // The value and the "−98% vs median" under it used to share a colour, so a
     // single peer standing painted two red marks. A reader counts marks: six
-    // findings read as eleven problems on the page that started this.
+    // findings read as twice as many problems.
     const result = metricResult("ai.active_days", 2);
     const tiles = metricKpiTiles(
       normalizeMetricResults([result]),

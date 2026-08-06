@@ -40,9 +40,9 @@ const HEADLINE_TIER: Record<PeerStatusWithNeutral, number> = {
  *
  * Shared so the attention block can leave it alone: the card's lead is the
  * most prominent thing on it, and repeating it above was the same finding
- * twice — the exact duplication that made a page of six findings read as
- * eleven. Excluding only `card.preview` missed this one, because the lead is
- * chosen from EVERY metric of the group, not from the three the card lists.
+ * twice — the duplication that makes a handful of findings read as twice as
+ * many. Excluding only `card.preview` misses this one, because the lead is
+ * chosen from EVERY metric of the group, not from the keys the card lists.
  */
 export function groupHeadlineKey(
   def: MetricGroup,

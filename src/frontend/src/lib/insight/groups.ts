@@ -518,10 +518,9 @@ export const HEATMAP_COLLECTION: MetricCollectionConfig = {
  *
  * The row renders the first `KPI_ROW_MAX` of these that this person was
  * actually observed for. A fixed five-key row spends the most valuable space on
- * the page on whatever the list happens to name: a VP of Engineering with no
- * pull requests and no tasks got two dashes out of five slots, while the 7k
- * messages and 300 meeting hours that ARE their month were nowhere on the
- * screen.
+ * the page on whatever the list happens to name: a person whose role produces
+ * no pull requests and no tasks gets dashes in those slots, while the metrics
+ * their work does register are nowhere on the screen.
  *
  * The tail exists for exactly that person. It is a fallback, not a demotion —
  * a developer still leads with tasks and PRs, because those come first here and

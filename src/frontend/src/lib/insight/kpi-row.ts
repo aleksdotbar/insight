@@ -141,7 +141,7 @@ export function metricKpiTiles(
         // Neutral on purpose: the gap EXPLAINS the value, it does not judge it
         // a second time. Painting both left one finding wearing two red marks,
         // and a reader counts marks — a person page with six findings read as
-        // eleven problems.
+        // twice as many problems.
         gapStatus: "neutral" as Status,
         context: metric.description ?? null,
         groupId: groupIdForMetricKey(metric.metric_key),

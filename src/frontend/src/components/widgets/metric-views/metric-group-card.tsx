@@ -136,9 +136,7 @@ export function MetricGroupCard({
   // The lead goes FIRST in the list, not into a sentence above it. The card
   // used to state a headline chosen from every metric of the group while
   // listing three fixed keys, so it either named a metric the reader could not
-  // see (Git output led with "Lines added" and listed commits, PRs and code
-  // lines) or repeated one of them a line later (AI adoption led with
-  // "AI-added lines" and listed it again). One list, lead at the top.
+  // see, or repeated one of them a line later. One list, lead at the top.
   const previewRows = def.card.preview
     .map((key) => rows.find((row) => row.metric.metric_key === key))
     .filter((row): row is CardRow => row != null && row.value != null);
@@ -254,8 +252,8 @@ export function MetricGroupCard({
                       </span>
                       {/* Under the row, not beside it: a card is a quarter of
                           the content width, and a third column there truncated
-                          the names it was meant to explain ("Meeting…",
-                          "AI-adde…"). The indent lines it up with the label. */}
+                          the names it was meant to explain. The indent lines
+                          it up with the label. */}
                       {gap ? (
                         <span className="pl-4 text-xs text-muted-foreground tabular-nums">
                           {gap}

@@ -46,8 +46,8 @@ export interface AttentionItem {
  * `preview` rows in the same colours and a "N behind peers" badge over them, so
  * repeating those rows above put every such finding on the screen twice — and
  * a reader counts red marks, not facts. Two numbers for one problem read as two
- * problems: the person-page screenshot that started this had eleven red marks
- * over six distinct findings.
+ * problems, and a handful of findings can reach the screen as twice as many
+ * marks.
  *
  * What is left is what the cards cannot tell you: a metric outside the preview
  * that is nonetheless bottom-quartile. That is the whole job of this block —
@@ -56,8 +56,7 @@ export interface AttentionItem {
  * The card's SUMMARY line counts as shown too. It is the most prominent thing
  * on the card and it is chosen from every metric of the group, not from the
  * three the card lists — so excluding only the preview left the lead metric
- * appearing twice, which is how "Lines added: 143 lines · −98% vs median"
- * managed to be both a card headline and the first attention row.
+ * appearing twice — a card's headline could also be the first attention row.
  */
 export function metricAttentionItems(
   def: MetricGroup,
