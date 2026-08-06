@@ -719,9 +719,10 @@ Every operator correction **MUST** be reversible: applying a correction and then
 
 **Main Flow**:
 1. Operator invokes the purge for the person; the operation (actor, subject, time, reason) is recorded in the operations journal
-2. The system erases the person's stored identity values everywhere they rest: the value payloads of the person's `persons` observations, the matching `identity_inputs` evidence rows, and the legacy `aliases` rows — structural rows may survive only value-free
-3. The next journal mirror publish and gold build no longer contain the erased values; derived caches rebuild without them
-4. The purge records value-free tombstones (e.g. salted hashes) in a deny-list consulted by automation, so a re-synced copy of an erased value can never silently re-link
+2. The system erases the person's stored identity values everywhere they physically rest: the value payloads of the person's `persons` observations, the rows of the per-connector staging tables behind the `identity_inputs` union view (the view itself stores nothing), and the legacy `aliases` rows — structural rows may survive only value-free
+3. Upstream copies the evidence derives from (connector history/raw layers) are erased through the owning ingestion domain's purge hook — a stated prerequisite of this flow: without it, a pipeline rebuild could re-materialize the values
+4. The next journal mirror publish and gold build no longer contain the erased values; derived caches rebuild without them; transformations consult the deny-list (step 5) so an erased value cannot re-materialize even on rebuild
+5. The purge records value-free tombstones in a deny-list consulted by automation and transformations: a keyed digest (HMAC-SHA256 of the normalized value under a per-tenant key held in the platform secret store; key rotation re-computes digests, and destroying the key crypto-shreds the deny-list itself), so a re-synced copy of an erased value can never silently re-link
 
 **Postconditions**:
 - Erased values are unresolvable via any path (service API, analytics mirror, direct query)
@@ -729,7 +730,8 @@ Every operator correction **MUST** be reversible: applying a correction and then
 
 **Alternative Flows**:
 - **No values found for the person**: purge succeeds with a zero count
-- **A connector re-delivers an erased value**: the deny-list blocks automatic linking; the account surfaces for operator review
+- **A connector re-delivers an erased value**: the deny-list digest matches; automatic linking is blocked and the account surfaces for operator review
+- **The ingestion-domain purge hook is unavailable**: the purge reports partial completion and the erasure request stays open — domain-local erasure alone does not satisfy the requirement
 
 > The v2.0 mechanism — copying purged aliases into a plaintext `alias_gdpr_deleted` archive with a soft-delete in `aliases` — is rejected: retaining the values contradicts hard erasure, and it never touched `persons`, where the values actually rest (see DESIGN §3.7).
 

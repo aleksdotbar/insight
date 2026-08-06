@@ -260,6 +260,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
   - Resolution-rate reporting (bound / pending / no-evidence / excluded shares — the operator-visible match rate of the umbrella epic)
   - Per-account binding history (explain) and per-person account listing (matching table)
   - Seed hardening: per-account bindings win over group collapse (removing the path that can silently re-derive a binding); author-aware conflict classification (bindings loader returns author); contested e-mails stop auto-linking
+  - Evidence reader fix: honor empty-value DELETE (closure) rows — the current non-empty filter drops them, leaving tombstones inert; required for correct seed closure handling and for the queue's UPSERT/DELETE fold
   - Reserved excluded-person sentinel mapped to NULL by the resolve macro
   - dbt resolver upgrade: account-first person resolution (latest `value_type='id'` binding per source account) with e-mail fallback; contested e-mail resolves to NULL — required for corrections to reach gold (DESIGN par. 4.4)
   - Decision-aware API idempotency + unique per-row observation timestamps (natural key has no account discriminator — DESIGN par. 3.7 index note)

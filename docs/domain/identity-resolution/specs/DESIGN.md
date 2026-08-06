@@ -327,7 +327,7 @@ Folds new connector observations from `identity_inputs` into the `persons` journ
 
 Implemented behaviour (groups accounts by normalized current e-mail, then resolves each group in priority order):
 
-- Reads `identity_inputs` — the **full evidence set each run** (no incremental watermark yet; REC-IR-02) and currently **without a tenant predicate** (producer-side tenant ids are hashed; single-tenant deployments only — restoring the filter is a multi-tenant prerequisite). UPSERT rows carry values; DELETE rows act as closure signals only. Groups observations per source account and accounts by e-mail.
+- Reads `identity_inputs` — the **full evidence set each run** (no incremental watermark yet; REC-IR-02) and currently **without a tenant predicate** (producer-side tenant ids are hashed; single-tenant deployments only — restoring the filter is a multi-tenant prerequisite). UPSERT rows carry values; DELETE rows are closure signals only. **Known gap**: by the write contract DELETE rows arrive with an empty `value`, and the current reader's non-empty filter drops them — closure/tombstone handling is inert until the reader fix ships with the manual-resolution feature. Groups observations per source account and accounts by e-mail.
 - Branch 1 — reuse: a group containing an already-bound account reuses that binding. **Known gap**: if the group's accounts are bound to *different* persons, the whole group currently collapses onto the first binding (with `known_binding_conflicts` counted and logged) — which can silently re-bind the other accounts.
 - Branch 2 — `LinkedByEmail`: an unbound group whose e-mail already maps to an existing person is linked to that person automatically.
 - Branch 3 — mint: a new person for a group with a new e-mail (at least one active profile); groups with no e-mail, or wholly closed, are skipped.
@@ -479,7 +479,7 @@ Future rule-driven matcher producing confidence-scored merge **proposals** for o
 | `POST` | `/v1/resolution/merge` | Merge two persons; operator names the surviving person explicitly | planned |
 | `POST` | `/v1/resolution/detach` | Detach an account into a freshly minted person | planned |
 | `POST` | `/v1/resolution/exclude` | Mark an account as not-a-person (bot/service); binds to the excluded sentinel | planned |
-| `GET` | `/v1/resolution/attention` | Review queue derived from `identity_inputs` evidence joined with current `persons` bindings: accounts pending a decision, contested-binding groups, no-evidence accounts — with candidates, counts, and resolution-rate shares (match rate) | planned |
+| `GET` | `/v1/resolution/attention` | Review queue derived from `identity_inputs` evidence joined with current `persons` bindings; evidence is folded per account over UPSERT/DELETE events, so accounts whose latest event is a closure drop out. Items: accounts pending a decision, contested-binding groups, no-evidence accounts — with candidates, counts, and resolution-rate shares (match rate) | planned |
 | `GET` | `/v1/resolution/accounts/{source}/{id}` | Binding history / explain for one account | planned |
 | `GET` | `/v1/resolution/persons/{person_id}/accounts` | Matching table: every account/value bound to a person, with author of each link | planned |
 
@@ -641,7 +641,7 @@ The macro reads from the connector's `fields_history` model (field-level change 
 - **UPSERT** rows when an identity-relevant field changes
 - **DELETE** rows (with empty `value`) when the deactivation condition is met
 
-Per-connector staging tables (e.g., `staging.bamboohr__identity_inputs`) are unified into a single `identity.identity_inputs` view via `union_by_tag('silver:identity_inputs')`.
+Per-connector staging tables (e.g., `staging.bamboohr__identity_inputs`) are unified into a single `identity.identity_inputs` view via `union_by_tag('silver:identity_inputs')`. The view stores nothing: any erasure obligation (GDPR purge) must target the physical staging tables and their upstream history, and guard dbt rebuilds — see the purge use case in the PRD.
 
 The models are incremental (`append` strategy): each run processes only `fields_history` rows with `updated_at` newer than the last `_synced_at` in the target table.
 
@@ -866,7 +866,7 @@ on the already-created tables; they never issue `CREATE`, `ALTER`,
 
 **Process** (data flow executed by each seed run):
 
-1. Read `identity.identity_inputs` (ClickHouse): UPSERT and DELETE rows with non-empty `value` (DELETE is a closure signal only, never persisted). **The full set each run** — no incremental watermark yet (REC-IR-02) — and currently without a tenant predicate (single-tenant deployments; multi-tenant prerequisite). Order by `_synced_at DESC` within each source-account so that the latest email observation is picked deterministically in step 5.
+1. Read `identity.identity_inputs` (ClickHouse): UPSERT observation rows plus DELETE closure signals (never persisted). **Known gap**: DELETE rows carry an empty `value` by contract while the reader filters non-empty values only, so closure signals are currently dropped before the fold — the reader fix ships with the manual-resolution feature. **The full set each run** — no incremental watermark yet (REC-IR-02) — and currently without a tenant predicate (single-tenant deployments; multi-tenant prerequisite). Order by `_synced_at DESC` within each source-account so that the latest email observation is picked deterministically in step 5.
 2. Group observations by `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id)` — a "source account" = one user in one connector instance.
 3. Connect to MariaDB. Load known bindings: for each source-account key, find the latest `value_type='id'` observation in `persons` and capture its `person_id`. This becomes the **known-account** set.
 4. Load existing emails: run `SELECT insight_tenant_id, LOWER(TRIM(value_id)) FROM persons WHERE value_type='email' AND value_id IS NOT NULL AND value_id != ''` and collect into a `(tenant, normalized_email)` set. The set is empty on the very first run (initial bootstrap) and non-empty afterwards; the same code path handles both — there is no mode flag.
@@ -917,7 +917,7 @@ The v2.0 design specified five further ClickHouse tables. **None of them exists 
 | `unmapped` | Persistent operator queue of unresolved observations with statuses and suggestions | Superseded for v1: the review queue is a **derived query** over `persons` (quarantine + conflict classification), with no status columns to drift. A persistent proposal store may return with the matcher |
 | `conflicts` | Alias-level conflict records (same value claimed by two persons) | Superseded for v1: conflicts are derived from the journal and classified by binding author (ADR-0003); a persistent record may return with the matcher |
 | `merge_audits` | Snapshot-before/after audit trail for merge/split | **Superseded by ADR-0003**: the append-only `persons` journal plus the `operations` journal are the audit trail; merge/split are appended reassignments, not snapshot-restores |
-| `alias_gdpr_deleted` | GDPR erasure archive (v2.0 proposal) | **Rejected as designed**: archiving plaintext values contradicts hard erasure. The future purge flow erases values in place across stores and keeps at most value-free tombstones (e.g. salted hashes) as a re-link deny-list — see the PRD purge use case and #719 |
+| `alias_gdpr_deleted` | GDPR erasure archive (v2.0 proposal) | **Rejected as designed**: archiving plaintext values contradicts hard erasure. The future purge flow erases values in place across the physical stores (including the staging tables behind the `identity_inputs` union view and their upstream history) and keeps at most value-free tombstones (keyed HMAC digests) as a re-link deny-list consulted by transformations — see the PRD purge use case and #719 |
 
 ---
 
@@ -1041,7 +1041,7 @@ Input: "John.Doe+test@Acme.COM"
 
 > Journal-based per [ADR-0003](ADR/0003-operator-decisions-as-persons-observations.md); supersedes the v2.0 snapshot-based merge/split over ClickHouse `aliases`/`merge_audits`. Reviewed design with worked scenarios (S1–S10): constructorfabric/insight#2180. Planned for the current iteration.
 
-Every correction is an **appended binding observation** in `persons`, authored by the operator's UUID with a machine-readable reason; the request and free-text comment are journaled in `operations`. Current state is the latest binding per account; nothing is ever updated or deleted. A correction writes **binding observations only**: which identity values (e-mails, usernames) belong to which account is not encoded in the journal — `persons` rows carry the source instance but no account discriminator — so the account↔value linkage comes from the `identity_inputs` evidence, where every row carries `source_account_id`. The resolver (§4.4) and the value-addressed bulk `bind` both consume that linkage; the service reads `identity_inputs` through the same infrastructure the seed already uses.
+Every correction is an **appended binding observation** in `persons`, authored by the operator's UUID with a machine-readable reason; the request and free-text comment are journaled in `operations`. Current state is the latest binding per account; nothing is ever updated or deleted. A correction writes **binding observations only**: which identity values (e-mails, usernames) belong to which account is not encoded in the journal — an account's own `value_type='id'` row does carry the account id (in `value_id`), but attribute observations reference only the source instance — so the account↔value linkage comes from the `identity_inputs` evidence, where every row carries `source_account_id`. The resolver (§4.4) and the value-addressed bulk `bind` both consume that linkage; the service reads `identity_inputs` through the same infrastructure the seed already uses.
 
 **Merge** — "these two persons are one human": for each account of the absorbed person, append a binding to the surviving person (`reason='operator-merge'`). The operator names the survivor explicitly. The absorbed person keeps its history and simply ends up with no current accounts.
 
