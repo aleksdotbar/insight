@@ -20,6 +20,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::too_many_lines)]
 
+mod common;
+
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::Deserialize;
 
@@ -29,11 +31,8 @@ fn env(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_owned())
 }
 
-fn client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .unwrap()
+fn client() -> common::Client {
+    common::client()
 }
 
 fn rewrite_host(url: &str) -> String {
@@ -182,6 +181,27 @@ async fn full_login_exchange_logout_loop() {
     assert!(!claims.sid.is_empty(), "stable sid present");
     let _ = &claims.tenant_id; // present (may be empty in a keyless local run)
 
+    // 5b. The discovery document points downstream verifiers at that JWKS
+    //     (cf-gears-oidc-authn-plugin resolves jwks_uri from it).
+    let discovery: serde_json::Value = http
+        .get(format!("{auth_base}/.well-known/openid-configuration"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        discovery["issuer"].as_str().is_some_and(|s| !s.is_empty()),
+        "discovery must carry the issuer"
+    );
+    assert!(
+        discovery["jwks_uri"]
+            .as_str()
+            .is_some_and(|s| s.ends_with("/.well-known/jwks.json")),
+        "discovery must point at the published JWKS"
+    );
+
     // 6. /auth/me returns the session summary.
     let me = http
         .get(format!("{auth_base}/auth/me"))
@@ -225,4 +245,48 @@ async fn full_login_exchange_logout_loop() {
         "no-store",
         "401 must never be cached"
     );
+}
+
+/// Failed callbacks bounce back into the SPA (#2032): the browser lands on
+/// `/auth/callback` from an IdP redirect, so a problem+json answer would
+/// dead-end the login on raw JSON. Every browser-facing failure must 302 to
+/// `default_return_to` with a fixed `auth_error=<reason>` the SPA consumes to
+/// restart the flow.
+#[tokio::test]
+#[ignore = "requires a running authenticator + fakeidp + Redis stack"]
+async fn failed_callback_redirects_into_the_spa_with_auth_error() {
+    let auth_base = env("AUTH_BASE", "http://localhost:8083");
+    let http = client();
+
+    // Distinct `state` values per case AND per run: the per-state callback
+    // rate-limit bucket (5-burst, 10/min refill) must not couple these
+    // requests — or trip on rapid suite re-runs against the same stack.
+    let run = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let cases = [
+        (
+            format!("code=x&state=e2e-auth-error-unknown-{run}"),
+            "/?auth_error=state_expired",
+        ),
+        (
+            format!("error=access_denied&state=e2e-auth-error-idp-{run}"),
+            "/?auth_error=idp_error",
+        ),
+        (
+            format!("state=e2e-auth-error-no-code-{run}"),
+            "/?auth_error=invalid_callback",
+        ),
+    ];
+    for (query, expected_location) in cases {
+        let resp = http
+            .get(format!("{auth_base}/auth/callback?{query}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 302, "{query} must redirect");
+        let location = resp.headers()[reqwest::header::LOCATION].to_str().unwrap();
+        assert_eq!(location, expected_location, "for {query}");
+    }
 }

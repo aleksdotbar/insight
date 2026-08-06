@@ -29,7 +29,6 @@ WITH src AS (
             'Username',   coalesce(toString(Username), ''),
             'UserRoleId', coalesce(toString(UserRoleId), '')
         ))                                              AS metadata,
-        custom_fields,
         collected_at,
         data_source,
         coalesce(toUnixTimestamp64Milli(SystemModstamp), 0) AS _version

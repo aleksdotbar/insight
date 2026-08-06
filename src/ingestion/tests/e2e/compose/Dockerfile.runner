@@ -44,6 +44,8 @@ RUN mkdir -p lib && touch lib/__init__.py \
 # (matches the `additional_contexts` entries).
 COPY --from=analytics /app/analytics /usr/local/bin/analytics
 COPY --from=jira-enrich /usr/local/bin/jira-enrich /usr/local/bin/jira-enrich
+# The Rust identity-resolution binary the identity contract suite spawns.
+COPY --from=identity-resolution /app/identity-resolution /usr/local/bin/identity-resolution
 
 # ── Defaults ────────────────────────────────────────────────────────────
 ENV E2E_RUN_MODE=docker

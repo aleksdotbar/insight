@@ -1,5 +1,7 @@
 from source_bitbucket_cloud.streams.metric_events import IssuesStream, PipelinesStream
 from source_bitbucket_cloud.streams.pr_activity import PRActivityStream
+from source_bitbucket_cloud.streams.pr_comments import PR_COMMENT_FIELDS
+from source_bitbucket_cloud.streams.pr_commits import PR_COMMIT_FIELDS
 from source_bitbucket_cloud.streams.pr_diffstat import PRDiffstatStream
 
 
@@ -98,6 +100,26 @@ def test_activity_classifies_every_event_type(stream_args, client, repo):
     assert records[-1]["snapshot_item_count"] == 3
 
 
+def test_activity_requests_accepted_pagelen(stream_args, client, repo):
+    # Regression for #1888: the PR-activity endpoint caps pagelen at 50 and
+    # rejects larger values with HTTP 400 "Invalid pagelen", which aborted the
+    # whole sync. The request must ask for pagelen=50, not 100.
+    stream = PRActivityStream(**stream_args)
+    path = client.repo_path(repo, "pullrequests/42/activity")
+    client.optional_values[path] = (True, [])
+    captured: dict[str, object] = {}
+    original = client.paginate_optional
+
+    def spy(requested_path, **kwargs):
+        if requested_path == path:
+            captured["params"] = kwargs.get("params")
+        return original(requested_path, **kwargs)
+
+    client.paginate_optional = spy
+    list(stream.pull_request_records(repo, pr()))
+    assert captured["params"] == {"pagelen": "50"}
+
+
 def test_pipeline_cursor_uses_observed_provider_time(stream_args, client, repo):
     stream = PipelinesStream(**stream_args)
     path = client.repo_path(repo, "pipelines")
@@ -120,3 +142,39 @@ def test_empty_pipeline_and_issue_results_keep_provider_watermark(stream_args, c
     issue_state = {"updated_on": "2026-06-02T00:00:00+00:00"}
     assert pipelines.pipeline_candidates(repo, pipeline_state)[2]["created_on"] == pipeline_state["created_on"]
     assert issues.selected_issues(repo, issue_state)[2] == issue_state
+
+
+class TestChildProjectionsCoverWhatTheStreamsRead:
+    """The API silently drops a misspelled fields entry, so a wrong projection
+    surfaces as NULL columns, not an error."""
+
+    def test_pr_commit_fields(self):
+        projected = set(PR_COMMIT_FIELDS.split(","))
+
+        assert "next" in projected, "without it pagination stops after one page"
+        assert projected == {
+            "values.hash",
+            "values.author.user.uuid",
+            "values.author.user.account_id",
+            "next",
+        }
+
+    def test_pr_comment_fields(self):
+        projected = set(PR_COMMENT_FIELDS.split(","))
+
+        assert "next" in projected, "without it pagination stops after one page"
+        assert projected == {
+            "values.id",
+            "values.content.raw",
+            "values.created_on",
+            "values.updated_on",
+            "values.user.display_name",
+            "values.user.uuid",
+            "values.user.account_id",
+            "values.inline.path",
+            "values.inline.from",
+            "values.inline.to",
+            "values.parent.id",
+            "values.deleted",
+            "next",
+        }

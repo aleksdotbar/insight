@@ -1,5 +1,5 @@
 from airbyte_cdk.models import SyncMode
-from source_bitbucket_cloud.streams.base import repository_bucket
+from source_bitbucket_cloud.streams.base import MAX_TEXT_BYTES, repo_state_key, repository_bucket
 
 
 def pr(pr_id=42, updated_on="2026-06-30T01:00:00+00:00", **extra):
@@ -28,7 +28,7 @@ def pr(pr_id=42, updated_on="2026-06-30T01:00:00+00:00", **extra):
 
 
 def read(stream, repo):
-    return list(stream.read_records(SyncMode.incremental, stream_slice={"bucket_id": repository_bucket(repo.uuid)}))
+    return list(stream.read_records(SyncMode.incremental, stream_slice={"bucket_id": repository_bucket(repo_state_key(repo))}))
 
 
 def test_pull_request_maps_provider_identity_and_revisions(pull_requests_stream, client, repo):
@@ -46,7 +46,7 @@ def test_pull_request_maps_provider_identity_and_revisions(pull_requests_stream,
 def test_state_advances_only_to_observed_provider_timestamp(pull_requests_stream, client, repo):
     client.pr_values = [pr(updated_on="2026-06-30T01:00:00+00:00")]
     read(pull_requests_stream, repo)
-    state = pull_requests_stream.state["repositories"][repo.uuid]
+    state = pull_requests_stream.state["repositories"][repo_state_key(repo)]
     assert state["updated_on"] == "2026-06-30T01:00:00+00:00"
     assert "2026-07" not in state["updated_on"]
 
@@ -54,20 +54,47 @@ def test_state_advances_only_to_observed_provider_timestamp(pull_requests_stream
 def test_empty_provider_result_does_not_advance_clock(pull_requests_stream, client, repo):
     client.pr_values = []
     read(pull_requests_stream, repo)
-    assert pull_requests_stream.state["repositories"][repo.uuid]["updated_on"] == ""
+    assert pull_requests_stream.state["repositories"][repo_state_key(repo)]["updated_on"] == ""
 
 
 def test_existing_state_replays_open_and_terminal_prs(pull_requests_stream, client, repo):
     pull_requests_stream.state = {
         "version": 2,
         "bucket_count": 8,
-        "repositories": {repo.uuid: {"updated_on": "2026-06-01T00:00:00+00:00", "reconcile_after_id": 0}},
+        "repositories": {repo_state_key(repo): {"updated_on": "2026-06-01T00:00:00+00:00", "reconcile_after_id": 0}},
     }
     client.pr_values = [pr(1, state="OPEN"), pr(2, state="MERGED")]
     records = read(pull_requests_stream, repo)
     assert {record["id"] for record in records} == {1, 2}
 
 
+def test_all_pullrequests_queries_use_accepted_pagelen(pull_requests_stream, client, repo):
+    # Regression for the /pullrequests pagelen cap (BCLOUD-13229, follows #1888):
+    # every query against /pullrequests — the listing, the open-PR refetch, and
+    # the reconcile sweep — must request pagelen<=50. The reconcile query used
+    # 100, which 400s "Invalid pagelen" and aborts the sync from the 2nd run on
+    # (it only fires once a watermark exists).
+    pull_requests_stream.state = {
+        "version": 2,
+        "bucket_count": 8,
+        "repositories": {repo_state_key(repo): {"updated_on": "2026-06-01T00:00:00+00:00", "reconcile_after_id": 0}},
+    }
+    client.pr_values = [pr(2, state="MERGED")]
+    seen_pagelens: list[str | None] = []
+    original = client.paginate
+
+    def spy(path, **kwargs):
+        if path.endswith("pullrequests"):
+            seen_pagelens.append(dict(kwargs.get("params") or []).get("pagelen"))
+        return original(path, **kwargs)
+
+    client.paginate = spy
+    read(pull_requests_stream, repo)
+
+    assert seen_pagelens  # listing + open refetch + reconcile all hit /pullrequests
+    assert all(value == "50" for value in seen_pagelens), seen_pagelens
+
+
 def test_description_is_bounded(pull_requests_stream, repo):
     record = pull_requests_stream._record(repo, pr(description="x" * 20_000))
-    assert len(record["description"].encode()) <= 16_384
+    assert len(record["description"].encode()) <= MAX_TEXT_BYTES

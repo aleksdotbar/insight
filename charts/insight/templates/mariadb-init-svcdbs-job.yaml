@@ -10,11 +10,11 @@ RDS / Cloud SQL, …); this Job dials `mariadb.host` directly, waits for
 it to accept connections, then runs the SQL.
 
 Hook timing: `pre-install,pre-upgrade`. The DB must exist BEFORE the
-application pods (identity, etc.) start — otherwise their migration
-init-containers / DbUp loops fail and helm's `--wait` blocks on
+application pods (identity-resolution, etc.) start — otherwise their
+migration init-containers fail and helm's `--wait` blocks on
 CrashLoopBackOff'd pods until the timeout, never reaching post-*
 hooks. Pre-* fires BEFORE main resources apply, so by the time the
-identity pod is scheduled, the database already exists.
+identity-resolution pod is scheduled, the database already exists.
 
 Prerequisite: `insight-db-creds` must exist in the namespace BEFORE
 helm install/upgrade runs. In gitops mode (`apply-app-secrets` step
@@ -33,7 +33,8 @@ gated block below following the identity pattern: read the service's
 The list lives HERE; do not mirror it elsewhere.
 ==============================================================================
 */}}
-{{- if .Values.identity.deploy }}
+{{- $kcdb := .Values.keycloak.deploy }}
+{{- if or .Values.identityResolution.deploy $kcdb }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -100,12 +101,20 @@ spec:
               done
 
               echo "Provisioning per-service databases..."
-              {{- if .Values.identity.deploy }}
-              IDENTITY_DB={{ required "identity.databaseName is required" .Values.identity.databaseName | quote }}
+              {{- if .Values.identityResolution.deploy }}
+              IDENTITY_DB={{ required "identityResolution.databaseName is required" .Values.identityResolution.databaseName | quote }}
               SQL=$(printf 'CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON `%s`.* TO `%s`@`%%`; FLUSH PRIVILEGES;' \
                 "$IDENTITY_DB" "$IDENTITY_DB" "$MARIADB_USER")
               mariadb -h"$MARIADB_HOST" -P"$MARIADB_PORT" -uroot -e "$SQL"
               echo "Provisioned ${IDENTITY_DB} (granted to ${MARIADB_USER}@%)."
+              {{- end }}
+              {{- if $kcdb }}
+              KC_DB={{ .Values.keycloak.database.name | quote }}
+              KC_DB_USER={{ required "keycloak.database.username is required" .Values.keycloak.database.username | quote }}
+              SQL=$(printf 'CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON `%s`.* TO `%s`@`%%`; FLUSH PRIVILEGES;' \
+                "$KC_DB" "$KC_DB" "$KC_DB_USER")
+              mariadb -h"$MARIADB_HOST" -P"$MARIADB_PORT" -uroot -e "$SQL"
+              echo "Provisioned ${KC_DB} (granted to ${KC_DB_USER}@%)."
               {{- end }}
               echo "Done."
 {{- end }}

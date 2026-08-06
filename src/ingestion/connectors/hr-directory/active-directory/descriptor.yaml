@@ -1,0 +1,26 @@
+name: active-directory
+type: cdk
+version: "1.5.0"
+# On-prem Active Directory user directory via LDAP/LDAPS (ldap3).
+# Sibling of ms-entra (cloud Entra ID): same class_people / identity_inputs
+# Silver contract, different transport (LDAP, not Microsoft Graph).
+schedule: 0 5 * * *
+workflow: sync
+dbt_select: tag:active-directory+
+# CI build metadata + runtime image ref (ADR-0016). bump-descriptors keeps
+# images.cdk.image pinned to the tag built by each main run; reconcile
+# WARN+skips this connector whenever the ref is empty.
+images:
+  cdk:
+    name: source-active-directory-insight
+    dockerfile: ./Dockerfile
+    context: .
+    image: ghcr.io/constructorfabric/source-active-directory-insight:2026.08.03.17.18-87bf1e2
+connection:
+  namespace: bronze_active_directory
+secret:
+  required_fields:
+    - ad_server_host
+    - ad_bind_dn
+    - ad_bind_password
+    - ad_search_base

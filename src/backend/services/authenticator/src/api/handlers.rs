@@ -25,7 +25,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::api::error::{OidcError, PersonError, SessionError};
+use crate::api::error::{OidcError, SessionError};
 use crate::audit::AuditEvent;
 use crate::cookie;
 use crate::identity::PersonResolution;
@@ -41,6 +41,10 @@ static X_GATEWAY_JWT: HeaderName = HeaderName::from_static("x-gateway-jwt");
 pub struct LoginParams {
     #[serde(default)]
     return_to: Option<String>,
+    /// View-as target (#1941). Honored only when `override_enabled`; the name
+    /// is the historical one the portal always used.
+    #[serde(default, rename = "__override")]
+    override_email: Option<String>,
 }
 
 /// Start the OIDC code+PKCE flow: stash state/nonce/verifier, 302 to the IdP.
@@ -48,7 +52,52 @@ pub async fn login(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<LoginParams>,
 ) -> Response {
-    let return_to = sanitize_return_to(params.return_to.as_deref(), &state.cfg.default_return_to);
+    let return_to = sanitize_return_to(
+        params.return_to.as_deref(),
+        &state.cfg.default_return_to,
+        &state.cfg.return_to_prefix,
+    );
+
+    // Preview experiments (`/exp/<name>`) are a capability, off by default. A
+    // production stand leaves `experiments_enabled=false`, so a login can never
+    // return into the preview subtree — an experimental frontend cannot be
+    // driven against that stand's data. Dev/demo preview hosts opt in. A future
+    // per-user RBAC check replaces this environment-level gate.
+    let return_to = if state.cfg.experiments_enabled || !is_preview_return(&return_to) {
+        return_to
+    } else {
+        tracing::warn!(
+            target: "audit",
+            event = "experiment_return_ignored",
+            "return_to under the /exp/ preview prefix but experiments_enabled=false: \
+             falling back to default_return_to"
+        );
+        state.cfg.default_return_to.clone()
+    };
+
+    // `__override` (view-as, #1941): carried into the login state only when
+    // the environment opts in; otherwise the parameter is inert — and logged,
+    // so an attempt against a real environment is visible, not silent.
+    // Sanitized before anything touches it (this log path is reachable in
+    // real environments): control characters stripped so a hostile value
+    // cannot forge log lines, length capped at the RFC 5321 address maximum.
+    let override_email = match params
+        .override_email
+        .as_deref()
+        .map(sanitize_override_email)
+    {
+        Some(email) if !email.is_empty() && state.cfg.override_enabled => email,
+        Some(email) if !email.is_empty() => {
+            tracing::warn!(
+                target: "audit",
+                event = "login_override_ignored",
+                email,
+                "__override presented but override_enabled=false: ignored"
+            );
+            String::new()
+        }
+        _ => String::new(),
+    };
 
     // Layer-2 cap (DESIGN §4.4): pre-auth there is no per-caller key, so the
     // guarded resource is the login-state store itself — refuse before any
@@ -85,6 +134,7 @@ pub async fn login(
                 pkce_verifier: start.pkce_verifier,
                 nonce: start.nonce,
                 return_to,
+                override_email,
             },
             300,
             now,
@@ -111,6 +161,33 @@ pub struct CallbackParams {
     state: Option<String>,
     #[serde(default)]
     error: Option<String>,
+    /// The IdP's human-readable detail (e.g. Entra's `AADSTS…` codes) — the
+    /// only place the failure cause survives now that the browser gets a
+    /// redirect instead of a problem body.
+    #[serde(default)]
+    error_description: Option<String>,
+}
+
+/// Bounce a failed callback back into the SPA (#2032). The browser arrives
+/// here on an IdP redirect with no page loaded, so problem+json would dead-end
+/// the login on raw JSON. Redirect to `default_return_to` with a fixed
+/// `auth_error=<reason>` instead — the SPA restarts the login (loop-guarded)
+/// or shows an error screen. `reason` must be one of the fixed codes; nothing
+/// IdP- or caller-supplied may reach the Location header.
+fn login_error_redirect(default_return_to: &str, reason: &str) -> Response {
+    let sep = if default_return_to.contains('?') {
+        '&'
+    } else {
+        '?'
+    };
+    build_response(
+        StatusCode::FOUND,
+        vec![(
+            LOCATION.clone(),
+            format!("{default_return_to}{sep}auth_error={reason}"),
+        )],
+        Body::empty(),
+    )
 }
 
 /// Complete login: validate state, exchange the code, guard against session
@@ -126,16 +203,19 @@ pub async fn callback(
     Query(params): Query<CallbackParams>,
 ) -> Response {
     if let Some(err) = params.error {
-        return OidcError::invalid_argument()
-            .with_field_violation("error", err, "IDP_ERROR")
-            .create()
-            .into_response();
+        // Client-reachable log path: strip control characters so the
+        // IdP-supplied values cannot forge log lines, and cap the lengths.
+        let sanitize =
+            |v: &str| -> String { v.chars().filter(|c| !c.is_control()).take(200).collect() };
+        tracing::warn!(
+            error = %sanitize(&err),
+            error_description = %sanitize(params.error_description.as_deref().unwrap_or("")),
+            "IdP reported an error at /auth/callback"
+        );
+        return login_error_redirect(&state.cfg.default_return_to, "idp_error");
     }
     let (Some(code), Some(oidc_state)) = (params.code, params.state) else {
-        return OidcError::invalid_argument()
-            .with_field_violation("state", "missing code or state", "MISSING")
-            .create()
-            .into_response();
+        return login_error_redirect(&state.cfg.default_return_to, "invalid_callback");
     };
 
     // Layer-2 bucket keyed by the presented `state`
@@ -158,10 +238,10 @@ pub async fn callback(
     let login_state = match state.sessions.take_login_state(&oidc_state).await {
         Ok(Some(ls)) => ls,
         Ok(None) => {
-            return OidcError::invalid_argument()
-                .with_field_violation("state", "unknown or expired state", "STATE_MISMATCH")
-                .create()
-                .into_response();
+            // Expired (the 300 s login-state TTL), unknown, or already-consumed
+            // (replayed callback) state. A fresh login fixes all three, so
+            // bounce to the SPA instead of dead-ending (#2032).
+            return login_error_redirect(&state.cfg.default_return_to, "state_expired");
         }
         Err(e) => return internal_problem("login_state_take", &e),
     };
@@ -183,10 +263,7 @@ pub async fn callback(
                 error = format!("{e:#}"),
                 "oidc code exchange / id_token validation failed"
             );
-            return OidcError::invalid_argument()
-                .with_field_violation("code", "token exchange failed", "EXCHANGE_FAILED")
-                .create()
-                .into_response();
+            return login_error_redirect(&state.cfg.default_return_to, "exchange_failed");
         }
     };
 
@@ -203,10 +280,7 @@ pub async fn callback(
             email = %idp.identity.email,
             "login denied: id_token carried no tenant and no default_tenant_id is set"
         );
-        return PersonError::permission_denied()
-            .with_reason("tenant_unresolved")
-            .create()
-            .into_response();
+        return login_error_redirect(&state.cfg.default_return_to, "access_denied");
     }
 
     // Session-fixation guard: never reuse an incoming session; revoke any live
@@ -246,30 +320,47 @@ pub async fn callback(
                     "idp_sub": idp.identity.sub,
                 }),
             });
-            return PersonError::permission_denied()
-                .with_reason("unknown_person")
-                .create()
-                .into_response();
+            return login_error_redirect(&state.cfg.default_return_to, "access_denied");
         }
         Err(e) => return internal_problem("person_resolution", &e),
     };
 
+    // View-as override (#1941): applied only when `override_enabled` (dev/demo
+    // environments) and only after the caller completed a full IdP login and
+    // resolved to a known person above. Every decision input is server-side
+    // (the flag, the login-state value, the person store) — no client-supplied
+    // identity is ever trusted, so the #1769 model holds.
+    let client = ClientInfo::from_headers(&headers);
+    let identity =
+        match resolve_override(&state, &login_state, &idp, &resolution, &client, &headers).await {
+            Ok(identity) => identity,
+            Err(resp) => return *resp,
+        };
+
     // `return_to` was sanitized at login time and stored with the login state.
     let return_to = login_state.return_to.clone();
-    let client = ClientInfo::from_headers(&headers);
-    match mint_and_store_session(&state, &idp, &resolution, &client).await {
+    match mint_and_store_session(&state, &idp, &identity, &client).await {
         Ok((session_id, token)) => {
+            let mut details = serde_json::json!({ "idp_sub": idp.identity.sub });
+            if !identity.impersonator_email.is_empty() {
+                details["override"] = serde_json::json!({
+                    "person_id": identity.person_id,
+                    "email": identity.email,
+                });
+            }
             state.audit.emit(AuditEvent {
                 action: "login",
                 outcome: "success",
-                tenant_id: resolution.tenant_id.clone(),
+                tenant_id: identity.tenant_id.clone(),
+                // The REAL authenticated principal — on view-as logins the
+                // impersonated person did nothing, so they are never the actor.
                 actor_person_id: resolution.person_id.clone(),
                 actor_ip: client.ip,
                 actor_user_agent: client.user_agent,
                 correlation_id: correlation_id(&headers),
                 resource_type: "session",
                 resource_id: session_id,
-                details: serde_json::json!({ "idp_sub": idp.identity.sub }),
+                details,
             });
             let jar = jar.add(cookie::session_cookie(
                 &token,
@@ -348,12 +439,115 @@ fn session_audit(
     }
 }
 
+/// The identity a new session is minted for: the effective person (the
+/// override target on view-as logins, the caller otherwise), plus the real
+/// principal behind a view-as session (empty on normal logins).
+struct SessionIdentity {
+    person_id: String,
+    email: String,
+    tenant_id: String,
+    impersonator_person_id: String,
+    impersonator_email: String,
+}
+
+/// Apply the `__override` view-as request stored with the login state (#1941):
+/// resolve the target through the same person store and swap the effective
+/// identity, keeping the real principal for the session record and audit.
+/// No-op (the caller's own identity) when the login carried no override or the
+/// flag is off. An unknown target is a 403, audited — silently falling back to
+/// the caller's identity would make a typo look like the override regressed.
+async fn resolve_override(
+    state: &AppState,
+    login_state: &LoginState,
+    idp: &crate::oidc::AuthenticatedIdp,
+    resolution: &PersonResolution,
+    client: &ClientInfo,
+    headers: &axum::http::HeaderMap,
+) -> Result<SessionIdentity, Box<Response>> {
+    let target_email = login_state.override_email.trim();
+    if target_email.is_empty() || !state.cfg.override_enabled {
+        return Ok(SessionIdentity {
+            person_id: resolution.person_id.clone(),
+            email: idp.identity.email.clone(),
+            tenant_id: resolution.tenant_id.clone(),
+            impersonator_person_id: String::new(),
+            impersonator_email: String::new(),
+        });
+    }
+
+    // The target resolves by email alone — Identity's internal lookup carries
+    // no tenant memberships (#1687) — so an email from another tenant DOES
+    // resolve, and the session then pairs the target's person_id with the
+    // CALLER's tenant claim. Acceptable only because the flag marks whole
+    // dev/demo environments; revisit when membership resolution exists.
+    let target = crate::identity::IdpIdentity {
+        sub: String::new(),
+        email: target_email.to_owned(),
+        tenant_id: idp.identity.tenant_id.clone(),
+        resolve_by: crate::identity::ResolveTarget::Email(target_email.to_owned()),
+    };
+    match state.resolver.resolve(&target).await {
+        Ok(Some(t)) => {
+            tracing::warn!(
+                target: "audit",
+                event = "login_override",
+                impersonator_person_id = %resolution.person_id,
+                impersonator_email = %idp.identity.email,
+                person_id = %t.person_id,
+                email = target_email,
+                "view-as override: minting the session for another person"
+            );
+            Ok(SessionIdentity {
+                person_id: t.person_id,
+                email: target_email.to_owned(),
+                tenant_id: t.tenant_id,
+                impersonator_person_id: resolution.person_id.clone(),
+                impersonator_email: idp.identity.email.clone(),
+            })
+        }
+        Ok(None) => {
+            tracing::warn!(
+                target: "audit",
+                event = "login_override_unknown_person",
+                impersonator_person_id = %resolution.person_id,
+                impersonator_email = %idp.identity.email,
+                email = target_email,
+                "view-as override denied: no matching person in Identity"
+            );
+            // The durable audit sink gets the denial too — an impersonation
+            // attempt against a bad target is exactly what audit is for.
+            state.audit.emit(AuditEvent {
+                action: "login",
+                outcome: "failure",
+                tenant_id: idp.identity.tenant_id.clone(),
+                actor_person_id: resolution.person_id.clone(),
+                actor_ip: client.ip.clone(),
+                actor_user_agent: client.user_agent.clone(),
+                correlation_id: correlation_id(headers),
+                resource_type: "session",
+                resource_id: String::new(),
+                details: serde_json::json!({
+                    "reason": "override_unknown_person",
+                    "override_email": target_email,
+                }),
+            });
+            // Denied, never a fallback to the caller (PRD 5.16) — but still a
+            // browser-facing callback failure, so it bounces like the rest.
+            Err(Box::new(login_error_redirect(
+                &state.cfg.default_return_to,
+                "access_denied",
+            )))
+        }
+        Err(e) => Err(Box::new(internal_problem("person_resolution", &e))),
+    }
+}
+
 /// Build claims, sign the linked JWT, and persist the session in one pipeline.
 /// Returns the cookie token.
 async fn mint_and_store_session(
     state: &AppState,
     idp: &crate::oidc::AuthenticatedIdp,
-    resolution: &PersonResolution,
+    identity: &SessionIdentity,
     client: &ClientInfo,
 ) -> anyhow::Result<(String, String)> {
     let now = now_secs();
@@ -388,8 +582,8 @@ async fn mint_and_store_session(
     // exp clamped to the session absolute cap (cheap hygiene, G3).
     let exp = (now + cfg.jwt_ttl_seconds).min(absolute_expires_at);
     let claims = GatewayClaims {
-        sub: resolution.person_id.clone(),
-        tenant_id: resolution.tenant_id.clone(),
+        sub: identity.person_id.clone(),
+        tenant_id: identity.tenant_id.clone(),
         roles: roles.clone(),
         sub_type: "user".to_owned(),
         sid: session_id.clone(),
@@ -414,9 +608,9 @@ async fn mint_and_store_session(
     };
 
     let record = SessionRecord {
-        person_id: resolution.person_id.clone(),
-        email: idp.identity.email.clone(),
-        tenant_id: resolution.tenant_id.clone(),
+        person_id: identity.person_id.clone(),
+        email: identity.email.clone(),
+        tenant_id: identity.tenant_id.clone(),
         roles,
         idp_iss: idp.issuer.clone(),
         idp_sub: idp.identity.sub.clone(),
@@ -431,6 +625,8 @@ async fn mint_and_store_session(
         ip: client.ip.clone(),
         csrf_token,
         current_token: token.clone(),
+        impersonator_person_id: identity.impersonator_person_id.clone(),
+        impersonator_email: identity.impersonator_email.clone(),
     };
 
     state
@@ -598,7 +794,7 @@ pub async fn me(Extension(state): Extension<Arc<AppState>>, jar: CookieJar) -> R
 
     let refresh_at = refresh_at_for(&state.cfg, record.expires_at);
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "user": record.person_id,
         "email": record.email,
         "tenant_id": record.tenant_id,
@@ -606,9 +802,13 @@ pub async fn me(Extension(state): Extension<Arc<AppState>>, jar: CookieJar) -> R
         "expires_at": record.expires_at,
         "refresh_at": refresh_at,
         "csrf_token": record.csrf_token,
-    })
-    .to_string();
-    json_ok(body)
+    });
+    // View-as session (#1941): name the real principal so the SPA can show a
+    // "viewing as X" banner. Absent on normal sessions.
+    if !record.impersonator_email.is_empty() {
+        body["impersonator_email"] = serde_json::Value::String(record.impersonator_email.clone());
+    }
+    json_ok(body.to_string())
 }
 
 // ── /auth/csrf ───────────────────────────────────────────────────────────────
@@ -849,9 +1049,11 @@ pub async fn sessions_revoke_one(
         Ok(t) => t,
         Err(e) => return internal_problem("session_load", &e),
     };
-    let owned = target
-        .as_ref()
-        .is_some_and(|t| t.person_id == record.person_id);
+    // A view-as session (#1941) belongs to the real principal too — it is
+    // listed under their index, so it must be revocable from there as well.
+    let owned = target.as_ref().is_some_and(|t| {
+        t.person_id == record.person_id || t.impersonator_person_id == record.person_id
+    });
     if !owned {
         return not_found(&target_id);
     }
@@ -1214,14 +1416,64 @@ fn refresh_at_for(cfg: &crate::config::AuthenticatorConfig, expires_at: u64) -> 
         .saturating_add_signed(jitter_seconds(cfg.refresh_jitter_seconds / 2))
 }
 
-/// Sanitize an SPA-supplied `return_to`: accept only a site-relative path (one
-/// leading `/`, not `//` — which would be protocol-relative / open-redirect).
+/// Sanitize an SPA-supplied `return_to`; `default` on rejection. A non-empty
+/// `prefix` (empty = any same-origin path) also confines the path to it.
 #[must_use]
-pub fn sanitize_return_to(candidate: Option<&str>, default: &str) -> String {
-    match candidate {
-        Some(p) if p.starts_with('/') && !p.starts_with("//") => p.to_owned(),
-        _ => default.to_owned(),
+pub fn sanitize_return_to(candidate: Option<&str>, default: &str, prefix: &str) -> String {
+    candidate
+        .filter(|p| is_safe_return_to(p, prefix))
+        .unwrap_or(default)
+        .to_owned()
+}
+
+/// Reserved path prefix that preview experiments (`/exp/<name>`) are served
+/// under. The single point the experiments capability keys on — a login return
+/// into this subtree is honored only when experiments are enabled.
+const PREVIEW_RETURN_PREFIX: &str = "/exp/";
+
+/// Whether a (already-sanitized, site-relative) `return_to` targets the preview
+/// experiments subtree. Case-folded so `/EXP/` cannot slip the gate.
+fn is_preview_return(return_to: &str) -> bool {
+    return_to
+        .to_ascii_lowercase()
+        .starts_with(PREVIEW_RETURN_PREFIX)
+}
+
+/// Same-origin and (when `prefix` is set) confined to it — checked on a form
+/// the browser cannot fold into an escape. `\`, `%5c`, `%2e`, `%2f`, and a
+/// literal `..` path segment are rejected, since the WHATWG URL parser turns
+/// them into `/` or `..` *after* this check (`/\host`, `/exp/%2e%2e/admin`).
+fn is_safe_return_to(p: &str, prefix: &str) -> bool {
+    if !p.starts_with('/') || p.starts_with("//") || p.starts_with("/\\") {
+        return false;
     }
+
+    let path = p.split(['?', '#']).next().unwrap_or(p).to_ascii_lowercase();
+    if ["\\", "%5c", "%2e", "%2f"]
+        .iter()
+        .any(|bad| path.contains(bad))
+    {
+        return false;
+    }
+    if path.split('/').any(|seg| seg == "..") {
+        return false;
+    }
+
+    prefix.is_empty() || p.starts_with(prefix)
+}
+
+/// Sanitize the client-supplied `__override` value before it is logged or
+/// stored: strip control characters (a CR/LF or ANSI escape in the value could
+/// forge log lines on a plain-text subscriber — and this is logged even in
+/// flag-off environments) and cap at the RFC 5321 address maximum.
+#[must_use]
+pub fn sanitize_override_email(candidate: &str) -> String {
+    candidate
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(254)
+        .collect()
 }
 
 // ── Internal plumbing ────────────────────────────────────────────────────────
@@ -1339,7 +1591,14 @@ fn unauthenticated_clear_cookie(jar: CookieJar) -> Response {
 }
 
 fn internal_problem(context: &str, err: &anyhow::Error) -> Response {
-    tracing::error!(context, error = %err, "authenticator internal error");
+    // Log the full error chain (`?` = Debug) — anyhow::Error's Display (`%`)
+    // shows only the top-level context, dropping the actual underlying cause
+    // (e.g. the real TLS/validation error text), which made failures like a
+    // rejected OIDC issuer or a missing CA impossible to diagnose from logs
+    // alone. The HTTP response body stays on the short `{context}: {err}`
+    // form — the full chain can include upstream-response fragments that
+    // shouldn't reach the browser.
+    tracing::error!(context, error = ?err, "authenticator internal error");
     toolkit_canonical_errors::CanonicalError::internal(format!("{context}: {err}"))
         .create()
         .into_response()
@@ -1378,15 +1637,93 @@ mod tests {
 
     #[test]
     fn return_to_accepts_site_relative_paths() {
-        assert_eq!(sanitize_return_to(Some("/dashboard"), "/"), "/dashboard");
+        assert_eq!(
+            sanitize_return_to(Some("/dashboard"), "/", ""),
+            "/dashboard"
+        );
+    }
+
+    #[test]
+    fn return_to_prefix_admits_only_matching_paths() {
+        assert_eq!(
+            sanitize_return_to(Some("/exp/widget-1/"), "/", "/exp/"),
+            "/exp/widget-1/"
+        );
+        // Outside the prefix, traversal, and open-redirect shapes all fall back.
+        assert_eq!(sanitize_return_to(Some("/dashboard"), "/", "/exp/"), "/");
+        assert_eq!(sanitize_return_to(Some("/exp/../admin"), "/", "/exp/"), "/");
+        assert_eq!(
+            sanitize_return_to(Some("//evil.example"), "/", "/exp/"),
+            "/"
+        );
+        assert_eq!(sanitize_return_to(None, "/", "/exp/"), "/");
+    }
+
+    #[test]
+    fn return_to_rejects_percent_encoded_traversal_out_of_prefix() {
+        // `%2e%2e` / `%2f` normalize to `../` in the browser and would escape
+        // the prefix after this check, so they are rejected up front.
+        for encoded in [
+            "/exp/%2e%2e/admin",
+            "/exp/%2E%2E/admin",
+            "/exp/%2e%2e%2fadmin",
+        ] {
+            assert_eq!(
+                sanitize_return_to(Some(encoded), "/", "/exp/"),
+                "/",
+                "should reject: {encoded:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn return_to_rejects_backslash_open_redirect() {
+        // Browsers fold `\` (and its `%5c` encoding) into `/`, so `/\host` and
+        // `/%5chost` resolve off-origin — rejected even with no prefix set.
+        for evil in ["/\\evil.example", "/%5cevil.example", "/%5Cevil.example"] {
+            assert_eq!(
+                sanitize_return_to(Some(evil), "/", ""),
+                "/",
+                "should reject: {evil:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_preview_return_matches_exp_subtree_case_folded() {
+        for hit in ["/exp/widget-1/", "/exp/", "/EXP/Widget/", "/Exp/x"] {
+            assert!(
+                is_preview_return(hit),
+                "should be a preview return: {hit:?}"
+            );
+        }
+        for miss in ["/", "/dashboard", "/expunge", "/experiments"] {
+            assert!(
+                !is_preview_return(miss),
+                "should not be a preview return: {miss:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn override_email_strips_control_chars_and_caps_length() {
+        assert_eq!(
+            sanitize_override_email("  bob@example.com\r\nforged=line  "),
+            "bob@example.comforged=line"
+        );
+        assert_eq!(sanitize_override_email("a\u{1b}[31mred"), "a[31mred");
+        assert_eq!(sanitize_override_email(&"x".repeat(300)).len(), 254);
     }
 
     #[test]
     fn return_to_rejects_open_redirects() {
         // Protocol-relative and absolute URLs fall back to the default.
-        assert_eq!(sanitize_return_to(Some("//evil.example"), "/"), "/");
-        assert_eq!(sanitize_return_to(Some("https://evil.example"), "/"), "/");
-        assert_eq!(sanitize_return_to(None, "/home"), "/home");
+        assert_eq!(sanitize_return_to(Some("//evil.example"), "/", ""), "/");
+        assert_eq!(
+            sanitize_return_to(Some("https://evil.example"), "/", ""),
+            "/"
+        );
+        assert_eq!(sanitize_return_to(None, "/home", ""), "/home");
     }
 
     #[test]
@@ -1407,5 +1744,26 @@ mod tests {
         let payload = B64.encode(br#"{"exp":4000000000}"#);
         let token = format!("aGVhZGVy.{payload}.c2ln");
         assert_eq!(jwt_exp(&token), Some(4_000_000_000));
+    }
+
+    fn location_of(resp: &Response) -> String {
+        resp.headers()
+            .get(LOCATION)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    #[test]
+    fn login_error_redirect_bounces_into_the_spa() {
+        let resp = login_error_redirect("/", "state_expired");
+        assert_eq!(resp.status(), StatusCode::FOUND);
+        assert_eq!(location_of(&resp), "/?auth_error=state_expired");
+    }
+
+    #[test]
+    fn login_error_redirect_appends_to_an_existing_query() {
+        let resp = login_error_redirect("/app?tab=home", "access_denied");
+        assert_eq!(location_of(&resp), "/app?tab=home&auth_error=access_denied");
     }
 }

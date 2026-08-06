@@ -107,14 +107,18 @@ redis://{{ include "insight.redis.host" . }}:{{ include "insight.redis.port" . }
 
 {{/*
 ==============================================================================
- AIRBYTE (separate release, SAME namespace)
+ AIRBYTE (separate release; airbyte.namespace="" = same namespace as the app)
 ==============================================================================
 */}}
+{{- define "insight.airbyte.namespace" -}}
+{{- default .Release.Namespace .Values.airbyte.namespace -}}
+{{- end -}}
+
 {{- define "insight.airbyte.url" -}}
 {{- if .Values.airbyte.apiUrl -}}
 {{- .Values.airbyte.apiUrl -}}
 {{- else -}}
-http://{{ .Values.airbyte.releaseName }}-airbyte-server-svc.{{ .Release.Namespace }}.svc.cluster.local:8001
+http://{{ .Values.airbyte.releaseName }}-airbyte-server-svc.{{ include "insight.airbyte.namespace" . }}.svc.cluster.local:8001
 {{- end -}}
 {{- end -}}
 
@@ -127,7 +131,7 @@ App services are mandatory umbrella components — no deploy flag.
 {{- define "insight.gateway.host"             -}}{{- printf "%s-gateway"              .Release.Name -}}{{- end -}}
 {{- define "insight.authenticator.host"       -}}{{- printf "%s-authenticator"        .Release.Name -}}{{- end -}}
 {{- define "insight.analytics.host"           -}}{{- printf "%s-analytics"            .Release.Name -}}{{- end -}}
-{{- define "insight.identity.host"            -}}{{- printf "%s-identity"             .Release.Name -}}{{- end -}}
+{{- define "insight.identityResolution.host"  -}}{{- printf "%s-identity-resolution"  .Release.Name -}}{{- end -}}
 {{- define "insight.frontend.host"            -}}{{- printf "%s-frontend"             .Release.Name -}}{{- end -}}
 {{- define "insight.fakeidp.host"             -}}{{- printf "%s-fakeidp"              .Release.Name -}}{{- end -}}
 
@@ -180,6 +184,18 @@ Invoked from NOTES.txt so they fire on every install.
     {{- if ne (toString $aoidc.issuerUrl) (toString $fake.issuer) -}}
       {{- fail (printf "fakeidp.deploy=true but authenticator.oidc.issuerUrl (%q) != fakeidp.issuer (%q) — they must be identical (the authenticator validates the id_token `iss` against its configured IdP)." $aoidc.issuerUrl $fake.issuer) -}}
     {{- end -}}
+  {{- end -}}
+
+  {{- /* The authenticator's login-bootstrap resolve
+         (GET /internal/persons/by-external-id / by-email-override) exists on
+         identity-resolution only (constructorfabric/insight#1960). Refuse to
+         render a config that would point it at a service that was never
+         deployed. */ -}}
+  {{- if not (default dict .Values.identityResolution).deploy -}}
+    {{- fail "identityResolution.deploy must be true — the authenticator's login-bootstrap resolve only exists on identity-resolution (constructorfabric/insight#1960)." -}}
+  {{- end -}}
+  {{- if not $aoidc.sourceType -}}
+    {{- fail "authenticator.oidc.sourceType is required — the identity-resolution source_type (e.g. \"ms-entra\") the login-bootstrap resolve is scoped to." -}}
   {{- end -}}
 
   {{- /* External hosts (L2 infra is out-of-chart → consumer must supply

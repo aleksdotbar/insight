@@ -154,9 +154,14 @@ print(json.dumps({
 # @cpt-begin:cpt-insightspec-algo-reconcile-cascade-delete-cronworkflow:p1
 reconcile_cascade_delete() {
   local connector="$1"
+  # Set to 1 when this call actually removed something (sources and/or the
+  # CronWorkflow); the caller counts CHANGED vs SKIPPED off it. Dry-run
+  # reports 1 — it would attempt the removal.
+  _RECONCILE_CASCADE_REMOVED=0
   if [[ "${RECONCILE_DRY_RUN:-0}" -eq 1 ]]; then  # RULE-DEFAULTS-OK: feature flag — OFF when caller doesn't opt in
     # @cpt-begin:cpt-insightspec-algo-reconcile-cascade-delete-cronworkflow:p1:inst-cd-dry-run-guard
-    log_line WARN "would remove ${connector} from Airbyte — its Secret was deleted in Kubernetes"
+    _RECONCILE_CASCADE_REMOVED=1
+    log_line WARN "would remove ${connector} from Airbyte — no Secret in Kubernetes"
     # @cpt-end:cpt-insightspec-algo-reconcile-cascade-delete-cronworkflow:p1:inst-cd-dry-run-guard
     return 0
   fi
@@ -175,9 +180,11 @@ reconcile_cascade_delete() {
 
   # Delete connections bound to connector's sources (by name prefix).
   # RECONCILE_DRY_RUN guard at top of reconcile_cascade_delete short-circuits.
+  local removed_sources=0
   while IFS= read -r conn_id; do
     [[ -n "${conn_id}" ]] || continue
     ab_delete_source "${conn_id}" >/dev/null 2>&1 || true
+    removed_sources=$((removed_sources + 1))
   done < <(printf '%s' "${sources_json}" \
     | python3 -c '
 import json, sys
@@ -190,8 +197,29 @@ for s in json.load(sys.stdin):
 
   # Delete the per-connector CronWorkflow.
   # RECONCILE_DRY_RUN guard at top of reconcile_cascade_delete short-circuits.
-  argo_delete_cronworkflow "${connector}" "${tenant}" 2>/dev/null || true
-  log_line WARN "${connector}: Secret was deleted in Kubernetes — removed connector from Airbyte"
+  # kubectl --ignore-not-found prints "… deleted" only when the object
+  # existed, so non-empty output = a CronWorkflow was actually removed.
+  local cron_out
+  cron_out="$(argo_delete_cronworkflow "${connector}" "${tenant}" 2>/dev/null || true)"
+
+  # A missing Secret is stateless: this tick cannot tell "deleted since the
+  # last tick" from "never existed on this cluster". What it CAN tell is
+  # whether any managed resources were actually removed — a descriptor that
+  # is baked into the toolbox but was never configured here must not WARN
+  # about a removal that never happened.
+  local removed_what=""
+  if (( removed_sources > 0 )); then
+    removed_what="${removed_sources} source(s)"
+  fi
+  if [[ -n "${cron_out}" ]]; then
+    removed_what="${removed_what:+${removed_what} + }CronWorkflow"
+  fi
+  if [[ -n "${removed_what}" ]]; then
+    _RECONCILE_CASCADE_REMOVED=1
+    log_line WARN "${connector}: Secret missing in Kubernetes — removed ${removed_what}"
+  else
+    log_line INFO "${connector}: no Secret and no Airbyte/Argo resources — not installed on this cluster; nothing to remove"
+  fi
 }
 # @cpt-end:cpt-insightspec-algo-reconcile-cascade-delete-cronworkflow:p1
 
@@ -589,7 +617,7 @@ reconcile_connections() {
     if ! destination_id="$(reconcile_resolve_destination_id "${connector_name}")"; then
       return 1
     fi
-    local discover_json sync_catalog
+    local discover_json sync_catalog source_catalog_id
     # disable_cache=true: bootstrap discover for a source whose definition may
     # have just been (re)created at a new image. Avoid a stale cached catalog.
     if ! discover_json="$(ab_discover_schema "${source_id}" true)"; then
@@ -603,6 +631,11 @@ reconcile_connections() {
         "normalize_catalog_to_append failed for source ${source_id}"
       return 1
     fi
+    # catalogId → sourceCatalogId: anchor schema-change detection to the
+    # catalog this connection is being created with (see
+    # reconcile_refresh_catalog for the stale-banner failure mode).
+    source_catalog_id="$(printf '%s' "${discover_json}" \
+      | python3 -c 'import sys,json;print(json.load(sys.stdin).get("catalogId") or "")')"
     # Airbyte connection is created with scheduleType=manual; Argo
     # CronWorkflow drives sync timing (reconcile_compute_schedule feeds the
     # CronWorkflow render in _reconcile_one_connector). Without this,
@@ -628,7 +661,8 @@ reconcile_connections() {
     # invalid/mismatched DB name (e.g. bronze_bitbucket-cloud).
     if ! new_conn_json="$(ab_create_connection "${workspace_id}" "${source_id}" \
               "${destination_id}" "${conn_name}" "${schedule_json}" \
-              "${tags_json}" "${sync_catalog}" "${namespace_format}")"; then
+              "${tags_json}" "${sync_catalog}" "${namespace_format}" \
+              "${source_catalog_id}")"; then
       reconcile__log ERROR "${connector_name}" \
         "ab_create_connection failed for source ${source_id}"
       return 1
@@ -637,6 +671,42 @@ reconcile_connections() {
       | python3 -c 'import sys,json;print(json.load(sys.stdin).get("connectionId",""))')"
     reconcile__log CHANGE "${connector_name}" \
       "connection ${new_conn_id} created"
+    # Duplicate-guard for the check-then-create window above. The list at
+    # line ~573 and the create here are not atomic, so two reconcile
+    # executions overlapping on the same freshly-sourced connector can both
+    # pass the empty-check and each create a connection (concurrencyPolicy:
+    # Forbid on the CronWorkflow only serializes SCHEDULED runs, not
+    # out-of-band / manually-triggered Workflow objects). Converge to one by
+    # re-listing after the create and, if more than one connection now binds
+    # this source, keeping a single deterministic winner and deleting the
+    # rest. The winner is the lexicographically-smallest connectionId: every
+    # racer computes the same one from the same set, so whichever execution
+    # runs this block last leaves exactly one connection regardless of
+    # ordering. Best-effort — a failed prune is logged, not fatal (the next
+    # reconcile tick re-runs this same convergence).
+    local post_list post_ids keep_id
+    post_list="$(ab_list_connections "${workspace_id}" \
+      | python3 "${_RECONCILE_PY_DIR}/select_connections_by_source.py" "${source_id}")"
+    post_ids="$(printf '%s' "${post_list}" \
+      | python3 -c 'import sys,json
+ids=[json.loads(l)["connectionId"] for l in sys.stdin if l.strip()]
+print("\n".join(sorted(i for i in ids if i)))')"
+    if [[ "$(printf '%s\n' "${post_ids}" | grep -c .)" -gt 1 ]]; then
+      keep_id="$(printf '%s\n' "${post_ids}" | head -n1)"
+      reconcile__log CHANGE "${connector_name}" \
+        "duplicate connections detected for source ${source_id}; keeping ${keep_id}, pruning others"
+      while IFS= read -r dup_id; do
+        [[ -n "${dup_id}" && "${dup_id}" != "${keep_id}" ]] || continue
+        if ab_delete_connection "${dup_id}" >/dev/null 2>&1; then
+          reconcile__log CHANGE "${connector_name}" \
+            "pruned duplicate connection ${dup_id}"
+        else
+          reconcile__log ERROR "${connector_name}" \
+            "failed to prune duplicate connection ${dup_id} (will retry next tick)"
+        fi
+      done <<< "${post_ids}"
+      new_conn_id="${keep_id}"
+    fi
     _RECONCILE_CHANGED=$((_RECONCILE_CHANGED + 1))
     printf 'created\t%s\n' "${new_conn_id}"
     return 0
@@ -697,7 +767,7 @@ reconcile_refresh_catalog() {
       "would refresh sync_catalog on connection ${connection_id} (re-discover; new streams/fields auto-enabled)"
     return 0
   fi
-  local discover_json sync_catalog
+  local discover_json sync_catalog source_catalog_id
   # disable_cache=true: this refresh runs on republish (definition/image
   # changed). Airbyte's discover cache is keyed by source config — unchanged
   # on an image-only bump — so a cached discover would return the OLD schema
@@ -713,7 +783,18 @@ reconcile_refresh_catalog() {
       "normalize_catalog_to_append failed during catalog refresh for source ${source_id}"
     return 1
   fi
-  if ! ab_update_connection_sync_catalog "${connection_id}" "${sync_catalog}" >/dev/null; then
+  # catalogId anchors the connection's sourceCatalogId to the catalog we just
+  # applied — without it Airbyte keeps comparing new discovers against the
+  # bootstrap-era catalog and shows "Schema changes detected" forever.
+  # Missing catalogId (older Airbyte) degrades to the previous behaviour.
+  source_catalog_id="$(printf '%s' "${discover_json}" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin).get("catalogId") or "")')"
+  if [[ -z "${source_catalog_id}" ]]; then
+    reconcile__log WARN "${connector_name}" \
+      "discover_schema returned no catalogId — sourceCatalogId not updated (schema-change banner may persist)"
+  fi
+  if ! ab_update_connection_sync_catalog "${connection_id}" "${sync_catalog}" \
+        "${source_catalog_id}" >/dev/null; then
     reconcile__log ERROR "${connector_name}" \
       "ab_update_connection_sync_catalog failed for connection ${connection_id}"
     return 1
@@ -939,7 +1020,14 @@ _reconcile_one_connector() {
       if ! reconcile_cascade_delete "${name}"; then
         return 1
       fi
-      _RECONCILE_CHANGED=$((_RECONCILE_CHANGED + 1))
+      # Only an actual removal is a change; an uninstalled descriptor (no
+      # Secret, no Airbyte/Argo resources) is a skip — otherwise every
+      # not-configured connector inflates the changed-count each tick.
+      if [[ "${_RECONCILE_CASCADE_REMOVED:-0}" -eq 1 ]]; then
+        _RECONCILE_CHANGED=$((_RECONCILE_CHANGED + 1))
+      else
+        _RECONCILE_SKIPPED=$((_RECONCILE_SKIPPED + 1))
+      fi
       return 0
       ;;
     2)

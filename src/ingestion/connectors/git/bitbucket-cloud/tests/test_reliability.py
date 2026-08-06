@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from source_bitbucket_cloud.client import BitbucketApiError, BitbucketClient, RepositoryCatalog
-from source_bitbucket_cloud.streams.base import BUCKET_COUNT
+from source_bitbucket_cloud.streams.base import BUCKET_COUNT, repo_state_key
 from source_bitbucket_cloud.streams.commits import CommitsStream
 from source_bitbucket_cloud.streams.metric_events import IssuesStream
 from tests.conftest import SHARED, FakeCatalog, FakeClient, branch, repository
@@ -73,7 +73,7 @@ class TestRepositoryQuarantine:
 
         assert error is None
         assert len(records) == 1
-        assert stream.state["repositories"]["{good}"] == {"head_shas": ["a1"]}
+        assert stream.state["repositories"][repo_state_key(good)] == {"head_shas": ["a1"], "repo_updated_on": "2026-06-01T00:00:00+00:00"}
 
 
 class TestIssuesDisabledRepos:
@@ -151,8 +151,36 @@ class TestClientHardening:
         client.paginate = fake_paginate
         list(client.commits_between(repository(), ["new1", "new2"], ["old1"]))
         assert seen["method"] == "POST"
-        assert seen["params"] == {"pagelen": "100"}
+        assert seen["params"]["pagelen"] == "100"
         assert ("include", "new1") in seen["data"] and ("exclude", "old1") in seen["data"]
+
+    def test_commits_between_projects_only_what_the_streams_read(self):
+        """The API silently drops a misspelled fields entry, so a wrong list
+        surfaces as NULL columns, not an error: pin what the record builder and
+        the pagination need."""
+        projected = set(BitbucketClient.COMMIT_FIELDS.split(","))
+
+        assert "next" in projected, "without it pagination stops after one page"
+        record_reads = {
+            "values.hash",
+            "values.date",
+            "values.message",
+            "values.parents.hash",
+        }
+        identity_reads = {
+            f"values.{role}.{part}"
+            for role in ("author", "committer")
+            for part in ("raw", "user.display_name", "user.uuid", "user.account_id")
+        }
+        assert projected == record_reads | identity_reads | {"next"}
+
+    def test_commits_between_without_current_heads_asks_nothing(self):
+        client = self.make_client()
+        calls = []
+
+        client.paginate = lambda *args, **kwargs: calls.append(kwargs) or iter(())
+        assert list(client.commits_between(repository(), [], ["old1"])) == []
+        assert calls == []
 
 
 class TestNewCommits404Recovery:

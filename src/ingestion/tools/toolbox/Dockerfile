@@ -5,9 +5,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl gettext-base jq gnupg lsb-release && \
     rm -rf /var/lib/apt/lists/*
 
-# Node.js (for JWT token generation)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
+# Node.js (for JWT token generation). npm is upgraded in place: the one the
+# distro package carries lags its own release line, and its bundled dependency
+# tree is what the image scan reports.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    npm install -g npm@latest && \
+    npm cache clean --force && \
     rm -rf /var/lib/apt/lists/*
 
 # yq (YAML processor)
@@ -24,3 +28,8 @@ RUN pip install --no-cache-dir dbt-clickhouse
 # Copy entire ingestion project
 COPY . /ingestion
 WORKDIR /ingestion
+
+# dbt writes logs/ and target/ under the project root, so the tree must belong
+# to the runtime user.
+RUN useradd -U -u 1000 -m appuser && chown -R 1000:1000 /ingestion
+USER 1000

@@ -6,8 +6,8 @@ the CI matrix). Pure data + lookup: no CLI, no side effects, never runs tests.
 Per component: name, lang, root (collection cwd), paths (repo-relative prefixes
 for bucketing), plus per-language extras consumed by the CI producer jobs:
   rust   -> package (cargo package name); all_features (default True)
-  dotnet -> solution
   python -> cov_package (the source_* package to measure)
+  js     -> none (the package.json scripts under `root` carry the collection)
 
 Nocode (declarative-YAML) connectors are excluded — no first-party code to
 line-cover.
@@ -53,6 +53,33 @@ COMPONENTS = [
         "cover_ignore_regex": "src/backend/libs/",
         "paths": ["src/backend/services/analytics"],
     },
+    # cover=False (mirrors authenticator): the crate's business logic
+    # is exercised by env-gated live tests (IDENTITY_TEST_* against a dev
+    # MariaDB/ClickHouse) that skip cleanly in CI, so only the pure-logic unit
+    # tests would count — gating the crate far below the 80% line. fmt + clippy
+    # + tests still run and gate the pipeline. Re-enable coverage when the
+    # HTTP+MariaDB integration suite lands (#1753).
+    {
+        "name": "identity-resolution",
+        "lang": "rust",
+        "root": "src/backend",
+        "package": "identity-resolution",
+        "cover": False,
+        # DB-backed migration/bootstrap tests: the CI rust job provisions a
+        # MariaDB (database `identity` — this service owns that schema), runs
+        # `identity-resolution migrate` up front, then `cargo test` with
+        # INTEGRATION_TESTS_MARIADB_URL set (the live tests re-run the
+        # migrator to prove idempotency and skip cleanly when unset).
+        "live_db": True,
+        "live_db_name": "identity",
+        "cover_ignore_regex": "src/backend/libs/",
+        "paths": ["src/backend/services/identity-resolution"],
+        # insight-clickhouse is compiled in as a path dependency: a lib change
+        # must re-run this crate's tests too. A shared path in `paths` would
+        # NOT do that (component_for() picks a single owner — always the lib's
+        # own component); `triggered_by` is the registry's co-trigger for this.
+        "triggered_by": ["insight-clickhouse"],
+    },
     # fakeidp is a dev/e2e test double (see cf/NGINX_BFF.md §10 G6), not shipped
     # code — but it has real integration tests, so it is covered + gated like any
     # other crate. Its only cross-crate files are none (standalone deps), so no
@@ -76,7 +103,7 @@ COMPONENTS = [
         "package": "routegen",
         "paths": ["src/backend/tools/routegen"],
     },
-    # cover=False (mirrors identity): the authenticator's security-critical
+    # cover=False: the authenticator's security-critical
     # flow (OIDC login, sessions, cookie->JWT exchange) is proven by the e2e
     # login-loop, which drives the server as a SEPARATE process — so it can't
     # feed `cargo llvm-cov` (that instruments the test binary, not a spawned
@@ -119,19 +146,6 @@ COMPONENTS = [
         "all_features": False,
         "clippy": False,
         "paths": ["src/ingestion/connectors/task-tracking/jira/enrich"],
-    },
-    # .NET
-    # cover=False: identity is excluded from coverage collection and gating
-    # entirely (2026-07 decision) — its tests still run in the dotnet CI job
-    # and still fail the pipeline on regressions; only the Cobertura
-    # collection, upload, and the per-component/new-code gates are dropped.
-    {
-        "name": "identity",
-        "lang": "dotnet",
-        "root": "src/backend/services/identity",
-        "solution": "Insight.Identity.sln",
-        "cover": False,
-        "paths": ["src/backend/services/identity"],
     },
     # Python CDK connectors
     {
@@ -176,6 +190,18 @@ COMPONENTS = [
         "cov_package": "source_github_copilot",
         "paths": ["src/ingestion/connectors/ai/github-copilot"],
     },
+    # Deploy-time ClickHouse schema tooling (the migration Job's Python half:
+    # reconcile_bronze_schema, which heals warm-cluster bronze drift — #1991).
+    # Owning the whole scripts/ tree means a connectors-ddl snapshot regen also
+    # re-runs these tests, which is the point: the reconciler's contract is with
+    # that snapshot. Shell scripts in the same tree have no measured lines.
+    {
+        "name": "ingestion-scripts",
+        "lang": "python",
+        "root": "src/ingestion/scripts",
+        "cov_package": "reconcile_bronze_schema",
+        "paths": ["src/ingestion/scripts"],
+    },
     # Mock-server test rig for NOCODE connectors (feature-connector-mock-tests),
     # split into two CI jobs for clean results (review ask): the harness's own
     # unit tests (meta/) and the per-connector mock suites. Both measure the
@@ -197,7 +223,7 @@ COMPONENTS = [
         "triggered_by": ["connector-mock-tests"],
         "paths": ["src/ingestion/tests/connectors"],
     },
-    # cover=False (mirrors the rust/dotnet flag): the suites job still runs and
+    # cover=False (mirrors the rust flag): the suites job still runs and
     # uploads its Cobertura — those lines merge into connector-tests-harness at
     # the gate — but every file it measures lives under the harness paths, so
     # this component itself never has measured lines and must not be in the
@@ -210,7 +236,15 @@ COMPONENTS = [
         "pytest_args": "--suites-only",
         "cover": False,
         "triggered_by": ["connector-tests-harness"],
-        "paths": ["src/ingestion/connectors/task-tracking/jira"],
+        "paths": ["src/ingestion/connectors/task-tracking/jira", "src/ingestion/connectors/ai/claude-admin"],
+    },
+    # `src/frontend/helm` falls under this path but has no measured lines, so it
+    # never moves the number.
+    {
+        "name": "frontend",
+        "lang": "js",
+        "root": "src/frontend",
+        "paths": ["src/frontend"],
     },
 ]
 

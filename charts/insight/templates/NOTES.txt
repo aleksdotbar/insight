@@ -22,10 +22,10 @@ Application services (always-on):
 {{- if .Values.fakeidp.deploy }}
   ⚠ fakeidp (dev IdP)  http://{{ include "insight.fakeidp.host" . }}:8084  (DEV/E2E ONLY — never production)
 {{- end }}
-{{- if .Values.identity.deploy }}
-  ✓ Identity           http://{{ include "insight.identity.host" . }}:8082  (deployed)
+{{- if .Values.identityResolution.deploy }}
+  ✓ Identity           http://{{ include "insight.identityResolution.host" . }}:8082  (deployed)
 {{- else }}
-  · Identity           not deployed (requires a populated `persons` table; enable via identity.deploy=true)
+  · Identity           not deployed (requires a populated `persons` table; enable via identityResolution.deploy=true)
 {{- end }}
 {{- if .Values.ingestion.templates.enabled }}
   ✓ Ingestion templates: airbyte-sync, dbt-run, ingestion-pipeline
@@ -49,6 +49,19 @@ Next steps:
 ⚠  WARNING: fakeidp is DEPLOYED — this is a DEV/E2E-only OIDC provider and must
             NEVER run in a real environment. Set fakeidp.deploy=false and point
             authenticator.oidc.issuerUrl at your real IdP for anything else.
+{{- end }}
+
+{{- if and .Values.ingestion.templates.enabled (not .Values.ingestion.reconcile.argoInstanceId) }}
+⚠  WARNING: ingestion.templates.enabled=true but ingestion.reconcile.argoInstanceId
+            is empty. If this cluster's Argo workflow-controller runs with an
+            `instanceID` configured (e.g. installed via `make system-argo`, which
+            sets one), it will only schedule CronWorkflows carrying a matching
+            `workflows.argoproj.io/controller-instanceid` label. With this value
+            empty the label is omitted, so the reconcile loop is SILENTLY ignored
+            — lastScheduled stays `never` and no connectors sync, with no error.
+            Set ingestion.reconcile.argoInstanceId to the controller's instanceID
+            to match. Leave it empty ONLY if your controller runs without an
+            instanceID.
 {{- end }}
 
 {{- if .Values.credentials.autoGenerate }}
