@@ -16,6 +16,5 @@
         'Business_Title', 'Job_Profile', 'Worker_Type', 'Worker_Status',
         'Supervisory_Organization',
         'Location', 'Country', 'City'
-    ],
-    fields_raw_data=var('workday_custom_fields', [])
+    ]
 ) }}

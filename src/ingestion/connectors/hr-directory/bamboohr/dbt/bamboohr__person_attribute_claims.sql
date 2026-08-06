@@ -16,6 +16,5 @@
         'jobTitle', 'department', 'division',
         'status', 'employmentHistoryStatus',
         'location', 'country', 'city'
-    ],
-    fields_raw_data=var('bamboohr_custom_fields', [])
+    ]
 ) }}

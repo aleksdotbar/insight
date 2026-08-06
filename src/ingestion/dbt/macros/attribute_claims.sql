@@ -1,4 +1,4 @@
-{% macro attribute_claims(snapshot_ref, entity_id_col, source_type, fields, fields_raw_data=[]) %}
+{% macro attribute_claims(snapshot_ref, entity_id_col, source_type, fields) %}
 {#
   Typed person-attribute claims from an SCD2 snapshot model.
   One row per (source account, field, transition): claim_action='set' when a
@@ -7,10 +7,11 @@
   NULL and '' both normalize to '' (value absent), so transitions into and out
   of NULL are recorded like any other change.
 
-  A field emits claims only if the snapshot versions on it: keep `fields` and
-  `fields_raw_data` within the snapshot's check_cols / check_raw_data_cols, or
-  a change lands with the observed_at of the next tracked change instead of
-  its own.
+  A field emits claims only if the snapshot versions on it: keep `fields`
+  within the snapshot's check_cols, or a change lands with the observed_at of
+  the next tracked change instead of its own. Customer-defined fields in the
+  raw payload are out of scope for the same reason — the snapshot versions on
+  a configured subset, so claiming the rest would date them wrongly.
 
   A 'clear' is emitted only when a delivered record carries an empty value.
   Absence of the whole record from a sync never closes values: no
@@ -18,13 +19,10 @@
   snapshots would fabricate end dates.
 
   Args:
-    snapshot_ref:     ref() to the SCD2 snapshot (output of the snapshot macro)
-    entity_id_col:    source-account identifier column in the snapshot
-    source_type:      insight_source_type literal (e.g. 'bamboohr')
-    fields:           top-level columns that become attribute claims
-    fields_raw_data:  keys inside the raw_data JSON column to claim
-                      (JSONExtractString: missing key, non-string value and
-                      empty string are indistinguishable)
+    snapshot_ref:   ref() to the SCD2 snapshot (output of the snapshot macro)
+    entity_id_col:  source-account identifier column in the snapshot
+    source_type:    insight_source_type literal (e.g. 'bamboohr')
+    fields:         top-level columns that become attribute claims
 
   Output columns match the class_person_attribute_claims contract:
     unique_key, insight_tenant_id, insight_source_type, insight_source_id,
@@ -46,10 +44,7 @@ WITH versioned AS (
         CAST(
             [
                 {% for f in fields %}
-                ('{{ f }}', ifNull(toString({{ f }}), '')){{ ',' if not loop.last or fields_raw_data }}
-                {% endfor %}
-                {% for f in fields_raw_data %}
-                ('{{ f }}', JSONExtractString(ifNull(toString(raw_data), '{}'), '{{ f }}')){{ ',' if not loop.last }}
+                ('{{ f }}', ifNull(toString({{ f }}), '')){{ ',' if not loop.last }}
                 {% endfor %}
             ],
             'Map(String, String)'
