@@ -15,6 +15,8 @@ function item(overrides: Partial<AttentionItem> = {}): AttentionItem {
     group: "ai_adoption",
     label: "Active AI days",
     valueText: "2 days",
+    valueNumber: "2",
+    valueUnit: "days",
     medianText: "11 days",
     gapText: "-82%",
     relGap: 0.8,

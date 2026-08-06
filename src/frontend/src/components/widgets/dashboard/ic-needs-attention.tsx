@@ -63,18 +63,30 @@ export function IcNeedsAttention({
                      width from the thing it measures is a bad trade. Fixed
                      columns give both — every value under the last, and each
                      next to its label. */
-                  className="-mx-2 grid w-[calc(100%+1rem)] grid-cols-[minmax(0,11rem)_7.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
+                  className="-mx-2 grid w-[calc(100%+1rem)] grid-cols-[minmax(0,10rem)_3.5rem_6.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0 truncate text-foreground">
                     {item.label}
                   </span>
+                  {/* Digits right, unit left: the numbers line up on their
+                      last figure AND the units start together, so neither
+                      column is ragged. One cell of "143 lines" could only give
+                      one of the two. */}
                   <span
                     className={cn(
-                      "justify-self-end text-right whitespace-nowrap tabular-nums",
+                      "justify-self-end text-right tabular-nums",
                       PEER_TEXT[badStatus]
                     )}
                   >
-                    {item.valueText}
+                    {item.valueNumber}
+                  </span>
+                  <span
+                    className={cn(
+                      "truncate text-left whitespace-nowrap",
+                      PEER_TEXT[badStatus]
+                    )}
+                  >
+                    {item.valueUnit}
                   </span>
                   <span className="truncate text-xs whitespace-nowrap text-muted-foreground tabular-nums">
                     {item.medianText ? (

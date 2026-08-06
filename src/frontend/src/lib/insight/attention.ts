@@ -1,4 +1,8 @@
-import { formatMetricValue } from "@/lib/format";
+import {
+  formatMetricNumber,
+  formatMetricValue,
+  metricDisplayUnit,
+} from "@/lib/format";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
 import { KPI_ROW, type MetricGroup, type GroupId } from "@/lib/insight/groups";
 import {
@@ -18,6 +22,10 @@ export interface AttentionItem {
   group: GroupId;
   label: string;
   valueText: string;
+  /** The number alone, and its unit — so a list can align digits on the right
+   *  and units on the left, and have both columns start together. */
+  valueNumber: string;
+  valueUnit: string;
   /** Formatted peer-median value only (no label); the view frames it. */
   medianText: string | null;
   /** Scale of divergence from the median ("16×", "−40%"); null at the median. */
@@ -81,6 +89,8 @@ export function metricAttentionItems(
       group: def.id,
       label: metric.label,
       valueText: formatMetricValue(value, metric.format, metric.unit),
+      valueNumber: formatMetricNumber(value, metric.format),
+      valueUnit: metricDisplayUnit(metric.format, metric.unit) ?? "",
       medianText: formatMetricValue(median, metric.format, metric.unit),
       gapText: formatGapMagnitude({
         value,
