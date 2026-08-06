@@ -552,6 +552,11 @@ export function standingCollection(def: MetricGroup): MetricCollectionConfig {
 }
 
 /** KPI tiles navigate to the group that owns their metric. */
+/** Every group's card-preview keys, deduped — the cross-domain headline set. */
+export function headlineMetricKeys(): string[] {
+  return [...new Set(GROUPS.flatMap((g) => g.card.preview))];
+}
+
 export function groupIdForMetricKey(metricKey: string): GroupId | null {
   for (const def of GROUPS) {
     if (def.collection.metrics.some((m) => m.key === metricKey)) return def.id;
