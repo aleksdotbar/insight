@@ -35,9 +35,13 @@ export interface KpiTileData {
   /**
    * Scale of divergence from the peer median ("3.5×", "−39%", "−35 pp"), shown
    * beside the median; null at the median or without an honest comparison.
-   * Colored by `gapStatus`.
    */
   gapText: string | null;
+  /**
+   * Always neutral today: the value carries the peer verdict, and repeating it
+   * under the number doubles the red without adding a fact. Kept as a field so
+   * a future rule (a real threshold on the gap itself) has somewhere to land.
+   */
   gapStatus: Status;
   /** Secondary context line, shown when explanations are enabled. */
   context: string | null;
@@ -131,7 +135,11 @@ export function metricKpiTiles(
               }`
             : null,
         gapText,
-        gapStatus: valueStatus,
+        // Neutral on purpose: the gap EXPLAINS the value, it does not judge it
+        // a second time. Painting both left one finding wearing two red marks,
+        // and a reader counts marks — a person page with six findings read as
+        // eleven problems.
+        gapStatus: "neutral" as Status,
         context: metric.description ?? null,
         groupId: groupIdForMetricKey(metric.metric_key),
       },

@@ -146,3 +146,21 @@ describe("metricKpiTiles", () => {
     expect(tiles[0]?.delta?.text).toBe("+5 pp");
   });
 });
+
+describe("one finding, one mark", () => {
+  it("leaves the gap line neutral while the value carries the verdict", () => {
+    // The value and the "−98% vs median" under it used to share a colour, so a
+    // single peer standing painted two red marks. A reader counts marks: six
+    // findings read as eleven problems on the page that started this.
+    const result = metricResult("ai.active_days", 2);
+    const tiles = metricKpiTiles(
+      normalizeMetricResults([result]),
+      null,
+      "me@x.com",
+      "all"
+    );
+    expect(tiles[0]?.valueStatus).toBe("bad");
+    expect(tiles[0]?.gapText).not.toBeNull();
+    expect(tiles[0]?.gapStatus).toBe("neutral");
+  });
+});
