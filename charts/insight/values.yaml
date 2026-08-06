@@ -547,7 +547,7 @@ frontend:
   deploy: true
   replicaCount: 1
   image:
-    repository: ghcr.io/constructorfabric/insight-front
+    repository: ghcr.io/constructorfabric/insight-frontend
     tag: "" # MUST be set (e.g. "0.1.0")
     pullPolicy: IfNotPresent
   resources:

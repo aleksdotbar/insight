@@ -39,9 +39,17 @@ on:
       - ".github/workflows/build-images.yml"
       - ".github/workflows/scripts/discover-image-matrix.py"
       - ".github/workflows/scripts/bump-service-appversions.sh"
-  # A manual dispatch is a full rebuild: every service and connector image is
-  # rebuilt regardless of changed paths, and publish-chart pins them all.
+  # A manual dispatch is a full rebuild by default: every service and
+  # connector image is rebuilt regardless of changed paths, and publish-chart
+  # pins them all. With `frontend_only` checked it instead builds and pushes
+  # JUST the frontend image from the dispatched ref (main or a branch) —
+  # no backend/connector builds, no descriptor bumps, no chart publish.
   workflow_dispatch:
+    inputs:
+      frontend_only:
+        description: "Build and push only the frontend image (skip everything else)"
+        type: boolean
+        default: false
 
 # One in-flight chart-publish per branch. Prevents two merges from racing
 # the auto-commit-back step.
@@ -206,8 +214,11 @@ jobs:
   # itself fired image rebuilds, we'd loop forever.
   # 
   # `workflow_dispatch` (full rebuild) emits every entry; PR runs use the same
-  # path-filter logic as push runs.
+  # path-filter logic as push runs. A frontend-only dispatch skips discovery
+  # entirely — build-image, merge-image and bump-descriptors all key off
+  # `outputs.any`, so they cascade-skip with it.
   discover-images:
+    if: github.event_name != 'workflow_dispatch' || !inputs.frontend_only
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.scan.outputs.matrix }}
@@ -287,7 +298,7 @@ jobs:
     needs: changes
     if: |
       needs.changes.outputs.analytics == 'true'
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch' && !inputs.frontend_only)
     strategy:
       fail-fast: false
       matrix:
@@ -419,7 +430,7 @@ jobs:
     needs: changes
     if: |
       needs.changes.outputs.authenticator == 'true'
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch' && !inputs.frontend_only)
     strategy:
       fail-fast: false
       matrix:
@@ -533,7 +544,7 @@ jobs:
     needs: changes
     if: |
       needs.changes.outputs.gateway == 'true'
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch' && !inputs.frontend_only)
     strategy:
       fail-fast: false
       matrix:
@@ -648,7 +659,7 @@ jobs:
     needs: changes
     if: |
       needs.changes.outputs.identity_resolution == 'true'
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch' && !inputs.frontend_only)
     strategy:
       fail-fast: false
       matrix:
@@ -773,8 +784,9 @@ jobs:
 
   # ─── Frontend build ────────────────────────────────────────────────────────
   # Per-arch on native runners so `pnpm build` never runs under QEMU. The image
-  # name stays `insight-front` — every chart, values file and overlay resolves it,
-  # so it must not drift to match the `src/frontend` path.
+  # is `insight-frontend` — a package created and owned by THIS repository.
+  # The old `insight-front` package belongs to the retired insight-front
+  # repo's Actions ACL, so this repo's GITHUB_TOKEN cannot push it (#2247).
   #
   # The workflow_dispatch clause is load-bearing: bump-service-appversions.sh pins
   # this subchart on dispatch (FULL_REBUILD), so without it publish-chart would
@@ -817,7 +829,7 @@ jobs:
         with:
           context: src/frontend
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-front,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-frontend,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=frontend-${{ matrix.arch }}
           cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=frontend-{0},ignore-error=true', matrix.arch) || '' }}
       - name: Export digest
@@ -871,7 +883,7 @@ jobs:
       - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         id: meta
         with:
-          images: ${{ env.IMAGE_PREFIX }}/insight-front
+          images: ${{ env.IMAGE_PREFIX }}/insight-frontend
           tags: |
             type=raw,value=${{ needs.changes.outputs.build_tag }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -881,7 +893,7 @@ jobs:
       - name: Fail on a fixable critical before any tag points here
         uses: ./.github/actions/image-cve-gate
         with:
-          image: ${{ env.IMAGE_PREFIX }}/insight-front
+          image: ${{ env.IMAGE_PREFIX }}/insight-frontend
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create multi-arch manifest and push
@@ -889,24 +901,24 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.IMAGE_PREFIX }}/insight-front@sha256:%s ' *)
+            $(printf '${{ env.IMAGE_PREFIX }}/insight-frontend@sha256:%s ' *)
       - name: Inspect manifest digest
         id: inspect
         run: |
           DIGEST=$(docker buildx imagetools inspect \
-            ${{ env.IMAGE_PREFIX }}/insight-front:${{ needs.changes.outputs.build_tag }} \
+            ${{ env.IMAGE_PREFIX }}/insight-frontend:${{ needs.changes.outputs.build_tag }} \
             --format '{{json .Manifest}}' | jq -r .digest)
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Attest build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-name: ${{ env.IMAGE_PREFIX }}/insight-front
+          subject-name: ${{ env.IMAGE_PREFIX }}/insight-frontend
           subject-digest: ${{ steps.inspect.outputs.digest }}
           push-to-registry: true
       # Copy-pastable pushed ref on the run's Summary page (#1994).
       - name: Report pushed image
         run: |
-          echo '- `${{ env.IMAGE_PREFIX }}/insight-front:${{ needs.changes.outputs.build_tag }}`' >> "$GITHUB_STEP_SUMMARY"
+          echo '- `${{ env.IMAGE_PREFIX }}/insight-frontend:${{ needs.changes.outputs.build_tag }}`' >> "$GITHUB_STEP_SUMMARY"
 
   # ─── Toolbox build (with dbt parse smoke) ──────────────────────────────────
   # Toolbox is special — it bakes every connector's descriptor.yaml and dbt
@@ -920,7 +932,7 @@ jobs:
     needs: changes
     if: |
       needs.changes.outputs.toolbox == 'true'
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch' && !inputs.frontend_only)
     strategy:
       fail-fast: false
       matrix:
@@ -1104,7 +1116,7 @@ jobs:
     needs: changes
     if: |
       needs.changes.outputs.ui_tests == 'true'
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch' && !inputs.frontend_only)
     strategy:
       fail-fast: false
       matrix:
@@ -1579,6 +1591,7 @@ jobs:
     if: |
       always()
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && !(github.event_name == 'workflow_dispatch' && inputs.frontend_only)
       && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release-'))
       && (needs.merge-analytics.result == 'success' || needs.merge-analytics.result == 'skipped')
       && (needs.merge-authenticator.result == 'success' || needs.merge-authenticator.result == 'skipped')
