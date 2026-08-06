@@ -35,16 +35,16 @@ function aiMetric(value: number | null, key = "ai.active_days"): MetricResult {
 }
 
 /**
- * Two metrics, as a real group has: the card leads with ONE of them, and the
- * block's job is what is left. A single-metric fixture cannot express that —
- * its only metric is always the card's lead.
+ * `ai.sessions` is the block's to show; `ai.active_days` is on the headline
+ * row (it is in `KPI_ROW`) and therefore this block's to leave alone. A
+ * fixture needs both to express the rule.
  */
 const AI_DEF: MetricGroup = {
   id: "ai_adoption",
   title: "AI adoption",
   collection: {
     metrics: [
-      { key: "ai.cost", views: [{ view: "period" }, { view: "peer" }] },
+      { key: "ai.sessions", views: [{ view: "period" }, { view: "peer" }] },
       { key: "ai.active_days", views: [{ view: "period" }, { view: "peer" }] },
     ],
   },
@@ -52,19 +52,20 @@ const AI_DEF: MetricGroup = {
   drilldown: [],
 };
 
-/** The card leads with `ai.cost` here; `ai.active_days` is the block's to show. */
 function bothMetrics(value: number | null) {
-  return normalizeMetricResults([aiMetric(0, "ai.cost"), aiMetric(value)]);
+  return normalizeMetricResults([
+    aiMetric(value, "ai.sessions"),
+    aiMetric(value, "ai.active_days"),
+  ]);
 }
 
 describe("metricAttentionItems", () => {
   it("surfaces bottom-quartile metrics with the same item shape", () => {
-    const byKey = bothMetrics(2);
-    const items = metricAttentionItems(AI_DEF, byKey, "me@x.com");
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), "me@x.com");
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
+      key: "ai.sessions",
       group: "ai_adoption",
-      label: "Active AI days",
       valueText: "2 days",
       medianText: "11 days",
       gapText: "-82%",
@@ -81,62 +82,35 @@ describe("metricAttentionItems", () => {
       metricAttentionItems(
         AI_DEF,
         normalizeMetricResults([unmeasured]),
-        "me@x.com"
-      )
+        "me@x.com",
+      ),
     ).toHaveLength(0);
   });
 
   it("ignores in-pack values and missing data", () => {
-    expect(
-      metricAttentionItems(
-        AI_DEF,
-        bothMetrics(10),
-        "me@x.com"
-      )
-    ).toHaveLength(0);
-    expect(
-      metricAttentionItems(
-        AI_DEF,
-        bothMetrics(null),
-        "me@x.com"
-      )
-    ).toHaveLength(0);
+    expect(metricAttentionItems(AI_DEF, bothMetrics(10), "me@x.com")).toHaveLength(0);
+    expect(metricAttentionItems(AI_DEF, bothMetrics(null), "me@x.com")).toHaveLength(0);
   });
 });
 
-describe("what the section card already shows", () => {
-  it("is left to the card — the block never repeats a preview row", () => {
-    // A card carries its preview rows in the same colours plus a "N behind
-    // peers" badge over them. Repeating those here put one finding on the
-    // screen twice, and a reader counts red marks, not facts.
-    const onCard: MetricGroup = { ...AI_DEF, card: { preview: ["ai.active_days"] } };
-    expect(metricAttentionItems(onCard, bothMetrics(2), "me@x.com")).toEqual([]);
+describe("what the headline row already shows", () => {
+  it("is left to the row — the block never repeats a headline metric", () => {
+    // This block is the only place on the person page that names problems, so
+    // it shows everything standing out EXCEPT what the row above already
+    // carries. Repeating one puts a single finding on the screen twice, and a
+    // reader counts marks rather than facts.
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), "me@x.com");
+    expect(items.map((i) => i.key)).not.toContain("ai.active_days");
   });
 
-  it("still surfaces a bottom-quartile metric the card omits", () => {
-    // The block's whole job: the finding you would otherwise miss, because it
-    // sits outside the three rows the card had room for.
-    const offCard: MetricGroup = { ...AI_DEF, card: { preview: ["ai.cost"] } };
-    const items = metricAttentionItems(offCard, bothMetrics(2), "me@x.com");
-    expect(items.map((i) => i.key)).toEqual(["ai.active_days"]);
-  });
-});
-
-describe("the card's summary line", () => {
-  it("is left to the card too — the lead is not repeated above it", () => {
-    // The lead is picked from EVERY metric of the group, not from the three
-    // the card lists, so excluding the preview alone let it through: "Lines
-    // added · −98% vs median" was both a card headline and the first
-    // attention row on the same screen.
-    const worst = normalizeMetricResults([
-      aiMetric(0, "ai.cost"),
-      aiMetric(9),
-    ]);
-    const items = metricAttentionItems(
-      { ...AI_DEF, card: { preview: [] } },
-      worst,
-      "me@x.com",
-    );
-    expect(items.map((i) => i.key)).not.toContain("ai.cost");
+  it("shows a metric the row does not carry, whatever the card used to list", () => {
+    // `card.preview` no longer gates this: the page has no section cards, so
+    // excluding those keys would hide them from the screen entirely.
+    const onOldCard: MetricGroup = {
+      ...AI_DEF,
+      card: { preview: ["ai.sessions"] },
+    };
+    const items = metricAttentionItems(onOldCard, bothMetrics(2), "me@x.com");
+    expect(items.map((i) => i.key)).toEqual(["ai.sessions"]);
   });
 });

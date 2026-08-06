@@ -31,6 +31,13 @@ import {
   usePortalLens,
 } from "@/lib/portal/portal-nav";
 import { SidebarProvider } from "@/components/ui/sidebar";
+// The sections nav asks where the person stands so it can mark each section;
+// the standings come from the section screens' own queries, which this test
+// has no reason to run.
+vi.mock("@/lib/portal/use-person-sections", () => ({
+  usePersonSectionStandings: () => [],
+}));
+
 import { ContextPane } from "./context-pane";
 
 const pane = () => render(<SidebarProvider><ContextPane /></SidebarProvider>);

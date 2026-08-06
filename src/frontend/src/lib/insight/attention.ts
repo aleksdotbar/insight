@@ -1,7 +1,6 @@
 import { formatMetricValue } from "@/lib/format";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
-import { groupHeadlineKey } from "@/lib/insight/group-data";
-import type { MetricGroup, GroupId } from "@/lib/insight/groups";
+import { KPI_ROW, type MetricGroup, type GroupId } from "@/lib/insight/groups";
 import {
   forEntity,
   type NormalizedMetricResult,
@@ -52,11 +51,11 @@ export function metricAttentionItems(
   entityId: string
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
-  const headline = groupHeadlineKey(def, byKey, entityId);
-  const shownOnCard = new Set(def.card.preview);
-  if (headline) shownOnCard.add(headline);
+  // KPI_ROW is a candidate list; the row renders the ones this person is
+  // measured on, and any of them may be up there.
+  const onHeadlineRow = new Set<string>(KPI_ROW);
   for (const metricConfig of def.collection.metrics) {
-    if (shownOnCard.has(metricConfig.key)) continue;
+    if (onHeadlineRow.has(metricConfig.key)) continue;
     const metric = byKey.get(metricConfig.key);
     if (!metric || metric.direction === "neutral") continue;
     const data = forEntity(metric, entityId);

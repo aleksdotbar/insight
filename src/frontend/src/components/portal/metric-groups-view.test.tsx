@@ -44,7 +44,20 @@ vi.mock("@/hooks/use-portal-period", () => ({
 }));
 vi.mock("@/hooks/use-settings", () => ({ useSettings: () => ({ focusMode: false }) }));
 vi.mock("@/components/widgets/dashboard/kpi-tile", () => ({
-  KpiTile: ({ tile }: { tile: { key: string } }) => <div data-testid="kpi-tile">{tile.key}</div>,
+  KpiTile: ({
+    tile,
+    onOpenGroup,
+  }: {
+    tile: { key: string; groupId: string | null };
+    onOpenGroup?: (id: string) => void;
+  }) => (
+    <button
+      data-testid="kpi-tile"
+      onClick={() => tile.groupId && onOpenGroup?.(tile.groupId)}
+    >
+      {tile.key}
+    </button>
+  ),
   KpiTilePlaceholder: () => <div data-testid="kpi-placeholder" />,
 }));
 vi.mock("@/components/widgets/dashboard/ic-needs-attention", () => ({
@@ -133,10 +146,13 @@ describe("MetricGroupsView", () => {
     expect(mocks.set.get("git_output")!.refetch).toHaveBeenCalled();
   });
 
-  it("renders a section card per requested group", () => {
+  it("renders NO section cards — the nav carries the sections", () => {
+    // The page is an overview and every section has its own screen, listed in
+    // the nav to the left with a standing mark on it. Cards here restated that
+    // list a second time and answered a question the nav already answers.
     render(<MetricGroupsView personId="p@x" groupIds={GROUPS} />);
-    expect(screen.getByTestId("group-card-git_output")).toBeInTheDocument();
-    expect(screen.getByTestId("group-card-collaboration")).toBeInTheDocument();
+    expect(screen.queryByTestId("group-card-git_output")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("group-card-collaboration")).not.toBeInTheDocument();
     // KPI row is opt-in and off here
     expect(screen.queryByTestId("needs-attention")).not.toBeInTheDocument();
   });
@@ -147,17 +163,46 @@ describe("MetricGroupsView", () => {
     expect(screen.getByTestId("needs-attention")).toBeInTheDocument();
   });
 
-  it("routes a card through onSelectGroup instead of the modal when provided", async () => {
+  it("routes a KPI tile through onSelectGroup instead of the modal when provided", async () => {
+    // The row renders metrics the person is OBSERVED on, so the fixture needs a
+    // peer row — an unmeasured metric gets no tile and nothing to click.
+    mocks.collection.byKey = normalizeMetricResults([
+      {
+        ...metric("git.commits"),
+        views: [
+          { view: "period", values: [{ entity_id: "p@x", value: 3 }] },
+          {
+            view: "peer",
+            values: [
+              {
+                entity_id: "p@x",
+                target_value: 3,
+                p25: 1,
+                median: 5,
+                p75: 9,
+                min: 0,
+                max: 12,
+                n: 8,
+              },
+            ],
+          },
+        ],
+      } as MetricResult,
+    ]);
+    // The tiles and the attention rows are the openers now that the cards are
+    // gone; inline selection is what the portal passes, so the section opens
+    // in place rather than in a sheet over it.
     const onSelect = vi.fn();
-    render(<MetricGroupsView personId="p@x" groupIds={GROUPS} onSelectGroup={onSelect} />);
-    await userEvent.click(screen.getByTestId("group-card-git_output"));
-    expect(onSelect).toHaveBeenCalledWith("git_output");
+    render(
+      <MetricGroupsView
+        personId="p@x"
+        groupIds={GROUPS}
+        showKpis
+        onSelectGroup={onSelect}
+      />,
+    );
+    await userEvent.click(screen.getAllByTestId("kpi-tile")[0]!);
+    expect(onSelect).toHaveBeenCalled();
     expect(screen.queryByTestId("drilldown-git_output")).not.toBeInTheDocument();
-  });
-
-  it("opens the drilldown modal when no inline selector is wired", async () => {
-    render(<MetricGroupsView personId="p@x" groupIds={GROUPS} />);
-    await userEvent.click(screen.getByTestId("group-card-git_output"));
-    expect(screen.getByTestId("drilldown-git_output")).toBeInTheDocument();
   });
 });

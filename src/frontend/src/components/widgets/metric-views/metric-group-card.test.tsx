@@ -178,7 +178,7 @@ describe("MetricGroupCard", () => {
     );
     // active_days 20 ≥ p75 15 → top; cost 2 ≤ p25 5 → bottom → 1 bottom wins
     // the phrase (behind beats ahead), single bottom below the red bar → amber.
-    expect(screen.getByText("1 behind peers")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2 behind peers")).toBeInTheDocument();
   });
 
   it("owns its error state with retry", () => {
