@@ -126,17 +126,25 @@ export function MetricGroupCard({
   const badgeText = sectionStandingPhrase(counts);
 
   const headlineRow = pickHeadlineRow(rows);
-  const summary = headlineRow
-    ? headlineSummary(headlineRow)
-    : "No data for this period.";
 
   // The preview is a FIXED set of keys — the card's stable identity. Keep a
   // key even when its value is null (renders "—"); only drop a key the
   // response never carried. A present-but-empty metric still belongs on the
   // card.
-  const preview = def.card.preview
+  // The lead goes FIRST in the list, not into a sentence above it. The card
+  // used to state a headline chosen from every metric of the group while
+  // listing three fixed keys, so it either named a metric the reader could not
+  // see (Git output led with "Lines added" and listed commits, PRs and code
+  // lines) or repeated one of them a line later (AI adoption led with
+  // "AI-added lines" and listed it again). One list, lead at the top.
+  const previewRows = def.card.preview
     .map((key) => rows.find((row) => row.metric.metric_key === key))
     .filter((row): row is CardRow => row != null);
+  const preview = (
+    headlineRow
+      ? [headlineRow, ...previewRows.filter((row) => row !== headlineRow)]
+      : previewRows
+  ).slice(0, 4);
   const isEmpty = !rows.some((row) => row.value != null);
 
   return (
@@ -200,12 +208,6 @@ export function MetricGroupCard({
           <GroupCardEmpty />
         ) : (
           <>
-            {/* Plain foreground, not a third shade between it and muted: the
-                card had black, 80% black and muted grey doing three different
-                jobs on one surface, which is how a screen ends up with a dozen
-                type treatments and reads as clutter. Two levels now — the text
-                that states something, and the text that labels it. */}
-            <p className="text-sm text-foreground">{summary}</p>
             {preview.length > 0 ? (
               <ul className="flex flex-col gap-1.5">
                 {preview.map((row) => {
@@ -213,11 +215,17 @@ export function MetricGroupCard({
                     peerStatusToStatus(row.rank),
                     focusMode,
                   );
+                  // Only the lead carries its comparison: it is the reason the
+                  // card is worth opening, and putting "vs median" on every row
+                  // is how the old summary line and the rows ended up saying
+                  // the same thing twice.
+                  const gap = row === preview[0] ? gapPhrase(row) : null;
                   return (
                     <li
                       key={row.metric.metric_key}
-                      className="flex items-center gap-2 text-sm"
+                      className="flex flex-col gap-0.5 text-sm"
                     >
+                    <span className="flex items-center gap-2">
                       <span
                         className={cn(
                           "size-2 shrink-0 rounded-full",
@@ -241,6 +249,16 @@ export function MetricGroupCard({
                             )
                           : "—"}
                       </span>
+                      </span>
+                      {/* Under the row, not beside it: a card is a quarter of
+                          the content width, and a third column there truncated
+                          the names it was meant to explain ("Meeting…",
+                          "AI-adde…"). The indent lines it up with the label. */}
+                      {gap ? (
+                        <span className="pl-4 text-xs text-muted-foreground tabular-nums">
+                          {gap}
+                        </span>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -273,13 +291,17 @@ function pickHeadlineRow(rows: CardRow[]): CardRow | null {
   return ranked ?? rows.find((row) => row.value != null) ?? null;
 }
 
-function headlineSummary(row: CardRow): string {
+/** "−98% vs median", or null when there is no honest comparison to make. */
+function gapPhrase(row: CardRow): string | null {
   const { metric, value, standing } = row;
-  if (value == null) return "No data for this period.";
-  const base = `${metric.label}: ${formatMetricValue(value, metric.format, metric.unit)}`;
   const stats = standing.stats;
-  if (!standing.eligible || stats == null || Math.abs(standing.gapDelta) <= 1e-9)
-    return base;
+  if (
+    value == null ||
+    !standing.eligible ||
+    stats == null ||
+    Math.abs(standing.gapDelta) <= 1e-9
+  )
+    return null;
   const gap = formatGapMagnitude({
     value,
     median: stats.p50,
@@ -288,5 +310,6 @@ function headlineSummary(row: CardRow): string {
     format: metric.format,
     unit: metric.unit,
   });
-  return gap == null ? base : `${base} · ${gap} vs median`;
+  return gap == null ? null : `${gap} vs median`;
 }
+
