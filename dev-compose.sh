@@ -1436,8 +1436,15 @@ test_stand_pinned_image() {
   printf 'ghcr.io/constructorfabric/insight-%s:%s' "$name" "$version"
 }
 
+# `frontend`, not `front`: build-images.yml publishes this repo's frontend as
+# the flat `insight-frontend` package. The `insight-front` package belongs to a
+# retired repository whose Actions ACL this repo's GITHUB_TOKEN cannot push
+# (#2247), so it stopped gaining tags — every appVersion minted after the rename
+# names an `insight-front` tag that was never published, and `up` dies on
+# `manifest unknown` before a single test runs. Unrelated to the `insight-front`
+# SERVICE hostname in docker-compose.yml, which is not an image reference.
 test_stand_frontend_image() {
-  test_stand_pinned_image src/frontend/helm/Chart.yaml front
+  test_stand_pinned_image src/frontend/helm/Chart.yaml frontend
 }
 
 # The backend services the stand runs from published images rather than from
