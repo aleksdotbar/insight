@@ -308,6 +308,37 @@ async fn builtin_keys_are_invisible_to_the_custom_repository() -> R {
     Ok(())
 }
 
+#[tokio::test]
+#[ignore = "requires live MariaDB 11+; set INTEGRATION_TESTS_MARIADB_URL to enable"]
+async fn definition_with_no_inputs_is_still_deletable() -> R {
+    let Some(db) = connect_or_skip().await else {
+        return Ok(());
+    };
+    let tenant = Uuid::now_v7();
+    let graph = sum_graph(&suffix());
+    create_custom_metric(&db, tenant, &graph).await?;
+
+    // Simulate the recovery case the source-via-inputs join cannot serve: drop
+    // the definition's input rows out of band. The definition is now
+    // unreachable through the inputs join, but it must not become a listed,
+    // unremovable ghost.
+    db.execute(Statement::from_sql_and_values(
+        db.get_database_backend(),
+        "DELETE i FROM metric_definition_inputs i \
+         INNER JOIN metric_definitions d ON d.id = i.metric_definition_id \
+         WHERE d.origin = 'custom' AND d.metric_key = ?",
+        [sea_orm::Value::from(graph.metric_key.as_str())],
+    ))
+    .await?;
+
+    // The delete resolves the definition directly, so it succeeds and the row
+    // leaves the listing.
+    assert!(delete_custom_metric(&db, tenant, &graph.metric_key).await?);
+    let summaries = list_custom_metrics(&db, tenant).await?;
+    assert!(!summaries.iter().any(|s| s.metric_key == graph.metric_key));
+    Ok(())
+}
+
 /// Any seeded builtin `metric_key` — the reconcile runs during `migrate`, so at
 /// least one is guaranteed to exist.
 async fn a_builtin_metric_key(db: &DatabaseConnection) -> Result<String, sea_orm::DbErr> {

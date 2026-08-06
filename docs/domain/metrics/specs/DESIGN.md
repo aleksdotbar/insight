@@ -784,8 +784,28 @@ builtins to the registry never disables or deletes a custom metric.
 ### Validation and execution role
 
 Custom SQL passes the existing single-SELECT gate (one `SELECT`/`WITH`, no
-DDL/DML) on write and before execution, and executes as `presentation_ro`, so
-a custom metric can read the contract but can never write, alter, or drop it.
+DDL/DML) on write and before execution; the gate additionally rejects
+external/remote table functions (`remote`, `url`, `file`, `s3`, `mysql`,
+`cluster`, the `*Cluster` variants, and the data-lake readers), so a custom
+source cannot reach outside the read-only warehouse. It executes as
+`presentation_ro`, so a custom metric can read the contract but can never
+write, alter, or drop it.
+
+### Tenant safety of custom SQL
+
+The compiler applies the tenant predicate to the rows the wrapped SELECT
+**emits**, not to the tables it **reads**. A custom SQL is therefore required to
+be **tenant-neutral and row-preserving**: it MUST expose the real `tenant_id` of
+every source row (so the outer predicate scopes correctly) and MUST NOT
+fabricate, rebind, or constant-fold `tenant_id`, aggregate across tenants before
+the outer filter, or otherwise let one tenant's rows influence another's result
+or export. The platform enforces this **structurally only in part** — single
+SELECT, no external table functions, `presentation_ro`, and the outer tenant
+predicate — and does **not** statically prove a given SELECT is tenant-neutral.
+That residual trust is the same posture as the saved-query console
+(`/v1/queries*`): authorship is trusted, which is why the surface is
+experiment-gated and off on production. Cross-tenant aggregate and export/import
+behavior is covered by tests.
 
 ## Frontend Contract
 

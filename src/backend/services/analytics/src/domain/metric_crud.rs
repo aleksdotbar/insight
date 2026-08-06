@@ -559,18 +559,25 @@ async fn insert_graph<C: ConnectionTrait>(
     Ok(())
 }
 
-/// Delete a tenant's custom definition and its source. The definition delete
-/// cascades its inputs and dimension links first, so the source delete then
-/// cascades the measures/source-dimensions no input still references.
+/// Delete a tenant's custom definition and its source. The definition is
+/// resolved from `metric_definitions` directly (not through the inputs join),
+/// so a definition whose input rows are gone is still deletable rather than a
+/// listed-but-unremovable ghost. The source is resolved through the inputs
+/// while they still exist and dropped best-effort afterward; the definition
+/// delete cascades its inputs and dimension links first, so the source delete
+/// then cascades the measures/source-dimensions no input still references.
 async fn delete_graph<C: ConnectionTrait>(
     conn: &C,
     tenant_id: Uuid,
     metric_key: &str,
 ) -> Result<bool, DbErr> {
-    let Some((definition_id, source_id)) = fetch_custom_ids(conn, tenant_id, metric_key).await?
-    else {
+    let Some(definition) = fetch_definition_row(conn, tenant_id, metric_key).await? else {
         return Ok(false);
     };
+    let definition_id = definition.definition_id;
+    let source_id = fetch_source_row(conn, definition_id)
+        .await?
+        .map(|source| source.source_id);
 
     conn.execute(Statement::from_sql_and_values(
         conn.get_database_backend(),
@@ -578,12 +585,14 @@ async fn delete_graph<C: ConnectionTrait>(
         [uuid_value(definition_id)],
     ))
     .await?;
-    conn.execute(Statement::from_sql_and_values(
-        conn.get_database_backend(),
-        "DELETE FROM metric_sources WHERE id = ? AND origin = 'custom'",
-        [uuid_value(source_id)],
-    ))
-    .await?;
+    if let Some(source_id) = source_id {
+        conn.execute(Statement::from_sql_and_values(
+            conn.get_database_backend(),
+            "DELETE FROM metric_sources WHERE id = ? AND origin = 'custom'",
+            [uuid_value(source_id)],
+        ))
+        .await?;
+    }
     Ok(true)
 }
 
@@ -876,20 +885,6 @@ async fn fetch_input_rows<C: ConnectionTrait>(
         })
     })
     .collect()
-}
-
-async fn fetch_custom_ids<C: ConnectionTrait>(
-    conn: &C,
-    tenant_id: Uuid,
-    metric_key: &str,
-) -> Result<Option<(Uuid, Uuid)>, DbErr> {
-    let Some(row) = fetch_definition_row(conn, tenant_id, metric_key).await? else {
-        return Ok(None);
-    };
-    let Some(source) = fetch_source_row(conn, row.definition_id).await? else {
-        return Ok(None);
-    };
-    Ok(Some((row.definition_id, source.source_id)))
 }
 
 async fn metric_exists<C: ConnectionTrait>(
