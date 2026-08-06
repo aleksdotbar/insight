@@ -21,8 +21,11 @@ name: E2E — Compose stand
 #                published ui-tests image.
 #
 # Neither is required on its own. The `Stand E2E` umbrella below is the check
-# meant to be required once it has a track record — see the wall-clock and
-# flake rate in .cf-studio/.plans/stage1-compose-e2e-suite/out/ci-wiring.md.
+# meant to be required in branch protection, and the whole workflow is a
+# merge-queue gate rather than a per-push one: on pull_request every job here
+# skips (branch protection counts a skipped job as a pass), and the lanes run
+# once per queue batch on merge_group. Wall-clock and flake history are in
+# .cf-studio/.plans/stage1-compose-e2e-suite/out/ci-wiring.md.
 #
 # Every stand operation goes through ./dev-compose.sh test-stand — never the
 # bare up/down/seed a human developer uses. The pinned frontend, Keycloak auth
@@ -33,11 +36,11 @@ name: E2E — Compose stand
 on:
   pull_request:
     branches: [main]
-    # Deliberately NO `paths:` filter. This workflow emits a REQUIRED check,
-    # and GitHub reports a required check whose workflow never ran as pending
-    # rather than passed — a path filter here would block every PR that did not
-    # happen to touch one of the listed directories. Relevance is decided by
-    # the `changes` job below instead, which is cheap and always reports.
+    # Deliberately NO `paths:` filter, even though every job below skips on
+    # pull_request: a required check whose workflow never triggers at all
+    # reports as pending forever and would block queue entry, while a
+    # triggered run whose jobs all skip counts as a pass. The trigger must
+    # therefore keep firing on every PR — it just costs no runner time.
   # Merge-queue builds: the queue's gh-readonly-queue/* branches emit
   # merge_group, and a required check must report there or every queued PR
   # times out and is evicted.
@@ -56,10 +59,12 @@ on:
         options: [compose]
         default: compose
 
-# One run per PR. A rebase or a force-push obsoletes whatever is in flight.
+# One run per PR; a rebase or a force-push obsoletes whatever is in flight.
+# Merge-queue builds get a unique group instead — cancelling a batch mid-run
+# is the queue's own call, never this workflow's.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'merge_group' && github.run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: read
@@ -84,6 +89,10 @@ jobs:
   # has to run the stand or the gate is decorative.
   changes:
     name: changes
+    # Not on pull_request: the stand gates the merge queue, not every push.
+    # Skipping here cascades — every downstream job skips with it, and a
+    # skipped job satisfies the required check on the PR.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -431,10 +440,10 @@ jobs:
           ./dev-compose.sh test-stand down
 
   # ─── the required check ───────────────────────────────────────────────────
-  # One stable context name for branch protection, and the only job here that
-  # runs unconditionally. That is the whole point: a required check must report
-  # on EVERY pull request, including ones that touch nothing this suite covers
-  # and ones where `changes` skipped the lanes.
+  # One stable context name for branch protection. On pull_request it skips
+  # with everything else — the skip IS the passing report. On merge-queue
+  # builds it runs whenever the run wasn't cancelled, so it still reports when
+  # `changes` deemed the batch irrelevant and the lanes were skipped.
   #
   # `skipped` is therefore a PASS here, unlike in e2e-bronze-to-api.yml's
   # umbrella where it is a failure. The difference is what the skip means: there
@@ -444,7 +453,7 @@ jobs:
   stand-suite:
     name: Stand E2E
     needs: [changes, api-smoke, ui-journeys]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
