@@ -57,24 +57,26 @@ export function IcNeedsAttention({
                      at four different x-positions. Numbers line up in their own
                      right-aligned column now, and the comparison in the next
                      one, so the eye reads down instead of hunting across.
-                     The value/gap columns carry a MINIMUM width because each
-                     row is its own grid: `auto` would size every row to its
-                     own content and the numbers would land wherever their
-                     labels ended, which is the thing being fixed. */
-                  className="-mx-2 grid w-[calc(100%+1rem)] grid-cols-[minmax(0,1fr)_auto_auto_auto] items-baseline gap-x-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
+                     The label column is FIXED rather than stretching: a 1fr
+                     label pushed its own value to the far edge of the row, and
+                     alignment bought at the cost of putting a number a hand's
+                     width from the thing it measures is a bad trade. Fixed
+                     columns give both — every value under the last, and each
+                     next to its label. */
+                  className="-mx-2 grid w-[calc(100%+1rem)] grid-cols-[minmax(0,11rem)_7.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0 truncate text-foreground">
                     {item.label}
                   </span>
                   <span
                     className={cn(
-                      "min-w-[5.5rem] justify-self-end text-right tabular-nums",
+                      "justify-self-end text-right whitespace-nowrap tabular-nums",
                       PEER_TEXT[badStatus]
                     )}
                   >
                     {item.valueText}
                   </span>
-                  <span className="min-w-[9rem] justify-self-end text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                  <span className="truncate text-xs whitespace-nowrap text-muted-foreground tabular-nums">
                     {item.medianText ? (
                       <>
                         {item.gapText ? <>{item.gapText} vs </> : null}
