@@ -356,14 +356,6 @@ this file and the registry disagree.
 - Shape: integer, higher_is_better, unit issues
 - Notes: Issues of a known non-bug type a person closed during the period. Issues whose type cannot be determined are excluded rather than counted here.
 
-## tasks.closed_unknown_type — Unclassified issues closed
-
-- Source: task (task_metric_observations)
-- Reads: closed_unknown_type
-- Formula: sum(closed_unknown_type)
-- Shape: integer, neutral, unit issues
-- Notes: Issues a person closed whose type matched no known type name, so they count in neither bugs nor non-bug work.
-
 ## tasks.dev_time — Development time
 
 - Source: task (task_metric_observations)

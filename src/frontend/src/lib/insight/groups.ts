@@ -85,10 +85,6 @@ const TASK_DELIVERY_COLLECTION: MetricCollectionConfig = {
       views: [{ view: "period" }, { view: "peer" }],
     },
     {
-      key: "tasks.closed_unknown_type",
-      views: [{ view: "period" }, { view: "peer" }],
-    },
-    {
       key: "tasks.dev_time",
       views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
     },
@@ -338,15 +334,22 @@ export const GROUPS: readonly MetricGroup[] = [
     drilldown: [
       { chart: "summary-card", view: "breakdown", metrics: ["tasks.closed"] },
       {
-        id: "task-throughput",
+        id: "closed-by-type",
         view: "timeseries",
-        metrics: [
-          "tasks.closed",
-          "tasks.bugs_fixed",
-          "tasks.closed_non_bug",
-          "tasks.closed_unknown_type",
-        ],
-        chart: { multiMetric: "combined" },
+        metrics: ["tasks.closed"],
+        table: {
+          columns: [{ metric: "tasks.closed" }],
+        },
+        groupBy: {
+          default: "type",
+          limits: {
+            type: {
+              count: 10,
+              rankBy: "tasks.closed",
+              includeRemainder: true,
+            },
+          },
+        },
       },
       {
         chart: "histogram",
