@@ -282,27 +282,13 @@ wizard. To use it, hand-edit `FRONTEND_MODE=built` in `.env.compose`,
 ./dev-compose.sh up --no-frontend                  # backend-only
 ```
 
-### Local dev auth backend (fakeidp / Keycloak)
+### Local dev auth (Keycloak)
 
-The `authenticator` service's login always runs the same BFF code path — only
-the IdP behind it changes. Select it with **`AUTH_MODE` in `.env.compose`**
-(a persisted setting like `FRONTEND_MODE`):
+Auth always runs via Keycloak: a real Keycloak container with an actual login
+form, exercising the genuine OIDC code path. (The old `fakeidp` mode and the
+`AUTH_MODE` / `--auth` switches are retired.)
 
-- `fakeidp` (default) — a tiny in-repo test double, no login screen, no setup.
-- `keycloak` — a real Keycloak container with an actual login form, for
-  exercising the genuine OIDC code path.
-
-```dotenv
-# .env.compose
-AUTH_MODE=keycloak
-```
-
-```bash
-./dev-compose.sh up            # reads AUTH_MODE from .env.compose
-./dev-compose.sh up --auth=keycloak   # optional per-run override
-```
-
-In keycloak mode the authenticator logs in server-side against the pre-seeded
+The authenticator logs in server-side against the generated
 realm's `insight-authenticator` confidential client; the SPA stays cookie/BFF (no
 special frontend build), and dev-compose points both the browser and the
 authenticator at a host-IP Keycloak issuer so the id_token `iss` validates. See
