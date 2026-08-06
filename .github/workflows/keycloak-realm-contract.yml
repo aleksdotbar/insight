@@ -1,10 +1,9 @@
 name: Keycloak realm — tenant claim contract
 
-# Guards the single-tenant_id invariant (ADR-0003 / DD-AUTH-04) against the
-# canonical broker realm: fail-closed with no tenant source, correct
-# group-to-tenant translation, and detection of the two cases token
-# inspection cannot see (two tenant groups; attribute shadowed by a group).
-# Boots a throwaway Keycloak in docker; no cluster.
+# Guards the pinned-tenant contract (ADR-0003 / DD-AUTH-04) against the
+# canonical broker realm: fail-closed with no pinned attribute, the pin
+# emitted verbatim as a single string, tenant-bearing groups inert AND
+# flagged as a policy violation. Boots a throwaway Keycloak in docker.
 
 on:
   pull_request:
@@ -24,7 +23,7 @@ permissions:
 
 jobs:
   tenant-contract:
-    name: tenant translation guard
+    name: tenant contract guard
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -40,4 +39,4 @@ jobs:
         run: python3 -m pip install --quiet pyyaml
 
       - name: Tenant translation guard
-        run: python3 deploy/compose/keycloak/tests/tenant_translation_guard.py
+        run: python3 deploy/compose/keycloak/tests/tenant_contract_guard.py

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Single-tenant_id contract guard (ADR-0003, insight#2196).
+"""Pinned-tenant contract guard (ADR-0003, insight#2196).
 
-Imports the canonical broker realm into a throwaway Keycloak and asserts the
-tenant claim contract the platform relies on (DD-AUTH-04: exactly one string
-tenant, or none — never two, never an ambiguous source):
+The tenant is ALWAYS the pinned per-registration value (a user attribute
+stamped by each IdP mapper); an IdP's own tenancy assertions are never
+consulted, and group-sourced tenants are rejected by policy. Imports the
+canonical broker realm into a throwaway Keycloak and asserts:
 
-1. no tenant source          -> token carries NO tenant_id (fail closed)
-2. one tenant group          -> token tenant_id == that group's value (string)
-3. two tenant groups         -> AMBIGUOUS: Keycloak silently emits one of
-                                them, so the token cannot reveal the problem;
-                                the guard's membership check must flag it
-4. user attribute + group    -> AMBIGUOUS: the group value shadows the
-                                pinned attribute; flagged the same way
+1. clean baseline            -> the canonical realm ships zero tenant groups
+2. no pinned attribute       -> token carries NO tenant_id (fail closed)
+3. pinned attribute          -> token tenant_id == the pin, a single string
+4. tenant-bearing group      -> must NOT influence the token (no aggregation)
+                                AND the realm scan flags it as a violation
 
 Requires docker and PyYAML. Boots quay.io/keycloak/keycloak, converts the
 canonical realm YAML to a realm representation (env placeholders substituted
@@ -47,9 +46,8 @@ SYNTHETIC = {
     "INSIGHT_TENANT_ID": "00000000-0000-0000-0000-00000000feed",
 }
 
-TENANT_A = "aaaaaaaa-0000-0000-0000-000000000001"
-TENANT_B = "bbbbbbbb-0000-0000-0000-000000000002"
-TENANT_ATTR = "cccccccc-0000-0000-0000-000000000003"
+TENANT_GROUP = "aaaaaaaa-0000-0000-0000-000000000001"
+TENANT_PIN = "cccccccc-0000-0000-0000-000000000003"
 
 
 def sh(*args: str) -> None:
@@ -110,27 +108,14 @@ def tenant_claim(admin: Admin, client_id: str, user_id: str):
     return token.get("tenant_id")
 
 
-def tenant_group_count(admin: Admin, user_id: str) -> int:
-    groups = admin.realm(f"/users/{user_id}/groups")
-    with_tenant = 0
-    for g in groups:
+def tenant_bearing_groups(admin: Admin) -> list[str]:
+    """Policy scan: NO group in the realm may carry a tenant_id attribute."""
+    offenders = []
+    for g in admin.realm("/groups"):
         detail = admin.realm(f"/groups/{g['id']}")
         if (detail.get("attributes") or {}).get("tenant_id"):
-            with_tenant += 1
-    return with_tenant
-
-
-def has_pinned_attribute(admin: Admin, user_id: str) -> bool:
-    user = admin.realm(f"/users/{user_id}")
-    return bool((user.get("attributes") or {}).get("tenant_id"))
-
-
-def unambiguous_tenant_source(admin: Admin, user_id: str) -> bool:
-    """The invariant: exactly one tenant source. Token inspection cannot see
-    a violation (Keycloak silently emits one value), so this checks sources."""
-    groups = tenant_group_count(admin, user_id)
-    attr = has_pinned_attribute(admin, user_id)
-    return (groups + (1 if attr else 0)) <= 1
+            offenders.append(g["name"])
+    return offenders
 
 
 def main() -> int:
@@ -168,9 +153,8 @@ def main() -> int:
         profile["unmanagedAttributePolicy"] = "ADMIN_EDIT"
         admin.realm("/users/profile", "PUT", profile)
 
-        admin.realm("/groups", "POST", {"name": "tenant-a", "attributes": {"tenant_id": [TENANT_A]}})
-        admin.realm("/groups", "POST", {"name": "tenant-b", "attributes": {"tenant_id": [TENANT_B]}})
-        groups = {g["name"]: g["id"] for g in admin.realm("/groups")}
+        check("clean-baseline", not tenant_bearing_groups(admin), "canonical realm ships zero tenant groups")
+
         admin.realm(
             "/users",
             "POST",
@@ -180,40 +164,32 @@ def main() -> int:
         client = admin.realm("/clients?clientId=insight-authenticator")[0]["id"]
 
         claim = tenant_claim(admin, client, user)
-        check("fail-closed", claim is None, f"no tenant source -> claim {claim!r}")
-
-        admin.realm(f"/users/{user}/groups/{groups['tenant-a']}", "PUT")
-        claim = tenant_claim(admin, client, user)
-        check("group-translation", claim == TENANT_A, f"one group -> claim {claim!r}")
-        check("single-source(1 group)", unambiguous_tenant_source(admin, user), "one tenant source")
-
-        admin.realm(f"/users/{user}/groups/{groups['tenant-b']}", "PUT")
-        claim = tenant_claim(admin, client, user)
-        check(
-            "two-groups-detected",
-            not unambiguous_tenant_source(admin, user),
-            f"two tenant groups; token silently emits {claim!r} — sources check must flag it",
-        )
+        check("fail-closed", claim is None, f"no pinned attribute -> claim {claim!r}")
 
         u = admin.realm(f"/users/{user}")
-        u["attributes"] = {"tenant_id": [TENANT_ATTR]}
+        u["attributes"] = {"tenant_id": [TENANT_PIN]}
         admin.realm(f"/users/{user}", "PUT", u)
         claim = tenant_claim(admin, client, user)
-        check(
-            "mixed-source-detected",
-            not unambiguous_tenant_source(admin, user),
-            f"attribute + groups; token emits {claim!r} (group shadows pin) — flagged",
-        )
+        check("pinned-tenant", claim == TENANT_PIN, f"pinned attribute -> claim {claim!r}")
+        check("claim-is-scalar", isinstance(claim, str), f"claim type {type(claim).__name__}")
 
+        admin.realm("/groups", "POST", {"name": "tenant-a", "attributes": {"tenant_id": [TENANT_GROUP]}})
+        groups = {g["name"]: g["id"] for g in admin.realm("/groups")}
+        admin.realm(f"/users/{user}/groups/{groups['tenant-a']}", "PUT")
         claim = tenant_claim(admin, client, user)
-        check("claim-is-scalar", claim is None or isinstance(claim, str), f"claim type {type(claim).__name__}")
+        check("group-inert", claim == TENANT_PIN, f"tenant group must not affect the token -> claim {claim!r}")
+        check(
+            "group-policy-detected",
+            bool(tenant_bearing_groups(admin)),
+            "a tenant-bearing group exists and the realm scan flags it",
+        )
     finally:
         subprocess.run(["docker", "rm", "-f", CONTAINER], capture_output=True, check=False)
 
     if failures:
-        print(f"\ntenant-translation guard FAILED: {failures}")
+        print(f"\ntenant-contract guard FAILED: {failures}")
         return 1
-    print("\ntenant-translation guard OK")
+    print("\ntenant-contract guard OK")
     return 0
 
 

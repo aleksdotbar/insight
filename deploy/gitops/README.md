@@ -254,34 +254,14 @@ so an IdP swap or upstream drift cannot change the tenant. Canonical
 realm shape to copy:
 [`environments/local/keycloak/realms/insight-broker.yaml`](environments/local/keycloak/realms/insight-broker.yaml).
 
-Where a SINGLE upstream registration serves several tenants, translate
-inside the realm instead of pinning: per-tenant groups carry the
-internal UUID in a `tenant_id` group attribute, and one advanced
-claim-to-group mapper per external tenant value puts the user in its
-group (`syncMode: FORCE`; unmapped values fail closed — no group, no
-`tenant_id`, token rejected downstream):
-
-```yaml
-groups:
-  - name: tenant-example-corp
-    attributes:
-      tenant_id: ["033dcbad-2374-4548-a9fa-04e2d5e0889a"]
-identityProviderMappers:
-  - name: tenant-example-corp
-    identityProviderAlias: upstream
-    identityProviderMapper: oidc-advanced-group-idp-mapper
-    config:
-      syncMode: FORCE
-      claims: '[{"key":"tid","value":"<external tenant value>"}]'
-      group: /tenant-example-corp
-```
-
-The canonical scope's `tenant_id` mapper aggregates over groups, so no
-scope change is needed. Two rules the CI guard
-(`deploy/compose/keycloak/tests/tenant_translation_guard.py`) enforces:
-a user must never sit in two tenant groups, and never mix the pinned
-attribute with tenant groups — Keycloak silently emits one value in
-both cases, so only source inspection catches it.
+The guard `deploy/compose/keycloak/tests/tenant_translation_guard.py`
+(CI lane) enforces the pinned-tenant contract against the canonical
+realm: no tenant source means no claim (fail closed), the pinned
+attribute is emitted verbatim as a single string, and no group in the
+realm may carry a `tenant_id` attribute — group-sourced tenants are
+rejected by policy (an IdP's own tenancy assertions are never
+consulted; a customer with several IdPs pins the same tenant on each
+registration).
 
 ## Secret management
 

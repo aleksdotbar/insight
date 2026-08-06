@@ -9,6 +9,13 @@ date: 2026-08-04
 
 **Status history**:
 
+- 2026-08-06: AMENDED -- claim-value-to-tenant translation (the advanced claim-to-group mapper
+  sketched in the Decision Outcome) is REJECTED: the tenant is always the fixed per-registration
+  pin from environment values, an IdP's own tenancy assertions are never consulted, and a
+  customer with several IdPs pins the same tenant on each registration. Two customers sharing
+  an IdP vendor do not intersect: realm-per-customer gives each its own registration, client,
+  and pin. A CI guard asserts the contract against the canonical realm (fail-closed without the
+  pin, single-string claim, tenant-bearing groups inert and flagged).
 - 2026-08-05: AMENDED -- of the instance-deployment options this ADR left open, the umbrella
   subchart is chosen: the broker runs **in-stack** (production-mode `insight-keycloak`,
   MariaDB-backed) as part of each environment's auth services, amending ADR-0002's shared
