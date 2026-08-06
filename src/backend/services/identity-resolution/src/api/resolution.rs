@@ -5,7 +5,7 @@
 //! calling operator and journals the call in `operations`; nothing is updated or
 //! deleted. Admin-gated like the rest of the operator surface.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::Json;
@@ -157,8 +157,19 @@ pub async fn bind(
         });
     }
 
-    let response =
-        apply_correction(&state, tenant, operator, targets, Verb::Bind, &req.comment).await?;
+    // The journal's verb-level target; heterogeneous bulk detail is in the
+    // per-account list either way.
+    let journal_target = req.bindings[0].person_id;
+    let response = apply_correction(
+        &state,
+        tenant,
+        operator,
+        targets,
+        Verb::Bind,
+        journal_target,
+        &req.comment,
+    )
+    .await?;
 
     Ok(Json(response))
 }
@@ -193,8 +204,16 @@ pub async fn merge(
         })
         .collect();
 
-    let outcome =
-        apply_correction(&state, tenant, operator, targets, Verb::Merge, &req.comment).await?;
+    let outcome = apply_correction(
+        &state,
+        tenant,
+        operator,
+        targets,
+        Verb::Merge,
+        req.target_person_id,
+        &req.comment,
+    )
+    .await?;
 
     Ok(Json(outcome))
 }
@@ -224,6 +243,7 @@ pub async fn detach(
         operator,
         targets,
         Verb::Detach,
+        new_person_id,
         &req.comment,
     )
     .await?;
@@ -262,6 +282,7 @@ pub async fn exclude(
         operator,
         targets,
         Verb::Exclude,
+        EXCLUDED_PERSON,
         &req.comment,
     )
     .await?;
@@ -272,12 +293,17 @@ pub async fn exclude(
 /// Read the targets' current bindings, build the rows the correction appends,
 /// write them once, and journal the call. One write and one cache rebuild per
 /// operation, however many accounts it names.
+///
+/// `journal_target` is the verb-level person the operation journal records —
+/// named by the caller, never derived from the targets: a merge of a person
+/// with no accounts has an empty target list but still a real survivor.
 async fn apply_correction(
     state: &AppState,
     tenant: Uuid,
     operator: Uuid,
     targets: Vec<Target>,
     verb: Verb,
+    journal_target: Uuid,
     comment: &str,
 ) -> Result<CorrectionResponse, CanonicalError> {
     let accounts: Vec<SourceAccountKey> = targets.iter().map(|t| t.account.clone()).collect();
@@ -325,13 +351,12 @@ async fn apply_correction(
         })
         .collect();
 
-    let target_person_id = targets.first().map(|t| t.person_id).unwrap_or_default();
     journal(
         state,
         tenant,
         operator,
         verb,
-        target_person_id,
+        journal_target,
         comment,
         &items,
     )
@@ -751,11 +776,13 @@ pub async fn person_accounts(
         .await
         .map_err(|e| internal(&e, "failed to read current bindings"))?;
     let evidence = read_evidence(&state).await?;
+    let by_account: HashMap<&SourceAccountKey, &AccountEvidence> =
+        evidence.iter().map(|e| (&e.account, e)).collect();
 
     let entries = accounts
-        .into_iter()
+        .iter()
         .map(|account| {
-            let observed = evidence.iter().find(|e| e.account == account);
+            let observed = by_account.get(account).copied();
             PersonAccountEntry {
                 source: account.source_type.clone(),
                 source_id: account.source_id,
@@ -763,7 +790,7 @@ pub async fn person_accounts(
                 email: observed.and_then(|e| e.email.clone()),
                 username: observed.and_then(|e| e.username.clone()),
                 bound_by_operator: bindings
-                    .get(&account)
+                    .get(account)
                     .is_some_and(crate::domain::seed::KnownBinding::is_operator_authored),
             }
         })
