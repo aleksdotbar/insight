@@ -9,6 +9,7 @@ import { MetricGroupCard } from "@/components/widgets/metric-views/metric-group-
 import { usePortalPeriod } from "@/hooks/use-portal-period";
 import { useSettings } from "@/hooks/use-settings";
 import { metricAttentionItems } from "@/lib/insight/attention";
+import { groupHasData } from "@/lib/insight/group-data";
 import {
   KPI_ROW_COLLECTION,
   GROUPS,
@@ -185,6 +186,20 @@ export function MetricGroupsView({
   const tiles = showKpis
     ? metricKpiTiles(kpiByKey, kpiData.previousByKey, entityId, focusMode)
     : [];
+  // Partitioned before rendering — see the note beside the empty-section line.
+  // A section counts as empty only once its query has SETTLED: while it loads
+  // there is nothing to conclude, and collapsing it early would drop the card
+  // for a moment and pop it back when the data lands.
+  const emptyDefs = defs.filter((def) => {
+    const result = groupResult(def.id);
+    return (
+      result != null &&
+      !result.isPending &&
+      !groupHasData(def, result.byKey, entityId)
+    );
+  });
+  const liveDefs = defs.filter((def) => !emptyDefs.includes(def));
+
   const attentionItems = showKpis
     ? defs.flatMap((def) =>
         metricAttentionItems(def, groupResult(def.id)?.byKey ?? new Map(), entityId),
@@ -220,7 +235,7 @@ export function MetricGroupsView({
               Sections
             </p>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-3">
-              {defs.map((def) => {
+              {liveDefs.map((def) => {
                 const result = groupResult(def.id);
                 if (!result) return null;
                 return (
@@ -234,6 +249,16 @@ export function MetricGroupsView({
                 );
               })}
             </div>
+            {/* Named, not hidden: a section with nothing this period is a fact
+                worth one line. As full-height "No data" cards, three of them
+                took a third of the page and pushed the person's actual work
+                below the fold. */}
+            {emptyDefs.length ? (
+              <p className="text-xs text-muted-foreground">
+                No data this period:{" "}
+                {emptyDefs.map((d) => d.title).join(", ")}
+              </p>
+            ) : null}
           </section>
         ) : null}
       </main>

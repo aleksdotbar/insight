@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -90,6 +91,13 @@ export function IcNeedsAttention({
                       </span>
                     </>
                   ) : null}
+                  {/* Same standing affordance as every other openable surface:
+                      a row that only reacts to hover is indistinguishable from
+                      a line of text until the mouse happens to cross it. */}
+                  <ChevronRight
+                    className="ml-auto size-3.5 shrink-0 self-center text-muted-foreground/50"
+                    aria-hidden
+                  />
                 </button>
               </li>
             ))}

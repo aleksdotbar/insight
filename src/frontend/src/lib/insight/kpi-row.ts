@@ -117,6 +117,9 @@ export function metricKpiTiles(
     return [
       {
         key: metric.metric_key,
+        // The full label, not `short_label`: "Msgs" and "AI lines +" save
+        // width by making the reader decode them. The tile wraps to two lines
+        // instead, which costs a row of pixels once and nothing after that.
         label: metric.label,
         value:
           value == null

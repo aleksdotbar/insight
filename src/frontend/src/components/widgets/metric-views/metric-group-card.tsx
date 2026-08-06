@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -165,7 +166,17 @@ export function MetricGroupCard({
       )}
     >
       <CardHeader>
-        <CardTitle className="text-base font-semibold">{def.title}</CardTitle>
+        <CardTitle className="flex items-center gap-1 text-base font-semibold">
+          <span className="min-w-0 truncate">{def.title}</span>
+          {/* Same standing affordance as the KPI tile — an empty card is not
+              interactive and gets none. */}
+          {isEmpty ? null : (
+            <ChevronRight
+              className="size-4 shrink-0 text-muted-foreground/60"
+              aria-hidden
+            />
+          )}
+        </CardTitle>
         {subtitle || !isEmpty ? (
           <CardDescription className="flex flex-col gap-1 text-xs">
             {subtitle ? (

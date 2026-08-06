@@ -13,7 +13,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { MetricResult } from "@/api/metric-results-client";
 import type { GroupId } from "@/lib/insight/groups";
+import { normalizeMetricResults } from "@/lib/metrics/collection";
 
 const mocks = vi.hoisted(() => ({
   collection: {
@@ -64,13 +66,43 @@ import { MetricGroupsView } from "./metric-groups-view";
 
 const GROUPS: readonly GroupId[] = ["git_output", "collaboration"];
 
-function seedSet(over: Partial<{ isPending: boolean; isError: boolean }> = {}) {
+/** One metric of the group, with a real value — a group with no values at all
+ *  is collapsed into a line now, so a card test has to give it something. */
+function metric(key: string): MetricResult {
+  return {
+    metric_key: key,
+    label: key,
+    unit: null,
+    format: "integer",
+    direction: "higher_is_better",
+    computation: "sum",
+    views: [{ view: "period", values: [{ entity_id: "p@x", value: 3 }] }],
+  } as MetricResult;
+}
+
+const GROUP_METRIC: Record<string, string> = {
+  git_output: "git.commits",
+  collaboration: "collab.messages_sent",
+};
+
+function seedSet(
+  over: Partial<{ isPending: boolean; isError: boolean }> = {},
+  { withData = true } = {},
+) {
   mocks.set = new Map(
     GROUPS.map((id) => [
       id as string,
-      { byKey: new Map<string, never>(), isPending: false, isError: false, refetch: vi.fn() as () => void, ...over },
+      {
+        byKey: withData
+          ? normalizeMetricResults([metric(GROUP_METRIC[id]!)])
+          : new Map<string, never>(),
+        isPending: false,
+        isError: false,
+        refetch: vi.fn() as () => void,
+        ...over,
+      },
     ]),
-  );
+  ) as typeof mocks.set;
 }
 
 beforeEach(() => {
