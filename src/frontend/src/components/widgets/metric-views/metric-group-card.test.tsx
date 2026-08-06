@@ -109,7 +109,7 @@ describe("MetricGroupCard", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("keeps a fixed preview key with no value, rendering an em dash", () => {
+  it("drops a preview key with no value rather than printing a dash", () => {
     render(
       <MetricGroupCard
         def={DEF}
@@ -121,11 +121,12 @@ describe("MetricGroupCard", () => {
         onOpen={vi.fn()}
       />,
     );
-    // Both preview rows stay on the card — the valueless one shows "—", not
-    // dropped, so the card's identity is stable across periods.
+    // A "—" row spends a line saying nothing. The null is not a measured zero
+    // — that prints 0 — it is a metric nothing feeds for this person, and a
+    // stable card identity is not worth a blank line every period they lack it.
     expect(screen.getByText("ai.active_days")).toBeInTheDocument();
-    expect(screen.getByText("ai.cost")).toBeInTheDocument();
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("ai.cost")).not.toBeInTheDocument();
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
   });
 
   it("keeps the card name and shows a spinner while loading", () => {

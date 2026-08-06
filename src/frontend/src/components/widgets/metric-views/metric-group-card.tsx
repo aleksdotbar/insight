@@ -127,10 +127,12 @@ export function MetricGroupCard({
 
   const headlineRow = pickHeadlineRow(rows);
 
-  // The preview is a FIXED set of keys — the card's stable identity. Keep a
-  // key even when its value is null (renders "—"); only drop a key the
-  // response never carried. A present-but-empty metric still belongs on the
-  // card.
+  // Rows with a value, and only those. A "—" row spends a line saying nothing:
+  // a null here is not a measured zero — that would print 0 — it is a metric no
+  // connector feeds for this person, and the card's identity is not worth a
+  // line of blank on every period they lack it. Same rule the headline row
+  // follows.
+  //
   // The lead goes FIRST in the list, not into a sentence above it. The card
   // used to state a headline chosen from every metric of the group while
   // listing three fixed keys, so it either named a metric the reader could not
@@ -139,7 +141,7 @@ export function MetricGroupCard({
   // "AI-added lines" and listed it again). One list, lead at the top.
   const previewRows = def.card.preview
     .map((key) => rows.find((row) => row.metric.metric_key === key))
-    .filter((row): row is CardRow => row != null);
+    .filter((row): row is CardRow => row != null && row.value != null);
   const preview = (
     headlineRow
       ? [headlineRow, ...previewRows.filter((row) => row !== headlineRow)]
