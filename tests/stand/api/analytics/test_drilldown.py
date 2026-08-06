@@ -101,9 +101,12 @@ def drilldown_capabilities(
     cost twice what it needs to.
 
     Capability is derived per request from the health of the evidence relation,
-    so this is a claim the endpoint can contradict. The sweep asserts it does
-    not: a metric the listing calls incapable must be refused, and one it calls
-    capable must answer.
+    so this is a claim the endpoint can contradict, and it does: the catalogue's
+    query requires the definition's schema to be checked as well, so it withholds
+    the capability for metrics the endpoint serves. The sweep asserts the
+    direction that holds — an advertised metric must answer — and
+    `test_advertised_capability_matches_what_the_endpoint_serves` carries the
+    other as a strict xfail.
     """
     response = lead_session.client.get(METRIC_DEFINITIONS)
     assert response.status_code == 200, f"definitions: {response.status_code}"
@@ -158,6 +161,29 @@ def _seeded_request(
     )
 
 
+def _page(
+    api: ApiClient,
+    manifest: Manifest,
+    metric_key: str,
+    *,
+    limit: int,
+    cursor: str | None = None,
+    filters: Sequence[JsonValue] = (),
+    display_dimensions: Sequence[str] = (),
+) -> ApiResponse:
+    return api.post(
+        DRILLDOWN,
+        json_body=_request_for(
+            manifest,
+            metric_key,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            display_dimensions=display_dimensions,
+        ),
+    )
+
+
 def _walk(
     api: ApiClient,
     manifest: Manifest,
@@ -167,25 +193,23 @@ def _walk(
     filters: Sequence[JsonValue] = (),
     display_dimensions: Sequence[str] = (),
     page_budget: int | None = None,
+    initial: ApiResponse | None = None,
 ) -> _Walk:
-    cursor: str | None = None
+    """Every page from `initial` (or a fresh first page) to the last or the budget."""
     cursors: set[str] = set()
     first: MetricDrilldownResponse | None = None
     rows: list[Mapping[str, object]] = []
     pages = 0
+    response = initial or _page(
+        api,
+        manifest,
+        metric_key,
+        limit=limit,
+        filters=filters,
+        display_dimensions=display_dimensions,
+    )
 
     while True:
-        response = api.post(
-            DRILLDOWN,
-            json_body=_request_for(
-                manifest,
-                metric_key,
-                limit=limit,
-                cursor=cursor,
-                filters=filters,
-                display_dimensions=display_dimensions,
-            ),
-        )
         assert response.status_code == 200, (
             f"{metric_key}: status={response.status_code} {response.text[:300]}"
         )
@@ -203,10 +227,19 @@ def _walk(
         assert cursor not in cursors, f"repeated pagination cursor {cursor!r}"
         cursors.add(cursor)
         if page_budget is not None and pages >= page_budget:
-            break
+            return _Walk(first=first, rows=rows, complete=False)
+        response = _page(
+            api,
+            manifest,
+            metric_key,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            display_dimensions=display_dimensions,
+        )
 
     assert first is not None
-    return _Walk(first=first, rows=rows, complete=cursor is None)
+    return _Walk(first=first, rows=rows, complete=True)
 
 
 def _period_value(
@@ -423,19 +456,27 @@ def _reconcile(period: float | None, walk: _Walk, expectation: Expectation) -> N
 
 
 def _assert_evidence_unavailable(
-    api: ApiClient, manifest: Manifest, metric_key: str, person_id: str
+    response: ApiResponse, metric_key: str, capability: MetricDrilldownCapability | None
 ) -> None:
-    response = api.post(
-        DRILLDOWN,
-        json_body=_request_for(manifest, metric_key, entity_id=person_id, limit=_PAGE_LIMIT),
-    )
+    """A refusal has to be the documented one, and the catalogue has to agree.
+
+    Only this direction is sound. The endpoint refuses when the evidence relation
+    is unhealthy, and the catalogue's capability query requires everything that
+    refusal tests plus more, so a refused metric can never be an advertised one.
+    The converse does NOT hold — see
+    `test_advertised_capability_matches_what_the_endpoint_serves`.
+    """
     assert response.status_code == 400, (
-        f"{metric_key} is not drilldown-capable in the catalogue, so the endpoint has to refuse "
-        f"it; it answered {response.status_code}: {response.text[:300]}"
+        f"{metric_key}: expected the documented refusal, got {response.status_code}: "
+        f"{response.text[:300]}"
     )
     assert response.parse(ProblemDocument).status == 400
     assert "EVIDENCE_UNAVAILABLE" in response.text, (
         f"{metric_key}: refused without naming the precondition: {response.text[:300]}"
+    )
+    assert capability is None, (
+        f"{metric_key}: the catalogue advertises drilldown for it, so a reader is offered "
+        "supporting data the endpoint then refuses to serve"
     )
 
 
@@ -454,6 +495,41 @@ def test_every_metric_definition_is_in_the_drilldown_matrix(
     assert served == expected, (
         f"served but unexpected: {sorted(served - expected)}; "
         f"expected but not served: {sorted(expected - served)}"
+    )
+
+
+@pytest.mark.requires_seed("dev_lead")
+@pytest.mark.xfail(
+    strict=True,
+    reason="the catalogue withholds the capability for a metric whose definition schema_status "
+    "is not ok, while the drilldown endpoint serves that metric's evidence, so the UI hides "
+    "supporting data that exists",
+)
+def test_advertised_capability_matches_what_the_endpoint_serves(
+    api: ApiClient,
+    stand_manifest: Manifest,
+    drilldown_capabilities: Mapping[str, MetricDrilldownCapability | None],
+) -> None:
+    """The half of the capability contract that does not hold yet.
+
+    `GET /v1/metric-definitions` is what the UI reads to decide whether to offer
+    "supporting data" at all, so a metric the endpoint would answer but the
+    catalogue calls incapable has evidence no reader can reach. One metric per
+    evidence presentation is asked, which is enough to catch a family-wide
+    difference without a second sweep over the catalogue.
+
+    Strict, so the day the two sides agree this fails as an XPASS and the marker
+    comes off rather than quietly staying.
+    """
+    hidden = sorted(
+        metric_key
+        for metric_key in EXPORT_SHAPES
+        if drilldown_capabilities.get(metric_key) is None
+        and _page(api, stand_manifest, metric_key, limit=1).status_code == 200
+    )
+    assert hidden == [], (
+        f"the endpoint serves evidence for {hidden}, and the catalogue advertises none, "
+        "so the affordance is hidden for metrics that have supporting data"
     )
 
 
@@ -477,11 +553,17 @@ def test_drilldown_reconciles_with_the_metric_value(
 
     An empty page is a legitimate answer, and it is still an assertion: nothing
     zero-fills, so evidence and metric have to be empty together.
+
+    Driven off what the endpoint answers rather than off the advertised
+    capability, because the two do not agree today and the endpoint is the side
+    that decides whether evidence exists.
     """
     person_id = stand_manifest.fixture("dev_lead").uuid
-    capability = drilldown_capabilities.get(expectation.metric_key)
-    if capability is None:
-        _assert_evidence_unavailable(api, stand_manifest, expectation.metric_key, person_id)
+    probe = _page(api, stand_manifest, expectation.metric_key, limit=_PAGE_LIMIT)
+    if probe.status_code != 200:
+        _assert_evidence_unavailable(
+            probe, expectation.metric_key, drilldown_capabilities.get(expectation.metric_key)
+        )
         return
 
     walk = _walk(
@@ -490,6 +572,7 @@ def test_drilldown_reconciles_with_the_metric_value(
         expectation.metric_key,
         limit=_PAGE_LIMIT,
         page_budget=_PAGE_BUDGET,
+        initial=probe,
     )
     _assert_shape(walk, expectation, person_id)
 
@@ -516,7 +599,6 @@ def test_drilldown_reconciles_with_the_metric_value(
 def test_drilldown_export_carries_every_row(
     api: ApiClient,
     stand_manifest: Manifest,
-    drilldown_capabilities: Mapping[str, MetricDrilldownCapability | None],
     metric_key: str,
 ) -> None:
     """Both export formats, against the page the same selection returns.
@@ -526,9 +608,6 @@ def test_drilldown_export_carries_every_row(
     against the page is what catches it. The empty case is in here too: an export
     of no evidence is a header and nothing else, not an error.
     """
-    assert drilldown_capabilities.get(metric_key) is not None, (
-        f"{metric_key} is an export shape but the catalogue calls it incapable"
-    )
     walk = _walk(api, stand_manifest, metric_key, limit=_PAGE_LIMIT, page_budget=_PAGE_BUDGET)
     assert walk.complete, f"{metric_key}: export shapes must be small enough to walk whole"
     request = _request_for(stand_manifest, metric_key)
