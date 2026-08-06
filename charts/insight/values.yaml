@@ -405,6 +405,9 @@ keycloak:
   # Advertised issuer BASE (must end in /kc) — the URL browser AND
   # authenticator reach, e.g. https://<host>/kc.
   hostname: ""
+  # Admin console base. The ingress exposes only /kc/realms + /kc/resources;
+  # the console rides a port-forward (empty = http://localhost:<port>/kc).
+  adminHostname: ""
   # Bootstrap-admin Secret (keys username/password) and DB connection.
   admin:
     existingSecret: ""
