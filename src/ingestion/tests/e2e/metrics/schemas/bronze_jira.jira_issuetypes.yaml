@@ -11,14 +11,8 @@ schemas:
       unique_key: {type: string}
       source_id: {type: string}
       tenant_id: {type: [string, "null"]}
-      # The issue-type id arrives as a JSON string and lands as Nullable(String)
-      # — unlike the status dimension, whose ids the connector types as JSON
-      # numbers. Declaring `number` here makes the seeder expect Float64 and
-      # reject the real column.
       id: {type: [string, "null"]}
       name: {type: string}
-      # Original, language-independent type name; what the kind is classified
-      # from, so a translated instance classifies like an untranslated one.
       untranslatedName: {type: [string, "null"]}
       subtask: {type: [boolean, "null"]}
       hierarchyLevel: {type: [number, string, "null"]}

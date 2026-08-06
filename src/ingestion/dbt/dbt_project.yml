@@ -81,13 +81,9 @@ vars:
     - '(^|/)mix\\.lock$'
     - '(^|/)flake\\.lock$'
 
-  # Issue-type names the shared `task_issue_kind` macro reconciles to
-  # `issue_kind = 'bug'` and `'other'`. Compared case-insensitively against the
-  # most stable name the tracker exposes (Jira `untranslatedName`), so a
-  # translated instance classifies like an untranslated one. A name in neither
-  # list is `unknown` and is reported as its own bucket — never counted as
-  # non-bug work. An instance whose type set uses other names (a renamed bug
-  # type, an extra work type) extends these lists per deployment.
+  # Issue-type names the shared `task_issue_kind` macro maps to
+  # `issue_kind = 'bug'` and `'other'`, compared case-insensitively. A name in
+  # neither list is `unknown`. Extend per deployment for a non-default type set.
   task_bug_type_names:
     - bug
   task_non_bug_type_names:

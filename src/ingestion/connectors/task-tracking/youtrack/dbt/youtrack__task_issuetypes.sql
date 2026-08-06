@@ -7,24 +7,14 @@
 ) }}
 
 -- Per-source issue-type dimension; unioned into `silver.class_task_issuetypes`
--- via `union_by_tag`. YouTrack has no global issue-type table: the equivalent
--- signal is the Type custom field's enum bundle, whose values are the instance's
--- issue types. We explode the bundle(s) and reconcile each value name to the
--- source-neutral `issue_kind` through the shared macro, the same axis Jira
--- derives from `untranslatedName`.
+-- via `union_by_tag`. YouTrack has no global issue-type table: the instance's
+-- types are the Type custom field's enum-bundle values, selected by
+-- `field_name` (canonical) rather than `field_localized_name` (per-language).
+-- No untranslated name exists here, so a non-default type set reads `unknown`.
 --
--- The Type field is selected by `field_name`, YouTrack's canonical field name —
--- never `field_localized_name`, which is per-language and would make the join
--- depend on the instance's UI locale.
---
--- No untranslated-name equivalent exists here, so a renamed or non-English type
--- set classifies as `unknown` until its names are added to the
--- `task_bug_type_names` / `task_non_bug_type_names` vars.
---
--- `bundle_values_json` is the raw JSON array of bundle value objects. An enum
--- bundle may be shared across projects, so the same value id appears in several
--- rows; `union_by_tag` dedups by `unique_key` (= source + issue_type_id) to one
--- row.
+-- `bundle_values_json` is the raw JSON array of bundle value objects. A bundle
+-- may be shared across projects, so the same value id appears in several rows;
+-- `union_by_tag` dedups by `unique_key`.
 
 WITH type_fields AS (
     SELECT

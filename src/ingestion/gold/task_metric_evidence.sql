@@ -92,9 +92,6 @@ issue_item_evidence AS (
         issue_type,
         item_measure.1 AS measure_key,
         toFloat64(item_measure.2) AS contribution,
-        -- Issue type as a breakdown dimension, so the closed-issue total splits
-        -- into parts that add back up to it. A type the class dimension does not
-        -- classify keeps its own bucket instead of joining non-bug work.
         CAST(
             [tuple(
                 'type',

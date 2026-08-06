@@ -154,11 +154,9 @@ def seed_task_users(
 
 _ISSUE_TYPES = ("Bug", "Task", "Story", "Improvement")
 
-# Issue-type dimension. Gold resolves an issue's type through
-# class_task_issuetypes on (insight_source_id, issue_type_id) and reads the
-# reconciled issue_kind, never a type display name. So issuetype field-history
-# events MUST carry an issue type id (value_ids[1]) that matches a seeded row,
-# or every issue reads as an unclassified type.
+# Issue-type dimension. issuetype field-history events MUST carry an issue type
+# id (value_ids[1]) matching a seeded row, or gold reads every issue as an
+# unclassified type.
 _ISSUE_TYPE_DIM = {
     # issue_type_name: (issue_type_id, issue_kind)
     "Bug": ("10004", "bug"),

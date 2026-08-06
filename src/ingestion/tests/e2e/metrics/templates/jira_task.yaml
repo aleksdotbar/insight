@@ -275,10 +275,8 @@ templates:
     category_key: done
 
   # ── Issue-type lookup (bronze_jira.jira_issuetypes) ──────────────────────
-  # Drives jira__task_issuetypes → silver.class_task_issuetypes, which gold uses
-  # to tell bug work from the rest by `issue_kind` instead of by a type display
-  # name. Each seeded issue references one of these ids in its
-  # custom_fields_json `issuetype.id`, so every closed issue resolves a kind.
+  # Drives jira__task_issuetypes → silver.class_task_issuetypes. Each seeded
+  # issue references one of these ids in custom_fields_json `issuetype.id`.
   jira_issuetype:
     unique_key: null
     source_id: jira-test
@@ -308,8 +306,6 @@ templates:
     name: Bug
     untranslatedName: Bug
 
-  # A type name the configured lists do not cover: its issues count in the
-  # closed total and land in the unknown bucket, never in non-bug work.
   issuetype_unclassified:
     $ref: "#/templates/jira_issuetype"
     unique_key: jira-test-issuetype-10099

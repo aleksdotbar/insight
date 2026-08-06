@@ -403,9 +403,6 @@ cases:
         view: period
         find: { entity_id: alice@example.com }
         equal: { value: 4 }
-      # Four members close non-bug work (erin closes only bugs), so the pool is
-      # under MIN_PEER_N and the distribution stays suppressed — same shape as
-      # the bug pool above.
       - metric: tasks.closed_non_bug
         view: peer
         find: { entity_id: alice@example.com }

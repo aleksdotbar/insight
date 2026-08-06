@@ -20,10 +20,8 @@
 -- per measure branch (ClickHouse re-inlines every WITH reference).
 --
 -- Lifecycle comes from class_task_statuses.status_category ('done' = closed)
--- joined on the status id — never match status display names. Issue type is the
--- same shape: class_task_issuetypes.issue_kind joined on the type id, so a type
--- absent from the dimension reads 'unknown' rather than being guessed from its
--- display name. Attribution:
+-- joined on the status id — never match status display names; issue type is the
+-- same shape, via class_task_issuetypes.issue_kind. Attribution:
 -- assignee account id → lowercased email via class_task_users; only
 -- email-shaped keys pass (unresolvable accounts are excluded, not carried).
 -- Class reads keep FINAL: RMT parts are not duplicate-immune and argMax over
@@ -89,9 +87,6 @@ SELECT
     cur.status_category                                                      AS status_category,
     p.issue_type                                                             AS issue_type,
     ifNull(it.issue_kind, 'unknown')                                         AS issue_kind,
-    -- Stable grouping key vs display label for the type dimension: the
-    -- untranslated name groups the same type across locales, the display name
-    -- is what a reader recognises.
     coalesce(it.untranslated_name, it.issue_type_name, nullIf(p.issue_type, '')) AS issue_type_key,
     coalesce(it.issue_type_name, nullIf(p.issue_type, ''))                   AS issue_type_name,
     if(p.due_date_str IS NOT NULL AND p.due_date_str != '',

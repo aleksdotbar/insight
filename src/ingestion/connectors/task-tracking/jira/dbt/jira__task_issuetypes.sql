@@ -7,25 +7,14 @@
 ) }}
 
 -- Per-source issue-type dimension; unioned into `silver.class_task_issuetypes`
--- via `union_by_tag`. Maps every Jira issue type id to the source-neutral
--- `issue_kind` (bug / other / unknown), so Gold tells bug work from the rest
--- without matching a localized type display name.
---
--- `untranslatedName` — not `name` — feeds the classification: it is the type's
--- original name regardless of the instance's language, which is what makes the
--- kind stable across locales. `name` is retained as the display label.
---
--- `hierarchy_level` and `is_subtask` are carried raw (as the status dimension
--- carries `category_id` / `category_key`): they describe container-vs-work
--- structure, which no measure reads yet.
+-- via `union_by_tag`. Classification reads `untranslatedName`, the type's
+-- language-independent name; `name` is the display label.
 --
 -- View, not table: bronze `jira_issuetypes` is MergeTree (full_refresh +
 -- overwrite), so the current state of bronze is the current state of staging.
--- FINAL not needed.
 --
 -- `issue_type_id` is normalised to an integer-string (stripping any `.0` from
--- Airbyte numeric coercion) so it joins `class_task_field_history.value_ids[1]`,
--- which carries the Jira issue type id as a plain string (e.g. '10001').
+-- Airbyte numeric coercion) so it joins `class_task_field_history.value_ids[1]`.
 
 SELECT
     s.unique_key                                                AS unique_key,

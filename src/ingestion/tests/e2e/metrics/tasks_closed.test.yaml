@@ -311,8 +311,6 @@ cases:
       - metric: tasks.closed
         view: breakdown
         assert: "items.exists(v, v.entity_id == 'erin@example.com' && v.dimensions.exists(d, d.key == 'type' && d.value == 'Defect') && double(v.value) == 1.0)"
-      # Three type groups and no fourth: with the per-group values above and the
-      # period total of 5, the parts add up to the total.
       - metric: tasks.closed
         view: breakdown
         assert: "size(items.filter(v, v.entity_id == 'erin@example.com')) == 3"

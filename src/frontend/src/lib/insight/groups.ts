@@ -336,7 +336,6 @@ export const GROUPS: readonly MetricGroup[] = [
       {
         id: "task-throughput",
         view: "timeseries",
-        // The two type subsets, not the total and one of its parts.
         metrics: ["tasks.bugs_fixed", "tasks.closed_non_bug"],
         chart: { multiMetric: "combined" },
       },
@@ -476,10 +475,6 @@ export const GROUPS: readonly MetricGroup[] = [
  * column, in display order. Every key exists in a group collection above.
  * The FE owns only the key list and order — each column's label, unit,
  * format, and direction ride the `/v1/metric-results` response.
- *
- * The two closed-issue type subsets are adjacent on purpose — they are read
- * against each other. Their total is not a column; it is composition, and
- * lives in the group drilldown.
  */
 export const HEATMAP_METRIC_KEYS: readonly string[] = [
   "tasks.bugs_fixed",
