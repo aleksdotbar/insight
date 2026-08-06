@@ -1,10 +1,6 @@
-import {
-  formatMetricNumber,
-  formatMetricValue,
-  metricDisplayUnit,
-} from "@/lib/format";
+import { formatMetricValue, splitMetricValue } from "@/lib/format";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
-import { KPI_ROW, type MetricGroup, type GroupId } from "@/lib/insight/groups";
+import type { MetricGroup, GroupId } from "@/lib/insight/groups";
 import {
   forEntity,
   type NormalizedMetricResult,
@@ -62,14 +58,19 @@ export function metricAttentionItems(
   def: MetricGroup,
   byKey: Map<string, NormalizedMetricResult>,
   previousByKey: Map<string, NormalizedMetricResult> | null,
-  entityId: string
+  entityId: string,
+  /**
+   * The keys the headline row actually RENDERED. Not `KPI_ROW`: that is a
+   * candidate list longer than the row, so excluding all of it hides a
+   * bottom-quartile metric that never made it into a slot — it would appear
+   * neither above nor here.
+   */
+  headlineKeys: ReadonlySet<string>
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
-  // KPI_ROW is a candidate list; the row renders the ones this person is
-  // measured on, and any of them may be up there.
-  const onHeadlineRow = new Set<string>(KPI_ROW);
+
   for (const metricConfig of def.collection.metrics) {
-    if (onHeadlineRow.has(metricConfig.key)) continue;
+    if (headlineKeys.has(metricConfig.key)) continue;
     const metric = byKey.get(metricConfig.key);
     if (!metric || metric.direction === "neutral") continue;
     const data = forEntity(metric, entityId);
@@ -108,13 +109,14 @@ export function metricAttentionItems(
       ? (median - value) / denom
       : (value - median) / denom;
     const gapDelta = value - median;
+    const split = splitMetricValue(value, metric.format, metric.unit);
     items.push({
       key: metric.metric_key,
       group: def.id,
       label: metric.label,
       valueText: formatMetricValue(value, metric.format, metric.unit),
-      valueNumber: formatMetricNumber(value, metric.format),
-      valueUnit: metricDisplayUnit(metric.format, metric.unit) ?? "",
+      valueNumber: split.number,
+      valueUnit: split.unit,
       medianText: formatMetricValue(median, metric.format, metric.unit),
       gapText: formatGapMagnitude({
         value,

@@ -166,12 +166,22 @@ export function MetricGroupsView({
     );
   }
 
-  const isLoading = (showKpis && kpiData.isPending) || collectionSetPending(groupData);
+  // The previous period counts as part of the picture: attention needs it to
+  // tell a change from a standing, so a pending one is still loading and a
+  // failed one is an error. Left out, a failed comparison would render as
+  // "nothing needs attention" — the most misleading empty state on the page.
+  const isLoading =
+    (showKpis &&
+      (kpiData.isPending || collectionSetPending(previousGroupData))) ||
+    collectionSetPending(groupData);
   if (isLoading) return <CenteredSpinner className="min-h-[60vh]" />;
 
   // Surface a backend failure as a retryable error, not empty section cards.
   const isError =
-    (showKpis && kpiData.isError) || [...groupData.values()].some((r) => r.isError);
+    (showKpis &&
+      (kpiData.isError ||
+        [...previousGroupData.values()].some((r) => r.isError))) ||
+    [...groupData.values()].some((r) => r.isError);
   if (isError)
     return (
       <div className="mx-auto w-full max-w-md p-8">
@@ -181,6 +191,7 @@ export function MetricGroupsView({
           onRetry={() => {
             kpiData.refetch();
             groupData.forEach((r) => r.refetch());
+            previousGroupData.forEach((r) => r.refetch());
           }}
         />
       </div>
@@ -203,6 +214,9 @@ export function MetricGroupsView({
     ? metricKpiTiles(kpiByKey, kpiData.previousByKey, entityId, focusMode)
     : [];
 
+  // What the row actually rendered — the block skips exactly those, no more.
+  const headlineKeys = new Set(tiles.map((t) => t.key));
+
   const attentionItems = showKpis
     ? defs.flatMap((def) =>
         metricAttentionItems(
@@ -210,6 +224,7 @@ export function MetricGroupsView({
           groupResult(def.id)?.byKey ?? new Map(),
           previousGroupData.get(def.id)?.byKey ?? null,
           entityId,
+          headlineKeys,
         ),
       )
     : [];

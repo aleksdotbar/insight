@@ -70,12 +70,13 @@ export function PortalTopBar() {
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <span
+                  <button
+                    type="button"
                     className="cursor-help text-muted-foreground"
                     aria-label="What the cohort controls"
                   >
                     <HelpCircle className="size-3.5" />
-                  </span>
+                  </button>
                 }
               />
               <TooltipContent

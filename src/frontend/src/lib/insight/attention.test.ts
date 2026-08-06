@@ -39,6 +39,9 @@ function aiMetric(value: number | null, key = "ai.active_days"): MetricResult {
  * row (it is in `KPI_ROW`) and therefore this block's to leave alone. A
  * fixture needs both to express the rule.
  */
+/** What the headline row rendered — only these are the block's to skip. */
+const HEADLINE = new Set(["ai.active_days"]);
+
 const AI_DEF: MetricGroup = {
   id: "ai_adoption",
   title: "AI adoption",
@@ -69,7 +72,7 @@ function before(value: number) {
 
 describe("metricAttentionItems", () => {
   it("surfaces bottom-quartile metrics with the same item shape", () => {
-    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(9), "me@x.com");
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(9), "me@x.com", HEADLINE);
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       key: "ai.sessions",
@@ -92,13 +95,14 @@ describe("metricAttentionItems", () => {
         normalizeMetricResults([unmeasured]),
         before(9),
         "me@x.com",
+        HEADLINE,
       ),
     ).toHaveLength(0);
   });
 
   it("ignores in-pack values and missing data", () => {
-    expect(metricAttentionItems(AI_DEF, bothMetrics(10), before(9), "me@x.com")).toHaveLength(0);
-    expect(metricAttentionItems(AI_DEF, bothMetrics(null), before(9), "me@x.com")).toHaveLength(0);
+    expect(metricAttentionItems(AI_DEF, bothMetrics(10), before(9), "me@x.com", HEADLINE)).toHaveLength(0);
+    expect(metricAttentionItems(AI_DEF, bothMetrics(null), before(9), "me@x.com", HEADLINE)).toHaveLength(0);
   });
 });
 
@@ -108,7 +112,7 @@ describe("what the headline row already shows", () => {
     // it shows everything standing out EXCEPT what the row above already
     // carries. Repeating one puts a single finding on the screen twice, and a
     // reader counts marks rather than facts.
-    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(9), "me@x.com");
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(9), "me@x.com", HEADLINE);
     expect(items.map((i) => i.key)).not.toContain("ai.active_days");
   });
 
@@ -119,7 +123,7 @@ describe("what the headline row already shows", () => {
       ...AI_DEF,
       card: { preview: ["ai.sessions"] },
     };
-    const items = metricAttentionItems(onOldCard, bothMetrics(2), before(9), "me@x.com");
+    const items = metricAttentionItems(onOldCard, bothMetrics(2), before(9), "me@x.com", HEADLINE);
     expect(items.map((i) => i.key)).toEqual(["ai.sessions"]);
   });
 });
@@ -129,17 +133,57 @@ describe("a standing is not an event", () => {
     // A lead measured against the developers reporting to them is below on
     // commits every month, by the shape of the job. Repeating that forever
     // teaches the reader to skip the block; a flat gap is not news.
-    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(2), "me@x.com");
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(2), "me@x.com", HEADLINE);
     expect(items).toEqual([]);
   });
 
   it("stays silent when it moved the RIGHT way, even if still behind", () => {
-    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(1), "me@x.com");
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(1), "me@x.com", HEADLINE);
     expect(items).toEqual([]);
   });
 
   it("makes no claim about direction without a previous period", () => {
     // One period of data cannot say which way anything is going.
-    expect(metricAttentionItems(AI_DEF, bothMetrics(2), null, "me@x.com")).toEqual([]);
+    expect(metricAttentionItems(AI_DEF, bothMetrics(2), null, "me@x.com", HEADLINE)).toEqual([]);
+  });
+});
+
+describe("the row's candidates are not the row", () => {
+  it("shows a bottom-quartile candidate the row had no slot for", () => {
+    // `KPI_ROW` lists more candidates than the row renders. Excluding the
+    // whole list would hide a metric that reached neither surface — visible
+    // nowhere, which is the one outcome worse than showing it twice.
+    const items = metricAttentionItems(
+      AI_DEF,
+      bothMetrics(2),
+      before(9),
+      "me@x.com",
+      new Set<string>(), // the row rendered nothing from this group
+    );
+    expect(items.map((i) => i.key).sort()).toEqual([
+      "ai.active_days",
+      "ai.sessions",
+    ]);
+  });
+});
+
+describe("value split", () => {
+  it("keeps a percent a percent", () => {
+    // The list renders the split fields, so a lost "%" turns 50% into 50 — a
+    // different number, not a shorter one.
+    const pct = {
+      ...aiMetric(2, "ai.sessions"),
+      format: "percent" as const,
+      unit: null,
+    };
+    const items = metricAttentionItems(
+      AI_DEF,
+      normalizeMetricResults([pct]),
+      before(9),
+      "me@x.com",
+      new Set<string>(),
+    );
+    expect(items[0]?.valueNumber).toBe("2");
+    expect(items[0]?.valueUnit).toBe("%");
   });
 });

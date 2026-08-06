@@ -10,6 +10,7 @@ import {
 } from "@/components/widgets/dashboard/kpi-tile";
 import { MetricGroupCard } from "@/components/widgets/metric-views/metric-group-card";
 import { GroupDrilldownSheet } from "@/components/widgets/dashboard/group-drilldown-sheet";
+import { previousPeriodRange } from "@/api/period-to-date-range";
 import { usePeriod } from "@/hooks/use-period";
 import { useSettings } from "@/hooks/use-settings";
 import { metricAttentionItems } from "@/lib/insight/attention";
@@ -73,6 +74,18 @@ export function DashboardScreen({ personId }: DashboardScreenProps) {
     dateRange
   );
 
+  // The same collections over the previous period. Attention reports a
+  // standing that is ALSO a change, so without this the block would go silent
+  // here — which reads as "nothing to see" rather than "not compared".
+  const previousGroupData = useMetricCollectionSet(
+    GROUPS.map((def) => ({
+      key: def.id,
+      collection: projectViews(def.collection, ["period"]),
+    })),
+    entity,
+    previousPeriodRange(dateRange, period)
+  );
+
   const [openGroup, setOpenGroup] = useState<GroupId | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const openDetails = (group: GroupId) => {
@@ -117,15 +130,16 @@ export function DashboardScreen({ personId }: DashboardScreenProps) {
     focusMode
   );
 
+  // What the row actually rendered — the block skips exactly those, no more.
+  const headlineKeys = new Set(tiles.map((t) => t.key));
+
   const attentionItems = GROUPS.flatMap((def) =>
     metricAttentionItems(
       def,
       groupData.get(def.id)?.byKey ?? new Map(),
-      // The legacy screen fetches no previous period for its groups, so
-      // attention has nothing to judge a change against and stays silent
-      // rather than reporting standings as events.
-      null,
-      entityId
+      previousGroupData.get(def.id)?.byKey ?? null,
+      entityId,
+      headlineKeys
     )
   );
 
