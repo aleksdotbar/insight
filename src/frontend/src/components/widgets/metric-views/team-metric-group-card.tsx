@@ -21,7 +21,6 @@ import {
 import { applyFocus, PEER_TEXT } from "@/lib/peers";
 import {
   STATUS_BG_CLASS,
-  STATUS_STRIPE_LEFT,
   applyFocusStatus,
 } from "@/lib/status";
 import type { MetricCollectionResult } from "@/queries/metric-results";
@@ -96,7 +95,6 @@ export function TeamMetricGroupCard({
   const preview: TeamMetricStanding[] = def.card.preview
     .map((key) => standings.find((s) => s.metric.metric_key === key))
     .filter((s): s is TeamMetricStanding => s != null);
-  const stripeClass = STATUS_STRIPE_LEFT[status];
 
   return (
     <Card
@@ -109,7 +107,6 @@ export function TeamMetricGroupCard({
       }
       className={cn(
         "text-left transition-colors hover:bg-accent/50",
-        stripeClass,
       )}
     >
       <CardHeader>

@@ -27,8 +27,6 @@ import {
 } from "@/lib/scoring";
 import {
   STATUS_BG_CLASS,
-  STATUS_STRIPE_LEFT,
-  STATUS_TEXT_CLASS,
   applyFocusStatus,
 } from "@/lib/status";
 import type { MetricCollectionResult } from "@/queries/metric-results";
@@ -140,7 +138,6 @@ export function MetricGroupCard({
     .map((key) => rows.find((row) => row.metric.metric_key === key))
     .filter((row): row is CardRow => row != null);
   const isEmpty = !rows.some((row) => row.value != null);
-  const stripeClass = STATUS_STRIPE_LEFT[status];
 
   return (
     <Card
@@ -162,7 +159,6 @@ export function MetricGroupCard({
         // gap-3), not the default 24px section gap.
         "gap-3",
         !isEmpty && "text-left transition-colors hover:bg-accent/50",
-        stripeClass,
       )}
     >
       <CardHeader>
@@ -227,12 +223,11 @@ export function MetricGroupCard({
                       <span className="min-w-0 flex-1 truncate text-muted-foreground">
                         {row.metric.label}
                       </span>
-                      <span
-                        className={cn(
-                          "shrink-0 font-medium tabular-nums",
-                          STATUS_TEXT_CLASS[previewStatus],
-                        )}
-                      >
+                      {/* The dot carries the standing; the number stays a
+                          number. Colouring both put two marks on one row, and
+                          a card of five rows then read as five problems
+                          instead of one section worth opening. */}
+                      <span className="shrink-0 font-medium tabular-nums">
                         {row.value != null
                           ? formatMetricValue(
                               row.value,
