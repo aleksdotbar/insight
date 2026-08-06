@@ -1437,7 +1437,7 @@ test_stand_pinned_image() {
 }
 
 test_stand_frontend_image() {
-  test_stand_pinned_image src/frontend/helm/Chart.yaml front
+  test_stand_pinned_image src/frontend/helm/Chart.yaml frontend
 }
 
 # The backend services the stand runs from published images rather than from
