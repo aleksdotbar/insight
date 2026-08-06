@@ -141,10 +141,10 @@ Blobs exist on disk only transiently, for the commit window being served:
    skeleton size. Run after serving a window when the repo's size exceeds its
    skeleton baseline, and during eviction (§3.6).
 
-`include_patch=false` requests (§4.2) skip step 2 entirely for `additions`/
-`deletions` only when the window is small enough that per-blob cost dominates;
-numstat always requires blob content, so the flag's main effect is skipping
-patch text assembly and its size limits.
+Blob prefetch is always required: numstat, `patch_id` computation, and patch
+text all need blob content. `include_patch=false` (§4.2) only skips patch
+text assembly and transfer — bronze retention policy, not a disk optimization
+on the proxy side.
 
 Initial backfills of large repositories are processed in **windows** (page-
 sized commit ranges): prefetch → serve → purge, keeping peak disk usage
@@ -286,6 +286,7 @@ append-only bronze behavior (dedup is downstream RMT's job).
 | `is_merge` | bool | `len(parents) > 1` |
 | `additions`, `deletions`, `changed_files` | int | numstat pass (shared with file-changes) |
 | `branch_names` | string[] | `--contains` in the same pass |
+| `patch_id` | string | `git patch-id --stable` over the commit's full diff — canonical, whitespace- and hunk-order-insensitive hash for duplicate/cherry-pick detection. Always computed from the untruncated diff, so dedup never depends on stored patch text. |
 
 `branch_names` subsumes the Bitbucket CDK connector's
 `commit_branch_reachability` stream; a flat bronze table is produced
@@ -293,10 +294,17 @@ downstream via `ARRAY JOIN` if required.
 
 #### `GET /v1/file-changes`
 
-`?repo&since&include_patch=false&max_patch_bytes=65536&page_size&page_token`
+`?repo&since&include_patch=true&max_patch_bytes=1048576&page_size&page_token`
 
 One row per file × commit, **non-merge commits only** (parity with current
 connectors), rename detection on (`-M`).
+
+`include_patch` defaults to **true**: patch text is stored so that LOC can be
+recomputed post-factum under additional filters (blank lines, comments, …)
+without re-extraction. `max_patch_bytes` is a safety cap for pathological
+diffs (lockfiles, vendored trees); truncation is flagged per row so consumers
+never silently under-count. Commit-level dedup does not depend on patch text
+(see `patch_id` on `/v1/commits`).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -306,7 +314,8 @@ connectors), rename detection on (`-M`).
 | `status` | string | `added` \| `modified` \| `removed` \| `renamed` |
 | `additions`, `deletions`, `changes` | int \| null | null for binary |
 | `is_binary` | bool | |
-| `patch` | string \| null | only when `include_patch=true`; truncated at `max_patch_bytes` |
+| `patch` | string \| null | per-file unified diff; truncated at `max_patch_bytes` |
+| `patch_truncated` | bool | true when `patch` was cut at the cap |
 
 #### `GET /v1/branches`
 
@@ -376,7 +385,7 @@ somewhere.
 | `pull_requests` + children | vendor API | as today | data does not exist in git |
 | `commits` | proxy | incremental, substream of `repositories` | cursor `committed_date`, per-partition |
 | `file_changes` | proxy | incremental, substream of `repositories` | cursor `committed_date`, per-partition |
-| `repository_branches` | proxy | full refresh, substream of `repositories` | or stay on vendor API if `protected` must be kept (§8) |
+| `repository_branches` | proxy | full refresh, substream of `repositories` | latest state in bronze; head history via dbt snapshot/fields_history (§5.6); or stay on vendor API if `protected` must be kept (§8) |
 
 The parent link uses `SubstreamPartitionRouter` with
 `incremental_dependency: true`: because `repositories` is itself incremental,
@@ -475,6 +484,31 @@ bronze schemas; `file_changes` adds `filename` to the `unique_key` parts.)
 - Force-push: the proxy re-emits rewritten commits (they satisfy
   `committed_date ≥ since`); bronze stays append-only; RMT dedup by
   `unique_key` downstream absorbs re-emission.
+
+### 5.6 Branch head history (downstream, dbt)
+
+Bronze keeps only the **latest state** per branch; head-movement history is
+produced by the same dbt machinery used for user profiles:
+
+```
+bronze branches (append-only → RMT)                    unique_key excludes head_sha
+  → <vendor>__branches_snapshot.sql      {{ snapshot(...) }}        SCD2 versions
+  → <vendor>__branches_head_history.sql  {{ fields_history(...) }}  (old, new, at) per head change
+```
+
+- The bronze `unique_key` MUST be `(tenant, source, repo, branch_name)` —
+  **without** `head_sha` — so RMT collapses to current state and a head move
+  is a tracked-column change, not a new key.
+- `snapshot()` `check_cols`: `['head_sha']` (optionally
+  `head_committed_date`). The macro reads the source `FINAL` by design
+  (ADR-0001): pre-merge duplicates never become versions, so there is **no
+  race against RMT collapse** — history granularity equals sync cadence,
+  which is also the physical observability limit (intermediate heads between
+  fetches are unobservable in git; per-push granularity is vendor
+  webhook/events territory, out of scope).
+- Branch deletion is not an event in this scheme (the row just stops
+  updating) — same property as profile snapshots; add liveness tracking later
+  if "branch deleted" must become a transition.
 
 ## 6. Deployment
 
