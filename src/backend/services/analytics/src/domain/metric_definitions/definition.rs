@@ -99,6 +99,24 @@ impl SourceKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObservationRelation(String);
 
+/// Inline observation SQL for a `custom_observation_sql` source. Stored on the
+/// source row (`metric_sources.observation_sql`) and wrapped by the compiler as
+/// `FROM (<sql>)`, so it must emit the observation contract columns
+/// (`tenant_id, source_key, entity_type, entity_id, metric_date, measure_key,
+/// observed_at, value, subject_key, dimensions`). Single-SELECT gated on write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomObservationSql(String);
+
+/// Where a metric input reads observations from: a managed gold relation, or
+/// inline custom SQL that emits the same observation contract. Both resolve to
+/// a `FROM` target the compiler wraps its bucketing / tenant filter /
+/// aggregation around unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObservationSource {
+    Managed(ObservationRelation),
+    Custom(CustomObservationSql),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceRelation(String);
 
@@ -220,7 +238,7 @@ pub enum ComputationSpec {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricInput {
     pub role: MetricInputRole,
-    pub observation_relation: ObservationRelation,
+    pub observation: ObservationSource,
     pub source_key: String,
     pub measure_key: String,
 }
@@ -238,12 +256,12 @@ impl MetricDefinition {
             .find(|d| *d == dimension)
     }
 
-    pub fn observation_relation(&self) -> &ObservationRelation {
+    pub fn observation_source(&self) -> &ObservationSource {
         match &self.spec {
             ComputationSpec::Sum { value }
             | ComputationSpec::Median { value }
-            | ComputationSpec::DistinctCount { value } => &value.observation_relation,
-            ComputationSpec::Ratio { numerator, .. } => &numerator.observation_relation,
+            | ComputationSpec::DistinctCount { value } => &value.observation,
+            ComputationSpec::Ratio { numerator, .. } => &numerator.observation,
         }
     }
 }
@@ -266,6 +284,42 @@ impl ObservationRelation {
     /// Used to group same-source metrics for batched queries.
     pub fn source_ref(&self) -> &str {
         &self.0
+    }
+}
+
+impl CustomObservationSql {
+    pub fn new(sql: String) -> Self {
+        Self(sql)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl ObservationSource {
+    /// The `FROM` target the compiler reads observations from: the qualified
+    /// managed relation (`insight.<relation>`), or the custom SQL wrapped as a
+    /// parenthesized subquery so every predicate/aggregate is applied outside
+    /// it.
+    pub fn render_from_clause(&self) -> String {
+        match self {
+            Self::Managed(relation) => {
+                let (database, table) = relation.table_ref();
+                format!("{database}.{table}")
+            }
+            Self::Custom(sql) => format!("({})", sql.as_str()),
+        }
+    }
+
+    /// Stable grouping key for batching metrics that read the same source: the
+    /// managed relation name, or the custom SQL text. Identical custom SQL is
+    /// the same `FROM` and batches; different SQL never collides.
+    pub fn source_ref(&self) -> &str {
+        match self {
+            Self::Managed(relation) => relation.source_ref(),
+            Self::Custom(sql) => sql.as_str(),
+        }
     }
 }
 
