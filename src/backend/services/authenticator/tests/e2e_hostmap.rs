@@ -1,13 +1,14 @@
 //! End-to-end host-keyed issuer selection (ADR-0003) against an authenticator
-//! configured with a two-entry `idp.hosts` map in front of two fakeidp
-//! instances, plus the flat-config instance for the degenerate case.
+//! configured with a two-entry `idp.hosts` map in front of two realms of the
+//! one Keycloak, plus the flat-config instance for the degenerate case.
 //!
 //! `#[ignore]` by default (needs the stack up); run-e2e.sh wires it:
 //!
 //! ```text
 //! AUTH_BASE=http://localhost:8087 AUTH_FLAT_BASE=http://localhost:8083 \
 //!   AUTH3_LOG=/tmp/authenticator-e2e-auth3.log \
-//!   FAKEIDP_PUBLIC=http://localhost:8084 FAKEIDP2_PUBLIC=http://localhost:8088 \
+//!   E2E_IDP_ISSUER=http://localhost:8084/realms/insight \
+//!   E2E_IDP2_ISSUER=http://localhost:8084/realms/insight-b \
 //!   cargo test -p authenticator --test e2e_hostmap -- --ignored --nocapture
 //! ```
 //!
@@ -48,11 +49,11 @@ fn cookie_from(resp: &reqwest::Response) -> Option<String> {
 }
 
 #[tokio::test]
-#[ignore = "requires the run-e2e.sh stack (two fakeidps + hosts-map authenticator)"]
+#[ignore = "requires the run-e2e.sh stack (two realms + hosts-map authenticator)"]
 async fn host_selects_the_issuer_and_the_callback_stays_pinned() {
     let auth_base = env("AUTH_BASE", "http://localhost:8087");
-    let idp_a = env("FAKEIDP_PUBLIC", "http://localhost:8084");
-    let idp_b = env("FAKEIDP2_PUBLIC", "http://localhost:8088");
+    let idp_a = env("E2E_IDP_ISSUER", "http://localhost:8084/realms/insight");
+    let idp_b = env("E2E_IDP2_ISSUER", "http://localhost:8084/realms/insight-b");
     let test_user = env("E2E_USER", "dev@company.nonpresent");
     let http = common::client();
 
@@ -83,16 +84,10 @@ async fn host_selects_the_issuer_and_the_callback_stays_pinned() {
         .unwrap();
     assert_eq!(login.status(), 302);
     let authorize = location_of(&login);
-    let sep = if authorize.contains('?') { '&' } else { '?' };
-    let authorized = http
-        .get(format!("{authorize}{sep}user={test_user}"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(authorized.status(), 302, "authorize redirects to callback");
+    let callback = common::kc::authorize(&authorize, &test_user).await;
 
     let cb = http
-        .get(location_of(&authorized))
+        .get(&callback)
         .header("Host", HOST_B)
         .send()
         .await
@@ -115,7 +110,7 @@ async fn host_selects_the_issuer_and_the_callback_stays_pinned() {
 }
 
 #[tokio::test]
-#[ignore = "requires the run-e2e.sh stack (two fakeidps + hosts-map authenticator)"]
+#[ignore = "requires the run-e2e.sh stack (two realms + hosts-map authenticator)"]
 async fn unknown_host_is_rejected_fail_closed_with_an_audit_event() {
     let auth_base = env("AUTH_BASE", "http://localhost:8087");
     let http = common::client();
@@ -146,10 +141,10 @@ async fn unknown_host_is_rejected_fail_closed_with_an_audit_event() {
 }
 
 #[tokio::test]
-#[ignore = "requires the run-e2e.sh stack (two fakeidps + hosts-map authenticator)"]
+#[ignore = "requires the run-e2e.sh stack (two realms + hosts-map authenticator)"]
 async fn flat_single_issuer_config_matches_every_host() {
     let flat_base = env("AUTH_FLAT_BASE", "http://localhost:8083");
-    let idp_a = env("FAKEIDP_PUBLIC", "http://localhost:8084");
+    let idp_a = env("E2E_IDP_ISSUER", "http://localhost:8084/realms/insight");
     let http = common::client();
 
     // The degenerate (map-less) instance serves any Host, exactly as before.
