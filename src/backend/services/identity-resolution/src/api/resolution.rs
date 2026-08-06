@@ -5,6 +5,7 @@
 //! calling operator and journals the call in `operations`; nothing is updated or
 //! deleted. Admin-gated like the rest of the operator surface.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::Json;
@@ -97,8 +98,10 @@ pub struct ItemResult {
     pub source: String,
     pub source_id: Uuid,
     pub account_id: String,
-    /// `applied` — a binding observation was appended;
-    /// `already_decided` — the same operator decision is already recorded.
+    /// `applied` — the binding is in force;
+    /// `already_decided` — the same operator decision was already recorded;
+    /// `refused` — the write could not place the row (a concurrent operation
+    /// held the key); the account keeps its previous binding.
     /// Open vocabulary: value-addressed items will report their skip reasons
     /// (`ambiguous_value`, `unknown_value`) here.
     pub outcome: String,
@@ -190,9 +193,12 @@ pub async fn detach(
     let operator = require_admin(&state.db, &ctx).await?;
     let tenant = ctx.subject_tenant_id();
 
+    let account = SourceAccountKey::from(&req.account);
+    require_known_account(&state, tenant, &account).await?;
+
     let new_person_id = Uuid::now_v7();
     let targets = vec![Target {
-        account: SourceAccountKey::from(&req.account),
+        account,
         person_id: new_person_id,
     }];
 
@@ -220,8 +226,11 @@ pub async fn exclude(
     let operator = require_admin(&state.db, &ctx).await?;
     let tenant = ctx.subject_tenant_id();
 
+    let account = SourceAccountKey::from(&req.account);
+    require_known_account(&state, tenant, &account).await?;
+
     let targets = vec![Target {
-        account: SourceAccountKey::from(&req.account),
+        account,
         person_id: EXCLUDED_PERSON,
     }];
 
@@ -260,21 +269,16 @@ async fn apply_correction(
         .collect();
     let rows = resolution::build_rows(pairs, operator, verb, chrono::Utc::now().naive_utc());
 
-    let appended = write_rows(state, tenant, operator, rows.clone()).await?;
+    let attempted: HashSet<SourceAccountKey> = rows.iter().map(|r| r.account.clone()).collect();
+    let landed = write_rows(state, tenant, operator, rows).await?;
 
-    let touched: std::collections::HashSet<&SourceAccountKey> =
-        rows.iter().map(|r| &r.account).collect();
     let items: Vec<ItemResult> = targets
         .iter()
         .map(|t| ItemResult {
             source: t.account.source_type.clone(),
             source_id: t.account.source_id,
             account_id: t.account.account_id.clone(),
-            outcome: if touched.contains(&t.account) {
-                OUTCOME_APPLIED.to_owned()
-            } else {
-                OUTCOME_ALREADY_DECIDED.to_owned()
-            },
+            outcome: outcome_label(&t.account, &attempted, &landed).to_owned(),
         })
         .collect();
 
@@ -291,53 +295,108 @@ async fn apply_correction(
     .await;
 
     Ok(CorrectionResponse {
-        applied: usize::try_from(appended).unwrap_or(rows.len()),
-        already_decided: targets.len() - rows.len(),
+        applied: landed.len(),
+        already_decided: targets.len() - attempted.len(),
         items,
         new_person_id: None,
     })
 }
 
-/// Append the rows, then recover any the database refused.
+/// What the caller is told about one requested account: a row that was never
+/// needed, one that is now in force, or one the database would not place.
+fn outcome_label<'a>(
+    account: &SourceAccountKey,
+    attempted: &HashSet<SourceAccountKey>,
+    landed: &'a HashSet<SourceAccountKey>,
+) -> &'a str {
+    if !attempted.contains(account) {
+        return OUTCOME_ALREADY_DECIDED;
+    }
+    if landed.contains(account) {
+        return OUTCOME_APPLIED;
+    }
+    OUTCOME_REFUSED
+}
+
+/// Append the rows, then recover only those the database refused.
 ///
 /// The natural key has no account discriminator, so a concurrent operation can
 /// have claimed the same microsecond and `INSERT IGNORE` silently drops the
-/// loser. Re-stamping past the contended instant and retrying once turns that
-/// into a late row rather than a lost binding; a second refusal is reported as
-/// such rather than papered over.
+/// loser. A short write is diagnosed by re-reading the bindings — the rows that
+/// did land are already current, so retrying the whole set would duplicate
+/// them; only the accounts still pointing elsewhere are re-stamped and retried.
+/// Returns the accounts whose binding is in force after the write.
 async fn write_rows(
     state: &AppState,
     tenant: Uuid,
     operator: Uuid,
     rows: Vec<resolution::BindingRow>,
-) -> Result<u64, CanonicalError> {
+) -> Result<HashSet<SourceAccountKey>, CanonicalError> {
     if rows.is_empty() {
-        return Ok(0);
+        return Ok(HashSet::new());
     }
 
-    let appended = resolution_repo::append_bindings(&state.db, tenant, operator, &rows)
-        .await
-        .map_err(|e| internal(&e, "failed to append the correction"))?;
-
-    let expected = rows.len() as u64;
-    if appended == expected {
-        return Ok(appended);
+    let appended = append(state, tenant, operator, &rows).await?;
+    if appended == rows.len() as u64 {
+        return Ok(rows.into_iter().map(|r| r.account).collect());
     }
 
-    let retry = resolution::restamp(&rows, chrono::Utc::now().naive_utc());
-    let recovered = resolution_repo::append_bindings(&state.db, tenant, operator, &retry)
-        .await
-        .map_err(|e| internal(&e, "failed to append the correction"))?;
+    let mut landed = landed_accounts(state, tenant, &rows).await?;
+    let missing: Vec<resolution::BindingRow> = rows
+        .iter()
+        .filter(|r| !landed.contains(&r.account))
+        .cloned()
+        .collect();
 
-    let total = appended + recovered;
-    if total < expected {
+    if missing.is_empty() {
+        return Ok(landed);
+    }
+
+    let retry = resolution::restamp(&missing, chrono::Utc::now().naive_utc());
+    append(state, tenant, operator, &retry).await?;
+    landed = landed_accounts(state, tenant, &rows).await?;
+
+    let refused = rows.len() - landed.len();
+    if refused > 0 {
         tracing::warn!(
-            expected,
-            appended = total,
-            "identity correction: some rows were refused twice"
+            refused,
+            "identity correction: rows the database refused twice"
         );
     }
-    Ok(total.min(expected))
+    Ok(landed)
+}
+
+async fn append(
+    state: &AppState,
+    tenant: Uuid,
+    operator: Uuid,
+    rows: &[resolution::BindingRow],
+) -> Result<u64, CanonicalError> {
+    resolution_repo::append_bindings(&state.db, tenant, operator, rows)
+        .await
+        .map_err(|e| internal(&e, "failed to append the correction"))
+}
+
+/// Which of the written accounts now hold the person the correction asked for.
+async fn landed_accounts(
+    state: &AppState,
+    tenant: Uuid,
+    rows: &[resolution::BindingRow],
+) -> Result<HashSet<SourceAccountKey>, CanonicalError> {
+    let accounts: Vec<SourceAccountKey> = rows.iter().map(|r| r.account.clone()).collect();
+    let current = resolution_repo::current_bindings(&state.db, tenant, &accounts)
+        .await
+        .map_err(|e| internal(&e, "failed to verify the correction"))?;
+
+    Ok(rows
+        .iter()
+        .filter(|r| {
+            current
+                .get(&r.account)
+                .is_some_and(|b| b.person_id == r.person_id)
+        })
+        .map(|r| r.account.clone())
+        .collect())
 }
 
 /// Record the call in the operations journal. Journalling must never fail the
@@ -394,6 +453,41 @@ pub const RESOLUTION_OP: &str = "identity-correction";
 /// Per-item outcome vocabulary.
 const OUTCOME_APPLIED: &str = "applied";
 const OUTCOME_ALREADY_DECIDED: &str = "already_decided";
+const OUTCOME_REFUSED: &str = "refused";
+
+/// Detaching or excluding presupposes an account that exists: it must already
+/// have a binding, or a connector must have observed it. (Binding an account
+/// ahead of its first sync is deliberate — pre-registration — but minting a
+/// person for an account nobody has seen is a typo, not a decision.)
+async fn require_known_account(
+    state: &AppState,
+    tenant: Uuid,
+    account: &SourceAccountKey,
+) -> Result<(), CanonicalError> {
+    let bindings =
+        resolution_repo::current_bindings(&state.db, tenant, std::slice::from_ref(account))
+            .await
+            .map_err(|e| internal(&e, "failed to read current bindings"))?;
+    if !bindings.is_empty() {
+        return Ok(());
+    }
+
+    let reader = evidence_reader(state);
+    let observed = reader
+        .has_account(account)
+        .await
+        .map_err(|e| internal(&e, "failed to check connector evidence"))?;
+    if observed {
+        return Ok(());
+    }
+
+    Err(CorrectionError::not_found("account not found")
+        .with_resource(format!(
+            "{}:{}:{}",
+            account.source_type, account.source_id, account.account_id
+        ))
+        .create())
+}
 
 async fn require_known_person(
     db: &sea_orm::DatabaseConnection,
@@ -677,14 +771,17 @@ async fn build_review(state: &AppState, tenant: Uuid) -> Result<Review, Canonica
     Ok(review_queue::build(observed, &bindings))
 }
 
-async fn read_evidence(state: &AppState) -> Result<Vec<AccountEvidence>, CanonicalError> {
-    let reader = ClickHouseEvidenceReader::connect(
+fn evidence_reader(state: &AppState) -> ClickHouseEvidenceReader {
+    ClickHouseEvidenceReader::connect(
         &state.config.clickhouse_url,
         &state.config.clickhouse_database,
         &state.config.clickhouse_user,
         &state.config.clickhouse_password,
-    );
-    reader
+    )
+}
+
+async fn read_evidence(state: &AppState) -> Result<Vec<AccountEvidence>, CanonicalError> {
+    evidence_reader(state)
         .accounts()
         .await
         .map_err(|e| internal(&e, "failed to read connector evidence"))

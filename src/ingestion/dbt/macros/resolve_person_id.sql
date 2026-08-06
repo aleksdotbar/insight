@@ -13,6 +13,13 @@
   `value_type='id'` row for it; an email's claimants are the persons those
   accounts are bound to; the email resolves only when they agree.
 
+  EVERY email an account has carried claims it, not just its current one: a
+  person who changed address still owns the facts recorded under the old one,
+  and dropping them would unresolve their history at the moment they renamed.
+  An address later carried by someone else's account has two claimants and so
+  resolves to nobody — recycling an address costs resolution, never a wrong
+  attribution.
+
   Why not latest-email-wins (rule v1): operator corrections are recorded as
   bindings — `value_type='id'` rows — so a merge or a detach left the email
   map untouched and never reached the metrics. Reading the map through
@@ -58,22 +65,30 @@
 -#}
 
 {% macro resolve_person_id() %}
+{%- set evidence = adapter.get_relation(
+        database=target.database, schema='identity', identifier='identity_inputs') -%}
+{%- if evidence is none -%}
+    {#- The connector evidence has never been built: resolve nothing rather
+        than fail the build, exactly as an empty journal would. -#}
+    SELECT
+        ''                                   AS email,
+        toUUID('00000000-0000-0000-0000-000000000000') AS person_id
+    WHERE 0
+{%- else -%}
     SELECT
         ae.email                             AS email,
         any(cb.person_id)                    AS person_id
     FROM (
-        SELECT
+        SELECT DISTINCT
             insight_source_type              AS source_type,
             insight_source_id                AS source_id,
             source_account_id                AS account_id,
-            argMaxIf(
-                lower(trimBoth(value)),
-                _synced_at,
-                value_type = 'email' AND operation_type = 'UPSERT' AND value != ''
-            )                                AS email
+            lower(trimBoth(value))           AS email
         FROM identity.identity_inputs
-        WHERE coalesce(source_account_id, '') != ''
-        GROUP BY source_type, source_id, account_id
+        WHERE value_type = 'email'
+          AND operation_type = 'UPSERT'
+          AND coalesce(value, '') != ''
+          AND coalesce(source_account_id, '') != ''
     ) AS ae
     INNER JOIN (
         SELECT
@@ -100,6 +115,7 @@
       AND cb.person_id != {{ excluded_person_id() }}
     GROUP BY ae.email
     HAVING uniqExact(cb.person_id) = 1
+{%- endif -%}
 {% endmacro %}
 
 {#-

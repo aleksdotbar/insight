@@ -116,6 +116,24 @@ impl ClickHouseEvidenceReader {
     }
 }
 
+/// Whether a connector has ever observed this account. Asked before the verbs
+/// that only make sense for an account that exists — an operator may
+/// pre-register a binding, but detaching or excluding something nothing has
+/// seen would mint a person for a typo.
+const EXISTS_SQL: &str = r"
+    SELECT count() AS hits
+    FROM identity.identity_inputs
+    WHERE insight_source_type = ?
+      AND toString(insight_source_id) = ?
+      AND source_account_id = ?
+    LIMIT 1
+";
+
+#[derive(Debug, Row, Deserialize)]
+struct CountRow {
+    hits: u64,
+}
+
 fn map_row(row: FoldedRow) -> anyhow::Result<AccountEvidence> {
     Ok(AccountEvidence {
         account: SourceAccountKey {
@@ -127,6 +145,25 @@ fn map_row(row: FoldedRow) -> anyhow::Result<AccountEvidence> {
         username: non_empty(row.username),
         is_closed: row.latest_op == "DELETE",
     })
+}
+
+impl ClickHouseEvidenceReader {
+    /// Whether the evidence knows this account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn has_account(&self, account: &SourceAccountKey) -> anyhow::Result<bool> {
+        let row: Option<CountRow> = self
+            .client
+            .query(EXISTS_SQL)
+            .bind(account.source_type.as_str())
+            .bind(account.source_id.to_string())
+            .bind(account.account_id.as_str())
+            .fetch_optional()
+            .await?;
+        Ok(row.is_some_and(|r| r.hits > 0))
+    }
 }
 
 fn non_empty(value: String) -> Option<String> {

@@ -155,11 +155,13 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 - The account is rebound to a freshly minted person, regardless of how the current grouping arose
 
 **Error Scenarios**:
-- The account has never been observed and no binding exists to detach
+- The account is unknown: nothing has observed it and it has no binding — detaching would mint a person for a typo
 
 **Steps**:
 1. [ ] - `p1` - Operator submits the detach for one account - `inst-mr-detach-submit`
 2. [ ] - `p1` - API: POST /v1/resolution/detach (account) - `inst-mr-detach-api`
+2. [ ] - `p1` - **IF** the account has neither a binding nor any observation - `inst-mr-detach-known`
+   1. [ ] - `p1` - **RETURN** not-found, nothing appended - `inst-mr-detach-unknown`
 3. [ ] - `p1` - Mint a new `person_id` (random UUIDv7) - `inst-mr-detach-mint`
 4. [ ] - `p1` - Apply `cpt-ir-algo-manual-resolution-apply-decision` with the new person - `inst-mr-detach-apply`
 5. [ ] - `p1` - **RETURN** the new `person_id` - `inst-mr-detach-return`
@@ -174,11 +176,13 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 - The account binds to the reserved excluded person; its activity is attributed to nobody and it leaves the queue
 
 **Error Scenarios**:
-- The account has never been observed
+- The account is unknown: nothing has observed it and it has no binding
 
 **Steps**:
 1. [ ] - `p1` - Operator submits the exclusion - `inst-mr-exclude-submit`
 2. [ ] - `p1` - API: POST /v1/resolution/exclude (account) - `inst-mr-exclude-api`
+2. [ ] - `p1` - **IF** the account has neither a binding nor any observation - `inst-mr-exclude-known`
+   1. [ ] - `p1` - **RETURN** not-found, nothing appended - `inst-mr-exclude-unknown`
 3. [ ] - `p1` - Apply `cpt-ir-algo-manual-resolution-apply-decision` with the excluded sentinel - `inst-mr-exclude-apply`
 4. [ ] - `p1` - **RETURN** confirmation - `inst-mr-exclude-return`
 
@@ -235,7 +239,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
    1. [ ] - `p1` - Advance the candidate by whole microseconds until it is unused - `inst-mr-ts-advance`
 3. [ ] - `p1` - **RETURN** the claimed instants - `inst-mr-ts-return`
 
-> Concurrency: allocation is not a lock, so two operations can claim the same instant and the insert silently drops the loser (the key has no account discriminator). A write **MUST** compare what the database appended against what it asked for, re-stamp the refused rows past the contended instant and retry, and report a row it could not place rather than count it as applied.
+> Concurrency: allocation is not a lock, so two operations can claim the same instant and the insert silently drops the loser (the key has no account discriminator). A write **MUST** compare what the database appended against what it asked for and, on a short write, re-read the bindings to learn **which** rows landed — re-sending the whole set would duplicate the ones that did. Only the accounts still pointing elsewhere are re-stamped and retried, and a row that cannot be placed is reported as refused rather than counted as applied.
 
 ### Build the Review Queue
 
@@ -273,7 +277,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 2. [ ] - `p1` - Build the value map: each identity value to the accounts observing it, resolved through the account map - `inst-mr-res-value-map`
 3. [ ] - `p1` - **IF** a fact carries a source account - `inst-mr-res-account-first`
    1. [ ] - `p1` - **RETURN** the account's bound person - `inst-mr-res-account-return`
-4. [ ] - `p1` - **ELSE** look the fact's value up in the value map - `inst-mr-res-fallback`
+4. [ ] - `p1` - **ELSE** look the fact's value up in the value map — built from **every** value an account has carried, not only its current one, so a person who changed address keeps the facts recorded under the old one - `inst-mr-res-fallback`
    1. [ ] - `p1` - **IF** all observing accounts resolve to one person - `inst-mr-res-value-unique`
       1. [ ] - `p1` - **RETURN** that person - `inst-mr-res-value-return`
    2. [ ] - `p1` - **ELSE RETURN** NULL (contested or unknown — excluded, never tie-broken) - `inst-mr-res-null`
@@ -328,7 +332,7 @@ The system **MUST** treat a correction as a no-op only when an identical operato
 
 - [ ] `p1` - **ID**: `cpt-ir-dod-manual-resolution-timestamps`
 
-The system **MUST** claim a distinct `created_at` per appended row within the natural observation key, so that rows of one operation cannot collide and be dropped by the insert, and **MUST** recover a row a concurrent operation displaced by re-stamping and retrying it rather than reporting it as applied.
+The system **MUST** claim a distinct `created_at` per appended row within the natural observation key, so that rows of one operation cannot collide and be dropped by the insert. On a short write it **MUST** identify the rows that did not land and retry only those, so recovery cannot duplicate history, and **MUST** report a row it could not place rather than counting it as applied.
 
 **Implements**:
 - `cpt-ir-algo-manual-resolution-timestamp-slot`
@@ -391,7 +395,7 @@ The system **MUST** require an operator grant for every write verb, enforced thr
 
 - [ ] `p1` - **ID**: `cpt-ir-dod-manual-resolution-resolver`
 
-The system **MUST** resolve `person_id` account-first on the source-instance-scoped account key, fall back to an account-derived value map for facts without an account, resolve contested values to NULL, and map the excluded sentinel to NULL.
+The system **MUST** resolve `person_id` account-first on the source-instance-scoped account key, fall back to an account-derived value map — covering every value an account has ever carried — for facts without an account, resolve contested values to NULL, and map the excluded sentinel to NULL. Where the connector evidence has never been built, resolution **MUST** degrade to resolving nothing rather than failing the build; it **MUST NOT** create or pre-create relations the transformation layer owns.
 
 **Implements**:
 - `cpt-ir-algo-manual-resolution-resolver-upgrade`
@@ -407,7 +411,9 @@ The system **MUST** resolve `person_id` account-first on the source-instance-sco
 - [ ] A merge rebinds every account of the absorbed person; a detach works on an account with no prior merge record
 - [ ] A correction followed by its counter-correction restores the effective bindings
 - [ ] Bulk rows addressed by a value that resolves to zero or several accounts are skipped with a machine-readable reason and remain in the queue (with value addressing; the direct form ships first)
-- [ ] Two accounts of one source bound to one person in one operation both persist (distinct timestamps)
+- [ ] Two accounts of one source bound to one person in one operation both persist (distinct timestamps); a short write retries only the rows that did not land and never duplicates one that did
+- [ ] Detach and exclude reject an account nothing has observed and that holds no binding
+- [ ] A person who changed e-mail keeps their history: facts recorded under the previous address still resolve
 - [ ] The queue surfaces pending, binding-conflict and no-evidence items, suppresses operator-settled divergence, hides excluded accounts, and reports resolution-rate shares
 - [ ] Accounts whose latest evidence event is a closure do not appear in the queue
 - [ ] After a correction, the next gold build attributes the affected accounts' full history to the corrected person; contested values resolve to NULL rather than a winner
