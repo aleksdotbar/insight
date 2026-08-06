@@ -619,6 +619,26 @@ ORDER BY unique_key
 SETTINGS allow_nullable_key = 1, replicated_deduplication_window = '0', index_granularity = 8192
 ;
 
+CREATE TABLE IF NOT EXISTS silver.class_person_attribute_claims
+(
+    `unique_key` String,
+    `insight_tenant_id` String,
+    `insight_source_type` String,
+    `insight_source_id` String,
+    `source_account_id` String,
+    `field_id` String,
+    `value_id` Nullable(String),
+    `value_label` String,
+    `claim_action` Enum8('set' = 1, 'clear' = 2),
+    `observed_at` DateTime64(3),
+    `ingested_at` DateTime64(3),
+    `_version` Int64
+)
+ENGINE = ReplacingMergeTree(_version)
+ORDER BY unique_key
+SETTINGS allow_nullable_key = 1, replicated_deduplication_window = '0', index_granularity = 8192
+;
+
 CREATE TABLE IF NOT EXISTS silver.class_people
 (
     `tenant_id` Nullable(String),
