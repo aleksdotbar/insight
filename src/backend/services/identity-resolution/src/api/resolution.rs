@@ -349,6 +349,10 @@ fn count_outcome(outcomes: &[&str], wanted: &str) -> usize {
     outcomes.iter().filter(|o| **o == wanted).count()
 }
 
+fn count_items(items: &[ItemResult], wanted: &str) -> usize {
+    items.iter().filter(|i| i.outcome == wanted).count()
+}
+
 /// Append the rows, then recover only those the database refused.
 ///
 /// The natural key has no account discriminator, so a concurrent operation can
@@ -442,8 +446,9 @@ async fn journal(
     items: &[ItemResult],
 ) {
     let summary = serde_json::json!({
-        "applied": items.iter().filter(|i| i.outcome == OUTCOME_APPLIED).count(),
-        "already_decided": items.iter().filter(|i| i.outcome == OUTCOME_ALREADY_DECIDED).count(),
+        "applied": count_items(items, OUTCOME_APPLIED),
+        "already_decided": count_items(items, OUTCOME_ALREADY_DECIDED),
+        "refused": count_items(items, OUTCOME_REFUSED),
     });
     let request = serde_json::json!({
         "verb": verb.reason_code(),
