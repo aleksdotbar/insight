@@ -92,7 +92,11 @@ describe("metricKpiTiles", () => {
     expect(tiles[0]?.medianLabel).toBeNull();
   });
 
-  it("renders neutral for unmeasured people (null peer target_value)", () => {
+  it("gives no slot to a metric this person is not measured on", () => {
+    // A null peer target means no connector feeds this metric for them. It used
+    // to render "—" over one of five slots in the most valuable space on the
+    // page; a VP of Engineering lost two slots that way while the 7k messages
+    // that WERE their month sat further down the screen.
     const result = metricResult("ai.active_days", 0);
     const peerView = result.views[1];
     if (peerView?.view === "peer" && peerView.values[0]) {
@@ -104,7 +108,21 @@ describe("metricKpiTiles", () => {
       "me@x.com",
       "all"
     );
-    expect(tiles[0]?.valueStatus).toBe("neutral");
+    expect(tiles).toEqual([]);
+  });
+
+  it("KEEPS the slot for a measured zero — that is a finding, not a gap", () => {
+    // The distinction the row rests on: a developer who merged nothing this
+    // month must still see the empty PR tile. Only "nobody measures this for
+    // you" drops out.
+    const result = metricResult("ai.active_days", 0);
+    const tiles = metricKpiTiles(
+      normalizeMetricResults([result]),
+      null,
+      "me@x.com",
+      "all"
+    );
+    expect(tiles.map((t) => t.key)).toEqual(["ai.active_days"]);
   });
 
   it("computes pp deltas for percent-ratio tiles (focus time)", () => {

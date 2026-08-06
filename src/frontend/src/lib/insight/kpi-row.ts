@@ -1,10 +1,12 @@
 import { formatMetricNumber, formatMetricValue } from "@/lib/format";
 import {
   KPI_ROW,
+  KPI_ROW_MAX,
   groupIdForMetricKey,
   type GroupId,
 } from "@/lib/insight/groups";
 import {
+  entityObserved,
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
@@ -49,9 +51,14 @@ export function metricKpiTiles(
   entityId: string,
   focusMode: FocusMode
 ): KpiTileData[] {
-  return KPI_ROW.flatMap((metricKey) => {
+  const tiles = KPI_ROW.flatMap((metricKey) => {
     const metric = byKey.get(metricKey);
     if (!metric) return [];
+    // Never observed for this person = no connector feeds it for them, which
+    // is not a headline — it is an empty slot in the most valuable space on the
+    // page. A measured zero survives: `entityObserved` reads the peer target,
+    // so 0 stays and only null drops.
+    if (!entityObserved(metric, entityId)) return [];
 
     const data = forEntity(metric, entityId);
     const value = data.value;
@@ -130,4 +137,5 @@ export function metricKpiTiles(
       },
     ];
   });
+  return tiles.slice(0, KPI_ROW_MAX);
 }

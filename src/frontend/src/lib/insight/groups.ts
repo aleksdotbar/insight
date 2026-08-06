@@ -514,9 +514,22 @@ export const HEATMAP_COLLECTION: MetricCollectionConfig = {
 };
 
 /**
- * The "At a glance" KPI row: array order is display order. Tiles are metric
- * keys resolved against the KPI collection below and render through the
- * display-ready tile intermediate — selectors own formatting and scoring.
+ * CANDIDATES for the "At a glance" row, in display order — not the row itself.
+ *
+ * The row renders the first `KPI_ROW_MAX` of these that this person was
+ * actually observed for. A fixed five-key row spends the most valuable space on
+ * the page on whatever the list happens to name: a VP of Engineering with no
+ * pull requests and no tasks got two dashes out of five slots, while the 7k
+ * messages and 300 meeting hours that ARE their month were nowhere on the
+ * screen.
+ *
+ * The tail exists for exactly that person. It is a fallback, not a demotion —
+ * a developer still leads with tasks and PRs, because those come first here and
+ * they have them.
+ *
+ * "Observed" is the honest test, not "non-zero": a developer who merged nothing
+ * this month KEEPS the empty PR tile, because a measured zero is a finding. A
+ * metric no connector feeds for this person is what drops out.
  */
 export const KPI_ROW: readonly string[] = [
   "tasks.closed",
@@ -524,7 +537,14 @@ export const KPI_ROW: readonly string[] = [
   "git.prs_merged",
   "ai.active_days",
   "ai.accepted_lines",
+  "collab.messages_sent",
+  "collab.meeting_hours",
+  "wiki.pages_created",
+  "git.commits",
 ];
+
+/** How many tiles the row shows; the rest of the candidates are fallbacks. */
+export const KPI_ROW_MAX = 5;
 
 export const KPI_ROW_COLLECTION: MetricCollectionConfig = {
   metrics: KPI_ROW.map((key) => ({

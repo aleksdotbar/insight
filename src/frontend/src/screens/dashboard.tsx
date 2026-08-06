@@ -13,10 +13,9 @@ import { GroupDrilldownSheet } from "@/components/widgets/dashboard/group-drilld
 import { usePeriod } from "@/hooks/use-period";
 import { useSettings } from "@/hooks/use-settings";
 import { metricAttentionItems } from "@/lib/insight/attention";
-import { metricKpiTiles, type KpiTileData } from "@/lib/insight/kpi-row";
+import { metricKpiTiles } from "@/lib/insight/kpi-row";
 import {
   GROUPS,
-  KPI_ROW,
   KPI_ROW_COLLECTION,
   type GroupId,
 } from "@/lib/insight/groups";
@@ -117,9 +116,6 @@ export function DashboardScreen({ personId }: DashboardScreenProps) {
     entityId,
     focusMode
   );
-  const tilesByKey = new Map<string, KpiTileData>(
-    tiles.map((tile) => [tile.key, tile])
-  );
 
   const attentionItems = GROUPS.flatMap((def) =>
     metricAttentionItems(
@@ -167,29 +163,26 @@ export function DashboardScreen({ personId }: DashboardScreenProps) {
                 At a glance
               </p>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
-                {KPI_ROW.map((key) => {
-                  const tile = tilesByKey.get(key);
-                  if (tile) {
-                    return (
-                      <KpiTile
-                        key={key}
-                        tile={tile}
-                        onOpenGroup={openDetails}
-                      />
-                    );
-                  }
-                  if (kpiData.isError) {
-                    return (
-                      <ComingSoon
-                        key={key}
-                        variant="card"
-                        state="error"
-                        onRetry={kpiData.refetch}
-                      />
-                    );
-                  }
-                  return <KpiTilePlaceholder key={key} />;
-                })}
+                {/* The tiles ARE the row — see the note in
+                    `metric-groups-view`. One error card for the row, not one
+                    per key: the request fails as a whole. */}
+                {kpiData.isError ? (
+                  <ComingSoon
+                    variant="card"
+                    state="error"
+                    onRetry={kpiData.refetch}
+                  />
+                ) : tiles.length ? (
+                  tiles.map((tile) => (
+                    <KpiTile
+                      key={tile.key}
+                      tile={tile}
+                      onOpenGroup={openDetails}
+                    />
+                  ))
+                ) : (
+                  <KpiTilePlaceholder />
+                )}
               </div>
             </section>
 

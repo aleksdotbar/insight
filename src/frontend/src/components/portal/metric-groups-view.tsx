@@ -4,18 +4,17 @@ import { CenteredSpinner } from "@/components/widgets/centered-spinner";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { GroupDrilldownSheet } from "@/components/widgets/dashboard/group-drilldown-sheet";
 import { IcNeedsAttention } from "@/components/widgets/dashboard/ic-needs-attention";
-import { KpiTile, KpiTilePlaceholder } from "@/components/widgets/dashboard/kpi-tile";
+import { KpiTile } from "@/components/widgets/dashboard/kpi-tile";
 import { MetricGroupCard } from "@/components/widgets/metric-views/metric-group-card";
 import { usePortalPeriod } from "@/hooks/use-portal-period";
 import { useSettings } from "@/hooks/use-settings";
 import { metricAttentionItems } from "@/lib/insight/attention";
 import {
-  KPI_ROW,
   KPI_ROW_COLLECTION,
   GROUPS,
   type GroupId,
 } from "@/lib/insight/groups";
-import { metricKpiTiles, type KpiTileData } from "@/lib/insight/kpi-row";
+import { metricKpiTiles } from "@/lib/insight/kpi-row";
 import { injectCohortPeer } from "@/lib/insight/within-team-peer";
 import {
   projectViews,
@@ -186,9 +185,6 @@ export function MetricGroupsView({
   const tiles = showKpis
     ? metricKpiTiles(kpiByKey, kpiData.previousByKey, entityId, focusMode)
     : [];
-  const tilesByKey = new Map<string, KpiTileData>(
-    tiles.map((tile) => [tile.key, tile]),
-  );
   const attentionItems = showKpis
     ? defs.flatMap((def) =>
         metricAttentionItems(def, groupResult(def.id)?.byKey ?? new Map(), entityId),
@@ -205,16 +201,13 @@ export function MetricGroupsView({
                 At a glance
               </p>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
-                {/* KPI_ROW is a plain metric-key list upstream now — the
-                    legacy/metric tile split died with the legacy data path. */}
-                {KPI_ROW.map((key) => {
-                  const tile = tilesByKey.get(key);
-                  if (tile)
-                    return (
-                      <KpiTile key={key} tile={tile} onOpenGroup={openOrSelect} />
-                    );
-                  return <KpiTilePlaceholder key={key} />;
-                })}
+                {/* The tiles ARE the row: `metricKpiTiles` already picked the
+                    metrics this person is observed for, in candidate order. A
+                    slot per fixed key is what painted "—" over the most
+                    valuable space on the page. */}
+                {tiles.map((tile) => (
+                  <KpiTile key={tile.key} tile={tile} onOpenGroup={openOrSelect} />
+                ))}
               </div>
             </section>
             <IcNeedsAttention items={attentionItems} onOpenGroup={openOrSelect} />
