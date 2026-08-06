@@ -1,0 +1,229 @@
+//! Custom-metric CRUD + export/import handlers — `/v1/metrics*`.
+//!
+//! Every request is tenant-scoped from the session `SecurityContext` and only
+//! ever touches `origin='custom'` rows, so a builtin (`registry.yaml`-owned) key
+//! is invisible here and can never be mutated. The observation SQL is validated
+//! two ways on write: the single-SELECT gate (pure) and a `LIMIT 0` column
+//! probe against ClickHouse that fails the write if the SQL does not emit the
+//! observation contract. Export strips tenant/origin; import re-homes each graph
+//! to the caller's tenant, keys on `metric_key`, and skips one that already
+//! exists (idempotent).
+
+use std::sync::Arc;
+
+use axum::Json;
+use axum::extract::{Extension, Path};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use sea_orm::DbErr;
+use toolkit_canonical_errors::CanonicalError;
+use toolkit_security::SecurityContext;
+
+use super::AppState;
+use super::error::CustomMetricError;
+use crate::domain::metric_crud::{
+    CustomMetric, CustomMetricListResponse, ExportCustomMetricsResponse, GraphViolation,
+    ImportCustomMetricsRequest, ImportCustomMetricsResponse, MAX_IMPORT_METRICS, WriteOutcome,
+    create_custom_metric, delete_custom_metric, export_custom_metrics, fetch_custom_metric,
+    list_custom_metrics as list_custom_metrics_repo, replace_custom_metric, validate_graph,
+};
+
+/// The observation-contract columns a custom source's SQL must emit. Probed as
+/// a `LIMIT 0` projection so a malformed source fails on write, not at render.
+const OBSERVATION_CONTRACT_COLUMNS: &str = "tenant_id, source_key, entity_type, entity_id, \
+    metric_date, measure_key, observed_at, value, subject_key, dimensions";
+
+pub async fn list_custom_metrics(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    let items = list_custom_metrics_repo(&state.db, ctx.subject_tenant_id())
+        .await
+        .map_err(db_error)?;
+    Ok(Json(CustomMetricListResponse { items }))
+}
+
+pub async fn get_custom_metric(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    Path(metric_key): Path<String>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    let metric = fetch_custom_metric(&state.db, ctx.subject_tenant_id(), &metric_key)
+        .await
+        .map_err(db_error)?
+        .ok_or_else(|| not_found(&metric_key))?;
+    Ok(Json(metric))
+}
+
+pub async fn create_custom_metric_handler(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    Json(mut graph): Json<CustomMetric>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    let tenant_id = ctx.subject_tenant_id();
+    graph.origin = None;
+    validate_graph(&graph).map_err(invalid_graph)?;
+    probe_observation_sql(&state, &graph.observation_sql).await?;
+
+    match create_custom_metric(&state.db, tenant_id, &graph)
+        .await
+        .map_err(db_error)?
+    {
+        WriteOutcome::Created => {
+            let created = reload(&state, tenant_id, &graph.metric_key).await?;
+            Ok((StatusCode::CREATED, Json(created)))
+        }
+        WriteOutcome::AlreadyExists => Err(conflict(&graph.metric_key)),
+    }
+}
+
+pub async fn update_custom_metric_handler(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    Path(metric_key): Path<String>,
+    Json(mut graph): Json<CustomMetric>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    let tenant_id = ctx.subject_tenant_id();
+    // The path key is authoritative — a custom metric's identity never changes
+    // under an update.
+    graph.metric_key = metric_key.clone();
+    graph.origin = None;
+    validate_graph(&graph).map_err(invalid_graph)?;
+    probe_observation_sql(&state, &graph.observation_sql).await?;
+
+    let replaced = replace_custom_metric(&state.db, tenant_id, &metric_key, &graph)
+        .await
+        .map_err(db_error)?;
+    if !replaced {
+        return Err(not_found(&metric_key));
+    }
+
+    let updated = reload(&state, tenant_id, &metric_key).await?;
+    Ok(Json(updated))
+}
+
+pub async fn delete_custom_metric_handler(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    Path(metric_key): Path<String>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    let deleted = delete_custom_metric(&state.db, ctx.subject_tenant_id(), &metric_key)
+        .await
+        .map_err(db_error)?;
+    if !deleted {
+        return Err(not_found(&metric_key));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn export_custom_metrics_handler(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    let metrics = export_custom_metrics(&state.db, ctx.subject_tenant_id())
+        .await
+        .map_err(db_error)?;
+    Ok(Json(ExportCustomMetricsResponse { metrics }))
+}
+
+pub async fn import_custom_metrics_handler(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    Json(req): Json<ImportCustomMetricsRequest>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    if req.metrics.len() > MAX_IMPORT_METRICS {
+        return Err(invalid_graph(GraphViolation {
+            field: "metrics",
+            reason: format!("at most {MAX_IMPORT_METRICS} metrics per import"),
+        }));
+    }
+
+    let tenant_id = ctx.subject_tenant_id();
+    let mut imported = 0;
+    let mut skipped = Vec::new();
+    for mut graph in req.metrics {
+        graph.origin = None;
+        validate_graph(&graph).map_err(invalid_graph)?;
+        probe_observation_sql(&state, &graph.observation_sql).await?;
+        match create_custom_metric(&state.db, tenant_id, &graph)
+            .await
+            .map_err(db_error)?
+        {
+            WriteOutcome::Created => imported += 1,
+            WriteOutcome::AlreadyExists => skipped.push(graph.metric_key),
+        }
+    }
+
+    Ok(Json(ImportCustomMetricsResponse { imported, skipped }))
+}
+
+// ── Helpers ─────────────────────────────────────────────────
+
+/// Author-time observation-contract probe: wrap the (already single-SELECT
+/// gated) SQL exactly as the compiler does and project the contract columns
+/// with `LIMIT 0`, so a source that omits a column or does not parse fails the
+/// write. The raw engine message is logged, never returned, so ClickHouse
+/// internals do not leak to the client.
+async fn probe_observation_sql(state: &AppState, sql: &str) -> Result<(), CanonicalError> {
+    let probe = format!("SELECT {OBSERVATION_CONTRACT_COLUMNS} FROM ({sql}) LIMIT 0");
+    let cursor = state.ch.query(&probe).fetch_bytes("JSONEachRow");
+    let outcome = match cursor {
+        Ok(mut cursor) => cursor.collect().await.map(|_| ()),
+        Err(error) => Err(error),
+    };
+    outcome.map_err(|error| {
+        tracing::warn!(error = %error, "custom observation SQL failed the column probe");
+        invalid_observation()
+    })
+}
+
+async fn reload(
+    state: &AppState,
+    tenant_id: uuid::Uuid,
+    metric_key: &str,
+) -> Result<CustomMetric, CanonicalError> {
+    fetch_custom_metric(&state.db, tenant_id, metric_key)
+        .await
+        .map_err(db_error)?
+        .ok_or_else(|| {
+            tracing::error!(%metric_key, "custom metric vanished immediately after write");
+            CanonicalError::internal("custom metric operation failed").create()
+        })
+}
+
+fn invalid_graph(violation: GraphViolation) -> CanonicalError {
+    CustomMetricError::invalid_argument()
+        .with_field_violation(violation.field, violation.reason, "INVALID")
+        .create()
+}
+
+fn invalid_observation() -> CanonicalError {
+    CustomMetricError::invalid_argument()
+        .with_field_violation(
+            "observation_sql",
+            "must emit the observation contract columns as a single read",
+            "INVALID",
+        )
+        .create()
+}
+
+fn not_found(metric_key: &str) -> CanonicalError {
+    CustomMetricError::not_found("custom metric not found")
+        .with_resource(metric_key.to_owned())
+        .create()
+}
+
+fn conflict(metric_key: &str) -> CanonicalError {
+    CustomMetricError::already_exists("custom metric already exists")
+        .with_resource(metric_key.to_owned())
+        .create()
+}
+
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "used as `.map_err(db_error)`, which hands over an owned DbErr"
+)]
+fn db_error(error: DbErr) -> CanonicalError {
+    tracing::error!(error = %error, "custom metric database operation failed");
+    CanonicalError::internal("custom metric operation failed").create()
+}

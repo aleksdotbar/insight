@@ -22,7 +22,7 @@ pub enum MetricFormat {
     Percent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricComputation {
     Sum,
@@ -138,7 +138,7 @@ pub struct MetricDefinition {
 /// Affine + clamp shaping for a computed metric value:
 /// `y = clamp(clamp_min, clamp_max, multiplier * x + offset)`.
 /// Absent fields are identity (multiplier 1, offset 0, no bound).
-#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ValueTransform {
     pub multiplier: Option<f64>,
