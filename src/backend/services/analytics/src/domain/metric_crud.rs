@@ -23,6 +23,10 @@ use crate::domain::metric_definitions::definition::{
 use crate::domain::metric_key::parse_metric_key;
 use crate::domain::query_gate::validate_custom_observation_sql;
 
+#[cfg(test)]
+#[path = "metric_crud_live_tests.rs"]
+mod live_tests;
+
 /// Upper bounds on an authored graph — every unbounded input is capped at the
 /// edge so one request cannot fan out into an unbounded write.
 const MAX_MEASURES: usize = 64;
