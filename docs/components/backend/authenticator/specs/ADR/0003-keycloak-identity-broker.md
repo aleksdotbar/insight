@@ -111,19 +111,18 @@ for multi-customer (cloud) installations (see realm selection below).
   secrets; nothing lands in the repository or an image (the #2163 credentials criterion). The
   admin UI is read-only in practice: `KeycloakRealmImport` and hand edits are not configuration
   channels, and config-cli re-applies the versioned realm on every sync, reverting drift.
-- **Claims are shaped at the broker.** Per-provider **identity provider mappers** inject or
-  import the Insight `tenant_id` (`hardcoded-attribute-idp-mapper` for a fixed per-registration
-  tenant; claim-importer mappers where the upstream carries tenancy, e.g. Entra `tid`). The
-  client's **protocol mappers / client scopes** are the allow-list: the token contains only what
-  is explicitly emitted -- `sub`, `email`, one string `tenant_id` -- matching what the compose
-  realm generator already emits today. Upstream claims never pass through by default. Where a
-  single upstream registration itself distinguishes tenants by a claim value, the external value
-  is translated inside the realm: an advanced claim-to-group mapper (`syncMode: FORCE`) puts the
-  user in a per-tenant group whose `tenant_id` attribute carries the internal UUID, emitted by
-  the protocol mapper with group-attribute aggregation. The translation table is realm YAML, one
-  entry per external tenant, and an unmapped value fails closed -- no group, no `tenant_id`
-  claim, token rejected downstream. Exactly one group per user is an invariant the end-to-end
-  tests guard.
+- **Claims are shaped at the broker.** Every provider registration carries a
+  `hardcoded-attribute-idp-mapper` pinning the fixed per-registration Insight `tenant_id` from
+  environment values, plus an attribute-importer stamping `idp_sub` (the upstream's stable
+  directory id, e.g. Entra `oid` -- the login-bootstrap external id). An upstream's own tenancy
+  assertions are never consulted (amended 2026-08-06; the claim-to-group translation once
+  sketched here is rejected): a customer with several IdPs pins the same tenant on each
+  registration, and two customers sharing an IdP vendor never intersect -- realm-per-customer
+  gives each its own registration, client, and pin. The client's **protocol mappers / client
+  scopes** are the allow-list: the token contains only what is explicitly emitted -- `sub`,
+  `email`, one string `tenant_id`, `idp_sub` -- and deliberately does NOT aggregate attributes
+  over groups, so a group-sourced tenant is mechanically impossible; a CI guard asserts the
+  contract on every committed realm file and against a live import.
 - **Topology: one realm per customer**, holding that customer's brokered IdPs and one
   confidential client. The single-`tenant_id` rule holds because each provider registration (or
   upstream tenancy claim) maps to exactly one Insight tenant. Realm-per-tenant remains available

@@ -84,7 +84,7 @@ class Admin:
             headers=headers,
             data=raw if raw is not None else (json.dumps(body).encode() if body is not None else None),
         )
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             payload = resp.read()
             return json.loads(payload) if payload else None
 
@@ -108,14 +108,50 @@ def tenant_claim(admin: Admin, client_id: str, user_id: str):
     return token.get("tenant_id")
 
 
+def all_groups(admin: Admin) -> list[dict]:
+    groups, first, page = [], 0, 100
+    while True:
+        batch = admin.realm(f"/groups?first={first}&max={page}")
+        groups.extend(batch)
+        if len(batch) < page:
+            return groups
+        first += page
+
+
 def tenant_bearing_groups(admin: Admin) -> list[str]:
     """Policy scan: NO group in the realm may carry a tenant_id attribute."""
     offenders = []
-    for g in admin.realm("/groups"):
+    for g in all_groups(admin):
         detail = admin.realm(f"/groups/{g['id']}")
         if (detail.get("attributes") or {}).get("tenant_id"):
             offenders.append(g["name"])
     return offenders
+
+
+def registration_violations(realm_doc: dict) -> list[str]:
+    """Static contract on a realm file: every IdP registration must pin the
+    tenant (hardcoded mapper from the INSIGHT_TENANT_ID placeholder) and
+    stamp idp_sub; no group may carry a tenant_id attribute."""
+    problems = []
+    mappers = realm_doc.get("identityProviderMappers") or []
+    for idp in realm_doc.get("identityProviders") or []:
+        alias = idp.get("alias", "?")
+        mine = [m for m in mappers if m.get("identityProviderAlias") == alias]
+        pins = [
+            m
+            for m in mine
+            if m.get("identityProviderMapper") == "hardcoded-attribute-idp-mapper"
+            and (m.get("config") or {}).get("attribute") == "tenant_id"
+            and (m.get("config") or {}).get("attribute.value") == "$(env:INSIGHT_TENANT_ID)"
+        ]
+        if len(pins) != 1:
+            problems.append(f"idp '{alias}': expected exactly one INSIGHT_TENANT_ID pin mapper, found {len(pins)}")
+        if not any((m.get("config") or {}).get("user.attribute") == "idp_sub" for m in mine):
+            problems.append(f"idp '{alias}': no mapper stamps the idp_sub attribute")
+    for g in realm_doc.get("groups") or []:
+        if (g.get("attributes") or {}).get("tenant_id"):
+            problems.append(f"group '{g.get('name')}': carries a tenant_id attribute")
+    return problems
 
 
 def main() -> int:
@@ -125,6 +161,14 @@ def main() -> int:
         print(f"{'ok  ' if ok else 'FAIL'} {name}: {detail}")
         if not ok:
             failures.append(name)
+
+    for realm_file in sorted(REPO_ROOT.glob("deploy/gitops/environments/*/keycloak/realms/*.yaml")):
+        problems = registration_violations(yaml.safe_load(realm_file.read_text()))
+        check(
+            f"registrations({realm_file.parent.parent.parent.name})",
+            not problems,
+            f"{realm_file.name}: {problems or 'contract holds'}",
+        )
 
     realm = substitute(yaml.safe_load(CANONICAL_REALM.read_text()))
 
@@ -147,7 +191,11 @@ def main() -> int:
     try:
         wait_for_keycloak()
         admin = Admin()
-        admin._call("/admin/realms", "POST", realm)
+        try:
+            admin._call("/admin/realms", "POST", realm)
+        except urllib.error.HTTPError as e:
+            check("realm-import", False, f"canonical realm rejected: HTTP {e.code} {e.read()[:200]!r}")
+            return 1
 
         profile = admin.realm("/users/profile")
         profile["unmanagedAttributePolicy"] = "ADMIN_EDIT"
