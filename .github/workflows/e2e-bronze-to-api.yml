@@ -15,7 +15,9 @@ name: E2E — Bronze to API
 # here is what only this rig can do — bronze → dbt → ClickHouse → analytics
 # response, over fixtures it seeds itself.
 #
-# Topology: a shared upstream `build` job assembles the runner image ONCE —
+# Topology: a cheap `changes` job decides whether the diff can reach the data
+# path at all and everything expensive hangs off it; a shared upstream `build`
+# job assembles the runner image ONCE —
 # on PRs from the component images build-images.yml already built (or the
 # published :latest for path-skipped components), elsewhere by compiling
 # analytics + each connector's enrich binary via build-only services — and
@@ -32,11 +34,16 @@ name: E2E — Bronze to API
 # Code:  src/ingestion/tests/e2e/
 
 on:
-  # PR-only (+ manual dispatch). Runs on every PR against main, regardless of
-  # which paths changed — no path filtering. workflow_dispatch remains for
-  # manual reruns against main.
+  # PR-only (+ manual dispatch). workflow_dispatch remains for manual reruns
+  # against main.
   pull_request:
     branches: [main]
+    # Deliberately NO `paths:` filter. This workflow emits a REQUIRED check
+    # ("Run E2E suite"), and GitHub reports a required check whose workflow
+    # never ran as pending rather than passed — a path filter here would block
+    # every PR that did not happen to touch one of the listed directories.
+    # Relevance is decided by the `changes` job below instead, which is cheap
+    # and always reports. Same pattern as e2e-stand.yml.
   # Merge-queue builds: the queue's gh-readonly-queue/* branches emit merge_group,
   # and the required "Run E2E suite" check must report there or every queued PR
   # times out and is evicted.
@@ -62,13 +69,77 @@ permissions:
 jobs:
   # `e2e-suite` emits the "Run E2E suite" status check the `main` ruleset
   # requires, so branch protection needs no change when lanes come and go —
-  # only this file's `needs:` does. If `build` fails, `e2e-metrics` is skipped
-  # by default `needs` semantics (a red build must not run the lane), and
-  # GitHub reports a required check's skipped job as failed rather than green.
+  # only this file's `needs:` does. It is the one job here that runs
+  # unconditionally — a required check must report on EVERY pull request,
+  # including the ones `changes` decided are irrelevant.
+  #
+  # Skipping cascades by default `needs` semantics: `changes` says irrelevant →
+  # `build` skips → `e2e-metrics` skips → `metric-coverage-gate` skips. A red
+  # `build` produces the same cascade, so the umbrella distinguishes the two
+  # cases from `changes`'s own output rather than from the lane results.
+
+  # ─── changes ──────────────────────────────────────────────────────────────
+  # What an `on: paths:` filter would have done, moved into a job so the
+  # workflow ALWAYS runs and the umbrella below can always report.
+  #
+  # The list is deliberately over-inclusive: a false positive costs one
+  # unnecessary suite run — today's behaviour for every PR — while a false
+  # negative greens a required check over untested data-path changes. It covers
+  # everything the runner image bakes in or the suite reads at run time:
+  #
+  #   src/ingestion/  the rig itself (tests/e2e), dbt models, the migration and
+  #                   connectors-ddl scripts, and every connector's enrich
+  #                   source (jira-enrich is baked into the runner image)
+  #   src/backend/    analytics and identity-resolution — compiled from their
+  #                   own Dockerfiles into the runner image, and the analytics
+  #                   HTTP response is the last hop every metric fixture
+  #                   asserts on
+  #   build-images.yml  the PR path consumes its e2e-prebuilt-* artifacts by
+  #                   name, so a change there can break this workflow's build
+  #
+  # src/frontend/, deploy/, tests/ (the deployed-stand suite) and docs/ are
+  # absent on purpose: nothing in this rig loads them.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # The diff needs both endpoints; the default shallow fetch has
+          # neither the base nor enough history to reach a merge base.
+          fetch-depth: 0
+          persist-credentials: false
+      - id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # No base to diff against (a merge_group without one, or a manual
+          # dispatch): assume relevant rather than skipping a required gate on
+          # a guess.
+          if [ -z "${BASE:-}" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "no base sha — running"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE" "$HEAD")"
+          echo "$changed" | sed 's/^/  /'
+          if echo "$changed" | grep -qE '^(src/ingestion/|src/backend/|\.github/workflows/e2e-bronze-to-api\.yml|\.github/workflows/build-images\.yml)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "nothing on the bronze → dbt → ClickHouse → analytics path changed"
+          fi
 
   # ─── Build the runner image once, shared by both lanes ────────────────────
   build:
     name: Build runner image
+    needs: changes
+    if: ${{ needs.changes.outputs.relevant == 'true' }}
     runs-on: ubuntu-latest
     # This compile-only job keeps the old combined job's full ceiling: a cold
     # GHA cache (Cargo.lock bump, the 7-day cache eviction, or the 10 GB
@@ -326,11 +397,11 @@ jobs:
   # artifact, and reads plain files. No Docker, no analytics boot.
   # `!cancelled()` so they still report when the suite itself failed (the
   # artifacts are usually present). The `needs.<lane>.result != 'skipped'`
-  # clause guards the other case: a lane is SKIPPED (not failed) when the
-  # upstream `build` job fails, and in that case there's no artifact to
-  # download at all — without this clause the gate would still run and fail
-  # noisily on a missing artifact instead of just skipping cleanly alongside
-  # its lane.
+  # clause guards the other case: a lane is SKIPPED (not failed) when `changes`
+  # found nothing relevant or when the upstream `build` job fails, and in
+  # neither case is there an artifact to download — without this clause the
+  # gate would still run and fail noisily on a missing artifact instead of just
+  # skipping cleanly alongside its lane.
 
   metric-coverage-gate:
     name: Metric coverage gate
@@ -373,6 +444,7 @@ jobs:
     # a broken service image can't be merged even though that workflow's own
     # checks aren't in the ruleset.
     needs:
+      - changes
       - build
       - e2e-metrics
     if: ${{ !cancelled() }}
@@ -381,16 +453,48 @@ jobs:
     # poll a straggling build-images run for up to 10 more.
     timeout-minutes: 15
     steps:
+      # A skipped lane now has two possible meanings, and they are opposites:
+      # `changes` decided the diff cannot reach the data path (a pass), or the
+      # upstream build went red and took the lane with it (a failure). So the
+      # lane results are read one at a time through the environment rather than
+      # collapsed with `contains(needs.*.result, 'skipped')` — that expression
+      # cannot tell the two apart, and it would also fold in `changes`'s own
+      # result now that it is a `needs` entry.
       - name: Require the build and the data-path lane to have succeeded
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+          BUILD: ${{ needs.build.result }}
+          METRICS: ${{ needs.e2e-metrics.result }}
         run: |
-          echo "build=${{ needs.build.result }}"
-          echo "metrics=${{ needs.e2e-metrics.result }}"
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
-            echo "::error::E2E suite did not fully pass — the build or the metrics lane failed, was cancelled, or was skipped."
+          set -euo pipefail
+          echo "changes=$CHANGES relevant=$RELEVANT build=$BUILD metrics=$METRICS"
+
+          # Fail closed. A `changes` job that did not succeed leaves `relevant`
+          # empty, which would otherwise read as "irrelevant" and green a
+          # required check that proved nothing.
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::the changes job did not succeed ($CHANGES) — relevance is unknown, so the data path is unproven."
             exit 1
           fi
-          echo "E2E suite passed: build + the metrics lane succeeded."
 
+          if [ "$RELEVANT" != "true" ]; then
+            echo "nothing on the bronze → dbt → ClickHouse → analytics path changed — nothing to prove."
+          else
+            for lane in "build=$BUILD" "metrics=$METRICS"; do
+              if [ "${lane#*=}" != "success" ]; then
+                echo "::error::${lane%%=*} did not pass (${lane#*=}) — the E2E suite did not fully run for this change."
+                exit 1
+              fi
+            done
+            echo "E2E suite passed: build + the metrics lane succeeded."
+          fi
+
+      # Unconditional, including on a PR `changes` found irrelevant: this gate
+      # guards the service images rather than the data path, and a PR touching
+      # only src/frontend/ can still break a build this required check is the
+      # sole ruleset-visible reporter for.
+      #
       # build-images.yml is a separate workflow, so `needs:` can't reach it;
       # ask the API for this SHA's run instead. Absent (path-skipped, or a
       # merge_group SHA — that workflow has no merge_group trigger) passes;
