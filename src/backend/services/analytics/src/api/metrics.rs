@@ -25,7 +25,8 @@ use crate::domain::metric_crud::{
     CustomMetric, CustomMetricListResponse, ExportCustomMetricsResponse, GraphViolation,
     ImportCustomMetricsRequest, ImportCustomMetricsResponse, MAX_IMPORT_METRICS, WriteOutcome,
     create_custom_metric, delete_custom_metric, export_custom_metrics, fetch_custom_metric,
-    list_custom_metrics as list_custom_metrics_repo, replace_custom_metric, validate_graph,
+    list_custom_metrics as list_custom_metrics_repo, normalize_observation_sql,
+    replace_custom_metric, validate_graph,
 };
 
 /// The observation-contract columns a custom source's SQL must emit. Probed as
@@ -62,6 +63,7 @@ pub async fn create_custom_metric_handler(
 ) -> Result<impl IntoResponse, CanonicalError> {
     let tenant_id = ctx.subject_tenant_id();
     graph.origin = None;
+    graph.observation_sql = normalize_observation_sql(&graph.observation_sql);
     validate_graph(&graph).map_err(invalid_graph)?;
     probe_observation_sql(&state, &graph.observation_sql).await?;
 
@@ -88,6 +90,7 @@ pub async fn update_custom_metric_handler(
     // under an update.
     graph.metric_key = metric_key.clone();
     graph.origin = None;
+    graph.observation_sql = normalize_observation_sql(&graph.observation_sql);
     validate_graph(&graph).map_err(invalid_graph)?;
     probe_observation_sql(&state, &graph.observation_sql).await?;
 
@@ -138,19 +141,26 @@ pub async fn import_custom_metrics_handler(
         }));
     }
 
+    // Validate and probe the whole batch before writing any row, so a malformed
+    // metric fails the import cleanly instead of after earlier ones have landed.
     let tenant_id = ctx.subject_tenant_id();
+    let mut graphs = req.metrics;
+    for graph in &mut graphs {
+        graph.origin = None;
+        graph.observation_sql = normalize_observation_sql(&graph.observation_sql);
+        validate_graph(graph).map_err(invalid_graph)?;
+        probe_observation_sql(&state, &graph.observation_sql).await?;
+    }
+
     let mut imported = 0;
     let mut skipped = Vec::new();
-    for mut graph in req.metrics {
-        graph.origin = None;
-        validate_graph(&graph).map_err(invalid_graph)?;
-        probe_observation_sql(&state, &graph.observation_sql).await?;
-        match create_custom_metric(&state.db, tenant_id, &graph)
+    for graph in &graphs {
+        match create_custom_metric(&state.db, tenant_id, graph)
             .await
             .map_err(db_error)?
         {
             WriteOutcome::Created => imported += 1,
-            WriteOutcome::AlreadyExists => skipped.push(graph.metric_key),
+            WriteOutcome::AlreadyExists => skipped.push(graph.metric_key.clone()),
         }
     }
 

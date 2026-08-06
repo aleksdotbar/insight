@@ -129,6 +129,14 @@ pub struct GraphViolation {
     pub reason: String,
 }
 
+/// Strip trailing whitespace and statement terminators from observation SQL.
+/// The single-SELECT gate accepts a trailing `;`, but the compiler wraps the
+/// SQL as `FROM (<sql>)`, where a trailing `;` is a syntax error — so it is
+/// removed once, at the write boundary, for both the probe and every render.
+pub fn normalize_observation_sql(sql: &str) -> String {
+    sql.trim().trim_end_matches(';').trim_end().to_owned()
+}
+
 fn violation(field: &'static str, reason: impl Into<String>) -> GraphViolation {
     GraphViolation {
         field,
@@ -930,6 +938,15 @@ mod tests {
             Ok(()) => panic!("expected a graph violation"),
             Err(violation) => violation.field,
         }
+    }
+
+    #[test]
+    fn normalize_strips_trailing_terminator() {
+        // A trailing `;` passes the single-SELECT gate but breaks the compiler's
+        // FROM (<sql>) wrap; it must be gone before the SQL is stored.
+        assert_eq!(normalize_observation_sql("SELECT 1;"), "SELECT 1");
+        assert_eq!(normalize_observation_sql("  SELECT 1 ;  "), "SELECT 1");
+        assert_eq!(normalize_observation_sql("SELECT 1"), "SELECT 1");
     }
 
     #[test]
