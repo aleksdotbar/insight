@@ -36,6 +36,7 @@ date: 2026-07-06
   - [5.13 Service Tokens](#513-service-tokens)
   - [5.14 Bootstrap of a Fresh Install](#514-bootstrap-of-a-fresh-install)
   - [5.15 Internal Endpoint Reachability](#515-internal-endpoint-reachability)
+  - [5.16 View-As Override](#516-view-as-override)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -173,6 +174,8 @@ Defined in the [parent backend PRD](../specs/PRD.md) as `cpt-insightspec-actor-o
 
 The system **MUST** implement OIDC authorization code flow with PKCE as a confidential client. The authenticator **MUST** generate `state`, `nonce`, and PKCE verifier per login attempt and validate them on callback. The browser **MUST NOT** receive or transmit the IdP code, ID token, access token, or refresh token at any point.
 
+A failed callback **MUST NOT** dead-end the browser on an error document: `/auth/callback` is an IdP redirect target with no page loaded, so every browser-facing failure (expired, unknown, or replayed `state`; IdP-reported error; missing parameters; code-exchange failure; a denied person) **MUST** redirect (302) back to the SPA with a fixed `auth_error=<reason>` query parameter, allowing the SPA to restart the login from scratch (issue #2032). Rate-limit (429) and internal (5xx) responses stay problem+json.
+
 The new session token issued at the end of a successful callback **MUST** be generated server-side from a CSPRNG and **MUST NOT** be derived from, or equal to, any value present in the incoming request (cookies, headers, query). Any `__Host-sid` cookie present on the `/auth/callback` request **MUST** be ignored; if its value maps to a live session in Redis, that session **MUST** be revoked before the new session is created. This prevents session fixation where an attacker plants a known token before the victim logs in.
 
 At login the system **MUST** resolve the authenticated person via Identity Service (`sub` to `person_id` plus tenant memberships) and **MUST** fetch access-control claims once, from the permissions service when it exists; until then the configured `authenticator.default_roles` apply.
@@ -253,12 +256,12 @@ The system **MUST NOT** extend the session on any other endpoint. A stale cookie
 
 The system **MUST**:
 
-1. **Persist sessions** -- record every active session server-side with all fields needed to validate, refresh, and revoke it (person, tenants, roles snapshot, IdP linkage, IdP refresh token and expiries, timestamps, hard cap, CSRF token). Key family `asm:session:{session_id}`.
-2. **Maintain the token-credential mapping** `asm:token:{token}` to `session_id`, TTL-bounded (see 5.2, 5.4).
-3. **Store the linked JWT** at `asm:jwt:{session_id}` (see 5.6).
-4. **Maintain a per-user session index** for "list my devices" and "log out everywhere" in sub-linear time. Key family `asm:user_sessions:{person_id}`.
-5. **Maintain an IdP-sid lookup** resolving `(iss, idp_sid)` from back-channel logout tokens to local sessions. Key family `asm:sid_index:*`.
-6. **Maintain the IdP refresh schedule** `asm:idp_refresh_due` so the background refresher can find sessions due for refresh without scanning (see 5.12).
+1. **Persist sessions** -- record every active session server-side with all fields needed to validate, refresh, and revoke it (person, tenants, roles snapshot, IdP linkage, IdP refresh token and expiries, timestamps, hard cap, CSRF token). Key family `{asm}:session:{session_id}`.
+2. **Maintain the token-credential mapping** `{asm}:token:{token}` to `session_id`, TTL-bounded (see 5.2, 5.4).
+3. **Store the linked JWT** at `{asm}:jwt:{session_id}` (see 5.6).
+4. **Maintain a per-user session index** for "list my devices" and "log out everywhere" in sub-linear time. Key family `{asm}:user_sessions:{person_id}`.
+5. **Maintain an IdP-sid lookup** resolving `(iss, idp_sid)` from back-channel logout tokens to local sessions. Key family `{asm}:sid_index:*`.
+6. **Maintain the IdP refresh schedule** `{asm}:idp_refresh_due` so the background refresher can find sessions due for refresh without scanning (see 5.12).
 7. **Make create / refresh / revoke atomic** -- session record, token mapping, linked JWT, and all indexes change in one pipeline; a partial failure **MUST NOT** leave them out of sync. Revocation deletes session **and** linked JWT together.
 8. **Run a periodic janitor** that trims expired entries from the indexes and emits a drift metric.
 
@@ -304,14 +307,14 @@ Session revoke/logout **MUST** delete the session and the linked JWT in one pipe
 
 The system **MUST** expose `GET /internal/authz` on the main listener as the gateway's `auth_request` target:
 
-1. Read the `__Host-sid` cookie, resolve `asm:token:{token}` to `session_id`, load the session; on miss return **401**.
+1. Read the `__Host-sid` cookie, resolve `{asm}:token:{token}` to `session_id`, load the session; on miss return **401**.
 2. On hit, read the linked JWT; serve it as-is while fresh, reissue ahead of expiry per 5.6.
 3. Respond `200` with the JWT in the `X-Gateway-Jwt` response header (`Bearer <jwt>`).
 4. A `200` response **MUST** carry `Cache-Control: max-age = min(authz_cache_max_age, jwt_exp - now - 60 s)` so the gateway-side exchange cache can never serve a JWT past its travel margin. Any non-200 response **MUST** carry `Cache-Control: no-store` -- a cached 401 would lock out a user who just logged in.
 
 The response carries no correlation id -- it is cacheable, so per-request correlation ids are generated at the edge (see [Gateway DESIGN](../gateway/DESIGN.md)).
 
-**Rationale**: This endpoint replaces the deleted Router's in-process session check + JWT injection; the Cache-Control contract keeps the authenticator in control of gateway-side staleness (revocation takes effect at the gateway within `authz_cache_max_age`, default 30 s).
+**Rationale**: This endpoint is the gateway's session check + JWT injection; the Cache-Control contract keeps the authenticator in control of gateway-side staleness (revocation takes effect at the gateway within `authz_cache_max_age`, default 30 s).
 
 **Actors**: `cpt-insightspec-actor-nginx-gateway`
 
@@ -359,7 +362,7 @@ The admin surface (revoke by user) **MUST** itself require a valid gateway JWT w
 
 The system **MUST** provide `POST /auth/logout` that revokes the current session, clears the cookie (`Max-Age=0`), and redirects (or returns a redirect URL) to the OIDC `end_session_endpoint` for RP-initiated logout.
 
-The system **MUST** accept OIDC back-channel logout tokens at a dedicated endpoint, validate the `logout_token` per spec, locate sessions by `(iss, sid)` (via the sid index) or `(iss, sub)` (via the sub index `asm:sub_index:*`, maintained at login — Identity cannot resolve a `sub` without an email, and the logout path must not depend on another service), and revoke them.
+The system **MUST** accept OIDC back-channel logout tokens at a dedicated endpoint, validate the `logout_token` per spec, locate sessions by `(iss, sid)` (via the sid index) or `(iss, sub)` (via the sub index `{asm}:sub_index:*`, maintained at login — Identity cannot resolve a `sub` without an email, and the logout path must not depend on another service), and revoke them.
 
 The system **MUST** protect the back-channel endpoint against replay: every accepted `logout_token` **MUST** be recorded by `(iss, jti)` with a TTL of at least `iat + max_clock_skew`, and any subsequent delivery of the same `(iss, jti)` **MUST** short-circuit to a successful response without performing another revoke.
 
@@ -396,7 +399,7 @@ The session must not outlive the IdP's willingness to vouch for the user. Theref
 
 1. At login the system **MUST** store the IdP **refresh token** (and access-token expiry) in the session record, alongside the `id_token`.
 2. A **background worker** (one leader elected via Redis lock) **MUST** refresh each session's IdP tokens `authenticator.idp.refresh_safety_margin_seconds` before expiry and store the rotated refresh token back. A per-session lock **MUST** guard each refresh: most IdPs rotate refresh tokens one-time-use, and two pods racing the same rotation would burn the grant and falsely kill the session.
-3. The worker **MUST** find due sessions via the `asm:idp_refresh_due` schedule (no scanning), with due-times jittered at write so sessions do not herd after a deploy or Redis restore. In-flight refreshes are capped by `authenticator.idp.refresh_concurrency` (default 128) -- politeness toward the customer IdP; IdP `429` is handled as transient honoring `Retry-After`.
+3. The worker **MUST** find due sessions via the `{asm}:idp_refresh_due` schedule (no scanning), with due-times jittered at write so sessions do not herd after a deploy or Redis restore. In-flight refreshes are capped by `authenticator.idp.refresh_concurrency` (default 128) -- politeness toward the customer IdP; IdP `429` is handled as transient honoring `Retry-After`.
 4. **Definitive refusal** (`invalid_grant`: revoked, expired, user disabled) **MUST** kill every session linked to that grant through the same revoke pipeline as logout. **Transient failures** (IdP unreachable, timeout, 5xx) **MUST NOT** kill sessions: retry with backoff until success or a definitive verdict. Fail open on transport, fail closed on verdict.
 5. When the IdP issues no refresh token, `authenticator.idp.no_refresh_token_policy` applies: `strict` (default) caps the session at the IdP access-token lifetime; `login_only` lets sessions live to the absolute cap, killed only by back-channel logout or manual revoke.
 6. The system **MUST** emit metrics for refresh outcomes, a consecutive-transient-failure gauge, and an `invalid_grant` counter -- alert before the mass logout, not after.
@@ -460,6 +463,22 @@ Compose/dev has no NetworkPolicies; acceptable -- layers 1 and 3 still hold ther
 
 **Actors**: `cpt-insightspec-actor-nginx-gateway`, `cpt-insightspec-actor-downstream-service`
 
+### 5.16 View-As Override
+
+#### `__override` Login Parameter (Dev/Demo Environments Only)
+
+- [x] `p2` - **ID**: `cpt-insightspec-fr-auth-override`
+
+The system **MUST** honor a `__override=<email>` query parameter on `GET /auth/login` (the historical portal name for the operator "view the dashboard as another user" facility) **only** when `authenticator.override_enabled` is set, and that flag **MUST** default to `false` at every layer (gear config, Helm values). With the flag off the parameter is inert: the login proceeds as the caller and the attempt is logged.
+
+When enabled, the target email is stored server-side with the transient login state and applied only on the callback, **after** the caller completed a full IdP authentication and resolved to a known person: the target is resolved through the same Identity lookup, and the session and its linked JWT are minted for the target `person_id`/email. Note the lookup is **email-only** — Identity carries no tenant memberships yet (#1687) — so a target from another tenant resolves too, paired with the *caller's* tenant claim; acceptable while the flag marks whole dev/demo environments, to be revisited when membership resolution exists. The session record **MUST** retain the real principal (impersonator person id + email), the session **MUST** be revocable through the real principal as well (indexed under both persons), the login audit event **MUST** attribute the real principal and name the override target (denials included), and `/auth/me` **MUST** surface the impersonator so the SPA can display a "viewing as" indicator. An override naming an unknown person **MUST** be denied (no fallback to the caller's own identity — a typo must not look like the feature regressed).
+
+Viewer identity remains exclusively gateway-authored: no client-supplied header or parameter is ever trusted as identity, so this does not reopen the header-spoofing hole the gateway hardening closed.
+
+**Rationale**: Operators of dev/demo installs need to see the portal exactly as a given person (their scope, their metrics); marking the *environment* as impersonation-capable via a default-off flag keeps the facility out of every real deployment without per-user authorization machinery that does not exist yet (roles are `default_roles` until the permissions service lands).
+
+**Actors**: `cpt-insightspec-actor-browser-user`, `cpt-insightspec-actor-oidc-provider`
+
 ## 6. Non-Functional Requirements
 
 ### 6.1 NFR Inclusions
@@ -468,7 +487,7 @@ Compose/dev has no NetworkPolicies; acceptable -- layers 1 and 3 still hold ther
 
 - [ ] `p2` - **ID**: `cpt-insightspec-nfr-auth-exchange-p95`
 
-The `/internal/authz` exchange (token mapping + session + JWT reads) **MUST** complete within 5 ms p95 under normal load, keeping total gateway overhead comfortably inside the 15 ms p95 budget the deleted gateway spec carried.
+The `/internal/authz` exchange (token mapping + session + JWT reads) **MUST** complete within 5 ms p95 under normal load, keeping total gateway overhead comfortably inside a 15 ms p95 budget.
 
 **Threshold**: 5 ms p95 for the exchange; two Redis reads on the hot path.
 
@@ -500,7 +519,7 @@ Every login, logout, session refresh, session revocation, back-channel logout, I
 
 - [x] `p1` - **ID**: `cpt-insightspec-nfr-auth-rate-limit`
 
-The gateway carries a coarse per-IP flood guard (layer 1). The authenticator **MUST** enforce the precise layer: a Redis token bucket keyed by session/user (not IP -- corporate NAT makes per-IP limits at the precise layer wrong), and a global cap on concurrent live `asm:login_state:*` entries (default 1000 per pod) rejecting excess `/auth/login` with 429 before any Redis write.
+The gateway carries a coarse per-IP flood guard (layer 1). The authenticator **MUST** enforce the precise layer: a Redis token bucket keyed by session/user (not IP -- corporate NAT makes per-IP limits at the precise layer wrong), and a global cap on concurrent live `{asm}:login_state:*` entries (default 1000 per pod) rejecting excess `/auth/login` with 429 before any Redis write.
 
 **Threshold**: under a sustained login flood, login-state entries stay at or below the cap and CPU is bounded.
 
@@ -534,11 +553,11 @@ If Redis is unreachable, `/internal/authz` and `/auth/*` mutations **MUST** fail
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/auth/login` | Start OIDC flow; 302 to IdP. |
-| GET | `/auth/callback` | OIDC callback; creates session + linked JWT; sets cookie; 302 to SPA. |
+| GET | `/auth/login` | Start OIDC flow; 302 to IdP. Optional `__override=<email>` view-as target, honored only when `override_enabled` (5.16). |
+| GET | `/auth/callback` | OIDC callback; creates session + linked JWT; sets cookie; 302 to SPA. Failures also 302 to the SPA, with `auth_error=<reason>` (5.1). |
 | POST | `/auth/refresh` | Rotate cookie, extend session TTL; return `{expires_at, refresh_at}`. |
 | POST | `/auth/logout` | Revoke current session; clear cookie; return RP-logout URL. |
-| GET | `/auth/me` | Current user, tenants, plus `{expires_at, refresh_at}`. |
+| GET | `/auth/me` | Current user, tenants, plus `{expires_at, refresh_at}`; `impersonator_email` on view-as sessions (5.16). |
 | GET | `/auth/sessions` | List active sessions for current user. |
 | DELETE | `/auth/sessions/{id}` | Revoke a specific session. |
 | DELETE | `/auth/sessions` | Revoke all sessions of current user. Admin/service variant revokes by user id (gateway-JWT authenticated). |
@@ -687,7 +706,7 @@ All endpoints are registered through the toolkit operation builder and land in t
 **Preconditions**: User disabled/revoked at the IdP; linked session still live; IdP has no back-channel logout.
 
 **Main Flow**:
-1. The refresher leader pops the session from `asm:idp_refresh_due`.
+1. The refresher leader pops the session from `{asm}:idp_refresh_due`.
 2. Refresh attempt returns `invalid_grant` (definitive).
 3. Every session linked to that grant is revoked through the standard pipeline.
 
@@ -727,6 +746,7 @@ All endpoints are registered through the toolkit operation builder and land in t
 - [x] `cpt-insightspec-fr-auth-service-tokens`: A registered service obtains a `sub = service:<name>` JWT verifiable via the same JWKS; an unregistered caller gets 401.
 - [ ] `cpt-insightspec-fr-auth-bootstrap`: On an empty persons table with bootstrap enabled, the first IdP login creates a universe admin and emits the audit event; the second login does not.
 - [x] `cpt-insightspec-fr-auth-logout`, `cpt-insightspec-fr-auth-csrf`: Local, RP-initiated, and back-channel logout all converge on the same revoke pipeline; state-changing `/auth/*` requests without CSRF token or matching `Origin` are rejected 403.
+- [x] `cpt-insightspec-fr-auth-override`: With `override_enabled`, a login carrying `__override=<email>` yields a session whose JWT `sub` and `/auth/me` identity are the target's, with `impersonator_email` naming the caller; an unknown target is denied 403. With the flag at its default the parameter changes nothing.
 
 ## 10. Dependencies
 
@@ -758,3 +778,4 @@ All endpoints are registered through the toolkit operation builder and land in t
 | Bootstrap race on fresh install | First IdP-authenticated colleague wins universe admin | Empty-table-only window; loud audit; off switch; INSTALLER as production path |
 | Gateway exchange cache staleness | Revocation reaches the gateway up to `authz_cache_max_age` late | Default 30 s, well inside the 300 s acceptance bound; set 0 for per-request checks |
 | Registry misconfiguration | A service gets roles it should not have | Gitops review of every registry change; issuance audit trail |
+| `override_enabled` left on in a real environment | Any authenticated user can view the portal as any known person (the email-only Identity lookup spans tenants until #1687) | Default `false` at every layer; Helm value carries a dev/demo-only warning; every use and denial is audited with the real principal |

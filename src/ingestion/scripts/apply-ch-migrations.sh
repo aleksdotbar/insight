@@ -34,12 +34,17 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 
 source "$SCRIPT_DIR/lib/ch-exec.sh"
 
-echo "=== Creating core databases (staging, silver, ${CLICKHOUSE_DATABASE}) ==="
+echo "=== Creating core databases (staging, silver, ${CLICKHOUSE_DATABASE}, presentation) ==="
+# `presentation` (#1964): writable namespace for new gold / results / scratch.
 run_ch <<SQL
 CREATE DATABASE IF NOT EXISTS staging;
 CREATE DATABASE IF NOT EXISTS silver;
 CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE};
+CREATE DATABASE IF NOT EXISTS presentation;
 SQL
+
+echo "=== Provisioning presentation access (role + grant-less user) (#1963/#1964) ==="
+bash "$SCRIPT_DIR/bootstrap-db/provision-presentation-access.sh"
 
 echo "=== Creating bronze/silver placeholders (ADR-0007) ==="
 bash "$SCRIPT_DIR/create-bronze-placeholders.sh"
@@ -88,13 +93,32 @@ heal_ai_dev_staging chatgpt_team__ai_dev_usage
 heal_ai_assistant_staging claude_enterprise__ai_assistant_usage
 heal_ai_assistant_staging chatgpt_team__ai_assistant_usage
 
-echo "=== Healing collab-chat and CRM contract schemas ==="
+echo "=== Healing CRM staging contract schemas ==="
+# The CRM overflow blob left the contract — the connectors carry the
+# unabridged record in raw_data — so the column must leave the physical
+# tables too, or the positional incremental insert misaligns. The silver
+# side drops in migrations/*.sql; staging drops here because these tables
+# exist only after the connector's first run. Idempotent.
+heal_crm_staging() {
+  local table="$1"
+  ch_table_exists staging "${table}" || return 0
+  echo "  staging.${table}"
+  run_ch <<SQL
+ALTER TABLE staging.${table} DROP COLUMN IF EXISTS custom_fields;
+SQL
+}
+
+for _crm_grain in accounts activities contacts deals users; do
+  heal_crm_staging "salesforce__crm_${_crm_grain}"
+  heal_crm_staging "hubspot__crm_${_crm_grain}"
+done
+
+echo "=== Healing collab-chat contract schema ==="
 # Same positional invariant: collab chat's direct_and_group_messages
-# (#266) was added mid-SELECT without a rebuild; CRM's hubspot members
-# lacked the custom_fields column the salesforce members project. Healed
-# here rather than in migrations/*.sql because the AFTER anchors do not
-# exist on the minimal gold-view placeholders — heals run only on real
-# tables (placeholders are replaced with the real schema at first build).
+# (#266) was added mid-SELECT without a rebuild. Healed here rather than
+# in migrations/*.sql because the AFTER anchors do not exist on the
+# minimal gold-view placeholders — heals run only on real tables
+# (placeholders are replaced with the real schema at first build).
 ch_table_is_real() {
   local db="$1" table="$2"
   ch_table_exists "$db" "$table" || return 1
@@ -117,30 +141,10 @@ ALTER TABLE ${db}.${table} MODIFY COLUMN direct_and_group_messages Nullable(Int6
 SQL
 }
 
-heal_crm_table() {
-  local db="$1" table="$2"
-  ch_table_is_real "$db" "$table" || return 0
-  echo "  ${db}.${table}"
-  run_ch <<SQL
-ALTER TABLE ${db}.${table} ADD COLUMN IF NOT EXISTS custom_fields String DEFAULT '{}' AFTER metadata;
-ALTER TABLE ${db}.${table} MODIFY COLUMN custom_fields String DEFAULT '{}' AFTER metadata;
-SQL
-}
-
 heal_collab_chat_table staging m365__collab_chat_activity
 heal_collab_chat_table staging slack__collab_chat_activity
 heal_collab_chat_table staging zulip_proxy__collab_chat_activity
 heal_collab_chat_table silver class_collab_chat_activity
-heal_crm_table staging hubspot__crm_accounts
-heal_crm_table staging hubspot__crm_activities
-heal_crm_table staging hubspot__crm_contacts
-heal_crm_table staging hubspot__crm_deals
-heal_crm_table staging hubspot__crm_users
-heal_crm_table silver class_crm_accounts
-heal_crm_table silver class_crm_activities
-heal_crm_table silver class_crm_contacts
-heal_crm_table silver class_crm_deals
-heal_crm_table silver class_crm_users
 
 # Same positional invariant: the task-users staging views gained tenant_id
 # mid-SELECT (after unique_key) for the task observation attribution, and
@@ -161,6 +165,37 @@ SQL
 
 heal_task_users_table silver class_task_users
 
+echo "=== Healing jira task id column types (#1743) ==="
+# #1892 retyped the jira staging id projections (worklog_id, comment_id)
+# from raw bronze Decimal(38,9) to toString(...), but pre-existing
+# incremental-append staging tables keep the Decimal column, and the
+# positional union with the youtrack String twins fails with NO_COMMON_TYPE,
+# blanking Task Delivery / Code Quality. MODIFY converges warm tables (and
+# silver targets built from them) to the snapshot's String; Decimal->String
+# is lossless. Guarded: staging tables exist only after the first jira sync.
+heal_task_id_column() {
+  local db="$1" table="$2" column="$3"
+  ch_table_exists "$db" "$table" || return 0
+  echo "  ${db}.${table}.${column}"
+  run_ch <<SQL
+ALTER TABLE ${db}.${table} MODIFY COLUMN IF EXISTS ${column} Nullable(String);
+SQL
+}
+
+heal_task_id_column staging jira__task_worklogs worklog_id
+heal_task_id_column staging jira__task_comments comment_id
+heal_task_id_column silver class_task_worklogs worklog_id
+heal_task_id_column silver class_task_comments comment_id
+
+# SKIP_DBT_GOLD=1 (set by bootstrap-db snapshot generation) skips this step:
+# generation already built every tag:gold model with the pinned dbt venv
+# (run-dbt.sh) BEFORE the migrations ran, and re-running here would need a `dbt`
+# on PATH — which outside the prod toolbox (local dev, the connectors-ddl CI
+# workflow) is absent or the wrong build (dbt-fusion 2.0). Real deploys leave it
+# unset and rely on this step to materialise gold at deploy time.
+if [[ "${SKIP_DBT_GOLD:-}" == "1" ]]; then
+  echo "=== Skipping gold dbt build (SKIP_DBT_GOLD=1; gold pre-built by generation) ==="
+else
 echo "=== Building gold models (dbt run --select tag:gold) ==="
 # Gold views are dbt-owned but must exist at DEPLOY time, not first-sync
 # time: the analytics service marks metric definitions schema-error while
@@ -201,6 +236,12 @@ profile = {
                 "send_receive_timeout": 1500,
                 "query_limit": 0,
                 "connect_timeout": 30,
+                # Correlated subqueries (LEFT ANTI JOIN in the identity seed
+                # models) are gated behind this experimental flag on CH 25.7.
+                # A model-level config() setting does NOT reach the SELECT plan
+                # in dbt-clickhouse, so it must be set at profile level. Parity
+                # with test/bootstrap.
+                "settings": {"allow_experimental_correlated_subqueries": 1},
             }
         },
     }
@@ -210,5 +251,6 @@ with open(os.path.join(os.environ["DBT_PROFILES_DIR"], "profiles.yml"), "w") as 
 PY
 (cd "$SCRIPT_DIR/../dbt" && dbt run --profiles-dir "$DBT_PROFILES_DIR" --log-format json --select tag:gold)
 rm -rf "$DBT_PROFILES_DIR"
+fi
 
 echo "=== ClickHouse migrations complete ==="

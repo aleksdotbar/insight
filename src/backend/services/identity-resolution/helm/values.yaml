@@ -1,0 +1,150 @@
+replicaCount: 1
+
+podAnnotations: {}
+
+image:
+  repository: ghcr.io/constructorfabric/insight-identity-resolution
+  tag: "" # MUST be set by the operator. No `:latest` default.
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  # Same port as the .NET identity service this replaces (consumers reach
+  # identity at <host>:8082, so the cutover flips only the hostname).
+  port: 8082
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Pre-provisioned Secret carrying the gears-rust host's leaf-config overrides
+# (injected via envFrom; they override the mounted config ConfigMap):
+#   APP__gears__identity_resolution__config__database_url
+#   APP__gears__identity_resolution__config__clickhouse_url|_database|_user|_password
+#   APP__gears__identity_resolution__config__tenant_default_id       (optional)
+#   APP__gears__identity_resolution__config__bootstrap_admin_person_id (optional)
+#
+# The two optional fields drive the first-admin bootstrap in the migrate
+# initContainer (port of the .NET BootstrapAdminRunner): the configured person
+# gets an active `admin` assignment in the default tenant, idempotently.
+#
+# The umbrella populates `insight-identity-resolution-config` automatically;
+# for standalone installs the operator pre-creates an equivalent Secret and
+# sets `existingSecret` to its name.
+existingSecret: ""
+
+# Gateway-JWT verification (cf-gears-oidc-authn-plugin, NGINX_BFF R1). These
+# render into the plugin's `jwt.trusted_issuers` / `expected_audience` in the
+# ConfigMap (nested/list-shaped, so not env-injectable). The plugin resolves the
+# JWKS via OIDC discovery on the issuer over https ONLY.
+gateway:
+  # `iss` the token carries = the authenticator's gateway_issuer (gateway
+  # origin). The plugin fetches `{issuer}/.well-known/openid-configuration`.
+  issuer: ""
+  # Optional discovery override: where to fetch the discovery document, when the
+  # public `issuer` is not reachable from in-cluster. `{issuer}` is substituted
+  # with the matched `iss`. Leave empty to use the issuer directly.
+  discoveryUrl: ""
+  # Expected `aud`. Fixed by the authenticator's claim contract.
+  audience: "internal-services"
+  # Optional extra TLS trust roots (PEM paths inside the pod) for the discovery/
+  # JWKS fetch — e.g. an internal CA. Empty for a publicly-trusted issuer cert.
+  caCertPaths: []
+  # Secret holding the discovery issuer's CA under key `ca.crt` (the
+  # authenticator's authn-tls cert Secret). When set, it is mounted read-only at
+  # /etc/insight/authn-ca and `caCertPaths` should include
+  # `/etc/insight/authn-ca/ca.crt`. The umbrella wires both automatically.
+  caCertSecret: ""
+
+# Org-chart source + subordinates expansion (mirrors the .NET AppOptions;
+# rendered into the gear config in the ConfigMap).
+identityResolution:
+  orgChartSourceType: "bamboohr"
+  expandSubordinates: true
+  maxDepth: 16
+
+# Scheduled persons-seed (#1690): a CronJob runs `identity-resolution seed`
+# to rebuild the identity org projection from ClickHouse identity_inputs.
+# Requires tenant_default_id in the config Secret (the seed refuses to run
+# without it). Manual run:
+#   kubectl create job --from=cronjob/<fullname>-seed seed-manual-<who>
+seed:
+  enabled: true
+  # Explicit tenant for the seed run (UUID). Optional: when set it is
+  # injected as an env var that OVERRIDES any tenant_default_id the
+  # existingSecret carries (k8s `env` beats `envFrom`) — the single source
+  # for the CronJob. Leave empty when the Secret already carries the tenant
+  # (the umbrella wires it from global.tenantDefaultId and validates at
+  # render). Without a tenant from either source every run exits 1.
+  tenantDefaultId: ""
+  # Daily, after the overnight connector syncs and the 06:00 data-quality run.
+  schedule: "30 6 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Persons-sync CronJob: publishes the `persons` log into ClickHouse
+# `identity.identity_persons` (the metrics email→person_id resolve source).
+# Scheduled after the seed by default — the seed rewrites the log, the sync
+# publishes it.
+sync:
+  enabled: true
+  # Journal-row tenant (UUID); same override semantics as seed.tenantDefaultId
+  # (the copy itself is tenant-agnostic — this only scopes the operations
+  # journal the admin GET routes read).
+  tenantDefaultId: ""
+  # Daily, 15 minutes after the seed's 06:30 run.
+  schedule: "45 6 * * *"
+  # Belt-and-braces for cron-vs-cron only — manual Jobs and other instances
+  # serialize on the MariaDB advisory lock regardless.
+  concurrencyPolicy: Forbid
+  # Retries for transient connect blips; the lock + snapshot-swap idempotency
+  # make a repeated run safe.
+  backoffLimit: 2
+  # Caps a wedged pod well past the in-binary 5-minute sync timeout.
+  activeDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# TCP gate before start: the service connects to MariaDB at boot. Same
+# busybox wait as the .NET identity chart.
+waitForMariadb:
+  enabled: true
+  image:
+    repository: busybox
+    tag: "1.36"
+  timeoutSeconds: 180
+
+# Health probes: /healthz is the cheap process-liveness ping, /health the
+# deeper status endpoint — readiness gets the deeper one so an unhealthy pod
+# leaves rotation instead of waiting for a liveness restart.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5

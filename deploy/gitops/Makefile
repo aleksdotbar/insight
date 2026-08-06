@@ -54,7 +54,10 @@ CHART            ?= oci://ghcr.io/constructorfabric/charts/insight
 LOCAL_CHART      ?= ../../charts/insight
 INSIGHT_VERSION  ?= $(shell cat .insight-version 2>/dev/null)
 VALUES           ?= environments/$(ENV)/values.yaml
-TIMEOUT          ?= 10m
+# Covers rollout waits plus the post-upgrade clickhouse-migrate hook; the
+# gold build inside that hook spills to disk under memory pressure, which
+# trades speed for reliability — give it room before --atomic rolls back.
+TIMEOUT          ?= 30m
 RENDER_DIR       := .deploy
 
 # Extra flags appended to helm invocations. Default empty.
@@ -102,6 +105,10 @@ REDPANDA_CONSOLE_RELEASE ?= redpanda-console
 REDPANDA_CONSOLE_CHART   ?= redpanda/console
 REDPANDA_CONSOLE_VERSION ?= 3.7.0
 
+# Airbyte 1.8+ merged the webapp service into server and stopped publishing
+# a separate webapp image — UI is served by the server service. Bumping below
+# 1.8 (or rolling back) requires re-adding the webapp subchart/routing that
+# system/airbyte/values.yaml removed; see issue #1910.
 AIRBYTE_RELEASE  ?= airbyte
 AIRBYTE_VERSION  ?= 1.9.2
 
@@ -330,28 +337,49 @@ local-wizard:
 	bash "$$WIZARD" --target=k8s-local
 
 .PHONY: keycloak-realm
-# Generate the Keycloak dev realm from the seed roster (deploy/compose/keycloak/
-# gen-realm.py) and apply it as the `$(RELEASE)-keycloak-realm` ConfigMap that the
-# insight-keycloak subchart mounts + imports. Runs before deploy-app in local-up.
-# No-op unless keycloak.deploy=true (fakeidp installs need nothing here).
+# ENV=local sandbox inputs for the in-stack Keycloak: generate the roster
+# realm (gen-realm.py) into the env realms dir — keycloak-broker-realms packs
+# it with the rest — and ensure the sandbox admin/placeholder Secret.
+# No-op unless keycloak.deploy=true.
 keycloak-realm: kube-ctx values-present
-	@if [ "$$(yq -r '.keycloak.deploy // false' $(VALUES))" != "true" ]; then \
-	  echo "$(C_YEL)skip$(C_RST) keycloak-realm (keycloak.deploy != true)"; exit 0; fi
-	@GEN="$$(cd ../.. && pwd)/deploy/compose/keycloak/gen-realm.py"; \
-	OUT="$(RENDER_DIR)/realm-insight-$(ENV).json"; mkdir -p "$(RENDER_DIR)"; \
+	@set -e; \
+	if [ "$$(yq -r '.keycloak.deploy // false' $(VALUES))" != "true" ]; then \
+	  echo "$(C_YEL)skip$(C_RST) keycloak-realm (keycloak.deploy != true)"; exit 0; fi; \
+	GEN="$$(cd ../.. && pwd)/deploy/compose/keycloak/gen-realm.py"; \
+	DIR=environments/$(ENV)/keycloak/realms; mkdir -p "$$DIR"; \
+	OUT="$$DIR/realm-insight.generated.json"; \
 	DEV_EMAIL="$$(yq -r '.fakeidp.devUserEmail // "dev@company.nonpresent"' $(VALUES))"; \
 	REDIRECT="$$(yq -r '.authenticator.oidc.redirectUri // "http://localhost/auth/callback"' $(VALUES))"; \
+	AUTH_SECRET="$$(yq -r '.authenticator.oidc.clientSecret // "insight-authenticator-dev-secret"' $(VALUES))"; \
 	KC_BASE="$$(yq -r '.keycloak.hostname // ""' $(VALUES))"; \
 	LB_REDIRECT="$${KC_BASE%/kc}/auth/callback"; \
 	echo "$(C_GRN)→$(C_RST) generating Keycloak realm (dev-lead $$DEV_EMAIL; redirects $$REDIRECT, $$LB_REDIRECT)"; \
 	python3 "$$GEN" --dev-email "$$DEV_EMAIL" \
 	  --authenticator-redirect "$$REDIRECT" \
 	  --authenticator-redirect "$$LB_REDIRECT" \
+	  --authenticator-secret "$$AUTH_SECRET" \
 	  --out "$$OUT"; \
-	kubectl --context $(KUBE_CTX) -n $(NS_APP) create configmap $(RELEASE)-keycloak-realm \
-	  --from-file=realm-insight.json="$$OUT" --dry-run=client -o yaml | \
+	kubectl --context $(KUBE_CTX) -n $(NS_APP) create secret generic insight-keycloak-config \
+	  --from-literal=username=admin --from-literal=password=admin \
+	  --from-literal=INSIGHT_AUTHENTICATOR_CLIENT_SECRET="$$AUTH_SECRET" \
+	  --from-literal=INSIGHT_AUTHENTICATOR_REDIRECT_URI="$$REDIRECT" \
+	  --dry-run=client -o yaml | kubectl --context $(KUBE_CTX) -n $(NS_APP) apply -f -; \
+	echo "$(C_GRN)generated$(C_RST) $$OUT + sandbox secret insight-keycloak-config"
+
+.PHONY: keycloak-broker-realms
+# Pack environments/$(ENV)/keycloak/realms/* into the ConfigMap the
+# umbrella's keycloak-config-cli hook Job applies (ADR-0003). Chained into
+# deploy-insight; no-op unless keycloakConfig.enabled=true.
+keycloak-broker-realms: kube-ctx values-present
+	@if [ "$$(yq -r '.keycloakConfig.enabled // false' $(VALUES))" != "true" ]; then \
+	  echo "$(C_YEL)skip$(C_RST) keycloak-broker-realms (keycloakConfig.enabled != true)"; exit 0; fi; \
+	DIR=environments/$(ENV)/keycloak/realms; \
+	ls $$DIR/* >/dev/null 2>&1 \
+	  || { echo "$(C_RED)ERROR$(C_RST): keycloakConfig.enabled=true but no realm files in $$DIR/"; exit 1; }; \
+	kubectl --context $(KUBE_CTX) -n $(NS_APP) create configmap $(RELEASE)-keycloak-config-realms \
+	  --from-file="$$DIR" --dry-run=client -o yaml | \
 	  kubectl --context $(KUBE_CTX) -n $(NS_APP) apply -f -; \
-	echo "$(C_GRN)applied$(C_RST) configmap $(RELEASE)-keycloak-realm → $(NS_APP)"
+	echo "$(C_GRN)applied$(C_RST) configmap $(RELEASE)-keycloak-config-realms → $(NS_APP)"
 
 .PHONY: deploy-app
 deploy-app: deploy-insight
@@ -401,7 +429,7 @@ validate-insight: values-present local-chart-present
 	@kubeconform -strict -summary < $(RENDER_DIR)/validate-render-$(ENV).yaml
 
 .PHONY: deploy-insight
-deploy-insight: sync-clean vpn-up kube-ctx confirm values-present chart-present apply-app-secrets
+deploy-insight: sync-clean vpn-up kube-ctx confirm values-present chart-present apply-app-secrets keycloak-broker-realms
 	@mkdir -p $(RENDER_DIR)
 	@helm template $(RELEASE) $(CHART) --version $(INSIGHT_VERSION) $(HELM_EXTRA_FLAGS) \
 		-n $(NS_APP) -f $(VALUES) \
@@ -618,8 +646,15 @@ system-airbyte: vpn-up kube-ctx
 		bash scripts/airbyte-setup.sh
 
 # Argo Workflows: install the chart with workflowNamespaces+instanceID
-# scoped to NS_INFRA, then apply the supplemental RBAC templated for
-# $(NS_INFRA).
+# scoped to NS_INFRA *and* NS_APP, then apply the supplemental RBAC
+# templated for each namespace.
+#
+# NS_APP is required here too because `ingestion.templates.enabled=true`
+# (insight chart) renders the reconcile CronWorkflow/WorkflowTemplates into
+# NS_APP, not NS_INFRA — the two-namespace split (services vs. shared infra)
+# is this repo's standard topology (see environments/*/inventory.yaml), not
+# a one-off. A controller scoped to workflowNamespaces=[NS_INFRA] only can
+# never see or run those objects, regardless of RBAC.
 .PHONY: system-argo
 system-argo: vpn-up kube-ctx
 	@$(call _helm_repo_add,argo,https://argoproj.github.io/argo-helm)
@@ -629,14 +664,18 @@ system-argo: vpn-up kube-ctx
 		--version $(ARGO_VERSION) $(HELM_EXTRA_FLAGS) \
 		$(call _system_values_args,argo-workflows) \
 		--set controller.workflowNamespaces[0]=$(NS_INFRA) \
+		--set controller.workflowNamespaces[1]=$(NS_APP) \
 		--set controller.instanceID.enabled=true \
 		--set controller.instanceID.explicitID=$(ARGO_RELEASE)-$(NS_INFRA) \
 		--wait --timeout 5m
 	@command -v envsubst >/dev/null \
 		|| { echo "$(C_RED)ERROR$(C_RST): envsubst not found (install gettext)"; exit 1; }
-	@NAMESPACE=$(NS_INFRA) WORKFLOW_SA=$(ARGO_WORKFLOW_SA) \
+	@NAMESPACE=$(NS_INFRA) SA_NAMESPACE=$(NS_INFRA) WORKFLOW_SA=$(ARGO_WORKFLOW_SA) \
 		envsubst < $(ARGO_RBAC_TMPL) \
 		| kubectl apply -n $(NS_INFRA) -f -
+	@NAMESPACE=$(NS_APP) SA_NAMESPACE=$(NS_INFRA) WORKFLOW_SA=$(ARGO_WORKFLOW_SA) \
+		envsubst < $(ARGO_RBAC_TMPL) \
+		| kubectl apply -n $(NS_APP) -f -
 
 .PHONY: system-status
 system-status: vpn-up kube-ctx

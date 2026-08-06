@@ -75,6 +75,7 @@ pub struct OidcClient {
     client_secret: String,
     tenant_claim: String,
     default_tenant_id: String,
+    external_id_claim: String,
     http: reqwest::Client,
 }
 
@@ -94,18 +95,58 @@ impl OidcClient {
         // same one-time-use refresh token, and the IdP burns it → false logout.
         // It also caps semaphore-permit hold time so hung calls can't wedge the
         // whole refresher (G5).
-        let http = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(10))
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .build()
-            .context("build OIDC HTTP client")?;
+            .connect_timeout(std::time::Duration::from_secs(5));
+        // Trust an extra internal/corporate CA for the IdP connection, on
+        // top of whichever trust store this build's TLS backend resolves by
+        // default. Explicit `.add_root_certificate()` works regardless of
+        // whether Cargo's feature unification landed on native-tls (OS trust
+        // store) or rustls (bundled webpki-roots) for this binary — unlike
+        // an OS-level trust-store file/env-var (e.g. SSL_CERT_FILE), which
+        // only applies if native-tls won and cannot be relied on here.
+        if !idp.extra_ca_cert_path.is_empty() {
+            let pem = std::fs::read(&idp.extra_ca_cert_path)
+                .with_context(|| format!("read extra_ca_cert_path {:?}", idp.extra_ca_cert_path))?;
+            // `from_pem_bundle`, not `from_pem`: the file may carry a full
+            // chain (e.g. intermediate + root); `from_pem` only parses the
+            // first certificate in the blob and silently drops the rest.
+            let certs = reqwest::Certificate::from_pem_bundle(&pem).with_context(|| {
+                format!(
+                    "parse PEM cert bundle from extra_ca_cert_path {:?}",
+                    idp.extra_ca_cert_path
+                )
+            })?;
+            // A whitespace/comment-only file parses to zero certs without
+            // erroring, silently leaving only the default trust store —
+            // reject it so a misconfigured mount fails loudly at startup.
+            anyhow::ensure!(
+                !certs.is_empty(),
+                "extra_ca_cert_path {:?} contained no certificates",
+                idp.extra_ca_cert_path
+            );
+            for cert in certs {
+                builder = builder.add_root_certificate(cert);
+            }
+        }
+        let http = builder.build().context("build OIDC HTTP client")?;
         Ok(Self {
-            issuer_url: idp.issuer_url.trim_end_matches('/').to_owned(),
+            // Do NOT normalize a trailing slash: OIDC issuer comparison is a
+            // byte-exact string match against the `issuer` field the IdP's
+            // own discovery document returns (RFC 8414 / OIDC Discovery
+            // §4.3) — no trailing-slash equivalence is defined. Some
+            // spec-compliant IdPs report an issuer WITH a trailing slash;
+            // stripping it here makes every login fail with `unexpected
+            // issuer URI` even though the configured value and the IdP's
+            // real issuer are the same URL. Operators must set `issuer_url`
+            // to exactly what the IdP's discovery document reports.
+            issuer_url: idp.issuer_url.clone(),
             client_id: idp.client_id.clone(),
             client_secret: idp.client_secret.clone(),
             tenant_claim: idp.tenant_claim.clone(),
             default_tenant_id: idp.default_tenant_id.clone(),
+            external_id_claim: idp.external_id_claim.clone(),
             http,
         })
     }
@@ -233,11 +274,29 @@ impl OidcClient {
         }
         let idp_sid = payload_string(&raw, "sid");
 
+        // The IdP's stable external user id for `idp.source_type` — the join
+        // key identity-resolution's `persons` seeded under `value_type='id'`
+        // (e.g. Entra's `oid`; NOT `sub`, which is pairwise-unique per client
+        // for directory-backed IdPs). FAIL CLOSED: a login whose id_token
+        // lacks the configured claim (e.g. Entra without `oid`) must not
+        // silently proceed — there is no safe fallback to email or `sub` for
+        // a directory-backed IdP, and doing so was exactly the P1 bug this
+        // guards against (see `identity::ResolveTarget`).
+        let external_id =
+            extract_external_id(&raw, &self.external_id_claim, &sub).with_context(|| {
+                format!(
+                    "id_token carries no non-empty `{}` claim (idp.external_id_claim) — \
+                     cannot resolve person for login",
+                    self.external_id_claim
+                )
+            })?;
+
         Ok(AuthenticatedIdp {
             identity: IdpIdentity {
                 sub,
                 email,
                 tenant_id,
+                resolve_by: crate::identity::ResolveTarget::ExternalId(external_id),
             },
             issuer,
             idp_sid,
@@ -320,7 +379,7 @@ impl OidcClient {
             .http
             .get(format!(
                 "{}/.well-known/openid-configuration",
-                self.issuer_url
+                self.issuer_url.trim_end_matches('/')
             ))
             .send()
             .await
@@ -355,7 +414,7 @@ impl OidcClient {
             .http
             .get(format!(
                 "{}/.well-known/openid-configuration",
-                self.issuer_url
+                self.issuer_url.trim_end_matches('/')
             ))
             .send()
             .await
@@ -385,6 +444,19 @@ fn payload_tenant(jwt: &str, field: &str) -> String {
             .unwrap_or_default(),
         None => String::new(),
     }
+}
+
+/// Resolve the IdP's stable external user id for `external_id_claim`
+/// (`idp.external_id_claim`, default `"sub"`) from an already-validated
+/// id_token. `sub` is passed in already-extracted (the typed claim, always
+/// present per OIDC) so the common `external_id_claim == "sub"` case needs no
+/// extra JSON parse. Returns `None` — fail closed, no fallback — when a
+/// NON-default claim is configured but absent or empty in the payload.
+fn extract_external_id(raw_id_token: &str, external_id_claim: &str, sub: &str) -> Option<String> {
+    if external_id_claim == "sub" {
+        return Some(sub.to_owned());
+    }
+    payload_string(raw_id_token, external_id_claim).filter(|v| !v.is_empty())
 }
 
 /// Read a string claim from an (already-validated) compact JWT payload.
@@ -438,5 +510,70 @@ mod tests {
         assert!(payload_tenant(&jwt, "tenant_id").is_empty());
         let jwt = jwt_with(&serde_json::json!({"tenant_id": ["t1", 2]}));
         assert!(payload_tenant(&jwt, "tenant_id").is_empty());
+    }
+
+    #[test]
+    fn external_id_uses_configured_claim_when_present() {
+        // Entra-shaped: `oid` configured and present — resolved from `oid`,
+        // NOT from `sub` (they legitimately differ for directory-backed IdPs).
+        let jwt = jwt_with(&serde_json::json!({"sub": "pairwise-sub", "oid": "entra-oid-123"}));
+        assert_eq!(
+            extract_external_id(&jwt, "oid", "pairwise-sub").as_deref(),
+            Some("entra-oid-123")
+        );
+    }
+
+    #[test]
+    fn external_id_claim_absent_fails_closed() {
+        let jwt = jwt_with(&serde_json::json!({"sub": "pairwise-sub"}));
+        assert_eq!(extract_external_id(&jwt, "oid", "pairwise-sub"), None);
+    }
+
+    #[test]
+    fn external_id_claim_present_but_empty_fails_closed() {
+        let jwt = jwt_with(&serde_json::json!({"sub": "pairwise-sub", "oid": ""}));
+        assert_eq!(extract_external_id(&jwt, "oid", "pairwise-sub"), None);
+    }
+
+    #[test]
+    fn external_id_defaults_to_sub() {
+        // idp.external_id_claim defaults to "sub" — no extra claim needed
+        // (fakeidp, and any IdP where `sub` IS the stable directory id).
+        let jwt = jwt_with(&serde_json::json!({"sub": "fakeidp|dev"}));
+        assert_eq!(
+            extract_external_id(&jwt, "sub", "fakeidp|dev").as_deref(),
+            Some("fakeidp|dev")
+        );
+    }
+
+    #[test]
+    fn override_email_target_never_reads_external_id_claim() {
+        // The admin `__override` synthetic identity is built directly as
+        // `ResolveTarget::Email` in `api::handlers::resolve_override` — it
+        // never goes through `extract_external_id` / id_token claims at all,
+        // so a normal login's external-id resolution can't leak into it and
+        // vice versa. This test locks that the two variants stay distinct
+        // and that matching on `ResolveTarget` (not string emptiness) is what
+        // selects the lookup mode.
+        let login = crate::identity::IdpIdentity {
+            sub: "fakeidp|dev".to_owned(),
+            email: "dev@company.nonpresent".to_owned(),
+            tenant_id: "t1".to_owned(),
+            resolve_by: crate::identity::ResolveTarget::ExternalId("fakeidp|dev".to_owned()),
+        };
+        let override_target = crate::identity::IdpIdentity {
+            sub: String::new(),
+            email: "bob@example.com".to_owned(),
+            tenant_id: "t1".to_owned(),
+            resolve_by: crate::identity::ResolveTarget::Email("bob@example.com".to_owned()),
+        };
+        assert!(matches!(
+            login.resolve_by,
+            crate::identity::ResolveTarget::ExternalId(ref v) if v == "fakeidp|dev"
+        ));
+        assert!(matches!(
+            override_target.resolve_by,
+            crate::identity::ResolveTarget::Email(ref v) if v == "bob@example.com"
+        ));
     }
 }

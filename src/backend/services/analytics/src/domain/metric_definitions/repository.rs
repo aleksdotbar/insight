@@ -84,6 +84,21 @@ pub async fn load_definitions(
     tenant_id: Uuid,
     metric_keys: &[String],
 ) -> Result<HashMap<String, MetricDefinition>, CanonicalError> {
+    load_definitions_with_ids(db, tenant_id, metric_keys)
+        .await
+        .map(|definitions| {
+            definitions
+                .into_iter()
+                .map(|(key, (_, definition))| (key, definition))
+                .collect()
+        })
+}
+
+pub async fn load_definitions_with_ids(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    metric_keys: &[String],
+) -> Result<HashMap<String, (Uuid, MetricDefinition)>, CanonicalError> {
     if metric_keys.is_empty() {
         return Ok(HashMap::new());
     }
@@ -115,7 +130,7 @@ pub async fn load_definitions(
             row_inputs,
             dimensions.get(&definition_id).cloned().unwrap_or_default(),
         )?;
-        definitions.insert(metric_key, definition);
+        definitions.insert(metric_key, (definition_id, definition));
     }
 
     for key in metric_keys {
@@ -383,7 +398,7 @@ fn select_available_row(
     Ok(None)
 }
 
-async fn fetch_dimensions(
+pub(super) async fn fetch_dimensions(
     db: &DatabaseConnection,
     definition_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<String>>, sea_orm::DbErr> {
@@ -529,27 +544,53 @@ fn one_input(
     }
 }
 
+#[derive(FromQueryResult)]
+pub struct ManagedSourceValidationTarget {
+    pub id: Uuid,
+    pub source_key: String,
+    pub source_kind: String,
+    pub source_ref: String,
+    pub evidence_ref: Option<String>,
+    pub config_revision: String,
+}
+
 pub async fn all_managed_sources(
     db: &DatabaseConnection,
-) -> Result<Vec<(Uuid, String, String)>, sea_orm::DbErr> {
-    #[derive(FromQueryResult)]
-    struct Row {
-        id: Uuid,
-        source_kind: String,
-        source_ref: String,
-    }
-
-    Row::find_by_statement(Statement::from_string(
+) -> Result<Vec<ManagedSourceValidationTarget>, sea_orm::DbErr> {
+    ManagedSourceValidationTarget::find_by_statement(Statement::from_string(
         db.get_database_backend(),
-        "SELECT id, source_kind, source_ref \
+        "SELECT id, source_key, source_kind, source_ref, evidence_ref, \
+                DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s.%f') AS config_revision \
          FROM metric_sources \
          WHERE is_enabled = TRUE",
     ))
     .all(db)
     .await
+}
+
+pub async fn source_evidence_granularities(
+    db: &DatabaseConnection,
+    source_id: Uuid,
+) -> Result<Vec<(String, Option<String>)>, sea_orm::DbErr> {
+    #[derive(FromQueryResult)]
+    struct Row {
+        measure_key: String,
+        evidence_granularity: Option<String>,
+    }
+
+    Row::find_by_statement(Statement::from_sql_and_values(
+        db.get_database_backend(),
+        "SELECT measure_key, evidence_granularity \
+         FROM metric_source_measures \
+         WHERE source_id = ? AND is_enabled = TRUE \
+         ORDER BY measure_key",
+        [uuid_value(source_id)],
+    ))
+    .all(db)
+    .await
     .map(|rows| {
         rows.into_iter()
-            .map(|row| (row.id, row.source_kind, row.source_ref))
+            .map(|row| (row.measure_key, row.evidence_granularity))
             .collect()
     })
 }
@@ -557,30 +598,77 @@ pub async fn all_managed_sources(
 // `updated_at = updated_at` in the status writers below pins the column so
 // ON UPDATE CURRENT_TIMESTAMP(3) does not fire: updated_at tracks config
 // edits, not validator sweeps.
-pub async fn update_source_status(
+pub async fn update_evidence_status(
     db: &DatabaseConnection,
     source_id: Uuid,
+    config_revision: &str,
     status: SchemaStatus,
     error_code: Option<MetricSchemaErrorCode>,
 ) -> Result<(), sea_orm::DbErr> {
-    db.execute(Statement::from_sql_and_values(
-        db.get_database_backend(),
-        "UPDATE metric_sources \
+    let result = db
+        .execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "UPDATE metric_sources \
+         SET evidence_schema_status = ?, \
+             evidence_schema_checked_at = CURRENT_TIMESTAMP(3), \
+             evidence_schema_error_code = ?, \
+             updated_at = updated_at \
+         WHERE id = ? AND updated_at = ?",
+            [
+                Value::from(status.as_db()),
+                match error_code {
+                    Some(code) => Value::from(code.as_db()),
+                    None => Value::String(None),
+                },
+                uuid_value(source_id),
+                Value::from(config_revision),
+            ],
+        ))
+        .await?;
+    if result.rows_affected() == 0 {
+        tracing::trace!(
+            %source_id,
+            config_revision,
+            "metric evidence status update skipped for stale configuration revision"
+        );
+    }
+    Ok(())
+}
+
+pub async fn update_source_status(
+    db: &DatabaseConnection,
+    source_id: Uuid,
+    config_revision: &str,
+    status: SchemaStatus,
+    error_code: Option<MetricSchemaErrorCode>,
+) -> Result<(), sea_orm::DbErr> {
+    let result = db
+        .execute(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "UPDATE metric_sources \
          SET schema_status = ?, \
              schema_checked_at = CURRENT_TIMESTAMP(3), \
              schema_error_code = ?, \
              updated_at = updated_at \
-         WHERE id = ?",
-        [
-            Value::from(status.as_db()),
-            match error_code {
-                Some(code) => Value::from(code.as_db()),
-                None => Value::String(None),
-            },
-            Value::Bytes(Some(Box::new(source_id.as_bytes().to_vec()))),
-        ],
-    ))
-    .await?;
+         WHERE id = ? AND updated_at = ?",
+            [
+                Value::from(status.as_db()),
+                match error_code {
+                    Some(code) => Value::from(code.as_db()),
+                    None => Value::String(None),
+                },
+                uuid_value(source_id),
+                Value::from(config_revision),
+            ],
+        ))
+        .await?;
+    if result.rows_affected() == 0 {
+        tracing::trace!(
+            %source_id,
+            config_revision,
+            "metric source status update skipped for stale configuration revision"
+        );
+    }
     Ok(())
 }
 
@@ -621,13 +709,26 @@ pub async fn update_definition_status(
     definition_id: Uuid,
     status: SchemaStatus,
     error_code: Option<MetricSchemaErrorCode>,
+    last_observed: Option<chrono::NaiveDate>,
 ) -> Result<(), sea_orm::DbErr> {
+    // last_observed_date is monotonic knowledge, not per-sweep state: keep the
+    // stored value when the sweep produced none (NULL — config errors bail
+    // before the observation probe) or an older date (retention drop, shrunk
+    // measure set), and only advance when the new date is strictly newer.
+    let last_val = match last_observed {
+        Some(date) => Value::from(date.to_string()),
+        None => Value::String(None),
+    };
     db.execute(Statement::from_sql_and_values(
         db.get_database_backend(),
         "UPDATE metric_definitions \
          SET schema_status = ?, \
              schema_checked_at = CURRENT_TIMESTAMP(3), \
              schema_error_code = ?, \
+             last_observed_date = CASE \
+                 WHEN ? IS NULL THEN last_observed_date \
+                 ELSE GREATEST(?, COALESCE(last_observed_date, ?)) \
+             END, \
              updated_at = updated_at \
          WHERE id = ?",
         [
@@ -636,6 +737,9 @@ pub async fn update_definition_status(
                 Some(code) => Value::from(code.as_db()),
                 None => Value::String(None),
             },
+            last_val.clone(),
+            last_val.clone(),
+            last_val,
             uuid_value(definition_id),
         ],
     ))

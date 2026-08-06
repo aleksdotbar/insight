@@ -3,12 +3,15 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from source_bitbucket_cloud.streams.base import schema, truncate, unique_key
+from source_bitbucket_cloud.streams.base import repo_scope, schema, truncate, unique_key
 from source_bitbucket_cloud.streams.pr_base import PullRequestStateStream
 
 
 class PullRequestsStream(PullRequestStateStream):
     name = "pull_requests"
+    # Emits full PR records, so it must fetch everything itself; its fetch
+    # populates the slim cache the five child streams read.
+    reads_selection_cache = False
 
     def pull_request_records(self, repo, pr: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
         yield self._record(repo, pr)
@@ -34,7 +37,7 @@ class PullRequestsStream(PullRequestStateStream):
                     "participated_on": participant.get("participated_on"),
                 }
             )
-        entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, pr_id)
+        entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), pr_id)
         return self.item(
             entity_key=entity_key,
             repository_uuid=repo.uuid,

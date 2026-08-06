@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from source_bitbucket_cloud.streams.base import schema, unique_key
+from source_bitbucket_cloud.client import UNCOMPUTABLE_DIFF
+from source_bitbucket_cloud.streams.base import repo_scope, schema, unique_key
 from source_bitbucket_cloud.streams.pr_base import PullRequestStateStream
 
 
@@ -17,14 +18,16 @@ class PRDiffstatStream(PullRequestStateStream):
         generation = self.generation(repo.uuid, pr_id, "diffstat")
         path = self._client.repo_path(repo, f"pullrequests/{pr_id}/diffstat")
         entity_keys: set[str] = set()
-        present, entries = self._client.paginate_optional(path, params={"pagelen": "100"})
+        present, entries = self._client.paginate_optional(
+            path, params={"pagelen": "100"}, tolerate_messages=UNCOMPUTABLE_DIFF
+        )
         for entry in entries:
             new_file = entry.get("new") or {}
             old_file = entry.get("old") or {}
             file_path = new_file.get("path") or old_file.get("path")
             if not file_path:
                 continue
-            entity_key = unique_key(self._tenant_id, self._source_id, repo.uuid, pr_id, file_path)
+            entity_key = unique_key(self._tenant_id, self._source_id, *repo_scope(repo), pr_id, file_path)
             entity_keys.add(entity_key)
             yield self.item(
                 entity_key=entity_key,

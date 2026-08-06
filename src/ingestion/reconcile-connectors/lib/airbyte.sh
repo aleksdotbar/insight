@@ -21,7 +21,8 @@
 #
 # Required env (set by callers — main.sh / lib/env.sh):
 #   AIRBYTE_URL          — base URL, e.g. http://airbyte-server:8001
-#   INSIGHT_NAMESPACE    — K8s namespace where airbyte-auth-secrets lives
+#   INSIGHT_NAMESPACE    — the app's K8s namespace (fallback location of
+#                          airbyte-auth-secrets; see AIRBYTE_AUTH_SECRET_NAMESPACE)
 # Optional env (with documented defaults):
 #   AIRBYTE_TOKEN          — pre-supplied bearer token (skips OAuth call; for tests/CI)
 #   AIRBYTE_TOKEN_CACHE    — path to TTL-backed cache file
@@ -30,6 +31,13 @@
 #   AIRBYTE_AUTH_SECRET_NAME — name of the K8s Secret holding the
 #                              instance-admin-client-{id,secret} keys
 #                              (default airbyte-auth-secrets, the bundled-chart name)
+#   AIRBYTE_AUTH_SECRET_NAMESPACE — namespace of that Secret. Defaults to
+#                              INSIGHT_NAMESPACE; set when Airbyte runs in
+#                              its own namespace (the Airbyte chart creates
+#                              the Secret there and nothing mirrors it).
+#   AIRBYTE_CLIENT_ID_KEY / AIRBYTE_CLIENT_SECRET_KEY — .data keys of the
+#                              OAuth client credentials in that Secret
+#                              (default instance-admin-client-{id,secret})
 # ---------------------------------------------------------------------------
 
 # NOTE: this file is sourced into callers' shells; do NOT enable
@@ -63,10 +71,13 @@ ab_get_token() {
     printf '%s' "${AIRBYTE_TOKEN}"
     return 0
   fi
-  : "${INSIGHT_NAMESPACE:?INSIGHT_NAMESPACE must be set (the K8s namespace where Airbyte runs)}"
+  : "${INSIGHT_NAMESPACE:?INSIGHT_NAMESPACE must be set (the app namespace; secret lookup falls back to it when AIRBYTE_AUTH_SECRET_NAMESPACE is unset)}"
   local cache="${AIRBYTE_TOKEN_CACHE:-/tmp/insight-airbyte-token-${UID:-$(id -u)}}"  # RULE-DEFAULTS-OK: per-UID tmp cache; mode 600 set below; not a config input
   local ttl="${AIRBYTE_TOKEN_TTL:-300}"  # RULE-DEFAULTS-OK: cache window; Airbyte tokens last hours, this is just our re-fetch cadence
   local secret_name="${AIRBYTE_AUTH_SECRET_NAME:-airbyte-auth-secrets}"  # RULE-DEFAULTS-OK: name fixed by Airbyte Helm chart; override only for non-bundled Airbyte
+  local secret_ns="${AIRBYTE_AUTH_SECRET_NAMESPACE:-$INSIGHT_NAMESPACE}"  # RULE-DEFAULTS-OK: same-namespace installs need no override
+  local id_key="${AIRBYTE_CLIENT_ID_KEY:-instance-admin-client-id}"  # RULE-DEFAULTS-OK: .data keys fixed by Airbyte Helm chart
+  local secret_key="${AIRBYTE_CLIENT_SECRET_KEY:-instance-admin-client-secret}"  # RULE-DEFAULTS-OK: .data keys fixed by Airbyte Helm chart
 
   # Cache hit — token still fresh enough.
   if [[ -r "$cache" ]]; then
@@ -89,15 +100,15 @@ ab_get_token() {
   # RBAC: reconcile-rbac.yaml grants `secrets get/list/watch` on the namespace;
   # locally the user's kubeconfig provides the same.
   local secret_json client_id client_secret
-  if ! secret_json="$(kubectl -n "$INSIGHT_NAMESPACE" get secret "$secret_name" -o json 2>/dev/null)"; then
-    printf 'ab_get_token: kubectl failed reading secret/%s in ns %s (RBAC? wrong namespace?)\n' \
-      "$secret_name" "$INSIGHT_NAMESPACE" >&2
+  if ! secret_json="$(kubectl -n "$secret_ns" get secret "$secret_name" -o json 2>/dev/null)"; then
+    printf 'ab_get_token: kubectl failed reading secret/%s in ns %s (RBAC? wrong namespace? see AIRBYTE_AUTH_SECRET_NAMESPACE)\n' \
+      "$secret_name" "$secret_ns" >&2
     return 1
   fi
-  client_id="$(printf '%s' "$secret_json" | python3 -c 'import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d["data"]["instance-admin-client-id"]).decode())')"
-  client_secret="$(printf '%s' "$secret_json" | python3 -c 'import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d["data"]["instance-admin-client-secret"]).decode())')"
+  client_id="$(printf '%s' "$secret_json" | python3 -c 'import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d["data"].get(sys.argv[1], b"")).decode())' "$id_key")"
+  client_secret="$(printf '%s' "$secret_json" | python3 -c 'import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d["data"].get(sys.argv[1], b"")).decode())' "$secret_key")"
   if [[ -z "$client_id" || -z "$client_secret" ]]; then
-    printf 'ab_get_token: secret/%s missing instance-admin-client-id or instance-admin-client-secret\n' "$secret_name" >&2
+    printf 'ab_get_token: secret/%s missing %s or %s\n' "$secret_name" "$id_key" "$secret_key" >&2
     return 1
   fi
 
@@ -558,6 +569,19 @@ ab_delete_source() {
 }
 
 # ---------------------------------------------------------------------------
+# ab_delete_connection <connection_id>
+# POST /api/v1/connections/delete — removes a single connection (leaves its
+# source/destination intact). Used to prune duplicate connections created by
+# overlapping reconcile executions racing the same source's bootstrap.
+# ---------------------------------------------------------------------------
+ab_delete_connection() {
+  local connection_id="$1"
+  local body
+  body=$(printf '{"connectionId":"%s"}' "${connection_id}")
+  ab__curl POST /api/v1/connections/delete "${body}"
+}
+
+# ---------------------------------------------------------------------------
 # ab_list_connections <workspace_id>
 # Returns JSON array of connections in workspace.
 # ---------------------------------------------------------------------------
@@ -607,25 +631,37 @@ ab_get_connection() {
 }
 
 # ---------------------------------------------------------------------------
-# ab_update_connection_sync_catalog <connection_id> <sync_catalog_json>
+# ab_update_connection_sync_catalog <connection_id> <sync_catalog_json> \
+#                                    [source_catalog_id]
 # POST /api/v1/connections/update with the existing connection body but the
 # new sync_catalog merged in. Per ADR-0015: called on every republish to
 # pick up new streams/fields the connector advertises. State (per-stream
 # cursors) is preserved by Airbyte across `connections/update` since state
 # is keyed on (connectionId, streamName) — only sync_catalog shape changes,
 # not the connection identity.
+#
+# source_catalog_id: the `catalogId` from the discover_schema response the
+# sync_catalog was built from. Airbyte's "Schema changes detected" indicator
+# compares the connection's sourceCatalogId against the latest discovered
+# catalog id — carrying the stale id forward leaves the banner stuck on
+# every republish even though the syncCatalog itself is fresh. Empty keeps
+# the existing value (pre-fix behaviour).
 # ---------------------------------------------------------------------------
 ab_update_connection_sync_catalog() {
   local connection_id="$1"
   local sync_catalog_json="$2"
+  local source_catalog_id="${3:-}"
   local current body
   if ! current="$(ab_get_connection "${connection_id}")"; then
     return 1
   fi
-  body=$(SYNC_CATALOG_ENV="${sync_catalog_json}" python3 -c '
+  body=$(SYNC_CATALOG_ENV="${sync_catalog_json}" \
+         SOURCE_CATALOG_ID_ENV="${source_catalog_id}" python3 -c '
 import sys, os, json
 conn = json.load(sys.stdin)
 conn["syncCatalog"] = json.loads(os.environ["SYNC_CATALOG_ENV"])
+if os.environ["SOURCE_CATALOG_ID_ENV"]:
+    conn["sourceCatalogId"] = os.environ["SOURCE_CATALOG_ID_ENV"]
 # /connections/update accepts a subset; keep only the fields Airbyte
 # requires for the update call. Forwarding the full response body works on
 # current versions but pruning to the documented update schema is safer.
@@ -789,7 +825,8 @@ print(json.dumps(arr))
 
 # ---------------------------------------------------------------------------
 # ab_create_connection <workspace_id> <source_id> <destination_id> <name> \
-#                      <schedule_json> <tags_json> [sync_catalog_json]
+#                      <schedule_json> <tags_json> [sync_catalog_json] \
+#                      [namespace_format] [source_catalog_id]
 # POST /api/v1/connections/create — private v1 schema requires Tag objects
 # on `tags`. tags_json is a JSON array of Tag objects (with tagId, name,
 # workspaceId, color). Use ab_resolve_tags to turn a string array of tag
@@ -798,6 +835,11 @@ print(json.dumps(arr))
 #                '{"scheduleType":"cron","cronExpression":"0 2 * * *"}'.
 # sync_catalog_json: optional pre-discovered syncCatalog object (else
 # caller should call sources/discover_schema beforehand and pass it).
+# source_catalog_id: the `catalogId` from the discover_schema response the
+# syncCatalog was built from; anchors Airbyte's schema-change detection to
+# the catalog we just configured (otherwise the connection is born with no
+# sourceCatalogId and the next scheduled discover flags "Schema changes
+# detected" against a catalog that is already applied).
 #
 # @cpt-constraint:cpt-dataflow-constraint-airbyte-append:p1
 # Per cpt-dataflow-constraint-airbyte-append (PR #251 conventions),
@@ -817,6 +859,7 @@ ab_create_connection() {
   local tags_json="$6"
   local sync_catalog_json="${7:-}"
   local namespace_format="${8:-}"
+  local source_catalog_id="${9:-}"
   [[ -n "${sync_catalog_json}" ]] || sync_catalog_json='{"streams":[]}'
   [[ -n "${tags_json}" && "${tags_json}" != "null" ]] || tags_json='[]'
   # schedule_json is the Airbyte 1.7+ schedule shape: flat object with
@@ -849,9 +892,13 @@ ns_fmt = sys.argv[8]
 if ns_fmt:
     payload["namespaceDefinition"] = "customformat"
     payload["namespaceFormat"]     = ns_fmt
+src_catalog_id = sys.argv[9]
+if src_catalog_id:
+    payload["sourceCatalogId"] = src_catalog_id
 print(json.dumps(payload))
 ' "${workspace_id}" "${source_id}" "${destination_id}" "${name}" \
-  "${schedule_json}" "${tags_json}" "${sync_catalog_json}" "${namespace_format}")
+  "${schedule_json}" "${tags_json}" "${sync_catalog_json}" "${namespace_format}" \
+  "${source_catalog_id}")
   ab__curl POST /api/v1/connections/create "${body}"
 }
 

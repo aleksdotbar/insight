@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from airbyte_cdk.models import SyncMode
 
-from source_bitbucket_cloud.streams.base import repository_bucket
+from source_bitbucket_cloud.streams.base import repo_state_key, repository_bucket
 from source_bitbucket_cloud.streams.metric_events import (
     DeploymentsStream,
     EnvironmentsStream,
@@ -29,7 +29,7 @@ def args(repo, client):
 
 def read(stream, repo):
     return list(
-        stream.read_records(SyncMode.incremental, stream_slice={"bucket_id": repository_bucket(repo.uuid)})
+        stream.read_records(SyncMode.incremental, stream_slice={"bucket_id": repository_bucket(repo_state_key(repo))})
     )
 
 
@@ -83,7 +83,7 @@ class TestPipelines:
         stream.state = {}
         records = read(stream, repo)
         assert items(records)[0]["uuid"] == "p1"
-        stored = stream.state["repositories"][repo.uuid]
+        stored = stream.state["repositories"][repo_state_key(repo)]
         assert stored["created_on"] == "2026-06-02T00:00:00+00:00"
         assert stored["open"] == []
 
@@ -105,13 +105,13 @@ class TestPipelines:
         }
         stream = PipelinesStream(**args(repo, client))
         stream.state = {
-            "version": 2,
+            "version": 3,
             "bucket_count": 8,
-            "repositories": {repo.uuid: {"created_on": "2026-06-01T00:00:00+00:00", "open": ["open1"]}},
+            "repositories": {repo_state_key(repo): {"created_on": "2026-06-01T00:00:00+00:00", "open": ["open1"]}},
         }
         records = read(stream, repo)
         assert items(records)[0]["uuid"] == "open1"
-        assert stream.state["repositories"][repo.uuid]["open"] == ["open1"]
+        assert stream.state["repositories"][repo_state_key(repo)]["open"] == ["open1"]
 
 
 class TestPipelineChildren:
@@ -131,6 +131,27 @@ class TestPipelineChildren:
         assert items(records)[0]["uuid"] == "s1"
         assert items(records)[0]["pipeline_uuid"] == "p1"
         assert marker(records)["snapshot_item_count"] == 1
+
+    def test_steps_request_uses_safe_pagelen(self, repo):
+        # The pipeline-steps endpoint's pagelen ceiling is unverifiable
+        # (BCLOUD-13229); request the 50 safe-floor rather than 100.
+        client = FakeClient()
+        self._pipeline(client)
+        steps_path = "repositories/ws/repo/pipelines/p1/steps"
+        client.optional_values[steps_path] = (True, [{"uuid": "s1"}])
+        captured: dict[str, object] = {}
+        original = client.paginate_optional
+
+        def spy(path, **kwargs):
+            if path == steps_path:
+                captured["params"] = kwargs.get("params")
+            return original(path, **kwargs)
+
+        client.paginate_optional = spy
+        stream = PipelineStepsStream(**args(repo, client))
+        stream.state = {}
+        read(stream, repo)
+        assert (captured.get("params") or {}).get("pagelen") == "50"
 
     def test_test_reports_present(self, repo):
         client = FakeClient()
@@ -160,7 +181,7 @@ class TestIssues:
         stream = IssuesStream(**args(no_issues, FakeClient()))
         stream.state = {}
         assert read(stream, no_issues) == []
-        assert stream.state["repositories"][no_issues.uuid] == {}
+        assert stream.state["repositories"][repo_state_key(no_issues)] == {}
 
     def test_emits_issues_and_watermark(self, repo):
         client = FakeClient()
@@ -169,7 +190,7 @@ class TestIssues:
         stream.state = {}
         records = read(stream, repo)
         assert items(records)[0]["id"] == 7
-        assert stream.state["repositories"][repo.uuid]["updated_on"] == "2026-06-05T00:00:00+00:00"
+        assert stream.state["repositories"][repo_state_key(repo)]["updated_on"] == "2026-06-05T00:00:00+00:00"
 
     def test_absent_issues_leaves_state_untouched(self, repo):
         client = FakeClient()

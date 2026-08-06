@@ -2,7 +2,7 @@
 //!
 //! Loaded via `GearCtx::config::<GearConfig>()` from the
 //! `gears.identity-resolution.config` YAML section. Env overrides are
-//! `APP__gears__identity-resolution__config__<field>`.
+//! `APP__gears__identity_resolution__config__<field>`.
 
 use serde::Deserialize;
 
@@ -29,6 +29,15 @@ pub struct GearConfig {
     pub clickhouse_user: String,
     /// `ClickHouse` password.
     pub clickhouse_password: String,
+    /// Default tenant for the bootstrap-admin seed (mirrors the .NET
+    /// `AppOptions.TenantDefaultId`). Empty = bootstrap skipped with a warning
+    /// when a bootstrap person is configured.
+    pub tenant_default_id: String,
+    /// First-admin seed for the admin-gated CRUD endpoints (mirrors the .NET
+    /// `AppOptions.BootstrapAdminPersonId`): on `migrate`, this person gets an
+    /// active `admin` assignment in `tenant_default_id` unless one already
+    /// exists. Empty = disabled.
+    pub bootstrap_admin_person_id: String,
 }
 
 impl Default for GearConfig {
@@ -42,6 +51,8 @@ impl Default for GearConfig {
             clickhouse_database: "identity".to_owned(),
             clickhouse_user: String::new(),
             clickhouse_password: String::new(),
+            tenant_default_id: String::new(),
+            bootstrap_admin_person_id: String::new(),
         }
     }
 }
