@@ -115,7 +115,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 1. [ ] - `p1` - Operator requests the review queue - `inst-mr-queue-request`
 2. [ ] - `p1` - API: GET /v1/resolution/attention (items with candidates + resolution-rate shares) - `inst-mr-queue-api`
 3. [ ] - `p1` - Operator inspects one account's history where needed - `inst-mr-history-inspect`
-4. [ ] - `p1` - API: GET /v1/resolution/accounts/{source}/{id} (current binding + authored history) - `inst-mr-history-api`
+4. [ ] - `p1` - API: GET /v1/resolution/accounts/{source}/{source_id}/{account_id} (current binding + authored history) - `inst-mr-history-api`
 5. [ ] - `p1` - Operator submits one or more bindings - `inst-mr-bind-submit`
 6. [ ] - `p1` - API: POST /v1/resolution/bind (items addressed by account; addressing by observed value is reserved, see the addressing process) - `inst-mr-bind-api`
 7. [ ] - `p1` - **IF** the caller has no operator grant - `inst-mr-authz-check`
@@ -161,11 +161,11 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 **Steps**:
 1. [ ] - `p1` - Operator submits the detach for one account - `inst-mr-detach-submit`
 2. [ ] - `p1` - API: POST /v1/resolution/detach (account) - `inst-mr-detach-api`
-2. [ ] - `p1` - **IF** the account has neither a binding nor any observation - `inst-mr-detach-known`
+3. [ ] - `p1` - **IF** the account has neither a binding nor any observation - `inst-mr-detach-known`
    1. [ ] - `p1` - **RETURN** not-found, nothing appended - `inst-mr-detach-unknown`
-3. [ ] - `p1` - Mint a new `person_id` (random UUIDv7) - `inst-mr-detach-mint`
-4. [ ] - `p1` - Apply `cpt-ir-algo-manual-resolution-apply-decision` with the new person - `inst-mr-detach-apply`
-5. [ ] - `p1` - **RETURN** the new `person_id` - `inst-mr-detach-return`
+4. [ ] - `p1` - Mint a new `person_id` (random UUIDv7) - `inst-mr-detach-mint`
+5. [ ] - `p1` - Apply `cpt-ir-algo-manual-resolution-apply-decision` with the new person - `inst-mr-detach-apply`
+6. [ ] - `p1` - **RETURN** the new `person_id` - `inst-mr-detach-return`
 
 ### Exclude a Non-Person Account
 
@@ -182,10 +182,10 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 **Steps**:
 1. [ ] - `p1` - Operator submits the exclusion - `inst-mr-exclude-submit`
 2. [ ] - `p1` - API: POST /v1/resolution/exclude (account) - `inst-mr-exclude-api`
-2. [ ] - `p1` - **IF** the account has neither a binding nor any observation - `inst-mr-exclude-known`
+3. [ ] - `p1` - **IF** the account has neither a binding nor any observation - `inst-mr-exclude-known`
    1. [ ] - `p1` - **RETURN** not-found, nothing appended - `inst-mr-exclude-unknown`
-3. [ ] - `p1` - Apply `cpt-ir-algo-manual-resolution-apply-decision` with the excluded sentinel - `inst-mr-exclude-apply`
-4. [ ] - `p1` - **RETURN** confirmation - `inst-mr-exclude-return`
+4. [ ] - `p1` - Apply `cpt-ir-algo-manual-resolution-apply-decision` with the excluded sentinel - `inst-mr-exclude-apply`
+5. [ ] - `p1` - **RETURN** confirmation - `inst-mr-exclude-return`
 
 ## 3. Processes / Business Logic (CDSL)
 
@@ -377,7 +377,7 @@ The system **MUST** return, for an account, its current binding and full decisio
 - `cpt-ir-flow-manual-resolution-review-and-bind`
 
 **Touches**:
-- API: `GET /v1/resolution/accounts/{source}/{id}`, `GET /v1/resolution/persons/{person_id}/accounts`
+- API: `GET /v1/resolution/accounts/{source}/{source_id}/{account_id}`, `GET /v1/resolution/persons/{person_id}/accounts`
 - DB: `persons`, `identity_inputs`
 
 ### Operator Authorization
