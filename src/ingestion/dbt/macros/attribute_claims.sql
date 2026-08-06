@@ -92,30 +92,49 @@ claims AS (
 
 SELECT
     concat(
-        insight_tenant_id, '-',
-        insight_source_id, '-',
+        claim.insight_tenant_id, '-',
+        claim.insight_source_id, '-',
         '{{ source_type }}', '-',
-        source_account_id, '-',
-        field_id, '-',
-        toString(toUnixTimestamp64Milli(observed_at))
+        claim.source_account_id, '-',
+        claim.field_id, '-',
+        toString(toUnixTimestamp64Milli(claim.observed_at))
     )                                                    AS unique_key,
-    insight_tenant_id,
+    claim.insight_tenant_id                              AS insight_tenant_id,
     '{{ source_type }}'                                  AS insight_source_type,
-    insight_source_id,
-    source_account_id,
-    field_id,
+    claim.insight_source_id                              AS insight_source_id,
+    claim.source_account_id                              AS source_account_id,
+    claim.field_id                                       AS field_id,
     CAST(NULL, 'Nullable(String)')                       AS value_id,
-    value_label,
+    claim.value_label                                    AS value_label,
     CAST(
-        if(value_label = '', 'clear', 'set'),
+        if(claim.value_label = '', 'clear', 'set'),
         'Enum8(\'set\' = 1, \'clear\' = 2)'
     )                                                    AS claim_action,
-    observed_at,
-    ingested_at,
-    toUnixTimestamp64Milli(observed_at)                  AS _version
-FROM claims
-WHERE source_account_id != ''
+    claim.observed_at                                    AS observed_at,
+    claim.ingested_at                                    AS ingested_at,
+    toUnixTimestamp64Milli(claim.observed_at)            AS _version
+FROM claims AS claim
 {% if is_incremental() %}
-  AND toUnixTimestamp64Milli(observed_at) > (SELECT max(_version) FROM {{ this }})
+-- Watermark per source instance, not per table: one staging relation holds
+-- every tenant and connection of this connector, and their sync workflows run
+-- concurrently. A table-wide max lets whichever instance commits first filter
+-- out another instance's older-stamped claims, which then never reach silver
+-- at all.
+LEFT JOIN (
+    SELECT
+        insight_tenant_id,
+        insight_source_id,
+        max(_version) AS max_version
+    FROM {{ this }}
+    GROUP BY
+        insight_tenant_id,
+        insight_source_id
+) AS watermark
+    ON  claim.insight_tenant_id = watermark.insight_tenant_id
+    AND claim.insight_source_id = watermark.insight_source_id
+{% endif %}
+WHERE claim.source_account_id != ''
+{% if is_incremental() %}
+  AND toUnixTimestamp64Milli(claim.observed_at) > coalesce(watermark.max_version, 0)
 {% endif %}
 {% endmacro %}

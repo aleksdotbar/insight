@@ -206,7 +206,10 @@ models:
       attribute_claims macro. Emits the class_person_attribute_claims contract;
       unioned into silver by the silver:class_person_attribute_claims tag.
       Custom fields claim via the same workday_custom_fields var that drives
-      snapshot versioning; keep it aligned with the report's extra columns.
+      snapshot versioning, so one list governs both. The var has no default and
+      is not supplied by the scheduled dbt invocation, so custom report columns
+      are claimed only when a run passes it explicitly — the same condition
+      their snapshot versioning already depends on.
     columns:
       - name: unique_key
         tests:
