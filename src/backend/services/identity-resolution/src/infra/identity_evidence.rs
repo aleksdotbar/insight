@@ -94,7 +94,11 @@ impl ClickHouseEvidenceReader {
     ///
     /// Returns an error if the query fails or a stored source id is not a UUID.
     pub async fn accounts(&self) -> anyhow::Result<Vec<AccountEvidence>> {
-        let rows: Vec<FoldedRow> = self.client.query(FOLD_SQL).fetch_all().await?;
+        let rows: Vec<FoldedRow> = match self.client.query(FOLD_SQL).fetch_all().await {
+            Ok(rows) => rows,
+            Err(e) if is_missing_relation(&e) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
 
         // A row whose source id is not a UUID is one unusable account, not a
         // reason to blind the whole review surface: skip it and say so.
@@ -154,16 +158,30 @@ impl ClickHouseEvidenceReader {
     ///
     /// Returns an error if the query fails.
     pub async fn has_account(&self, account: &SourceAccountKey) -> anyhow::Result<bool> {
-        let row: Option<CountRow> = self
+        let row: Result<Option<CountRow>, _> = self
             .client
             .query(EXISTS_SQL)
             .bind(account.source_type.as_str())
             .bind(account.source_id.to_string())
             .bind(account.account_id.as_str())
             .fetch_optional()
-            .await?;
-        Ok(row.is_some_and(|r| r.hits > 0))
+            .await;
+
+        match row {
+            Ok(hit) => Ok(hit.is_some_and(|r| r.hits > 0)),
+            // A fresh install has no evidence relation yet — dbt creates it on
+            // its first silver build. That is "nothing observed", not a failure
+            // to answer.
+            Err(e) if is_missing_relation(&e) => Ok(false),
+            Err(e) => Err(e.into()),
+        }
     }
+}
+
+/// ClickHouse reports an absent table as `UNKNOWN_TABLE` (code 60).
+fn is_missing_relation(error: &clickhouse::error::Error) -> bool {
+    let message = error.to_string();
+    message.contains("UNKNOWN_TABLE") || message.contains("code: 60")
 }
 
 fn non_empty(value: String) -> Option<String> {

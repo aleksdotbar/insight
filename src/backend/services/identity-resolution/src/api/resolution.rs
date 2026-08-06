@@ -133,10 +133,25 @@ pub async fn bind(
     reject_oversized(req.bindings.len())?;
 
     let mut targets = Vec::with_capacity(req.bindings.len());
+    let mut seen: HashSet<SourceAccountKey> = HashSet::with_capacity(req.bindings.len());
     for item in &req.bindings {
+        let account = SourceAccountKey::from(&item.account);
+
+        // One call naming an account twice has no answer: which person wins is
+        // the caller's contradiction to resolve, not ours to guess.
+        if !seen.insert(account.clone()) {
+            return Err(invalid(
+                "bindings",
+                &format!(
+                    "account {}:{} appears more than once",
+                    account.source_type, account.account_id
+                ),
+            ));
+        }
+
         require_known_person(&state.db, tenant, item.person_id).await?;
         targets.push(Target {
-            account: SourceAccountKey::from(&item.account),
+            account,
             person_id: item.person_id,
         });
     }
@@ -269,16 +284,37 @@ async fn apply_correction(
         .collect();
     let rows = resolution::build_rows(pairs, operator, verb, chrono::Utc::now().naive_utc());
 
-    let attempted: HashSet<SourceAccountKey> = rows.iter().map(|r| r.account.clone()).collect();
+    // Row i belongs to the target at `written[i]`: outcomes are reported by
+    // position, never by account, so one call naming an account twice cannot
+    // have its results collapse into one.
+    let written: Vec<usize> = targets
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| {
+            rows.iter()
+                .any(|r| r.account == t.account && r.person_id == t.person_id)
+        })
+        .map(|(index, _)| index)
+        .collect();
     let landed = write_rows(state, tenant, operator, rows).await?;
+
+    let mut outcomes = vec![OUTCOME_ALREADY_DECIDED; targets.len()];
+    for (slot, index) in written.iter().enumerate() {
+        outcomes[*index] = if landed.get(slot).copied().unwrap_or(false) {
+            OUTCOME_APPLIED
+        } else {
+            OUTCOME_REFUSED
+        };
+    }
 
     let items: Vec<ItemResult> = targets
         .iter()
-        .map(|t| ItemResult {
+        .zip(&outcomes)
+        .map(|(t, outcome)| ItemResult {
             source: t.account.source_type.clone(),
             source_id: t.account.source_id,
             account_id: t.account.account_id.clone(),
-            outcome: outcome_label(&t.account, &attempted, &landed).to_owned(),
+            outcome: (*outcome).to_owned(),
         })
         .collect();
 
@@ -295,75 +331,75 @@ async fn apply_correction(
     .await;
 
     Ok(CorrectionResponse {
-        applied: landed.len(),
-        already_decided: targets.len() - attempted.len(),
+        applied: count_outcome(&outcomes, OUTCOME_APPLIED),
+        already_decided: count_outcome(&outcomes, OUTCOME_ALREADY_DECIDED),
         items,
         new_person_id: None,
     })
 }
 
-/// What the caller is told about one requested account: a row that was never
-/// needed, one that is now in force, or one the database would not place.
-fn outcome_label<'a>(
-    account: &SourceAccountKey,
-    attempted: &HashSet<SourceAccountKey>,
-    landed: &'a HashSet<SourceAccountKey>,
-) -> &'a str {
-    if !attempted.contains(account) {
-        return OUTCOME_ALREADY_DECIDED;
-    }
-    if landed.contains(account) {
-        return OUTCOME_APPLIED;
-    }
-    OUTCOME_REFUSED
+fn count_outcome(outcomes: &[&str], wanted: &str) -> usize {
+    outcomes.iter().filter(|o| **o == wanted).count()
 }
 
 /// Append the rows, then recover only those the database refused.
 ///
 /// The natural key has no account discriminator, so a concurrent operation can
 /// have claimed the same microsecond and `INSERT IGNORE` silently drops the
-/// loser. A short write is diagnosed by re-reading the bindings — the rows that
-/// did land are already current, so retrying the whole set would duplicate
-/// them; only the accounts still pointing elsewhere are re-stamped and retried.
-/// Returns the accounts whose binding is in force after the write.
+/// loser. A short write is diagnosed by asking which of these exact rows the
+/// journal now holds — author and instant included, because a confirmation
+/// writes an operator row over an automatic binding to the same person and
+/// "the account points at this person" cannot tell those two apart. Only the
+/// rows that are missing are re-stamped and retried; the ones that landed must
+/// not be sent again or the history gains duplicates.
+///
+/// Returns, per input row, whether its observation is in the journal.
 async fn write_rows(
     state: &AppState,
     tenant: Uuid,
     operator: Uuid,
     rows: Vec<resolution::BindingRow>,
-) -> Result<HashSet<SourceAccountKey>, CanonicalError> {
+) -> Result<Vec<bool>, CanonicalError> {
     if rows.is_empty() {
-        return Ok(HashSet::new());
+        return Ok(Vec::new());
     }
 
     let appended = append(state, tenant, operator, &rows).await?;
     if appended == rows.len() as u64 {
-        return Ok(rows.into_iter().map(|r| r.account).collect());
+        return Ok(vec![true; rows.len()]);
     }
 
-    let mut landed = landed_accounts(state, tenant, &rows).await?;
+    let mut present = present_rows(state, tenant, &rows).await?;
+
     let missing: Vec<resolution::BindingRow> = rows
         .iter()
-        .filter(|r| !landed.contains(&r.account))
-        .cloned()
+        .zip(&present)
+        .filter(|(_, landed)| !**landed)
+        .map(|(row, _)| row.clone())
         .collect();
-
     if missing.is_empty() {
-        return Ok(landed);
+        return Ok(present);
     }
 
     let retry = resolution::restamp(&missing, chrono::Utc::now().naive_utc());
     append(state, tenant, operator, &retry).await?;
-    landed = landed_accounts(state, tenant, &rows).await?;
 
-    let refused = rows.len() - landed.len();
+    let recovered = present_rows(state, tenant, &retry).await?;
+    let mut recovered = recovered.into_iter();
+    for landed in &mut present {
+        if !*landed {
+            *landed = recovered.next().unwrap_or(false);
+        }
+    }
+
+    let refused = present.iter().filter(|landed| !**landed).count();
     if refused > 0 {
         tracing::warn!(
             refused,
             "identity correction: rows the database refused twice"
         );
     }
-    Ok(landed)
+    Ok(present)
 }
 
 async fn append(
@@ -377,26 +413,14 @@ async fn append(
         .map_err(|e| internal(&e, "failed to append the correction"))
 }
 
-/// Which of the written accounts now hold the person the correction asked for.
-async fn landed_accounts(
+async fn present_rows(
     state: &AppState,
     tenant: Uuid,
     rows: &[resolution::BindingRow],
-) -> Result<HashSet<SourceAccountKey>, CanonicalError> {
-    let accounts: Vec<SourceAccountKey> = rows.iter().map(|r| r.account.clone()).collect();
-    let current = resolution_repo::current_bindings(&state.db, tenant, &accounts)
+) -> Result<Vec<bool>, CanonicalError> {
+    resolution_repo::present_rows(&state.db, tenant, rows)
         .await
-        .map_err(|e| internal(&e, "failed to verify the correction"))?;
-
-    Ok(rows
-        .iter()
-        .filter(|r| {
-            current
-                .get(&r.account)
-                .is_some_and(|b| b.person_id == r.person_id)
-        })
-        .map(|r| r.account.clone())
-        .collect())
+        .map_err(|e| internal(&e, "failed to verify the correction"))
 }
 
 /// Record the call in the operations journal. Journalling must never fail the

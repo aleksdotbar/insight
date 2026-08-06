@@ -5,7 +5,7 @@
 //! [`super::seed_repo::rebuild_derived_caches`]). Nothing here updates or
 //! deletes a journal row.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait, Value};
 use uuid::Uuid;
@@ -303,4 +303,86 @@ pub async fn binding_history(
         });
     }
     Ok(history)
+}
+
+/// Which of these exact observations the journal holds.
+///
+/// Identity is the whole natural key including the author and the instant, not
+/// just "the account points at this person": a confirmation appends an
+/// operator-authored row over an automatic binding to the SAME person, so
+/// asking about the person alone cannot tell a landed row from a refused one.
+///
+/// # Errors
+///
+/// Returns an error if the query fails.
+pub async fn present_rows(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    rows: &[BindingRow],
+) -> anyhow::Result<Vec<bool>> {
+    const SQL_PREFIX: &str = "SELECT insight_source_type, insight_source_id, value_id, \
+         person_id, author_person_id, created_at \
+         FROM persons \
+         WHERE value_type = 'id' AND insight_tenant_id = ? \
+           AND (insight_source_type, insight_source_id, value_id, person_id, \
+                author_person_id, created_at) IN (";
+    const ROW_TUPLE: &str = "(?, ?, ?, ?, ?, ?)";
+    const LOOKUP_CHUNK: usize = 200;
+
+    let mut found: HashSet<(String, Uuid, String, Uuid, Uuid, sea_orm::prelude::DateTime)> =
+        HashSet::new();
+
+    for chunk in rows.chunks(LOOKUP_CHUNK) {
+        let tuples = vec![ROW_TUPLE; chunk.len()].join(", ");
+        let sql = format!("{SQL_PREFIX}{tuples})");
+
+        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 6 + 1);
+        params.push(tenant_id.as_bytes().to_vec().into());
+        for row in chunk {
+            params.push(row.account.source_type.clone().into());
+            params.push(row.account.source_id.as_bytes().to_vec().into());
+            params.push(row.account.account_id.clone().into());
+            params.push(row.person_id.as_bytes().to_vec().into());
+            params.push(row.author_person_id.as_bytes().to_vec().into());
+            params.push(row.created_at.into());
+        }
+
+        let hits = db
+            .query_all(Statement::from_sql_and_values(
+                DbBackend::MySql,
+                &sql,
+                params,
+            ))
+            .await?;
+
+        for hit in hits {
+            let source_type: String = hit.try_get("", "insight_source_type")?;
+            let source_id: Vec<u8> = hit.try_get("", "insight_source_id")?;
+            let account_id: String = hit.try_get("", "value_id")?;
+            let person_id: Vec<u8> = hit.try_get("", "person_id")?;
+            let author_person_id: Vec<u8> = hit.try_get("", "author_person_id")?;
+            found.insert((
+                source_type,
+                Uuid::from_slice(&source_id)?,
+                account_id,
+                Uuid::from_slice(&person_id)?,
+                Uuid::from_slice(&author_person_id)?,
+                hit.try_get("", "created_at")?,
+            ));
+        }
+    }
+
+    Ok(rows
+        .iter()
+        .map(|row| {
+            found.contains(&(
+                row.account.source_type.clone(),
+                row.account.source_id,
+                row.account.account_id.clone(),
+                row.person_id,
+                row.author_person_id,
+                row.created_at,
+            ))
+        })
+        .collect())
 }

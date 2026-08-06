@@ -104,6 +104,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 
 **Error Scenarios**:
 - The caller lacks the operator grant
+- One call names the same account twice — which person wins is the caller's contradiction, not the system's to guess
 - A row addresses a value that resolves to more than one account, or to none
 - A row names a person that does not exist
 
@@ -219,7 +220,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 **Steps**:
 1. [ ] - `p1` - **IF** the reference names source type and account id - `inst-mr-addr-direct`
    1. [ ] - `p1` - **RETURN** that account key (it may not have been observed yet — pre-registration is allowed) - `inst-mr-addr-direct-return`
-2. [ ] - `p1` - DB: SELECT identity_inputs (accounts observing the value, folded per account over UPSERT/DELETE) - `inst-mr-addr-evidence`
+2. [ ] - `p1` - DB: SELECT identity_inputs (accounts observing the value, folded per account over UPSERT/DELETE); an absent evidence relation reads as no observations, never as a failure - `inst-mr-addr-evidence`
 3. [ ] - `p1` - **IF** exactly one active account observes the value - `inst-mr-addr-unique`
    1. [ ] - `p1` - **RETURN** that account key - `inst-mr-addr-unique-return`
 4. [ ] - `p1` - **ELSE** - `inst-mr-addr-ambiguous`
@@ -239,7 +240,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
    1. [ ] - `p1` - Advance the candidate by whole microseconds until it is unused - `inst-mr-ts-advance`
 3. [ ] - `p1` - **RETURN** the claimed instants - `inst-mr-ts-return`
 
-> Concurrency: allocation is not a lock, so two operations can claim the same instant and the insert silently drops the loser (the key has no account discriminator). A write **MUST** compare what the database appended against what it asked for and, on a short write, re-read the bindings to learn **which** rows landed — re-sending the whole set would duplicate the ones that did. Only the accounts still pointing elsewhere are re-stamped and retried, and a row that cannot be placed is reported as refused rather than counted as applied.
+> Concurrency: allocation is not a lock, so two operations can claim the same instant and the insert silently drops the loser (the key has no account discriminator). A write **MUST** compare what the database appended against what it asked for and, on a short write, ask which of its **exact** observations the journal now holds — author and instant included, because a confirmation writes an operator row over an automatic binding to the same person and "the account points at this person" cannot tell a landed row from a refused one. Only the missing rows are re-stamped and retried; a row that cannot be placed is reported as refused rather than counted as applied.
 
 ### Build the Review Queue
 
@@ -332,7 +333,7 @@ The system **MUST** treat a correction as a no-op only when an identical operato
 
 - [ ] `p1` - **ID**: `cpt-ir-dod-manual-resolution-timestamps`
 
-The system **MUST** claim a distinct `created_at` per appended row within the natural observation key, so that rows of one operation cannot collide and be dropped by the insert. On a short write it **MUST** identify the rows that did not land and retry only those, so recovery cannot duplicate history, and **MUST** report a row it could not place rather than counting it as applied.
+The system **MUST** claim a distinct `created_at` per appended row within the natural observation key, so that rows of one operation cannot collide and be dropped by the insert. On a short write it **MUST** identify the rows that did not land — by their full observation identity, not by the account's current person — and retry only those, so recovery cannot duplicate history, and **MUST** report a row it could not place rather than counting it as applied.
 
 **Implements**:
 - `cpt-ir-algo-manual-resolution-timestamp-slot`
@@ -412,7 +413,8 @@ The system **MUST** resolve `person_id` account-first on the source-instance-sco
 - [ ] A correction followed by its counter-correction restores the effective bindings
 - [ ] Bulk rows addressed by a value that resolves to zero or several accounts are skipped with a machine-readable reason and remain in the queue (with value addressing; the direct form ships first)
 - [ ] Two accounts of one source bound to one person in one operation both persist (distinct timestamps); a short write retries only the rows that did not land and never duplicates one that did
-- [ ] Detach and exclude reject an account nothing has observed and that holds no binding
+- [ ] Detach and exclude reject an account nothing has observed and that holds no binding — including before the evidence relation has ever been built, where the answer is still not-found
+- [ ] A bulk call naming one account twice is rejected, and per-item outcomes are reported by position
 - [ ] A person who changed e-mail keeps their history: facts recorded under the previous address still resolve
 - [ ] The queue surfaces pending, binding-conflict and no-evidence items, suppresses operator-settled divergence, hides excluded accounts, and reports resolution-rate shares
 - [ ] Accounts whose latest evidence event is a closure do not appear in the queue
