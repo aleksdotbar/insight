@@ -5,9 +5,11 @@ import { ComingSoon } from "@/components/widgets/coming-soon";
 import { GroupDrilldownSheet } from "@/components/widgets/dashboard/group-drilldown-sheet";
 import { IcNeedsAttention } from "@/components/widgets/dashboard/ic-needs-attention";
 import { KpiTile } from "@/components/widgets/dashboard/kpi-tile";
+import { previousPeriodRange } from "@/api/period-to-date-range";
 import { usePortalPeriod } from "@/hooks/use-portal-period";
 import { useSettings } from "@/hooks/use-settings";
 import { metricAttentionItems } from "@/lib/insight/attention";
+import { typicalPeerPool } from "@/lib/insight/peer-pool";
 import {
   KPI_ROW_COLLECTION,
   GROUPS,
@@ -95,6 +97,20 @@ export function MetricGroupsView({
     entity,
     dateRange,
   );
+  // The same collections over the previous period: attention needs to know
+  // whether a standing is also a change (see `metricAttentionItems`), and
+  // "period" alone is enough for that — no peer stats needed.
+  const previousRange = previousPeriodRange(dateRange, period);
+  const previousGroupData = useMetricCollectionSet(
+    showKpis
+      ? defs.map((def) => ({
+          key: def.id,
+          collection: projectViews(def.collection, ["period"]),
+        }))
+      : [],
+    showKpis ? entity : CLOSED_ENTITY,
+    previousRange,
+  );
 
   // Slice cohort: the people who share this person's active-slice attribute
   // value. Only fetched when a slice is picked — otherwise the person's own
@@ -181,13 +197,20 @@ export function MetricGroupsView({
     return { ...r, byKey: injectCohortPeer(r.byKey, cr.byKey, cohortIds) };
   };
 
+  const peerPool = showKpis ? typicalPeerPool(kpiByKey, entityId) : null;
+
   const tiles = showKpis
     ? metricKpiTiles(kpiByKey, kpiData.previousByKey, entityId, focusMode)
     : [];
 
   const attentionItems = showKpis
     ? defs.flatMap((def) =>
-        metricAttentionItems(def, groupResult(def.id)?.byKey ?? new Map(), entityId),
+        metricAttentionItems(
+          def,
+          groupResult(def.id)?.byKey ?? new Map(),
+          previousGroupData.get(def.id)?.byKey ?? null,
+          entityId,
+        ),
       )
     : [];
 
@@ -197,8 +220,17 @@ export function MetricGroupsView({
         {showKpis ? (
           <>
             <section className="flex flex-col gap-3">
-              <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+              <p className="flex flex-wrap items-baseline gap-x-2 text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 At a glance
+                {/* Whose median. Every comparison on this page says "vs median"
+                    and none of them said against whom — which is the one thing
+                    a reader needs to judge any of it, and the one that reveals
+                    a lead being measured against their own reports. */}
+                {peerPool ? (
+                  <span className="font-normal normal-case tracking-normal">
+                    · compared with {peerPool} people in the same {cohortLabel}
+                  </span>
+                ) : null}
               </p>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
                 {/* The tiles ARE the row: `metricKpiTiles` already picked the

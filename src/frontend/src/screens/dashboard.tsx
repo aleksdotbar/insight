@@ -121,6 +121,10 @@ export function DashboardScreen({ personId }: DashboardScreenProps) {
     metricAttentionItems(
       def,
       groupData.get(def.id)?.byKey ?? new Map(),
+      // The legacy screen fetches no previous period for its groups, so
+      // attention has nothing to judge a change against and stays silent
+      // rather than reporting standings as events.
+      null,
       entityId
     )
   );

@@ -59,9 +59,17 @@ function bothMetrics(value: number | null) {
   ]);
 }
 
+/** A previous period the current one fell from, so a standing is also a change. */
+function before(value: number) {
+  return normalizeMetricResults([
+    aiMetric(value, "ai.sessions"),
+    aiMetric(value, "ai.active_days"),
+  ]);
+}
+
 describe("metricAttentionItems", () => {
   it("surfaces bottom-quartile metrics with the same item shape", () => {
-    const items = metricAttentionItems(AI_DEF, bothMetrics(2), "me@x.com");
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(9), "me@x.com");
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       key: "ai.sessions",
@@ -82,14 +90,15 @@ describe("metricAttentionItems", () => {
       metricAttentionItems(
         AI_DEF,
         normalizeMetricResults([unmeasured]),
+        before(9),
         "me@x.com",
       ),
     ).toHaveLength(0);
   });
 
   it("ignores in-pack values and missing data", () => {
-    expect(metricAttentionItems(AI_DEF, bothMetrics(10), "me@x.com")).toHaveLength(0);
-    expect(metricAttentionItems(AI_DEF, bothMetrics(null), "me@x.com")).toHaveLength(0);
+    expect(metricAttentionItems(AI_DEF, bothMetrics(10), before(9), "me@x.com")).toHaveLength(0);
+    expect(metricAttentionItems(AI_DEF, bothMetrics(null), before(9), "me@x.com")).toHaveLength(0);
   });
 });
 
@@ -99,7 +108,7 @@ describe("what the headline row already shows", () => {
     // it shows everything standing out EXCEPT what the row above already
     // carries. Repeating one puts a single finding on the screen twice, and a
     // reader counts marks rather than facts.
-    const items = metricAttentionItems(AI_DEF, bothMetrics(2), "me@x.com");
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(9), "me@x.com");
     expect(items.map((i) => i.key)).not.toContain("ai.active_days");
   });
 
@@ -110,7 +119,27 @@ describe("what the headline row already shows", () => {
       ...AI_DEF,
       card: { preview: ["ai.sessions"] },
     };
-    const items = metricAttentionItems(onOldCard, bothMetrics(2), "me@x.com");
+    const items = metricAttentionItems(onOldCard, bothMetrics(2), before(9), "me@x.com");
     expect(items.map((i) => i.key)).toEqual(["ai.sessions"]);
+  });
+});
+
+describe("a standing is not an event", () => {
+  it("stays silent when a metric is below its cohort but did not move", () => {
+    // A lead measured against the developers reporting to them is below on
+    // commits every month, by the shape of the job. Repeating that forever
+    // teaches the reader to skip the block; a flat gap is not news.
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(2), "me@x.com");
+    expect(items).toEqual([]);
+  });
+
+  it("stays silent when it moved the RIGHT way, even if still behind", () => {
+    const items = metricAttentionItems(AI_DEF, bothMetrics(2), before(1), "me@x.com");
+    expect(items).toEqual([]);
+  });
+
+  it("makes no claim about direction without a previous period", () => {
+    // One period of data cannot say which way anything is going.
+    expect(metricAttentionItems(AI_DEF, bothMetrics(2), null, "me@x.com")).toEqual([]);
   });
 });

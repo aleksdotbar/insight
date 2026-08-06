@@ -1,9 +1,16 @@
+import { HelpCircle } from "lucide-react";
 import { useMemo } from "react";
 
 import { useViewer } from "@/auth";
 import { ScopeSelect } from "@/components/portal/scope-select";
 import { SliceSelect } from "@/components/portal/slice-select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
 import { usePortalPeriod } from "@/hooks/use-portal-period";
 import { availableSlices } from "@/lib/insight/slices";
@@ -53,7 +60,37 @@ export function PortalTopBar() {
           gesture can reach it — Scope and Slice became unreachable. */}
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto md:flex-wrap md:justify-end md:overflow-x-visible">
         {scoped ? <ScopeSelect /> : null}
-        <SliceSelect dims={dims} />
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className="hidden text-xs text-muted-foreground md:inline">
+            Cohort
+          </span>
+          {/* Every "vs median" on every screen is computed against whatever
+              this names, and the word alone does not say so. */}
+          <TooltipProvider delay={200}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className="cursor-help text-muted-foreground"
+                    aria-label="What the cohort controls"
+                  >
+                    <HelpCircle className="size-3.5" />
+                  </span>
+                }
+              />
+              <TooltipContent
+                side="bottom"
+                className="max-w-xs text-xs leading-relaxed"
+              >
+                The people every comparison on screen is made against. "Team
+                (all)" compares within the org you are looking at; picking an
+                attribute compares each person with the people who share their
+                value for it.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <SliceSelect dims={dims} />
+        </span>
         <PeriodSelectorBar
           period={period}
           customRange={customRange}

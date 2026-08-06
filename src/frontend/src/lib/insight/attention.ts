@@ -17,6 +17,12 @@ import { peerStatusVsQuartiles } from "@/lib/peers";
  * cohort, display-ready. Ranking (`relGap` descending) happens in the
  * component.
  */
+/**
+ * How far a metric must move against its own past to count as a change rather
+ * than noise: a period boundary shifts most counters a little.
+ */
+const ADVERSE_MOVE_MIN = 0.1;
+
 export interface AttentionItem {
   key: string;
   group: GroupId;
@@ -56,6 +62,7 @@ export interface AttentionItem {
 export function metricAttentionItems(
   def: MetricGroup,
   byKey: Map<string, NormalizedMetricResult>,
+  previousByKey: Map<string, NormalizedMetricResult> | null,
   entityId: string
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
@@ -78,6 +85,24 @@ export function metricAttentionItems(
     if (peerStatusVsQuartiles(value, stats, higherIsBetter) !== "bottom") {
       continue;
     }
+    // Below the cohort AND moving the wrong way.
+    //
+    // "Below the cohort" alone is a standing, not an event: a lead measured
+    // against the developers reporting to them is below on commits every
+    // month, by the shape of the job, and a block that repeats that forever
+    // teaches the reader to skip it. A structural gap is flat; a regression is
+    // not, so requiring the move keeps the standing out and lets the change
+    // through.
+    //
+    // No previous value means no claim about direction — the item is left out
+    // rather than asserted on one period of data.
+    const before = previousByKey?.get(metricConfig.key);
+    const previous = before ? forEntity(before, entityId).value : null;
+    if (previous == null || !Number.isFinite(previous)) continue;
+    const movedAdversely = higherIsBetter ? value < previous : value > previous;
+    if (!movedAdversely) continue;
+    const moveScale = Math.abs(previous) > 1e-9 ? Math.abs(previous) : 1;
+    if (Math.abs(value - previous) / moveScale < ADVERSE_MOVE_MIN) continue;
     const median = stats.p50;
     const denom = Math.abs(median) > 1e-9 ? Math.abs(median) : 1;
     const relGap = higherIsBetter
