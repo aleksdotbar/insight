@@ -85,6 +85,10 @@ const TASK_DELIVERY_COLLECTION: MetricCollectionConfig = {
       views: [{ view: "period" }, { view: "peer" }],
     },
     {
+      key: "tasks.closed_unknown_type",
+      views: [{ view: "period" }, { view: "peer" }],
+    },
+    {
       key: "tasks.dev_time",
       views: [{ view: "period" }, { view: "peer" }, { view: "histogram" }],
     },
@@ -336,7 +340,12 @@ export const GROUPS: readonly MetricGroup[] = [
       {
         id: "task-throughput",
         view: "timeseries",
-        metrics: ["tasks.bugs_fixed", "tasks.closed_non_bug"],
+        metrics: [
+          "tasks.closed",
+          "tasks.bugs_fixed",
+          "tasks.closed_non_bug",
+          "tasks.closed_unknown_type",
+        ],
         chart: { multiMetric: "combined" },
       },
       {
@@ -477,6 +486,7 @@ export const GROUPS: readonly MetricGroup[] = [
  * format, and direction ride the `/v1/metric-results` response.
  */
 export const HEATMAP_METRIC_KEYS: readonly string[] = [
+  "tasks.closed",
   "tasks.bugs_fixed",
   "tasks.closed_non_bug",
   "tasks.resolution_time",

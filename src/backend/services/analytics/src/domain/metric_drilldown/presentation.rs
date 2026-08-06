@@ -238,8 +238,13 @@ pub(super) fn evidence_presentation(
         },
         (
             "task",
-            "tasks_closed" | "bugs_fixed" | "closed_non_bug" | "due_date_on_time"
-            | "due_date_with_due" | "late_count",
+            "tasks_closed"
+            | "bugs_fixed"
+            | "closed_non_bug"
+            | "closed_unknown_type"
+            | "due_date_on_time"
+            | "due_date_with_due"
+            | "late_count",
         ) => EvidencePresentation {
             detail_keys: &["ref", "issue_type"],
             show_value: false,

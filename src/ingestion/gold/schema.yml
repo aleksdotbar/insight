@@ -426,6 +426,7 @@ models:
                   - tasks_closed
                   - bugs_fixed
                   - closed_non_bug
+                  - closed_unknown_type
                   - due_date_on_time
                   - due_date_with_due
                   - slip_days_total

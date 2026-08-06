@@ -16,7 +16,8 @@ description: >
   captures them all -> per-person sums {1,2,3,4,5}; the IC case requests erin (5).
   Erin's five are 3 Task + 1 Bug + 1 Incident, so her total splits into three
   type groups that add back up to 5 — and Incident, a name neither configured
-  list covers, stays its own group instead of joining the non-bug work.
+  list covers, stays its own group instead of joining the non-bug work, and is
+  what tasks.closed_unknown_type counts.
   Empty window 2026-06 -> no items.
 
 bronze:
@@ -289,6 +290,11 @@ cases:
               - { view: peer }
               - { view: timeseries, bucket: day }
               - { view: breakdown, dimensions: [type] }
+          - metric_key: tasks.closed_unknown_type
+            views:
+              - { view: period }
+              - { view: peer }
+              - { view: timeseries, bucket: day }
     expect:
       - assert: "status == 200"
       - metric: tasks.closed
@@ -314,6 +320,17 @@ cases:
       - metric: tasks.closed
         view: breakdown
         assert: "size(items.filter(v, v.entity_id == 'erin@example.com')) == 3"
+      - metric: tasks.closed_unknown_type
+        view: period
+        find: { entity_id: erin@example.com }
+        equal: { value: 1 }
+      - metric: tasks.closed_unknown_type
+        view: peer
+        find: { entity_id: erin@example.com }
+        equal: { target_value: 1, p25: null, median: null, p75: null, min: null, max: null, n: 1 }
+      - metric: tasks.closed_unknown_type
+        view: timeseries
+        assert: "items.exists(s, s.entity_id == 'erin@example.com' && s.points.exists(p, p.bucket_start == '2026-12-25' && double(p.value) == 1.0))"
 
   - name: tasks.closed empty window
     request:

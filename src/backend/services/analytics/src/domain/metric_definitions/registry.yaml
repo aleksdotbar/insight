@@ -127,6 +127,8 @@ sources:
         evidence_granularity: event
       - key: closed_non_bug
         evidence_granularity: event
+      - key: closed_unknown_type
+        evidence_granularity: event
       - key: due_date_on_time
         evidence_granularity: event
       - key: due_date_with_due
@@ -965,6 +967,24 @@ metrics:
     inputs:
       - input_role: value
         measure_key: closed_non_bug
+    dimensions: []
+  - metric_key: tasks.closed_unknown_type
+    source_key: task
+    label: Unclassified issues closed
+    short_label: Unclassified
+    description: Closed issues whose type could not be determined
+    explanation: >-
+      Issues a person closed whose type matched no known type name, so they
+      count in neither bugs nor non-bug work.
+    unit: issues
+    format: integer
+    direction: neutral
+    entity_type: person
+    computation: sum
+    peer_cohort_key: org_unit
+    inputs:
+      - input_role: value
+        measure_key: closed_unknown_type
     dimensions: []
   - metric_key: tasks.dev_time
     source_key: task
