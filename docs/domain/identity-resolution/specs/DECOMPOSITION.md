@@ -25,7 +25,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
 - Feature 2 (Evidence Intake & Seed Fold) introduces the `identity_inputs` evidence contract and the scheduled persons-seed fold that binds accounts to persons, plus the persons-sync mirror publisher.
 - Feature 3 (Matching Engine, future) adds configurable matching rules with confidence-scored proposals — never auto-applied.
 - Feature 4 (Manual Resolution) adds operator correction verbs over the journal (ADR-0003) with the resolver upgrade and seed hardening they require.
-- Dependencies: Feature 1 → Feature 2 → Feature 3; Feature 1 → Feature 4. No circular dependencies.
+- Dependencies: Feature 1 → Feature 2 → Feature 3, and Feature 4 → Feature 3 (proposal acceptance flows through the Feature 4 operator API); Feature 1 → Feature 4. No circular dependencies.
 - 100% coverage of all DESIGN components, tables, and sequences verified.
 
 **Manual Resolution (current iteration)**: operator corrections were re-scoped from "late phase" to `p1` by [ADR-0003](ADR/0003-operator-decisions-as-persons-observations.md) — the journal-based model replaced the snapshot-based merge/split plan, and the v1 merge/split/audit/idempotency requirements were superseded by their `-v2` forms in the PRD. Entry 2.4 below tracks this feature; its FEATURE.md follows with the implementation PR (design reviewed in constructorfabric/insight#2180).
@@ -74,7 +74,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
 
 - **Design Principles Covered**:
 
-  - [ ] `p2` - `cpt-insightspec-ir-principle-alias-centric`
+  - [ ] `p2` - `cpt-insightspec-ir-principle-alias-centric` (v1 framing — retained; see the storage-split principle)
   - [ ] `p2` - `cpt-insightspec-ir-principle-ch-native-v2`
   - [ ] `p2` - `cpt-insightspec-ir-principle-domain-isolation`
 
@@ -103,7 +103,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
 - **Data**:
 
   - [ ] `p3` - `cpt-insightspec-ir-db-schemas`
-  - `cpt-insightspec-ir-dbtable-aliases`
+  - `cpt-insightspec-ir-dbtable-aliases` (legacy — not consumed by resolution)
   - `cpt-insightspec-ir-dbtable-persons-mariadb`
   - `cpt-insightspec-ir-dbtable-account-person-map`
 
@@ -159,7 +159,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
 
 - **Domain Model Entities**:
   - `identity_inputs` (create)
-  - `persons` (update — fold new observations per ADR-0002)
+  - `persons` (append observations per ADR-0002 — never updated)
   - `unmapped` / `conflicts` (future tables — the v1 review queue is derived; see DESIGN §3.7)
 
 - **Design Components**:
@@ -261,7 +261,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
   - Per-account binding history (explain) and per-person account listing (matching table)
   - Seed hardening: per-account bindings win over group collapse (removing the path that can silently re-derive a binding); author-aware conflict classification (bindings loader returns author); contested e-mails stop auto-linking
   - Evidence reader fix: honor empty-value DELETE (closure) rows — the current non-empty filter drops them, leaving tombstones inert; required for correct seed closure handling and for the queue's UPSERT/DELETE fold
-  - Reserved excluded-person sentinel mapped to NULL by the resolve macro
+  - Reserved excluded-person sentinel treated as "no person" by every consumer — resolve macro (NULL), service read API, person domain, review queue (normative definition in DESIGN par. 4.3)
   - dbt resolver upgrade: account-first person resolution (latest `value_type='id'` binding per source account) with e-mail fallback; contested e-mail resolves to NULL — required for corrections to reach gold (DESIGN par. 4.4)
   - Decision-aware API idempotency + unique per-row observation timestamps (natural key has no account discriminator — DESIGN par. 3.7 index note)
   - Account-derived e-mail fallback in the resolver: `identity_inputs` provides the account-to-value linkage (`source_account_id` on every row); an e-mail resolves through the current bindings of its observing accounts
@@ -324,15 +324,16 @@ cpt-ir-feature-initial-seed (HIGH, p1)
     +---> cpt-ir-feature-bootstrap-pipeline (HIGH, p1)
     |         |
     |         +---> cpt-ir-feature-matching-engine (MEDIUM, p2)
-    |
+    |                   ^
     +---> cpt-ir-feature-manual-resolution (HIGH, p1)
+                        (proposal acceptance surface)
 ```
 
 **Late-phase items (not yet decomposed):**
 ```text
 cpt-ir-feature-manual-resolution
     |
-    +---> [future] stored negative rules / value blocklists / proposals (with the matcher)
+    +---> [future] stored negative rules / value blocklists (with the matcher)
     +---> [future] GDPR alias deletion (p3)
 ```
 

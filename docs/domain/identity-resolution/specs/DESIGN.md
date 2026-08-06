@@ -102,7 +102,7 @@ This domain is deliberately narrow: it owns the account-to-person binding (the `
 
 - [ ] `p3` - **ID**: `cpt-insightspec-ir-tech-layers`
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                         IDENTITY RESOLUTION DOMAIN                           │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -292,7 +292,7 @@ All temporal ranges use `[effective_from, effective_to)` half-open intervals. `e
 
 ### 3.2 Component Model
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────┐
 │                     Identity Resolution                        │
 │                                                                │
@@ -469,6 +469,7 @@ Future rule-driven matcher producing confidence-scored merge **proposals** for o
 |---|---|---|---|
 | `POST` | `/v1/profiles` | Person profile lookup by e-mail / account; single-result invariant, `422 ambiguous_profile` on violation | implemented |
 | `POST` | `/v1/visible-persons` | Visibility-scoped person listing | implemented |
+| `GET` | `/v1/persons-seed`, `/v1/persons-seed/{id}` | Inspect seed runs recorded in the `operations` journal (list / by id); there is no HTTP seed trigger — runs are scheduled | implemented |
 | `GET` | `/health`, `/healthz` | Liveness/readiness | implemented |
 
 **Planned operator resolution surface** (ADR-0003; reviewed design with request/response shapes and scenarios in constructorfabric/insight#2180; exact contracts to be fixed at FEATURE level):
@@ -780,7 +781,7 @@ Exactly one of `(value_id, value_full_text, value)` is populated per normal row;
 - `idx_person_id (person_id)` — list all attributes for a person
 - `idx_tenant_person (insight_tenant_id, person_id)` — tenant-scoped person lookup
 - `idx_source (insight_source_type, insight_source_id)` — filter by source system + instance
-- `uq_person_observation (insight_tenant_id, person_id, insight_source_type, insight_source_id, value_type, created_at)` UNIQUE — the natural observation key as of migration 004. `created_at` (taken from the observation's `identity_inputs._synced_at` for seed writes) disambiguates repeated observations: re-emission of the same observation at the same `created_at` collapses via `INSERT IGNORE` (seed re-run idempotency), while a genuine later re-observation of the same value is a new history row. Two obligations follow for writers: (a) the key does **not** deduplicate a re-applied operator correction (its `created_at` is new) — correction idempotency is decision-aware at the API level (§3.3); (b) the key contains **no account discriminator** — two `value_type='id'` observations for two different accounts of the same source, bound to the same person at the same `created_at`, collide and `INSERT IGNORE` silently drops one. The correction write path MUST therefore allocate strictly increasing `DATETIME(6)` timestamps per affected row within an operation (bulk merge/bind included); extending the key with an account discriminator is a candidate follow-up migration
+- `uq_person_observation (insight_tenant_id, person_id, insight_source_type, insight_source_id, value_type, created_at)` UNIQUE — the natural observation key as of migration 004. `created_at` (taken from the observation's `identity_inputs._synced_at` for seed writes) disambiguates repeated observations: re-emission of the same observation at the same `created_at` collapses via `INSERT IGNORE` (seed re-run idempotency), while a genuine later re-observation of the same value is a new history row. Two obligations follow for writers: (a) the key does **not** deduplicate a re-applied operator correction (its `created_at` is new) — correction idempotency is decision-aware at the API level (§3.3); (b) the key contains **no account discriminator** — two `value_type='id'` observations for two different accounts of the same source, bound to the same person at the same `created_at`, collide and `INSERT IGNORE` silently drops one. Every write path MUST therefore guarantee per-account timestamp uniqueness within the key: the correction path allocates strictly increasing `DATETIME(6)` timestamps per affected row within an operation (bulk merge/bind included), and the seed must disambiguate accounts of one source resolving to one person at the same `_synced_at` (see the seed write step). Extending the key with an account discriminator is a candidate follow-up migration
 
 ##### Semantics — append-only observation history (SCD-style)
 
@@ -860,16 +861,18 @@ lives inside the identity-resolution service at
 and is applied by the service's own SeaORM migrator via the
 `migrate` subcommand. See
 [ADR-0006](../../ingestion/specs/ADR/0006-service-owned-migrations.md)
-for the service-owned-migrations policy. The seed scripts here operate
-on the already-created tables; they never issue `CREATE`, `ALTER`,
-`TRUNCATE`, or `DELETE`.
+for the service-owned-migrations policy. The seed operates on the
+already-created tables and never issues DDL; `persons` is never
+deleted from or updated, and the only row deletion in the
+transactional apply is the tenant-scoped rebuild of the derived
+`account_person_map` cache.
 
 **Process** (data flow executed by each seed run):
 
 1. Read `identity.identity_inputs` (ClickHouse): UPSERT observation rows plus DELETE closure signals (never persisted). **Known gap**: DELETE rows carry an empty `value` by contract while the reader filters non-empty values only, so closure signals are currently dropped before the fold — the reader fix ships with the manual-resolution feature. **The full set each run** — no incremental watermark yet (REC-IR-02) — and currently without a tenant predicate (single-tenant deployments; multi-tenant prerequisite). Order by `_synced_at DESC` within each source-account so that the latest email observation is picked deterministically in step 5.
 2. Group observations by `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id)` — a "source account" = one user in one connector instance.
 3. Connect to MariaDB. Load known bindings: for each source-account key, find the latest `value_type='id'` observation in `persons` and capture its `person_id`. This becomes the **known-account** set.
-4. Load existing emails: run `SELECT insight_tenant_id, LOWER(TRIM(value_id)) FROM persons WHERE value_type='email' AND value_id IS NOT NULL AND value_id != ''` and collect into a `(tenant, normalized_email)` set. The set is empty on the very first run (initial bootstrap) and non-empty afterwards; the same code path handles both — there is no mode flag.
+4. Load the current e-mail map: for each normalized e-mail (lowercased, not trimmed — ADR-0011 parity), take the **latest** `value_type='email'` observation (`created_at DESC, id DESC`) and its `person_id`, producing `normalized_email → person_id`. Latest-wins over the append-only journal; the map is empty on the very first run (initial bootstrap) and non-empty afterwards — the same code path handles both, there is no mode flag. (Contested-claim detection on this map ships with the manual-resolution hardening; see §3.2.)
 5. Group accounts by normalized current e-mail; resolve each group in priority order (mirrors the .NET resolver; `domain/seed.rs::resolve_assignments`):
    - **Group with a bound account** (step 3 set): reuse that `person_id` for the whole group; no new binding decision. **Known gap**: if the group's accounts are bound to *different* persons, the group currently collapses onto the first binding (counted in `known_binding_conflicts`, logged) and can thereby silently re-derive a binding — the manual-resolution hardening replaces this with per-account binding respect and surfacing.
    - **Unbound group, e-mail present in step 4 set**: link the group to that person (`LinkedByEmail`) — the account joins an existing person automatically when the e-mail is unambiguous.
@@ -877,10 +880,12 @@ on the already-created tables; they never issue `CREATE`, `ALTER`,
    - **No e-mail, or all profiles closed**: skip — no binding is created. Skipped active accounts are not hidden: the review queue surfaces them from `identity_inputs` as no-evidence items awaiting an operator bind. E-mail remains the sole automatic identity anchor for this seed.
 
    > ADR-0002 additionally specified a quarantine mode (`reason='pending-iresolution'`) for contested e-mails; the implemented port kept .NET-parity auto-linking instead. Contested-evidence handling (no auto-link when an e-mail maps to more than one person) ships with the manual-resolution feature.
-6. Write observations to `persons` via `INSERT IGNORE`. Routing rules (hardcoded in the seed, mirrored by the dbt macro):
-   - `value_type IN ('id', 'email')` → `value_id = value`, others NULL
-   - `value_type = 'display_name'` → `value_full_text = value`, others NULL
+6. Write observations to `persons` via `INSERT IGNORE`. Routing rules (hardcoded in the seed's `route_value`, mirrored by the dbt macro):
+   - id-like types (`id`, `email`, `username`, `employee_id`, `parent_email`, `parent_id`, `parent_person_id`) → `value_id = value`, others NULL
+   - name-like types (`display_name`, `first_name`, `last_name`, `department`, `division`, `job_title`, `status`) → `value_full_text = value`, others NULL
    - otherwise → `value = value`, others NULL
+
+   **Timestamp-uniqueness obligation (seed side)**: `created_at` comes from `_synced_at`, and the natural key has no account discriminator — two accounts of the same source resolving to one person at the same `_synced_at` would collide on their `value_type='id'` rows and `INSERT IGNORE` would silently drop one binding. The seed write path must disambiguate per account (same obligation as the operator path, §3.7 index note); until that hardening ships this is a known gap of the same family as the divergent-group collapse.
 
    `author_person_id` is the all-zero sentinel `00000000-0000-0000-0000-000000000000` for auto-minted bindings; the `uq_person_observation` UNIQUE key (on `created_at`, migration 004) dedupes re-runs. `created_at` is taken from each observation's `identity_inputs._synced_at`, not from the seed wall-clock, so chronology in `persons` reflects the source's view of when each value was seen — and re-runs over the same input reproduce the same keys.
 7. **Rebuild `account_person_map`** from `persons.value_type='id'` observations — tenant-scoped `DELETE` + `INSERT ... SELECT ... LEAD()` inside the same transaction as the observation writes (see the account_person_map Semantics block). Drift relative to `persons` is impossible by construction.
@@ -926,7 +931,7 @@ The v2.0 design specified five further ClickHouse tables. **None of them exists 
 ### 4.1 Min-Propagation Algorithm (ClickHouse-Native)
 
 > Source: `inbox/IDENTITY_RESOLUTION.md`
-
+>
 > **Status: future — not implemented.** Kept as candidate material for the matcher iteration (bulk verification / candidate generation). Note two ADR-0003 constraints on any future use: transitive auto-grouping must never write bindings (proposals only), and operator decisions in the journal override its output.
 
 This is an **alternative implementation** of identity grouping — runs entirely in ClickHouse on `(token, rid)` pairs. It may be used for bulk initial grouping or as a verification tool to detect grouping inconsistencies alongside the future MatchingEngine.

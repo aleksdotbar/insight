@@ -415,7 +415,7 @@ The system **MUST** surface the accounts that require an operator decision: (a) 
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-correction-durability`
 
-An operator decision **MUST** survive every subsequent run of automatic resolution and the connection of any new source: automation **MUST NOT** override, re-derive, or silently supersede an operator-authored binding under any circumstances.
+An operator decision **MUST** survive every subsequent run of automatic resolution and the connection of any new source: automation **MUST NOT** override, re-derive, or silently supersede an operator-authored binding under any circumstances. (Unconditional once the manual-resolution seed hardening is deployed; until then the divergent-group gap documented in DESIGN §3.2 remains the one known violation path.)
 
 **Rationale**: The single most repeated stakeholder requirement (#1873): the override store is the source of truth; automation only proposes.
 
@@ -593,13 +593,13 @@ Every operator correction **MUST** be reversible: applying a correction and then
 
 - [ ] `p1` - **ID**: `cpt-ir-contract-person-domain`
 
-**Direction**: provided by library (identity resolution provides `aliases.person_id`)
+**Direction**: provided by this domain (identity resolution provides `persons` observations and mints `person_id`)
 
-**Protocol/Format**: Logical FK — `aliases.person_id` references `persons.person_id` (the stable UUIDv7, not the auto-increment observation row PK)
+**Protocol/Format**: read access to the `persons` observation journal; `person_id` is the stable random UUIDv7 minted at first binding (ADR-0002), never the auto-increment observation row PK
 
-**Description**: The `aliases` table provides the authoritative mapping from identity signals to person records. The person domain owns person creation; identity resolution links aliases to existing persons. The `person_id` column in `aliases` is the primary integration point.
+**Description**: The `persons` journal is the authoritative source for the account-to-person binding and for identity-attribute observations. This domain mints `person_id`; the person domain reads the observations to derive its golden record and never writes here. (The v1 wording of this contract — `aliases.person_id` as the authoritative mapping, persons created by the person domain — is superseded; the legacy `aliases` table is not consumed by resolution.)
 
-**Compatibility**: The `person_id` UUID format is stable. Column name changes are breaking.
+**Compatibility**: The `person_id` UUID format is stable. Journal column semantics changes are breaking for the person domain.
 
 ---
 
@@ -739,7 +739,7 @@ Every operator correction **MUST** be reversible: applying a correction and then
 
 ## 9. Acceptance Criteria
 
-- [ ] Accounts observed by connectors are bound or surfaced for review by the seed; bound accounts resolve to a `person_id` in gold builds and via the read API
+- [ ] Accounts observed by connectors are bound by the seed or surfaced for review by the evidence-derived queue (e-mail-less accounts included); bound accounts resolve to a `person_id` in gold builds and via the read API
 - [ ] The seed processes 100K `identity_inputs` rows without duplicates; three consecutive runs on unchanged data change nothing
 - [ ] An operator-authored binding survives a subsequent seed run and the connection of a new source, byte-for-byte
 - [ ] Accounts pending a decision appear in the review queue with their candidate persons; a decision removes the item without any explicit "close" step
