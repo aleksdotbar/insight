@@ -14,9 +14,9 @@ description: >
   Department: 5 Engineering members alice..erin of rank r in 1..5, each closing r
   issues on the same close date (2026-12-25). The custom window 2026-12-20..12-31
   captures them all -> per-person sums {1,2,3,4,5}; the IC case requests erin (5).
-  Erin's five are 3 Task + 1 Bug + 1 Defect, so her total splits into three type
-  groups that add back up to 5 — and Defect, a name the configured lists do not
-  cover, stays its own group instead of joining the non-bug work.
+  Erin's five are 3 Task + 1 Bug + 1 Incident, so her total splits into three
+  type groups that add back up to 5 — and Incident, a name neither configured
+  list covers, stays its own group instead of joining the non-bug work.
   Empty window 2026-06 -> no items.
 
 bronze:
@@ -160,7 +160,7 @@ bronze:
       unique_key: jira-test-TEW-5
       id_readable: TEW5
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10099","name":"Defect"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10099","name":"Incident"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
 
   bronze_jira.jira_issue_history:
     # ── Alice Alpha (rank 1) ──
@@ -310,7 +310,7 @@ cases:
         assert: "items.exists(v, v.entity_id == 'erin@example.com' && v.dimensions.exists(d, d.key == 'type' && d.value == 'Bug') && double(v.value) == 1.0)"
       - metric: tasks.closed
         view: breakdown
-        assert: "items.exists(v, v.entity_id == 'erin@example.com' && v.dimensions.exists(d, d.key == 'type' && d.value == 'Defect') && double(v.value) == 1.0)"
+        assert: "items.exists(v, v.entity_id == 'erin@example.com' && v.dimensions.exists(d, d.key == 'type' && d.value == 'Incident') && double(v.value) == 1.0)"
       - metric: tasks.closed
         view: breakdown
         assert: "size(items.filter(v, v.entity_id == 'erin@example.com')) == 3"

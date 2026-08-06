@@ -81,11 +81,16 @@ vars:
     - '(^|/)mix\\.lock$'
     - '(^|/)flake\\.lock$'
 
-  # Issue-type names the shared `task_issue_kind` macro maps to
-  # `issue_kind = 'bug'` and `'other'`, compared case-insensitively. A name in
-  # neither list is `unknown`. Extend per deployment for a non-default type set.
+  # Issue-type names the shared `task_issue_kind` macro maps to bug / other,
+  # compared case-insensitively. Anything else is `unknown`.
   task_bug_type_names:
     - bug
+    - defect
+    - regression
+    - exception
+    - cosmetics
+    - usability problem
+    - performance problem
   task_non_bug_type_names:
     - task
     - sub-task
@@ -96,6 +101,7 @@ vars:
     - improvement
     - feature
     - new feature
+    - meeting
 
 # on-run-start hooks:
 #  - create_task_field_history_staging:

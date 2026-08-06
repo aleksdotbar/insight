@@ -310,5 +310,5 @@ templates:
     $ref: "#/templates/jira_issuetype"
     unique_key: jira-test-issuetype-10099
     id: "10099"
-    name: Defect
-    untranslatedName: Defect
+    name: Incident
+    untranslatedName: Incident
