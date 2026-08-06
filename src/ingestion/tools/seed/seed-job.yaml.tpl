@@ -62,12 +62,11 @@ spec:
           # IfNotPresent so a locally built image can be tried on a local
           # cluster without pushing it to a registry first.
           imagePullPolicy: IfNotPresent
-          # Run as a module from the tool directory, which puts the package's
-          # parent on sys.path without installing anything into the image.
-          command: [bash, -c]
-          args:
-            - exec python -m insight_seed ${SEED_STEP}
-          workingDir: /ingestion/tools/seed
+          # The package is installed in the image, so this is a program on PATH
+          # — no shell, no working directory, nothing that depends on where the
+          # source happens to sit.
+          command: [insight-seed]
+          args: [${SEED_STEP}]
           env:
             # ── MariaDB ──────────────────────────────────────────────────
             # The app user, not root: the umbrella grants it ALL on the
@@ -127,6 +126,11 @@ spec:
               value: "${SEED_WINDOW_DAYS}"
             - name: SEED_ANCHOR_DATE
               value: "${SEED_ANCHOR_DATE}"
+            # The pod's filesystem dies with it and the manifest is echoed to
+            # the log, so this only has to be somewhere writable — the package
+            # is installed in the image and its working directory is not.
+            - name: SEED_MANIFEST_PATH
+              value: /tmp/manifest.json
             # dbt (run by the silver step's gold build) writes target/, logs/
             # and ~/.dbt under whatever it is given; the toolbox image owns
             # /ingestion, but keep the scratch paths explicit.

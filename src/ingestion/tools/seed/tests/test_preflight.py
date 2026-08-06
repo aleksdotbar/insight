@@ -1,26 +1,24 @@
 """Env-contract and preflight-message tests.
 
-Same harness as `test_identity.py`: stdlib `unittest`, no database, no
-third-party import. Everything under test here is the pure half — env parsing,
-the SQL a guard issues, and the messages a refusal carries — because that is
-what has to stay true for an operator who reads only the error.
+Stdlib `unittest` against the real package: env parsing, the SQL a guard
+issues, and the messages a refusal carries — the half that has to stay true
+for an operator who reads only the error. No database is touched.
 
-From the tool directory:
+Run against the installed package (see the README's develop section):
 
-    python3 -m unittest discover -s tests -t .
-    python3 -m unittest tests.test_preflight -v
+    uv run --extra dev python -m unittest discover -s tests -t .
 """
 
 from __future__ import annotations
 
 import datetime as _dt
+import pathlib
 import re
 import unittest
 import uuid as uuid_mod
 
 from insight_seed import config, identity, preflight
-
-from . import conftest
+from insight_seed.generators import base
 
 _TENANT = "3f1d8f4e-6c2a-4a9b-91d7-8e5c0b2a7f36"
 
@@ -156,7 +154,7 @@ class SilverResetGuardTests(unittest.TestCase):
         from insight_seed.generators.base import RESET_TARGETS
 
         called: set[tuple[str, str]] = set()
-        for path in sorted((conftest.TOOL_ROOT / "insight_seed" / "generators").glob("*.py")):
+        for path in sorted(pathlib.Path(base.__file__).parent.glob("*.py")):
             for schema, table in re.findall(
                 r'truncate\(\s*client,\s*"([a-z0-9_]+)",\s*"([a-z0-9_]+)"', path.read_text()
             ):
@@ -223,8 +221,6 @@ class SilverResetGuardTests(unittest.TestCase):
 
 class ResetRegistryTests(unittest.TestCase):
     def test_clearing_an_unregistered_relation_is_refused(self) -> None:
-        from insight_seed.generators import base
-
         with self.assertRaises(ValueError) as caught:
             # The client is never reached: registration is checked first.
             base.truncate(object(), "silver", "class_not_registered")  # type: ignore[arg-type]
@@ -237,7 +233,6 @@ class WindowContractTests(unittest.TestCase):
 
     def test_the_generators_and_the_manifest_read_the_same_window(self) -> None:
         from insight_seed import manifest as manifest_mod
-        from insight_seed.generators import base
 
         env = {config.ANCHOR_ENV: "2026-06-30", config.DAYS_ENV: "14"}
         self.assertEqual(config.parse_anchor_date(env), _dt.date(2026, 6, 30))
@@ -273,6 +268,29 @@ class WindowContractTests(unittest.TestCase):
         with self.assertRaises(config.EnvContractError) as caught:
             config.parse_dev_user_email({})
         self.assertIn(config.DEV_USER_EMAIL_ENV, str(caught.exception))
+
+
+class ArtifactLocationTests(unittest.TestCase):
+    """Generated files go where the CALLER is, never where pip put the code —
+    an installed package's own directory is site-packages."""
+
+    def test_the_manifest_defaults_to_the_working_directory(self) -> None:
+        self.assertEqual(config.parse_manifest_path({}), pathlib.Path.cwd() / "manifest.json")
+
+    def test_an_explicit_manifest_path_wins(self) -> None:
+        self.assertEqual(
+            config.parse_manifest_path({config.MANIFEST_PATH_ENV: "/tmp/somewhere.json"}),
+            pathlib.Path("/tmp/somewhere.json"),
+        )
+
+    def test_neither_artifact_resolves_inside_the_installed_package(self) -> None:
+        from insight_seed import manifest as manifest_mod
+        from insight_seed import profile_md
+
+        package_dir = pathlib.Path(manifest_mod.__file__).resolve().parent
+        for path in (manifest_mod.manifest_path(), profile_md.profile_path()):
+            with self.subTest(path=path):
+                self.assertFalse(path.resolve().is_relative_to(package_dir))
 
 
 class SeedReasonNamespaceTests(unittest.TestCase):

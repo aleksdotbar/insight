@@ -31,7 +31,7 @@ using the pre-seeded `insight-authenticator` client + dev secret).
 
 On `up`, `dev-compose.sh`:
 
-- generates the realm from the seed roster (`gen-realm.py`) and starts Keycloak
+- generates the realm from the seed roster (`insight_seed.keycloak_realm`) and starts Keycloak
   (single container, `:8085`, profile `auth-keycloak`);
 - points the **authenticator** at the realm's `insight-authenticator` confidential
   client — exporting `KEYCLOAK_HOSTNAME` + `AUTHENTICATOR_OIDC_ISSUER` to the
@@ -82,9 +82,9 @@ one and only one tenant per token.
 artifact rebuilt from the seed roster on every `up`. To change realm
 shape, edit the generator's inputs:
 
-- [`src/ingestion/tools/seed/profiles.py`](../../../src/ingestion/tools/seed/profiles.py) — the roster (`build_roster`),
+- [`insight_seed/profiles.py`](../../../src/ingestion/tools/seed/insight_seed/profiles.py) — the roster (`build_roster`),
   team/role assignments, dev-lead email resolution.
-- [`gen-realm.py`](./gen-realm.py) — the realm generator (clients, protocol mappers,
+- [`insight_seed/keycloak_realm.py`](../../../src/ingestion/tools/seed/insight_seed/keycloak_realm.py) — the realm generator (clients, protocol mappers,
   role mapping). The `insight-authenticator` client redirect + secret are parameters
   (`--authenticator-redirect`, `--authenticator-secret`) so k8s can seed the same
   realm with its own ingress callback.

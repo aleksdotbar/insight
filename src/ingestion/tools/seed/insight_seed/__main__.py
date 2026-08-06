@@ -30,9 +30,10 @@ STEPS = ("identity", "silver", "analytics")
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        # Named for how it is invoked, not for the file argparse found itself in
-        # — `__main__.py` in a usage line tells a reader nothing.
-        prog="python3 -m insight_seed",
+        # The installed console script, not the file argparse found itself in:
+        # every runner installs this package, and `__main__.py` in a usage line
+        # tells a reader nothing.
+        prog="insight-seed",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -108,12 +109,12 @@ def main(argv: list[str] | None = None) -> int:
         path = write_manifest(doc)
         LOG.info("manifest written: %s", path)
     except OSError as exc:
-        # The seed container has historically mounted /app read-only. Fail
-        # loudly rather than leaving downstream consumers reading a stale
-        # manifest from a previous run.
+        # Loud rather than skipped: a consumer reading a stale manifest from a
+        # previous run is worse than a failed one. The document is already on
+        # stdout above, so nothing is lost but the file.
         raise RuntimeError(
-            f"could not write {manifest_path()}: {exc}. The seed source mount "
-            "must be writable — see docker-compose.yml seed-sample.volumes."
+            f"could not write {manifest_path()}: {exc}. Run from a writable directory, "
+            "or set SEED_MANIFEST_PATH to somewhere this process can write."
         ) from exc
 
     return 0

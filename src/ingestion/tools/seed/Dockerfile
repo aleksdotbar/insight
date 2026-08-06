@@ -34,12 +34,16 @@ RUN apt-get update \
 # `docker build && docker run` without a volume.
 COPY pyproject.toml .
 COPY insight_seed ./insight_seed/
-RUN pip install .
+
+# EDITABLE, unlike the toolbox image's install: compose mounts the working tree
+# over /app so seeder edits need no rebuild, and a regular install would keep
+# executing the copy baked in above while the developer edited a file that never
+# ran. The silver extra brings dbt, which this image's step runs.
+RUN pip install -e '.[silver]'
 
 RUN useradd -U -u 1000 -m appuser
 USER 1000
 
-# `-m` rather than a path: /app is the package's parent both in the image and
-# under the bind mount, so the same invocation works either way.
-ENTRYPOINT ["python", "-m", "insight_seed"]
+# A program on PATH, installed above — same entry point as the cluster Job.
+ENTRYPOINT ["insight-seed"]
 CMD ["all"]

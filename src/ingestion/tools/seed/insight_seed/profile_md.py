@@ -24,8 +24,13 @@ CHECK_COMMAND = "python3 -m insight_seed.render_profile --check"
 
 
 def profile_path() -> Path:
-    """The committed profile page, at the tool root beside the README."""
-    return Path(__file__).resolve().parents[1] / "PROFILE.md"
+    """The committed profile page, in the working directory.
+
+    Not derived from this module's location: an installed package lives wherever
+    pip put it, and this page belongs to the checkout. `render_profile` is a
+    developer tool run from the seeder's directory (see the README).
+    """
+    return Path.cwd() / "PROFILE.md"
 
 
 def _table(headers: list[str], rows: list[list[str]]) -> list[str]:

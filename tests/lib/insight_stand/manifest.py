@@ -94,7 +94,7 @@ def _optional_str(doc: Mapping[str, Any], key: str, where: str) -> str | None:
 
 @dataclass(frozen=True)
 class Realm:
-    """`realm` — mirrors deploy/compose/keycloak/gen-realm.py's realm."""
+    """`realm` — mirrors the seeder's `keycloak_realm` output."""
 
     name: str
     issuer: str

@@ -468,7 +468,7 @@ services:
   #
   # Single container, embedded H2, imports the roster-generated realm at
   # deploy/compose/keycloak/realm-insight.generated.json (produced by
-  # deploy/compose/keycloak/gen-realm.py, gitignored). Gated behind
+  # insight_seed.keycloak_realm, gitignored). Gated behind
   # --profile auth-keycloak; mutually exclusive with fakeidp's auth-fakeidp
   # profile.
   keycloak:

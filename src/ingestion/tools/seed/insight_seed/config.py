@@ -19,6 +19,7 @@ import datetime as _dt
 import uuid as uuid_mod
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 #: Prefix on the `reason` of every identity row this seeder writes. It is what
 #: lets a preflight check tell demo rows from rows some other writer owns, so
@@ -31,6 +32,7 @@ IDENTITY_DB_ENV = "MARIADB_DB"
 CROSS_TENANT_FIXTURE_ENV = "SEED_CROSS_TENANT_FIXTURE"
 FORCE_ENV = "SEED_FORCE"
 ANCHOR_ENV = "SEED_ANCHOR_DATE"
+MANIFEST_PATH_ENV = "SEED_MANIFEST_PATH"
 DAYS_ENV = "SEED_DAYS"
 DEV_USER_EMAIL_ENV = "DEV_USER_EMAIL"
 
@@ -206,6 +208,20 @@ def parse_seed_days(env: Mapping[str, str], default: int = DEFAULT_SEED_DAYS) ->
     if days < 1:
         raise EnvContractError((f"{DAYS_ENV}={days} must be at least 1.",))
     return days
+
+
+def parse_manifest_path(env: Mapping[str, str]) -> Path:
+    """Where a run writes its manifest.
+
+    The working directory by default, NOT a path derived from this module's
+    location: the package is installed (into the toolbox image, into a venv), so
+    its own directory is wherever pip put it — writing there means writing into
+    site-packages. The compose service runs with the seeder's directory as its
+    working directory, so the default lands exactly where the stand suite reads
+    it, and a cluster Job points the variable at somewhere writable.
+    """
+    raw = (env.get(MANIFEST_PATH_ENV) or "").strip()
+    return Path(raw) if raw else Path.cwd() / "manifest.json"
 
 
 def parse_dev_user_email(env: Mapping[str, str]) -> str:

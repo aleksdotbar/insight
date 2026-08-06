@@ -74,9 +74,36 @@ def _connect() -> Iterator[pymysql.connections.Connection]:
         conn.close()
 
 
-#: The two columns an observation's value lands in, by kind. `persons` is an EAV
-#: log: identifier-shaped values go in `value_id`, free text in `value_full_text`.
-_VALUE_COLUMNS = ("value_id", "value_full_text")
+#: One complete statement per value column, spelled out rather than composed.
+#: `persons` is an EAV log — identifier-shaped values land in `value_id`, free
+#: text in `value_full_text` — and a column name cannot be a bound parameter, so
+#: the alternative is formatting one into the SQL. Two literals keep every
+#: statement this module executes a constant, which is the only version a reader
+#: (or a scanner) can confirm at a glance.
+_EXISTS_BY_VALUE_ID = """
+    SELECT 1 FROM persons
+    WHERE insight_tenant_id = %s
+      AND person_id = %s
+      AND insight_source_type = %s
+      AND insight_source_id = %s
+      AND value_type = %s
+      AND value_id = %s
+    LIMIT 1
+"""
+_EXISTS_BY_VALUE_FULL_TEXT = """
+    SELECT 1 FROM persons
+    WHERE insight_tenant_id = %s
+      AND person_id = %s
+      AND insight_source_type = %s
+      AND insight_source_id = %s
+      AND value_type = %s
+      AND value_full_text = %s
+    LIMIT 1
+"""
+_EXISTS_SQL: dict[str, str] = {
+    "value_id": _EXISTS_BY_VALUE_ID,
+    "value_full_text": _EXISTS_BY_VALUE_FULL_TEXT,
+}
 
 
 def _observation_exists(
@@ -94,20 +121,13 @@ def _observation_exists(
     carries `created_at`, so a re-run's insert never collides and IGNORE stopped
     deduplicating anything. The logical key — ignoring `created_at` — is what
     makes a re-run a no-op.
+
+    Indexing `_EXISTS_SQL` rather than validating a name: an unknown column is a
+    `KeyError` before any statement exists, and the statement that does run was
+    written out in full above.
     """
-    if value_column not in _VALUE_COLUMNS:
-        raise ValueError(f"{value_column!r} is not an observation value column")
     cur.execute(
-        f"""
-        SELECT 1 FROM persons
-        WHERE insight_tenant_id = %s
-          AND person_id = %s
-          AND insight_source_type = %s
-          AND insight_source_id = %s
-          AND value_type = %s
-          AND `{value_column}` = %s
-        LIMIT 1
-        """,
+        _EXISTS_SQL[value_column],
         (
             _bin(tenant_uuid),
             _bin(person_uuid),

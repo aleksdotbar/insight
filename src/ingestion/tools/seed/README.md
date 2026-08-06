@@ -26,8 +26,11 @@ The stack must be up first (`./dev-compose.sh up`). Then:
 ./dev-compose.sh seed silver                # just silver
 ```
 
-A successful run writes `manifest.json` next to this README, describing the
-stand it just produced (roster, fixtures, data window, capabilities).
+A successful run writes `manifest.json` describing the stand it just produced
+(roster, fixtures, data window, capabilities). It lands in the working
+directory — for the compose service that is the bind-mounted seeder directory,
+which is where the stand test suite reads it; `SEED_MANIFEST_PATH` names it
+explicitly anywhere else.
 
 ## Run it on a Kubernetes stand
 
@@ -119,26 +122,35 @@ loop stays populated as the calendar moves. Whichever applied is recorded in
 roster or the manifest builder:
 
 ```bash
-cd src/ingestion/tools/seed
-python3 -m insight_seed.render_profile            # regenerate
-python3 -m insight_seed.render_profile --check    # verify (no database needed)
+cd src/ingestion/tools/seed                          # the page lives here
+uv run python -m insight_seed.render_profile         # regenerate
+uv run python -m insight_seed.render_profile --check # verify (no database needed)
 ```
 
 ## Develop on it
 
 ```bash
 cd src/ingestion/tools/seed
-python3 -m venv .venv                              # one-time
-.venv/bin/pip install -e '.[dev]'
 
-.venv/bin/ruff check .                             # package + tests
-.venv/bin/mypy .
-python3 -m unittest discover -s tests -t .         # stdlib only, no database
+uv run --extra dev python -m unittest discover -s tests -t .   # tests
+uv run --extra dev ruff check .                                # package + tests
+uv run --extra dev mypy .
 ```
 
-The tests need nothing installed: they stub the database drivers and exercise
-the pure half — the environment contract, the SQL a guard issues, and the
-messages a refusal carries.
+`uv` resolves and installs the package into a local `.venv` on first use, so
+the tests import `insight_seed` the same way anything else does — no
+`sys.path` juggling and no stubbed modules. A hand-made venv works identically
+(`python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`).
+
+Both images install the package too, so every runner invokes a program rather
+than a module in a directory: `insight-seed <step>` seeds, and
+`insight-seed-realm` generates the compose Keycloak realm from the same roster
+(`dev-compose.sh` runs it through `uv run --project`). The extras split what
+each caller needs: `silver` adds dbt for the gold build (the toolbox image
+installs it separately), `dev` adds ruff, mypy and stubs.
+
+The tests touch no database: they cover the pure half — the environment
+contract, the SQL a guard issues, and the messages a refusal carries.
 
 Deps live in `pyproject.toml`: `[project.dependencies]` for runtime,
 `[project.optional-dependencies].dev` for the tooling (ruff, mypy, stubs).
@@ -152,7 +164,7 @@ compose bind mount) name them.
 ```text
 src/ingestion/tools/seed/
 ├── insight_seed/            the package — everything importable
-│   ├── __main__.py          `python3 -m insight_seed <step>`: the entry point
+│   ├── __main__.py          the `insight-seed <step>` entry point
 │   ├── config.py            environment contract: required, defaulted, and why
 │   ├── preflight.py         refuses a stand that cannot take the seed
 │   ├── identity.py          MariaDB: persons, org_chart, account_person_map
@@ -163,8 +175,9 @@ src/ingestion/tools/seed/
 │   ├── golden_metrics.py    the only source for the manifest's golden set
 │   ├── profile_md.py        renders `PROFILE.md` from a manifest
 │   ├── render_profile.py    regenerates / verifies `PROFILE.md`; no database
+│   ├── keycloak_realm.py    the `insight-seed-realm` entry point, same roster
 │   └── generators/          one module per activity domain, `base.py` shared
-├── tests/                   stdlib unittest; drivers stubbed in `conftest.py`
+├── tests/                   stdlib unittest against the installed package
 ├── seed-stand.sh            seeds a Kubernetes stand (discover → render → apply)
 ├── seed-job.yaml.tpl        the Job it renders — and the reference manifest
 ├── Dockerfile               the compose `seed-sample` image
@@ -173,7 +186,7 @@ src/ingestion/tools/seed/
 └── manifest.json            GENERATED per stand at seed time (gitignored)
 ```
 
-On a cluster the runtime is the toolbox image (`../toolbox/Dockerfile`), which
-carries this tree at `/ingestion/tools/seed` together with the migration
-scripts the silver step runs — so the Job's command is the same
-`python -m insight_seed` you would run locally.
+On a cluster the runtime is the toolbox image (`../toolbox/Dockerfile`): it
+carries this tree at `/ingestion/tools/seed` together with the migration scripts
+the silver step runs, and installs the package, so the Job's command is just
+`insight-seed` — no shell, no working directory, no path assumptions.

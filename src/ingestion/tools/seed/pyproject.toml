@@ -16,15 +16,22 @@ description = "Insight sample-data seeder for the compose stack and Kubernetes t
 # ingestion tree pins the same direction (tests/connectors caps at <3.13). No
 # 3.13-only syntax or API is used here, so the floor costs nothing.
 requires-python = ">=3.12"
+# What the package IMPORTS. dbt is deliberately absent: no module here imports
+# it — the silver step shells out to the ingestion tree's own scripts, and dbt
+# is a requirement of THAT environment (the toolbox image installs it directly,
+# and the `silver` extra below covers a host run). Declaring it here made every
+# install of this package resolve dbt-core, including the one a realm
+# generation needs.
 dependencies = [
     "PyMySQL==1.2.0",
     "clickhouse-connect==1.6.0",
-    # Unpinned to match src/ingestion/tools/toolbox/Dockerfile. dbt-core pulls
-    # in PyYAML, which apply-ch-migrations.sh's profiles.yml generator imports.
-    "dbt-clickhouse",
 ]
 
 [project.optional-dependencies]
+# The silver step's environment for a host run outside the toolbox image:
+# `apply-ch-migrations.sh` writes a profiles.yml with PyYAML (which dbt-core
+# pulls in) and then runs dbt itself.
+silver = ["dbt-clickhouse"]
 dev = [
     # dbt-core 1.12 raised its own cap to pathspec<1.1 (dbt-labs/dbt-core#12385),
     # so a current mypy resolves again. Below 2.0 it would pull pathspec<1.0 and
@@ -36,11 +43,14 @@ dev = [
     "types-PyMySQL==1.2.0.20260724",
 ]
 
-# The entry point every runner uses: `python3 -m insight_seed <step>` from this
-# directory, which is also what the container images and the Kubernetes Job run.
-# The console script is for an installed copy.
+# The entry points every runner uses. Both images install this package, so the
+# compose service, the Kubernetes Job and a developer shell all invoke a program
+# on PATH rather than a module in a particular directory.
 [project.scripts]
 insight-seed = "insight_seed.__main__:main"
+# The realm generator is a second entry point on the same roster, so compose
+# bring-up can run it as a program rather than a module in a directory.
+insight-seed-realm = "insight_seed.keycloak_realm:main"
 
 # One importable package; `tests/` stays out of the distribution.
 [tool.setuptools.packages.find]

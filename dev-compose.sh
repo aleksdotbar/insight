@@ -379,7 +379,7 @@ cmd_up() {
   local build_only_csv=""
   local frontend_mode_override=""
   local instance="$COMPOSE_INSTANCE"
-  # Repeatable. Empty => gen-realm.py keeps its own defaults untouched.
+  # Repeatable. Empty => the realm generator keeps its own defaults untouched.
   local authenticator_redirects=""
   local skip_build=false
   local no_frontend=false
@@ -618,7 +618,7 @@ YML
   local kc_base="http://${kc_ip:-localhost}:8085/kc"
 
   echo "=== Generating Keycloak realm import (deploy/compose/keycloak/realm-insight.generated.json) ==="
-  # gen-realm.py's own --authenticator-redirect REPLACES its defaults rather
+  # The generator's own --authenticator-redirect REPLACES its defaults rather
   # than appending, so whenever we pass any URI we must re-state the two
   # defaults too — dropping them would deregister the human login origins
   # and break `./dev-compose.sh up`.
@@ -632,11 +632,19 @@ YML
     done
     echo "    registering redirect URIs:$redirect_args"
   fi
+  # The realm is built from the seeder's roster, so the generator ships in
+  # that package and runs as an installed program. uv provisions the package
+  # into its own .venv on first use — the same tool the stand suite already
+  # requires — instead of this script reaching into the source tree.
+  command -v uv >/dev/null 2>&1 || {
+    echo "ERROR: uv is required to generate the Keycloak realm." >&2
+    echo "       Install it (brew install uv) and re-run; see CONTRIBUTING.md." >&2
+    return 1; }
   # shellcheck disable=SC2086  # redirect_args is a deliberately word-split flag list
-  python3 deploy/compose/keycloak/gen-realm.py \
+  uv run --project "$ROOT_DIR/src/ingestion/tools/seed" insight-seed-realm \
     --dev-email "$dev_lead_email" \
     $redirect_args \
-    --out deploy/compose/keycloak/realm-insight.generated.json
+    --out "$ROOT_DIR/deploy/compose/keycloak/realm-insight.generated.json"
 
   # NGINX_BFF: the AUTHENTICATOR (not the frontend) logs in against Keycloak,
   # server-side, as the pre-seeded `insight-authenticator` confidential client.
@@ -651,7 +659,7 @@ YML
   export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-insight-authenticator}"
   export OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:-insight-authenticator-dev-secret}"
   # The login-bootstrap resolve is scoped to idp.source_type; keycloak's
-  # sub differs in KIND from fakeidp's (gen-realm.py sets each realm user's
+  # sub differs in KIND from fakeidp's (keycloak_realm sets each realm user's
   # id to their OWN roster uuid, so sub IS that uuid — not the fixed
   # "fakeidp|dev" string fakeidp issues), so it must be seeded/looked-up
   # under its own source_type, not the fakeidp default (see

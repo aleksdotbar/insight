@@ -458,9 +458,11 @@ for the per-environment IdP selection rationale.
 
 The seeder lives in [`src/ingestion/tools/seed/`](src/ingestion/tools/seed/):
 the `insight_seed` package, its `tests/`, and the artifacts it writes. Its
-README documents the layout and the ruff / mypy / venv setup. Both deploy paths
-run the same package (`python3 -m insight_seed <step>`); only how it is invoked
-differs.
+README documents the layout and the uv / ruff / mypy setup. Both deploy paths
+install the package and run the same program (`insight-seed <step>`); only how
+it is invoked differs. Generating the compose Keycloak realm also runs from that
+package (`insight-seed-realm`, via `uv run`), so `uv` is a prerequisite for
+`./dev-compose.sh up --auth=keycloak`.
 
 **Identity content (after `seed identity`):** CEO, your
 `DEV_USER_EMAIL` person (leads the dev team), 4 team leads (dev /

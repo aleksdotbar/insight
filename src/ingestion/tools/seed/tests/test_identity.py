@@ -8,14 +8,13 @@ regressions:
    dedupes a re-run (each insert gets a fresh `created_at`, so the unique key
    never collides). Every writer must check for an existing row explicitly.
 2. Roster scope: fakeidp only defines a fixed dev-lead identity, but a
-   Keycloak realm seeds the WHOLE roster (gen-realm.py pins every realm
+   Keycloak realm seeds the WHOLE roster (`keycloak_realm` pins every realm
    user's id to their own roster uuid) — `seed_login_ids` must seed a row per
    roster member under `AUTH_MODE=keycloak`, not just the dev lead.
 
-From the tool directory:
+Run against the installed package (see the README's develop section):
 
-    python3 -m unittest discover -s tests -t .
-    python3 -m unittest tests.test_identity -v
+    uv run --extra dev python -m unittest discover -s tests -t .
 """
 
 from __future__ import annotations
@@ -24,8 +23,8 @@ import os
 import unittest
 from typing import Any
 
-from . import conftest  # noqa: F401 — sys.path + driver stubs, before the imports below
-
+# Set before the roster is imported: `profiles` reads it at call time, but a
+# test that forgot would otherwise depend on the developer's shell.
 os.environ.setdefault("IDP_SOURCE_TYPE", "fakeidp")
 
 from insight_seed import identity, profiles
@@ -126,7 +125,7 @@ class SeedLoginIdsTests(unittest.TestCase):
         self.assertEqual(
             first_run_count,
             len(roster),
-            "keycloak seeds every roster persona (gen-realm.py registers all of them)",
+            "keycloak seeds every roster persona (keycloak_realm registers all of them)",
         )
         self.assertEqual(second_run_count, 0, "re-run must be a no-op for every pair")
         self.assertEqual(cur.insert_count, len(roster))

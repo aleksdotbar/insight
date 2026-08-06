@@ -1,9 +1,9 @@
 """Seed manifest — the machine-readable description of a seeded stand.
 
-Written to one fixed path — `manifest.json` at the tool root, beside this
-package (`/app/manifest.json` in the compose seed container, the same file
-through the bind mount). Downstream test phases read that path; it is frozen
-and has no env knob.
+Written to `manifest.json` in the working directory, which for the compose
+seed container is the bind-mounted seeder directory the stand suite reads
+(`/app/manifest.json`). `SEED_MANIFEST_PATH` names it explicitly — a cluster
+Job does, because its filesystem is discarded and the log is the record.
 
 The builder is a PURE FUNCTION of (roster, supplied env, committed
 constants). It queries neither MariaDB nor ClickHouse. That is what lets the
@@ -31,12 +31,12 @@ from .golden_metrics import GOLDEN_METRICS, GOLDEN_METRICS_NOTE
 
 MANIFEST_VERSION = 1
 
-# Values copied verbatim from deploy/compose/keycloak/gen-realm.py, which
-# builds the Keycloak realm from this same roster. The two must agree exactly
-# or a persona will authenticate as someone the API does not recognise.
-REALM_NAME = "insight"  # gen-realm.py REALM_NAME
-EXECUTIVE_ORG_UNIT = "executive"  # gen-realm.py _org_unit, teamless
-OPERATOR_ORG_UNIT = "operations"  # gen-realm.py OPERATOR_ORG_UNIT
+# Values shared with `keycloak_realm`, which builds the Keycloak realm from
+# this same roster. The two must agree exactly or a persona will authenticate
+# as someone the API does not recognise.
+REALM_NAME = "insight"  # keycloak_realm.REALM_NAME
+EXECUTIVE_ORG_UNIT = "executive"  # keycloak_realm._org_unit, teamless
+OPERATOR_ORG_UNIT = "operations"  # keycloak_realm.OPERATOR_ORG_UNIT
 ROLE_TO_REALM_ROLES: dict[str, list[str]] = {
     "ceo": ["insight-admin", "insight-lead"],
     "lead": ["insight-lead"],
@@ -90,27 +90,20 @@ CANONICAL_ENV: dict[str, str] = {
 # instead of shipping.
 _FORBIDDEN_LITERALS = frozenset(
     {
-        "insight-dev",  # gen-realm.py dev password
-        "insight-authenticator-dev-secret",  # gen-realm.py client secret
+        "insight-dev",  # keycloak_realm dev password
+        "insight-authenticator-dev-secret",  # keycloak_realm client secret
         "insight-local",  # MariaDB / ClickHouse dev password
         "root-local",  # MariaDB root password
     }
 )
 _FORBIDDEN_KEY_SUBSTRINGS = ("password", "secret", "token", "credential", "passwd")
 
-#: The tool directory: the package's home, holding the artifacts it writes
-#: (`manifest.json`) and the ones it renders (`PROFILE.md`).
-_TOOL_ROOT = Path(__file__).resolve().parents[1]
-
 
 def manifest_path() -> Path:
-    """The frozen manifest location. No env knob by design.
+    """Where this run writes its manifest — see `config.parse_manifest_path`."""
+    import os
 
-    The tool directory, not the package directory: the manifest is a per-stand
-    artifact this package produces, and its readers (the stand suite, the
-    compose bind mount) name that path.
-    """
-    return _TOOL_ROOT / "manifest.json"
+    return config.parse_manifest_path(os.environ)
 
 
 # The window comes from `config`, the same reader the generators use, so the
@@ -145,7 +138,7 @@ def seed_revision() -> str:
 def _persona(person: profiles.Person) -> dict[str, Any]:
     """One roster entry. Fields are named explicitly, never spread from the
     Person object, so a future attribute cannot leak into the document."""
-    # Mirrors gen-realm.py's `_org_unit`: teamless people are the CEO
+    # Mirrors `keycloak_realm._org_unit`: teamless people are the CEO
     # (executive) and the admin operator (operations, its own unit because it
     # administers the product rather than belonging to the org).
     if person.team is not None:
