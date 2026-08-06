@@ -39,6 +39,9 @@ DEV_USER_EMAIL_ENV = "DEV_USER_EMAIL"
 #: Length of the seeded activity window when nobody pins one.
 DEFAULT_SEED_DAYS = 60
 
+#: The clock is read once; see `parse_anchor_date`.
+_DERIVED_ANCHOR: _dt.date | None = None
+
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
 
@@ -193,7 +196,15 @@ def parse_anchor_date(env: Mapping[str, str]) -> _dt.date:
             raise EnvContractError(
                 (f"{ANCHOR_ENV}={raw!r} is not an ISO date (YYYY-MM-DD) or `today`: {exc}.",)
             ) from exc
-    return _dt.datetime.now(_dt.UTC).date() - _dt.timedelta(days=1)
+
+    # Resolved from the clock ONCE per process. Sharing the reader was not
+    # enough: two callers each computing `now()` still disagree if the run
+    # straddles a UTC midnight, and the manifest would then report a window the
+    # rows do not sit in.
+    global _DERIVED_ANCHOR
+    if _DERIVED_ANCHOR is None:
+        _DERIVED_ANCHOR = _dt.datetime.now(_dt.UTC).date() - _dt.timedelta(days=1)
+    return _DERIVED_ANCHOR
 
 
 def parse_seed_days(env: Mapping[str, str], default: int = DEFAULT_SEED_DAYS) -> int:

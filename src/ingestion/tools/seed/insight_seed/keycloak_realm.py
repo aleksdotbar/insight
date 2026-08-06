@@ -283,7 +283,6 @@ def main() -> None:
     # Explicit --dev-email wins; otherwise fall back to DEV_USER_EMAIL via
     # get_dev_user_email() (which fail-fasts if that is also unset).
     dev_user_email = args.dev_email if args.dev_email else get_dev_user_email()
-    # The compose stack's tenant. The seeder REQUIRES `TENANT_DEFAULT_ID` and
     # Required, exactly as the seeder requires it — and read through the same
     # parser. A default here could mint realm users whose tenant claim matches
     # nothing the seed then writes: they would authenticate and resolve to

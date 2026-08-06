@@ -120,15 +120,19 @@ class _FakeClickHouse:
         self,
         columns: list[tuple[str, str, str]],
         counts: list[tuple[str, int]],
+        total_rows: int = 0,
     ) -> None:
         self._columns = columns
         self._counts = counts
+        self._total_rows = total_rows
         self.queries: list[str] = []
 
     def query(self, sql: str, parameters: dict[str, object] | None = None) -> _FakeResult:
         self.queries.append(sql)
         if "system.columns" in sql:
             return _FakeResult(list(self._columns))
+        if sql.startswith("SELECT sum(n)"):
+            return _FakeResult([(self._total_rows,)])
         return _FakeResult([(name, count) for name, count in self._counts])
 
 
@@ -291,6 +295,32 @@ class ArtifactLocationTests(unittest.TestCase):
         for path in (manifest_mod.manifest_path(), profile_md.profile_path()):
             with self.subTest(path=path):
                 self.assertFalse(path.resolve().is_relative_to(package_dir))
+
+
+class GuardCoverageTests(unittest.TestCase):
+    """Which guard runs for which step. The silver scan is differential, so on a
+    single-tenant stand it returns zero however much real data the tables hold —
+    the `persons` signal is what covers that case, and the destructive step has
+    to consult it."""
+
+    def test_the_silver_step_also_consults_the_persons_signal(self) -> None:
+        source = pathlib.Path(preflight.__file__).read_text()
+        gate = '"identity" in requested or "silver" in requested'
+        self.assertIn(gate, source)
+
+    def test_the_silver_scan_is_differential_and_says_so(self) -> None:
+        """Locks the reason the gate above exists: a same-tenant row is not
+        counted, so this scan alone cannot see a single-tenant stand's data."""
+        client = _FakeClickHouse(
+            columns=[("silver", "class_people", "tenant_id")],
+            counts=[],
+        )
+        preflight._foreign_silver_rows(client, _TENANT)
+        self.assertIn("!= {tenant:String}", client.queries[-1])
+
+    def test_the_reset_surface_is_sized_for_the_operator(self) -> None:
+        client = _FakeClickHouse(columns=[], counts=[], total_rows=4321)
+        self.assertEqual(preflight._reset_surface_rows(client), 4321)
 
 
 class SeedReasonNamespaceTests(unittest.TestCase):

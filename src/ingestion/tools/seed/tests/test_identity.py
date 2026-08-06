@@ -137,3 +137,79 @@ class SeedLoginIdsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _ObservationCursor:
+    """Answers the exists-then-insert pair the observation writers issue.
+
+    Keyed on (person, value_type, value) — the logical identity of an
+    observation, which is exactly what `created_at` stopped enforcing. The two
+    writers order their parameters differently, so the INSERT key is read from
+    the statement's own shape.
+    """
+
+    def __init__(self) -> None:
+        self.insert_count = 0
+        self.rowcount = 0
+        self._seen: set[tuple[Any, Any, Any]] = set()
+        self._pending: tuple[int] | None = None
+
+    def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
+        head = sql.strip().upper()
+        if head.startswith("SELECT"):
+            # _observation_exists: (tenant, person, source_type, source_id, value_type, value)
+            self._pending = (1,) if (params[1], params[4], params[5]) in self._seen else None
+        elif head.startswith("INSERT"):
+            if "value_full_text" in sql:
+                # (value_type, source_type, source_id, tenant, value, person, author, reason)
+                key = (params[5], params[0], params[4])
+            else:
+                # value_type is the literal 'email' in the statement:
+                # (source_type, source_id, tenant, value_id, person, author, reason)
+                key = (params[4], "email", params[3])
+            self._seen.add(key)
+            self.insert_count += 1
+            self.rowcount = 1
+        else:
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    def fetchone(self) -> tuple[int] | None:
+        return self._pending
+
+
+class SeedPersonsIdempotencyTests(unittest.TestCase):
+    """The writers that used to rely on `INSERT IGNORE`. Migration 004 put
+    `created_at` in the unique key, so a re-run never collided and every run
+    appended a duplicate observation; each writer now checks first."""
+
+    def setUp(self) -> None:
+        self._previous = os.environ.get("IDP_SOURCE_TYPE")
+        os.environ["IDP_SOURCE_TYPE"] = "fakeidp"
+
+    def tearDown(self) -> None:
+        if self._previous is None:
+            os.environ.pop("IDP_SOURCE_TYPE", None)
+        else:
+            os.environ["IDP_SOURCE_TYPE"] = self._previous
+
+    def test_seed_persons_inserts_once_across_two_runs(self) -> None:
+        cur = _ObservationCursor()
+        roster = _roster()
+
+        first = identity.seed_persons(cur, _TENANT, roster)  # type: ignore[arg-type]
+        second = identity.seed_persons(cur, _TENANT, roster)  # type: ignore[arg-type]
+
+        self.assertEqual(first, len(roster), "the first run writes one row per person")
+        self.assertEqual(second, 0, "a re-run must be a no-op, not a duplicate observation")
+        self.assertEqual(cur.insert_count, len(roster))
+
+    def test_seed_person_names_inserts_once_across_two_runs(self) -> None:
+        cur = _ObservationCursor()
+        roster = _roster()
+
+        first = identity.seed_person_names(cur, _TENANT, roster)  # type: ignore[arg-type]
+        second = identity.seed_person_names(cur, _TENANT, roster)  # type: ignore[arg-type]
+
+        self.assertGreater(first, 0, "names are written on the first run")
+        self.assertEqual(second, 0, "a re-run must be a no-op, not a duplicate observation")
+        self.assertEqual(cur.insert_count, first)

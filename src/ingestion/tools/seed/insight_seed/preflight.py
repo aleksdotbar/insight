@@ -9,16 +9,22 @@ Two of the checks are safety gates rather than correctness ones: the seeder is
 demo data, it now ships inside the same image a cluster uses for migrations, and
 a CLI can point it at any stand.
 
-* Identity rows are additive, and every one the seeder writes carries a `reason`
-  starting with `seed.py ` — so a tenant holding person rows with any other
-  reason is a tenant somebody else's data lives in.
-* Silver rows are NOT additive: the generators TRUNCATE each table before
-  writing, across every tenant, because a partially rewritten silver table
-  produces metrics that are wrong rather than absent. Rows there for any other
-  tenant would be destroyed, so their presence is a refusal too.
+Two signals, because neither sees everything:
 
-Both are overridable with `SEED_FORCE=1`, which is the only way to say "yes,
-clear it" out loud.
+* `persons` rows in the target tenant whose `reason` is outside this seeder's
+  namespace. Identity rows are additive, so this one is about not mixing demo
+  people into somebody's directory — but it is also the ONLY signal that works
+  on a single-tenant stand, so the silver step consults it too.
+* Rows in the reset surface belonging to a different tenant. Silver rows are
+  NOT additive: the generators TRUNCATE each table before writing, across every
+  tenant, because a partially rewritten silver table produces metrics that are
+  wrong rather than absent. This one is differential, so it says nothing on a
+  stand that has only ever had one tenant — hence the first.
+
+Neither can attribute rows in the targets that carry no tenant column at all;
+those are named in the log rather than silently counted as clean. Both refusals
+are overridable with `SEED_FORCE=1`, which is the only way to say "yes, clear
+it" out loud.
 """
 
 from __future__ import annotations
@@ -229,6 +235,29 @@ def _foreign_silver_rows(
     return sum(count for _, count in rows), rows[:limit], unattributable
 
 
+def _reset_surface_rows(client: object) -> int:
+    """How many rows the silver step would clear, across every reset target.
+
+    Tenant-agnostic on purpose: the refusal above answers "whose rows are
+    these", this answers "how much is there", and the second question still has
+    an answer when the first one cannot be told apart on a single-tenant stand.
+    """
+    from .generators.base import RESET_TARGETS
+
+    parts = [
+        f"SELECT count() AS n FROM `{schema}`.`{table}`"
+        for schema, table in RESET_TARGETS
+        if _IDENTIFIER.match(schema) and _IDENTIFIER.match(table)
+    ]
+    try:
+        result = client.query(f"SELECT sum(n) FROM ({' UNION ALL '.join(parts)})")  # type: ignore[attr-defined]
+    except Exception as exc:
+        LOG.info("could not size the reset surface: %s", exc)
+        return 0
+    rows = result.result_rows
+    return int(rows[0][0]) if rows and rows[0][0] is not None else 0
+
+
 def _check_clickhouse(target: ClickHouse, scripts: Path, tenant: str, *, force: bool) -> list[str]:
     problems: list[str] = []
 
@@ -270,7 +299,19 @@ def _check_clickhouse(target: ClickHouse, scripts: Path, tenant: str, *, force: 
                 )
             if rows:
                 problems.append(foreign_silver_problem(rows, worst, tenant))
-            elif unattributable:
+            if not problems:
+                # Visible even on a clean pass: this is the one step that
+                # destroys, and an operator should be told what it is about to
+                # clear rather than reading it out of the generators.
+                total = _reset_surface_rows(client)
+                if total:
+                    LOG.warning(
+                        "the silver step clears %d row(s) across the tables it writes; "
+                        "all of them belong to tenant %s or carry no tenant",
+                        total,
+                        tenant,
+                    )
+            if unattributable:
                 # Said out loud rather than silently ignored: these targets are
                 # cleared too and carry no tenant, so nobody can tell whose rows
                 # they hold. In practice a stand holding foreign rows here also
@@ -345,7 +386,14 @@ def check(env: dict[str, str] | None = None, steps: Iterable[str] = STEPS) -> No
     # a plain `str`, and nothing has to reason about how it got that way.
     tenant = config.parse_tenant_id(environ)
 
-    if "identity" in requested:
+    # The persons check runs for the SILVER step too, and it is the more
+    # important of the two guards there. The silver scan is differential — it
+    # compares tenants — so on a single-tenant stand, which is the ordinary
+    # case, it can only ever return zero however much real data the tables
+    # hold. Foreign rows in `persons` are what says "this stand belongs to
+    # somebody" when there is no second tenant to compare against, and the
+    # silver step is the one that TRUNCATEs.
+    if "identity" in requested or "silver" in requested:
         problems += _check_identity(
             config.parse_mariadb(environ, database=config.parse_identity_database(environ)),
             tenant,
