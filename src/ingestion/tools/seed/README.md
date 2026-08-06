@@ -8,13 +8,16 @@ roster and the per-team source-type weights; the per-domain generators under
 — roster, fixtures, populated metrics and capabilities.
 
 It runs against two kinds of stand, from the same sources: the local
-docker-compose stack, and a chart-deployed Kubernetes stand (the package ships
-inside the toolbox image, so no separate image or build is involved).
+docker-compose stack, and a chart-deployed Kubernetes stand. Both run the same
+image, `insight-seed`, built from [`Dockerfile`](Dockerfile) — compose builds it
+locally, CI publishes it.
 
 This package lives inside `src/ingestion` deliberately: the silver step runs the
 ingestion tree's own DDL and gold-build scripts, and being in the same tree means
-the published toolbox image carries both, at one version, with no chance of the
-seeder and the migration SQL drifting apart.
+one image carries both, at one version, with no chance of the seeder and the
+migration SQL drifting apart. It is deliberately NOT the toolbox image — that one
+runs migrations against real stands, and a demo-data generator has no business
+being installed there.
 
 ## Run it on compose
 
@@ -49,7 +52,7 @@ is no manifest to hand-edit and no tenant UUID to copy:
 | database holding the analytics catalogue | ConfigMap `<release>-platform`, `MARIADB_DATABASE` |
 | database holding `persons` | Secret `insight-identity-resolution-config`, `…database_url` |
 | the stand's tenant | Secret `insight-identity-resolution-config`, `…tenant_default_id` |
-| the image to run | `helm get values <release>`, `ingestion.toolboxImage` |
+| the image to run | `helm get values <release>`, `ingestion.seedImage` |
 | passwords | never read — the Job references Secret `insight-db-creds` by key |
 
 Credentials never pass through the script, and the Job runs as the application
@@ -86,16 +89,19 @@ Preflight runs before anything is written and reports every problem at once:
 - MariaDB or ClickHouse unreachable, or the ingestion scripts missing;
 - the target tenant already holds `persons` rows this seeder did not write
   (every row it writes carries a `reason` starting `"seed.py "`, trailing space
-  included);
+  included). The silver step checks this too — on a stand that has only ever had
+  one tenant it is the only signal that can tell somebody's data from nothing;
 - any table the silver step clears holds rows for another tenant — that step
   **TRUNCATEs every table it writes**, across all tenants, so those rows would be
   destroyed. This is the one genuinely destructive thing the seeder does, and it
   is why an occupied stand is refused rather than merged into. The surface it
   checks is `generators.base.RESET_TARGETS`, the same list `truncate` itself
   enforces — including two inputs outside the silver database (an
-  identity-projection table and a bronze HR table). Targets carrying no tenant
-  column at all cannot be attributed to anyone; the run logs them by name
-  instead of pretending to have judged them.
+  identity-projection table and a bronze HR table). This check is differential,
+  so it finds nothing on a single-tenant stand; that is what the `persons` signal
+  above is for. Targets carrying no tenant column at all cannot be attributed to
+  anyone; the run logs them by name, and logs how many rows the step is about to
+  clear in total, instead of pretending to have judged them.
 
 Either refusal is overridable with `--force`, which is how you say "yes, clear
 it" out loud.
@@ -143,12 +149,13 @@ the tests import `insight_seed` the same way anything else does — no
 `sys.path` juggling and no stubbed modules. A hand-made venv works identically
 (`python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`).
 
-Both images install the package too, so every runner invokes a program rather
+The image installs the package too, so every runner invokes a program rather
 than a module in a directory: `insight-seed <step>` seeds, and
 `insight-seed-realm` generates the compose Keycloak realm from the same roster
 (`dev-compose.sh` runs it through `uv run --project`). The extras split what
-each caller needs: `silver` adds dbt for the gold build (the toolbox image
-installs it separately), `dev` adds ruff, mypy and stubs.
+each caller needs: `silver` adds dbt for the gold build (the image installs it
+in its own layer, before the source, so an edit here does not re-resolve it),
+`dev` adds ruff, mypy and stubs.
 
 The tests touch no database: they cover the pure half — the environment
 contract, the SQL a guard issues, and the messages a refusal carries.
@@ -181,13 +188,28 @@ src/ingestion/tools/seed/
 ├── tests/                   stdlib unittest against the installed package
 ├── seed-stand.sh            seeds a Kubernetes stand (discover → render → apply)
 ├── seed-job.yaml.tpl        the Job it renders — and the reference manifest
-├── Dockerfile               the compose `seed-sample` image
+├── Dockerfile               the `insight-seed` image, for both callers
 ├── pyproject.toml           package metadata, deps, ruff + mypy config
 ├── PROFILE.md               GENERATED, committed — do not hand-edit
 └── manifest.json            GENERATED per stand at seed time (gitignored)
 ```
 
-On a cluster the runtime is the toolbox image (`../toolbox/Dockerfile`): it
-carries this tree at `/ingestion/tools/seed` together with the migration scripts
-the silver step runs, and installs the package, so the Job's command is just
-`insight-seed` — no shell, no working directory, no path assumptions.
+## The image
+
+[`Dockerfile`](Dockerfile) builds from the ingestion tree, not this directory:
+
+```bash
+docker build -f src/ingestion/tools/seed/Dockerfile src/ingestion
+```
+
+It carries this tree at `/ingestion/tools/seed` together with the DDL and
+gold-build scripts the silver step runs and the dbt project they drive, installs
+the package, and sets `insight-seed` as the entry point — so the Job's command is
+just the step name: no shell, no working directory, no path assumptions. What it
+does not carry is the toolbox's operator tooling (node, kubectl, yq); what the
+toolbox does not carry is this tree, excluded there by
+`../toolbox/Dockerfile.dockerignore`.
+
+CI builds and publishes it as `insight-seed` beside the toolbox
+(`.github/workflows/build-images.yml`) and pins the pushed ref into the chart as
+`ingestion.seedImage`, which is the ref `seed-stand.sh` discovers.

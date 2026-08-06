@@ -409,7 +409,7 @@ A freshly installed stand holds no people, so every login is refused and every d
 ./src/ingestion/tools/seed/seed-stand.sh -n insight --email you@example.com
 ```
 
-The script reads this stand's own coordinates — infrastructure hosts from the `<release>-platform` ConfigMap, the tenant and identity database from `insight-identity-resolution-config`, the image from `ingestion.toolboxImage` — and runs the seeder as a one-shot Job on that image. Nothing is hand-edited, no credential passes through the shell, and it runs as the application MariaDB user rather than root. `--dry-run` prints the Job it would apply; `--step identity` seeds only the roster.
+The script reads this stand's own coordinates — infrastructure hosts from the `<release>-platform` ConfigMap, the tenant and identity database from `insight-identity-resolution-config`, the image from `ingestion.seedImage` — and runs the seeder as a one-shot Job on that image. Nothing is hand-edited, no credential passes through the shell, and it runs as the application MariaDB user rather than root. `--dry-run` prints the Job it would apply; `--step identity` seeds only the roster.
 
 Two things it cannot do for you: a user with the `--email` address must already exist in your IdP (the authenticator resolves people by the email claim), and the ClickHouse schema must exist already — that is Step 4's migration hook.
 

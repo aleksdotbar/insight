@@ -22,24 +22,16 @@ RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linu
 RUN curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" \
     -o /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl
 
-# dbt-clickhouse. Installed before the source is copied so this slow layer
-# survives every ingestion change; it is also what the sample-data seeder's
-# silver step needs at run time (apply-ch-migrations.sh writes a profiles.yml
-# and runs dbt), which is why that package declares it as an extra rather than
-# a hard dependency.
+# dbt-clickhouse
 RUN pip install --no-cache-dir dbt-clickhouse
 
-# Copy entire ingestion project. This is also how the seeder ships: it lives at
-# tools/seed inside this tree, so it runs against the same scripts/ and dbt/ the
-# migrations use — one image, one version, no drift between seeder and migration
-# SQL.
+# Copy the ingestion project, minus the sample-data seeder: this image runs
+# migrations against real stands, and a demo-data generator does not belong on
+# one. The exclusion lives in Dockerfile.dockerignore beside this file, so it
+# applies to THIS image only — the seeder's own image (tools/seed/Dockerfile)
+# builds from the same context and does carry it.
 COPY . /ingestion
 WORKDIR /ingestion
-
-# Install the seeder as a package, so the Job runs `insight-seed` from PATH
-# rather than a module out of a working directory, and its drivers come from its
-# own metadata instead of a second list here that could drift from it.
-RUN pip install --no-cache-dir /ingestion/tools/seed
 
 # dbt writes logs/ and target/ under the project root, so the tree must belong
 # to the runtime user.

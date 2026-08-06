@@ -8,7 +8,7 @@
 # Expected variables (all required, all exported by seed-stand.sh):
 #   SEED_JOB_NAME             Job name, unique per run
 #   SEED_NAMESPACE            namespace holding the release and its creds Secret
-#   SEED_IMAGE                toolbox image carrying tools/seed (the chart's own pin)
+#   SEED_IMAGE                the seeder image (the chart's own pin)
 #   SEED_STEP                 identity | silver | analytics | all
 #   SEED_DEADLINE_SECONDS     wall-clock ceiling for the pod
 #   SEED_DB_SECRET            Secret with mariadb-password + clickhouse-password
@@ -53,8 +53,8 @@ spec:
       # seeder's own variables.
       enableServiceLinks: false
       # The same secrets the release's own Jobs use for this image; `[]` on a
-      # stand that pulls it anonymously. Without them a private toolbox image
-      # leaves the pod in ImagePullBackOff.
+      # stand that pulls it anonymously. Without them a private image leaves
+      # the pod in ImagePullBackOff.
       imagePullSecrets: ${SEED_PULL_SECRETS}
       containers:
         - name: seed
@@ -132,8 +132,8 @@ spec:
             - name: SEED_MANIFEST_PATH
               value: /tmp/manifest.json
             # dbt (run by the silver step's gold build) writes target/, logs/
-            # and ~/.dbt under whatever it is given; the toolbox image owns
-            # /ingestion, but keep the scratch paths explicit.
+            # and ~/.dbt under whatever it is given; the image owns /ingestion,
+            # but keep the scratch paths explicit.
             - name: DBT_TARGET_PATH
               value: /tmp/dbt-target
             - name: DBT_LOG_PATH

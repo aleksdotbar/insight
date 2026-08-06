@@ -496,7 +496,7 @@ To force auto-seed on next `up`, clear the `SEEDED_LOCAL_*` markers in
 
 ### Kubernetes
 
-No auto-seed, but one command. The seeder ships inside the toolbox
+No auto-seed, but one command. The seeder runs from the `insight-seed`
 image the release already pins, so nothing is built or port-forwarded:
 
 ```bash

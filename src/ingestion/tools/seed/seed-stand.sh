@@ -9,7 +9,7 @@
 #                                         holds the analytics catalogue
 #   Secret insight-identity-resolution-*  the stand's tenant, and the database
 #                                         holding `persons`
-#   helm get values <release>             the toolbox image the release pins
+#   helm get values <release>             the seed image the release pins
 #
 # Credentials are never read: the rendered Job references the release's own
 # database Secret by key, so nothing sensitive passes through this shell.
@@ -53,7 +53,7 @@ usage() {
 Usage: seed-stand.sh -n <namespace> --email <address> [options]
 
 Runs the demo-data seeder as a one-shot Job on a chart-deployed stand, using the
-toolbox image the release already pins.
+seeder image the release already pins.
 
 Required:
   -n, --namespace <ns>     namespace the Insight release runs in
@@ -65,7 +65,7 @@ Discovered from the stand (pass a flag only to override):
       --context <name>     kube context to act on         [default: the current one]
       --release <name>     helm release name                 [default: same as -n]
       --tenant <uuid>      tenant every seeded row is scoped to
-      --image <ref>        toolbox image to run
+      --image <ref>        seeder image to run (chart: ingestion.seedImage)
       --analytics-db <db>  database holding metric_definitions
       --identity-db <db>   database holding persons
       --db-secret <name>   Secret holding mariadb-password + clickhouse-password
@@ -187,14 +187,24 @@ kube -n "$NAMESPACE" get configmap "$platform_cm" >/dev/null 2>&1 || die \
        Check --release (currently '$RELEASE')."
 
 cm_value() {
-  kube -n "$NAMESPACE" get configmap "$platform_cm" -o "jsonpath={.data.$1}"
+  # Same reasoning as secret_value below: a failed read must reach the
+  # missing-values report, not `set -e`.
+  kube -n "$NAMESPACE" get configmap "$platform_cm" -o "jsonpath={.data.$1}" 2>/dev/null || true
 }
 
 secret_value() {
-  # $1 = secret, $2 = key. Missing secret or key yields an empty string, which
-  # every caller treats as "not discovered".
-  kube -n "$NAMESPACE" get secret "$1" -o "jsonpath={.data.$2}" 2>/dev/null \
-    | { base64 --decode 2>/dev/null || true; }
+  # $1 = secret, $2 = key. An absent secret, an absent key, or a read this
+  # caller is not allowed to make all yield an empty string, which every call
+  # site treats as "not discovered" and reports through the missing-values list.
+  #
+  # The `|| true` is on the READ, not on the decode: under `pipefail` a failing
+  # kubectl at the head of a pipeline sets the whole pipeline's status, and a
+  # bare `X="$(secret_value …)"` assignment would then take `set -e` with it —
+  # killing the script before it can name the flag that fixes the problem.
+  local encoded
+  encoded="$(kube -n "$NAMESPACE" get secret "$1" -o "jsonpath={.data.$2}" 2>/dev/null || true)"
+  [[ -n "$encoded" ]] || return 0
+  printf '%s' "$encoded" | base64 --decode 2>/dev/null || true
 }
 
 MARIADB_HOST="$(cm_value MARIADB_HOST)"
@@ -285,7 +295,10 @@ if [[ -z "$IMAGE" || -z "$PULL_SECRETS" ]]; then
   release_values="$(helm_release get values "$RELEASE" -n "$NAMESPACE" -a -o json 2>/dev/null || true)"
   if [[ -n "$release_values" ]]; then
     if [[ -z "$IMAGE" ]]; then
-      IMAGE="$(printf '%s' "$release_values" | jq -r '.ingestion.toolboxImage // empty')"
+      # `ingestion.seedImage`, NOT the toolbox: the seeder ships in an image of
+      # its own so the operator toolbox carries no demo data. A release that
+      # never set it cannot be seeded until someone names one.
+      IMAGE="$(printf '%s' "$release_values" | jq -r '.ingestion.seedImage // empty')"
     fi
     if [[ -z "$PULL_SECRETS" ]]; then
       # Rendered as a YAML flow sequence so the template needs no conditional:
@@ -336,7 +349,11 @@ check "$CLICKHOUSE_DATABASE" "ClickHouse database (ConfigMap $platform_cm)" "--r
 check "$ANALYTICS_DB" "analytics catalogue database" "--analytics-db"
 check "$IDENTITY_DB" "identity database (Secret $ir_secret, database_url)" "--identity-db"
 check "$TENANT" "stand tenant (Secret $ir_secret, tenant_default_id)" "--tenant"
-check "$IMAGE" "toolbox image (helm values ingestion.toolboxImage)" "--image"
+check "$IMAGE" \
+  "the seeder's image. The chart carries it as ingestion.seedImage, empty by
+    default because seeding is a test-stand activity; CI publishes the image as
+    insight-seed alongside every toolbox build" \
+  "--image"
 check "$DB_SECRET" "database-credentials Secret" "--db-secret"
 check "$IDP_SOURCE_TYPE" \
   "the identity source_type the stand's logins resolve under. Newer charts
@@ -451,8 +468,9 @@ while [[ "$SECONDS" -lt "$deadline" ]]; do
     exit 0
   fi
   if [[ "${failed:-0}" -ge 1 ]]; then
-    echo "ERROR: Job $job_name failed. Its logs above hold the reason; the Job is kept" >&2
-    echo "       (backoffLimit 0, no retry) so it can be read again:" >&2
+    echo "ERROR: Job $job_name failed. Its logs above hold the reason; it is not" >&2
+    echo "       retried (backoffLimit 0) and survives for an hour" >&2
+    echo "       (ttlSecondsAfterFinished), so it can be read again until then:" >&2
     echo "         $(kubectl_hint) -n $NAMESPACE logs job/$job_name" >&2
     exit 1
   fi
