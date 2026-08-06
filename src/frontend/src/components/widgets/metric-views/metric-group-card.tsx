@@ -10,7 +10,7 @@ import { ComingSoon } from "@/components/widgets/coming-soon";
 import { GroupCardEmpty } from "@/components/widgets/group-card-empty";
 import { useSettings } from "@/hooks/use-settings";
 import { formatMetricValue } from "@/lib/format";
-import { standingCollection, type MetricGroup } from "@/lib/insight/groups";
+import type { MetricGroup } from "@/lib/insight/groups";
 import { peerStatusToStatus } from "@/lib/insight/peer-status";
 import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
@@ -122,22 +122,11 @@ export function MetricGroupCard({
     return [{ metric, value: entityData.value, rank, standing }];
   });
 
-  // The rollup and the headline judge the group's standing metrics: a total
-  // and its own parts would weigh the same work several times.
-  const standingKeys = new Set(
-    standingCollection(def).metrics.map((metricConfig) => metricConfig.key)
-  );
-  const standingRows = rows.filter((row) =>
-    standingKeys.has(row.metric.metric_key)
-  );
-
-  const counts = rankCounts(
-    standingRows.map((row) => ({ row, rank: row.rank }))
-  );
+  const counts = rankCounts(rows.map((row) => ({ row, rank: row.rank })));
   const status = applyFocusStatus(gradeSectionStanding(counts), focusMode);
   const badgeText = sectionStandingPhrase(counts);
 
-  const headlineRow = pickHeadlineRow(standingRows);
+  const headlineRow = pickHeadlineRow(rows);
   const summary = headlineRow
     ? headlineSummary(headlineRow)
     : "No data for this period.";

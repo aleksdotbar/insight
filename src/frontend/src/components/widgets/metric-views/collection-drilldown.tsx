@@ -6,11 +6,7 @@ import { MetricSummaryCard } from "@/components/widgets/metric-views/metric-summ
 import { MetricTimeseriesView } from "@/components/widgets/metric-views/metric-timeseries-view";
 import { PeerStory } from "@/components/widgets/metric-views/peer-story";
 import type { DateRange } from "@/api/period-to-date-range";
-import {
-  standingCollection,
-  type DrilldownBlock,
-  type MetricGroup,
-} from "@/lib/insight/groups";
+import type { DrilldownBlock, MetricGroup } from "@/lib/insight/groups";
 import {
   forEntity,
   type NormalizedMetricResult,
@@ -68,9 +64,8 @@ function Block({
 
 /**
  * Drilldown body for a metrics-backed group: the def's chart blocks, then
- * the peer story over the group's standing metrics (hero outlier, side cards,
- * chips, supporting fold) — a `totals` metric is presented as composition
- * above and left out of the story.
+ * the peer story over every collection metric (hero outlier, side cards,
+ * chips, supporting fold).
  */
 export function CollectionDrilldown({
   def,
@@ -110,11 +105,7 @@ export function CollectionDrilldown({
     );
   }
 
-  const entries = buildPeerStoryEntries(
-    standingCollection(def),
-    data.byKey,
-    entityId
-  );
+  const entries = buildPeerStoryEntries(def.collection, data.byKey, entityId);
   // Summary cards get their own wider grid row above the charts;
   // distribution (histogram) charts get their own labeled card below the
   // peer story; everything else pairs into the top chart grid. Filter to
