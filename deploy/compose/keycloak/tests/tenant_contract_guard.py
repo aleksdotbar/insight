@@ -85,9 +85,8 @@ class Admin:
             data=raw if raw is not None else (json.dumps(body).encode() if body is not None else None),
         )
         # URLs are module constants targeting the throwaway 127.0.0.1 Keycloak.
-        with urllib.request.urlopen(
-            req, timeout=30
-        ) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urllib.request.urlopen(req, timeout=30) as resp:
             payload = resp.read()
             return json.loads(payload) if payload else None
 
@@ -99,9 +98,8 @@ def wait_for_keycloak(timeout_s: int = 180) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
-            urllib.request.urlopen(
-                f"{BASE}/realms/master/.well-known/openid-configuration", timeout=3
-            )  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected, python.lang.security.audit.insecure-transport.urllib.insecure-urlopen.insecure-urlopen
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected, python.lang.security.audit.insecure-transport.urllib.insecure-urlopen.insecure-urlopen
+            urllib.request.urlopen(f"{BASE}/realms/master/.well-known/openid-configuration", timeout=3)
             return
         except (urllib.error.URLError, OSError):
             time.sleep(3)
