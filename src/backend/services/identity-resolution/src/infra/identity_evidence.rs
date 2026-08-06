@@ -95,7 +95,24 @@ impl ClickHouseEvidenceReader {
     /// Returns an error if the query fails or a stored source id is not a UUID.
     pub async fn accounts(&self) -> anyhow::Result<Vec<AccountEvidence>> {
         let rows: Vec<FoldedRow> = self.client.query(FOLD_SQL).fetch_all().await?;
-        rows.into_iter().map(map_row).collect()
+
+        // A row whose source id is not a UUID is one unusable account, not a
+        // reason to blind the whole review surface: skip it and say so.
+        let mut accounts = Vec::with_capacity(rows.len());
+        let mut skipped = 0usize;
+        for row in rows {
+            match map_row(row) {
+                Ok(evidence) => accounts.push(evidence),
+                Err(_) => skipped += 1,
+            }
+        }
+        if skipped > 0 {
+            tracing::warn!(
+                skipped,
+                "review evidence: rows with an unreadable source id"
+            );
+        }
+        Ok(accounts)
     }
 }
 

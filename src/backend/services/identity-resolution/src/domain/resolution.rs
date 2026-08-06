@@ -75,14 +75,22 @@ pub struct BindingRow {
     pub created_at: DateTime,
 }
 
-/// Build the rows for one correction over `accounts`, skipping those whose
-/// decision is already recorded. `at` is the operation's instant; rows that
-/// would collide inside the natural key are nudged forward (see
-/// [`SlotAllocator`]).
+/// One account and the person the operator wants it bound to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub account: SourceAccountKey,
+    pub person_id: Uuid,
+}
+
+/// Build the rows one correction appends, skipping targets whose decision is
+/// already recorded. `at` is the operation's instant; rows that would collide
+/// inside the natural key are nudged forward (see [`SlotAllocator`]).
+///
+/// The whole operation shares one allocator — a bulk call may name several
+/// persons, and two of its rows can still collide on the same key.
 #[must_use]
 pub fn build_rows<'a>(
-    accounts: impl IntoIterator<Item = (&'a SourceAccountKey, Option<KnownBinding>)>,
-    target_person_id: Uuid,
+    targets: impl IntoIterator<Item = (&'a Target, Option<KnownBinding>)>,
     operator_person_id: Uuid,
     verb: Verb,
     at: DateTime,
@@ -90,22 +98,22 @@ pub fn build_rows<'a>(
     let mut slots = SlotAllocator::new();
     let mut rows = Vec::new();
 
-    for (account, current) in accounts {
-        if decide(current, target_person_id) == Outcome::AlreadyDecided {
+    for (target, current) in targets {
+        if decide(current, target.person_id) == Outcome::AlreadyDecided {
             continue;
         }
 
         let created_at = slots.claim(
-            target_person_id,
-            &account.source_type,
-            account.source_id,
+            target.person_id,
+            &target.account.source_type,
+            target.account.source_id,
             BINDING_VALUE_TYPE,
             at,
         );
 
         rows.push(BindingRow {
-            account: account.clone(),
-            person_id: target_person_id,
+            account: target.account.clone(),
+            person_id: target.person_id,
             author_person_id: operator_person_id,
             reason: verb.reason_code().to_owned(),
             created_at,
@@ -113,6 +121,32 @@ pub fn build_rows<'a>(
     }
 
     rows
+}
+
+/// Re-stamp rows the database refused so a retry cannot collide again: every
+/// row moves past the last instant the operation used. The natural key has no
+/// account discriminator, so two operations racing on the same microsecond can
+/// have one of their rows dropped by the insert — this is how the caller
+/// recovers the dropped row instead of losing a binding.
+#[must_use]
+pub fn restamp(rows: &[BindingRow], after: DateTime) -> Vec<BindingRow> {
+    let mut slots = SlotAllocator::new();
+
+    rows.iter()
+        .map(|row| {
+            let created_at = slots.claim(
+                row.person_id,
+                &row.account.source_type,
+                row.account.source_id,
+                BINDING_VALUE_TYPE,
+                after,
+            );
+            BindingRow {
+                created_at,
+                ..row.clone()
+            }
+        })
+        .collect()
 }
 
 /// Binding observations are `value_type='id'` rows whose value is the account id
@@ -189,12 +223,19 @@ mod tests {
         let fresh = account("slack", "U2");
         let target = Uuid::from_u128(5);
 
+        let settled_target = Target {
+            account: settled.clone(),
+            person_id: target,
+        };
+        let fresh_target = Target {
+            account: fresh.clone(),
+            person_id: target,
+        };
         let rows = build_rows(
             [
-                (&settled, Some(operator_bound(5))),
-                (&fresh, Some(seed_bound(7))),
+                (&settled_target, Some(operator_bound(5))),
+                (&fresh_target, Some(seed_bound(7))),
             ],
-            target,
             Uuid::from_u128(42),
             Verb::Bind,
             ts(),
@@ -214,9 +255,16 @@ mod tests {
         let a = account("bamboohr", "1");
         let b = account("bamboohr", "2");
 
+        let a_target = Target {
+            account: a,
+            person_id: Uuid::from_u128(5),
+        };
+        let b_target = Target {
+            account: b,
+            person_id: Uuid::from_u128(5),
+        };
         let rows = build_rows(
-            [(&a, None), (&b, None)],
-            Uuid::from_u128(5),
+            [(&a_target, None), (&b_target, None)],
             Uuid::from_u128(42),
             Verb::Merge,
             ts(),

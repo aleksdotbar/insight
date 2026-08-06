@@ -12,7 +12,9 @@ use uuid::Uuid;
 use super::resolution::EXCLUDED_PERSON;
 use super::seed::{KnownBinding, SourceAccountKey, normalize_email};
 
-/// Why an account is on the queue.
+/// Why an account is on the queue. The discriminant orders the queue: a
+/// contested account is the operator's most actionable item, a no-evidence one
+/// the least.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemKind {
     /// The account's identity evidence is claimed by more than one person.
@@ -109,6 +111,24 @@ pub fn build(
     }
 
     items.extend(binding_conflicts(&by_email, bindings));
+
+    // The queue is truncated by the caller, so its order must not depend on
+    // hash iteration: the same data must surface the same items every build.
+    items.sort_by(|a, b| {
+        (
+            a.kind as u8,
+            &a.account.source_type,
+            a.account.source_id,
+            &a.account.account_id,
+        )
+            .cmp(&(
+                b.kind as u8,
+                &b.account.source_type,
+                b.account.source_id,
+                &b.account.account_id,
+            ))
+    });
+
     Review { items, rates }
 }
 
@@ -289,6 +309,24 @@ mod tests {
         assert_eq!(
             conflicts[0].candidates,
             vec![Uuid::from_u128(17), Uuid::from_u128(23)]
+        );
+    }
+
+    #[test]
+    fn queue_order_is_stable_across_builds() {
+        let a = observed("github", "gh-1", Some("legacy@example.com"));
+        let b = observed("jira", "jr-1", Some("legacy@example.com"));
+        let orphan = observed("slack", "slk-9", None);
+        let mut bindings = HashMap::new();
+        bindings.insert(a.account.clone(), seed_bound(17));
+        bindings.insert(b.account.clone(), seed_bound(23));
+
+        let first = build(vec![a.clone(), b.clone(), orphan.clone()], &bindings);
+        let again = build(vec![orphan, b, a], &bindings);
+
+        assert_eq!(
+            first.items, again.items,
+            "input order must not change what the operator sees"
         );
     }
 

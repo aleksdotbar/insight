@@ -19,7 +19,7 @@ use uuid::Uuid;
 use super::AppState;
 use super::error::CorrectionError;
 use super::gate::require_admin;
-use crate::domain::resolution::{self, EXCLUDED_PERSON, Verb};
+use crate::domain::resolution::{self, EXCLUDED_PERSON, Target, Verb};
 use crate::domain::review_queue::{self, EvidenceAccount, ItemKind, Review};
 use crate::domain::seed::SourceAccountKey;
 use crate::infra::db::{ops_repo, resolution_repo};
@@ -129,30 +129,17 @@ pub async fn bind(
     reject_empty(req.bindings.is_empty(), "bindings")?;
     reject_oversized(req.bindings.len())?;
 
-    // One correction per target person: rows of one call may name different
-    // persons, and each person's rows need their own timestamp slots.
-    let mut response = CorrectionResponse {
-        applied: 0,
-        already_decided: 0,
-        items: Vec::with_capacity(req.bindings.len()),
-        new_person_id: None,
-    };
-
+    let mut targets = Vec::with_capacity(req.bindings.len());
     for item in &req.bindings {
-        let account = SourceAccountKey::from(&item.account);
         require_known_person(&state.db, tenant, item.person_id).await?;
-        let outcome = apply_correction(
-            &state,
-            tenant,
-            operator,
-            &[account],
-            item.person_id,
-            Verb::Bind,
-            &req.comment,
-        )
-        .await?;
-        merge_into(&mut response, outcome);
+        targets.push(Target {
+            account: SourceAccountKey::from(&item.account),
+            person_id: item.person_id,
+        });
     }
+
+    let response =
+        apply_correction(&state, tenant, operator, targets, Verb::Bind, &req.comment).await?;
 
     Ok(Json(response))
 }
@@ -179,17 +166,16 @@ pub async fn merge(
     let accounts = resolution_repo::accounts_of_person(&state.db, tenant, req.source_person_id)
         .await
         .map_err(|e| internal(&e, "failed to read the person's accounts"))?;
+    let targets = accounts
+        .into_iter()
+        .map(|account| Target {
+            account,
+            person_id: req.target_person_id,
+        })
+        .collect();
 
-    let outcome = apply_correction(
-        &state,
-        tenant,
-        operator,
-        &accounts,
-        req.target_person_id,
-        Verb::Merge,
-        &req.comment,
-    )
-    .await?;
+    let outcome =
+        apply_correction(&state, tenant, operator, targets, Verb::Merge, &req.comment).await?;
 
     Ok(Json(outcome))
 }
@@ -204,15 +190,17 @@ pub async fn detach(
     let operator = require_admin(&state.db, &ctx).await?;
     let tenant = ctx.subject_tenant_id();
 
-    let account = SourceAccountKey::from(&req.account);
     let new_person_id = Uuid::now_v7();
+    let targets = vec![Target {
+        account: SourceAccountKey::from(&req.account),
+        person_id: new_person_id,
+    }];
 
     let mut outcome = apply_correction(
         &state,
         tenant,
         operator,
-        &[account],
-        new_person_id,
+        targets,
         Verb::Detach,
         &req.comment,
     )
@@ -232,13 +220,16 @@ pub async fn exclude(
     let operator = require_admin(&state.db, &ctx).await?;
     let tenant = ctx.subject_tenant_id();
 
-    let account = SourceAccountKey::from(&req.account);
+    let targets = vec![Target {
+        account: SourceAccountKey::from(&req.account),
+        person_id: EXCLUDED_PERSON,
+    }];
+
     let outcome = apply_correction(
         &state,
         tenant,
         operator,
-        &[account],
-        EXCLUDED_PERSON,
+        targets,
         Verb::Exclude,
         &req.comment,
     )
@@ -247,55 +238,47 @@ pub async fn exclude(
     Ok(Json(outcome))
 }
 
-/// Read the accounts' current bindings, build the rows a correction appends,
-/// write them, and journal the call.
+/// Read the targets' current bindings, build the rows the correction appends,
+/// write them once, and journal the call. One write and one cache rebuild per
+/// operation, however many accounts it names.
 async fn apply_correction(
     state: &AppState,
     tenant: Uuid,
     operator: Uuid,
-    accounts: &[SourceAccountKey],
-    target_person_id: Uuid,
+    targets: Vec<Target>,
     verb: Verb,
     comment: &str,
 ) -> Result<CorrectionResponse, CanonicalError> {
-    let current = resolution_repo::current_bindings(&state.db, tenant, accounts)
+    let accounts: Vec<SourceAccountKey> = targets.iter().map(|t| t.account.clone()).collect();
+    let current = resolution_repo::current_bindings(&state.db, tenant, &accounts)
         .await
         .map_err(|e| internal(&e, "failed to read current bindings"))?;
 
-    let pairs: Vec<_> = accounts
+    let pairs: Vec<_> = targets
         .iter()
-        .map(|a| (a, current.get(a).copied()))
+        .map(|t| (t, current.get(&t.account).copied()))
         .collect();
-    let rows = resolution::build_rows(
-        pairs,
-        target_person_id,
-        operator,
-        verb,
-        chrono::Utc::now().naive_utc(),
-    );
+    let rows = resolution::build_rows(pairs, operator, verb, chrono::Utc::now().naive_utc());
 
-    if !rows.is_empty() {
-        resolution_repo::append_bindings(&state.db, tenant, operator, &rows)
-            .await
-            .map_err(|e| internal(&e, "failed to append the correction"))?;
-    }
+    let appended = write_rows(state, tenant, operator, rows.clone()).await?;
 
-    let appended: std::collections::HashSet<&SourceAccountKey> =
+    let touched: std::collections::HashSet<&SourceAccountKey> =
         rows.iter().map(|r| &r.account).collect();
-    let items: Vec<ItemResult> = accounts
+    let items: Vec<ItemResult> = targets
         .iter()
-        .map(|a| ItemResult {
-            source: a.source_type.clone(),
-            source_id: a.source_id,
-            account_id: a.account_id.clone(),
-            outcome: if appended.contains(a) {
-                "applied".to_owned()
+        .map(|t| ItemResult {
+            source: t.account.source_type.clone(),
+            source_id: t.account.source_id,
+            account_id: t.account.account_id.clone(),
+            outcome: if touched.contains(&t.account) {
+                OUTCOME_APPLIED.to_owned()
             } else {
-                "already_decided".to_owned()
+                OUTCOME_ALREADY_DECIDED.to_owned()
             },
         })
         .collect();
 
+    let target_person_id = targets.first().map(|t| t.person_id).unwrap_or_default();
     journal(
         state,
         tenant,
@@ -308,11 +291,53 @@ async fn apply_correction(
     .await;
 
     Ok(CorrectionResponse {
-        applied: rows.len(),
-        already_decided: accounts.len() - rows.len(),
+        applied: usize::try_from(appended).unwrap_or(rows.len()),
+        already_decided: targets.len() - rows.len(),
         items,
         new_person_id: None,
     })
+}
+
+/// Append the rows, then recover any the database refused.
+///
+/// The natural key has no account discriminator, so a concurrent operation can
+/// have claimed the same microsecond and `INSERT IGNORE` silently drops the
+/// loser. Re-stamping past the contended instant and retrying once turns that
+/// into a late row rather than a lost binding; a second refusal is reported as
+/// such rather than papered over.
+async fn write_rows(
+    state: &AppState,
+    tenant: Uuid,
+    operator: Uuid,
+    rows: Vec<resolution::BindingRow>,
+) -> Result<u64, CanonicalError> {
+    if rows.is_empty() {
+        return Ok(0);
+    }
+
+    let appended = resolution_repo::append_bindings(&state.db, tenant, operator, &rows)
+        .await
+        .map_err(|e| internal(&e, "failed to append the correction"))?;
+
+    let expected = rows.len() as u64;
+    if appended == expected {
+        return Ok(appended);
+    }
+
+    let retry = resolution::restamp(&rows, chrono::Utc::now().naive_utc());
+    let recovered = resolution_repo::append_bindings(&state.db, tenant, operator, &retry)
+        .await
+        .map_err(|e| internal(&e, "failed to append the correction"))?;
+
+    let total = appended + recovered;
+    if total < expected {
+        tracing::warn!(
+            expected,
+            appended = total,
+            "identity correction: some rows were refused twice"
+        );
+    }
+    Ok(total.min(expected))
 }
 
 /// Record the call in the operations journal. Journalling must never fail the
@@ -327,8 +352,8 @@ async fn journal(
     items: &[ItemResult],
 ) {
     let summary = serde_json::json!({
-        "applied": items.iter().filter(|i| i.outcome == "applied").count(),
-        "already_decided": items.iter().filter(|i| i.outcome == "already_decided").count(),
+        "applied": items.iter().filter(|i| i.outcome == OUTCOME_APPLIED).count(),
+        "already_decided": items.iter().filter(|i| i.outcome == OUTCOME_ALREADY_DECIDED).count(),
     });
     let request = serde_json::json!({
         "verb": verb.reason_code(),
@@ -366,11 +391,9 @@ async fn journal(
 /// `operations.operation_type` for operator corrections.
 pub const RESOLUTION_OP: &str = "identity-correction";
 
-fn merge_into(response: &mut CorrectionResponse, outcome: CorrectionResponse) {
-    response.applied += outcome.applied;
-    response.already_decided += outcome.already_decided;
-    response.items.extend(outcome.items);
-}
+/// Per-item outcome vocabulary.
+const OUTCOME_APPLIED: &str = "applied";
+const OUTCOME_ALREADY_DECIDED: &str = "already_decided";
 
 async fn require_known_person(
     db: &sea_orm::DatabaseConnection,

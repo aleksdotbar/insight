@@ -85,7 +85,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 - **PRD**: [PRD.md](../PRD.md)
 - **Design**: [DESIGN.md](../DESIGN.md)
 - **Decisions**: [ADR-0003](../ADR/0003-operator-decisions-as-persons-observations.md), [ADR-0002](../ADR/0002-stable-person-id-via-persons-observations.md)
-- **Dependencies**: `cpt-ir-feature-initial-seed` (journal, read paths); persons-seed hardening (shipped)
+- **Dependencies**: `cpt-ir-feature-initial-seed` (journal, read paths). The seed hardening and the analytics resolver upgrade are parts of this feature, not external dependencies: corrections are inert without either.
 
 ## 2. Actor Flows (CDSL)
 
@@ -108,12 +108,15 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 - A row names a person that does not exist
 
 **Steps**:
+
+> Every step below reads and writes within the caller's tenant: the tenant comes from the verified request context, never from the request body or path, so an operator cannot reach another tenant's accounts, persons or history.
+
 1. [ ] - `p1` - Operator requests the review queue - `inst-mr-queue-request`
 2. [ ] - `p1` - API: GET /v1/resolution/attention (items with candidates + resolution-rate shares) - `inst-mr-queue-api`
 3. [ ] - `p1` - Operator inspects one account's history where needed - `inst-mr-history-inspect`
 4. [ ] - `p1` - API: GET /v1/resolution/accounts/{source}/{id} (current binding + authored history) - `inst-mr-history-api`
 5. [ ] - `p1` - Operator submits one or more bindings - `inst-mr-bind-submit`
-6. [ ] - `p1` - API: POST /v1/resolution/bind (items addressed by account or observed value; per-item results) - `inst-mr-bind-api`
+6. [ ] - `p1` - API: POST /v1/resolution/bind (items addressed by account; addressing by observed value is reserved, see the addressing process) - `inst-mr-bind-api`
 7. [ ] - `p1` - **IF** the caller has no operator grant - `inst-mr-authz-check`
    1. [ ] - `p1` - **RETURN** authorization error, nothing appended - `inst-mr-authz-reject`
 8. [ ] - `p1` - **FOR EACH** item: resolve the target account, then apply `cpt-ir-algo-manual-resolution-apply-decision` - `inst-mr-bind-loop`
@@ -232,6 +235,8 @@ Automatic resolution errs in both directions — under-merge (one human as two p
    1. [ ] - `p1` - Advance the candidate by whole microseconds until it is unused - `inst-mr-ts-advance`
 3. [ ] - `p1` - **RETURN** the claimed instants - `inst-mr-ts-return`
 
+> Concurrency: allocation is not a lock, so two operations can claim the same instant and the insert silently drops the loser (the key has no account discriminator). A write **MUST** compare what the database appended against what it asked for, re-stamp the refused rows past the contended instant and retry, and report a row it could not place rather than count it as applied.
+
 ### Build the Review Queue
 
 - [ ] `p1` - **ID**: `cpt-ir-algo-manual-resolution-review-queue`
@@ -250,7 +255,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
    2. [ ] - `p1` - **ELSE** emit a binding-conflict item with the persons involved - `inst-mr-queue-conflict-item`
 5. [ ] - `p1` - **FOR EACH** unbound account whose evidence is contested - `inst-mr-queue-pending`
    1. [ ] - `p1` - Emit a pending item with the candidate persons and the contested values - `inst-mr-queue-pending-item`
-6. [ ] - `p1` - **FOR EACH** observed account with no usable identity evidence - `inst-mr-queue-noevidence`
+6. [ ] - `p1` - **FOR EACH** unbound observed account with no usable identity evidence — an account already bound, including one bound to the excluded person, is not pending anything - `inst-mr-queue-noevidence`
    1. [ ] - `p1` - Emit a no-evidence item (never hidden) - `inst-mr-queue-noevidence-item`
 7. [ ] - `p1` - Compute shares: bound / pending / no-evidence / excluded over observed accounts - `inst-mr-queue-rates`
 8. [ ] - `p1` - **RETURN** items and shares - `inst-mr-queue-return`
@@ -323,7 +328,7 @@ The system **MUST** treat a correction as a no-op only when an identical operato
 
 - [ ] `p1` - **ID**: `cpt-ir-dod-manual-resolution-timestamps`
 
-The system **MUST** claim a distinct `created_at` per appended row within the natural observation key, so that rows of one operation cannot collide and be dropped by the insert.
+The system **MUST** claim a distinct `created_at` per appended row within the natural observation key, so that rows of one operation cannot collide and be dropped by the insert, and **MUST** recover a row a concurrent operation displaced by re-stamping and retrying it rather than reporting it as applied.
 
 **Implements**:
 - `cpt-ir-algo-manual-resolution-timestamp-slot`
@@ -374,7 +379,7 @@ The system **MUST** return, for an account, its current binding and full decisio
 
 - [ ] `p1` - **ID**: `cpt-ir-dod-manual-resolution-authz`
 
-The system **MUST** require an operator grant for every write verb, enforced through the service's existing role grants, and **MUST** record the acting person on every appended row and journal entry.
+The system **MUST** require an operator grant for every write verb, enforced through the service's existing role grants, and **MUST** record the acting person on every appended row and journal entry. Every read and write — queue, account history, person accounts, binding lookups, appended rows and cache rebuilds — **MUST** be scoped to the tenant of the verified caller, taken from the request context and never from caller-supplied input.
 
 **Implements**:
 - `cpt-ir-flow-manual-resolution-review-and-bind`

@@ -50,30 +50,41 @@ pub async fn current_bindings(
         WHERE rn = 1
     ";
 
-    if accounts.is_empty() {
-        return Ok(HashMap::new());
+    // The review surface asks about every observed account, so the list is as
+    // long as the tenant is wide: chunk it rather than build one statement
+    // whose placeholder count grows without bound.
+    const LOOKUP_CHUNK: usize = 500;
+
+    let mut map = HashMap::with_capacity(accounts.len());
+    for chunk in accounts.chunks(LOOKUP_CHUNK) {
+        let tuples = vec!["(?, ?, ?)"; chunk.len()].join(", ");
+        let sql = format!("{SQL_PREFIX}{tuples}{SQL_SUFFIX}");
+
+        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 3 + 1);
+        params.push(tenant_id.as_bytes().to_vec().into());
+        for account in chunk {
+            params.push(account.source_type.clone().into());
+            params.push(account.source_id.as_bytes().to_vec().into());
+            params.push(account.account_id.clone().into());
+        }
+
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                DbBackend::MySql,
+                &sql,
+                params,
+            ))
+            .await?;
+
+        collect_bindings(rows, &mut map)?;
     }
+    Ok(map)
+}
 
-    let tuples = vec!["(?, ?, ?)"; accounts.len()].join(", ");
-    let sql = format!("{SQL_PREFIX}{tuples}{SQL_SUFFIX}");
-
-    let mut params: Vec<Value> = Vec::with_capacity(accounts.len() * 3 + 1);
-    params.push(tenant_id.as_bytes().to_vec().into());
-    for account in accounts {
-        params.push(account.source_type.clone().into());
-        params.push(account.source_id.as_bytes().to_vec().into());
-        params.push(account.account_id.clone().into());
-    }
-
-    let rows = db
-        .query_all(Statement::from_sql_and_values(
-            DbBackend::MySql,
-            &sql,
-            params,
-        ))
-        .await?;
-
-    let mut map = HashMap::with_capacity(rows.len());
+fn collect_bindings(
+    rows: Vec<sea_orm::QueryResult>,
+    map: &mut HashMap<SourceAccountKey, KnownBinding>,
+) -> anyhow::Result<()> {
     for row in rows {
         let source_type: String = row.try_get("", "insight_source_type")?;
         let source_id: Vec<u8> = row.try_get("", "insight_source_id")?;
@@ -92,7 +103,7 @@ pub async fn current_bindings(
             },
         );
     }
-    Ok(map)
+    Ok(())
 }
 
 /// Accounts currently bound to a person (latest binding wins). The merge verb
