@@ -57,6 +57,9 @@ services:
       APP__gears__authenticator__config__redirect_uri: "http://gateway:8080/auth/callback"
       APP__gears__authenticator__config__idp__issuer_url: "http://fakeidp:8084"
       APP__gears__authenticator__config__idp__client_id: "insight-authenticator"
+      # Required since the login-bootstrap person resolve: the identity-stub
+      # answers any source_type, so the value only has to be non-empty.
+      APP__gears__authenticator__config__idp__source_type: "fakeidp"
       # Short exchange-cache window so the logout-revocation phase is fast.
       APP__gears__authenticator__config__authz_cache_max_age_seconds: "3"
       # Resolve the baked dev `testclient` registry entry's public_key_paths
