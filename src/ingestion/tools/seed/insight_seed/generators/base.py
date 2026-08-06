@@ -184,6 +184,7 @@ RESET_TARGETS: tuple[tuple[str, str], ...] = (
     ("silver", "class_people"),
     ("silver", "class_support_activity"),
     ("silver", "class_task_field_history"),
+    ("silver", "class_task_issuetypes"),
     ("silver", "class_task_statuses"),
     ("silver", "class_task_users"),
     ("silver", "class_task_worklogs"),
