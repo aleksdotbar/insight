@@ -35,7 +35,7 @@ What actually blocks you is identity, not auth. The login email has to resolve t
 
 Read that symptom as "the stand isn't ready", not "the product is broken" — filing it would be a `layer: stand` finding, which `file-bug-insight` will bounce.
 
-With `AUTH_MODE=keycloak` you get a real username-and-password form, and `--persistent` is worth it so the session survives between runs.
+The Keycloak login is a real username-and-password form, so `--persistent` is worth it — the session survives between runs.
 
 ### Behind a passkey: attach, never launch
 

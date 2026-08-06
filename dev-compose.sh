@@ -489,18 +489,17 @@ cmd_up() {
   [[ -n "${GATEWAY_IMAGE:-}" ]] && ghcr_list=$(add "$ghcr_list" gateway)
 
   if [[ -n "$from_ghcr_csv" ]]; then
-    local OLD_IFS=$IFS; IFS=','
-    local s
-    for s in $from_ghcr_csv; do ghcr_list=$(add "$ghcr_list" "$(trim "$s")"); done
-    IFS=$OLD_IFS
+    local s parts=()
+    IFS=',' read -r -a parts <<< "$from_ghcr_csv"
+    for s in "${parts[@]}"; do ghcr_list=$(add "$ghcr_list" "$(trim "$s")"); done
   fi
   if [[ "$watch_option_set" == "true" ]]; then
     case "$watch_csv" in
       ""|,*|*,|*,,*) echo "ERROR: --watch requires a comma-separated service list without empty entries." >&2; return 2 ;;
     esac
-    local OLD_IFS=$IFS; IFS=','
-    local s
-    for s in $watch_csv; do
+    local s parts=()
+    IFS=',' read -r -a parts <<< "$watch_csv"
+    for s in "${parts[@]}"; do
       s="$(trim "$s")"
       [[ -n "$s" ]] || { echo "ERROR: --watch contains an empty service name." >&2; return 2; }
       contains "$watchable_services" "$s" || {
@@ -509,13 +508,11 @@ cmd_up() {
       }
       watch_list=$(add "$watch_list" "$s")
     done
-    IFS=$OLD_IFS
   fi
   if [[ -n "$build_only_csv" ]]; then
-    local OLD_IFS=$IFS; IFS=','
-    local s
-    for s in $build_only_csv; do build_list=$(add "$build_list" "$(trim "$s")"); done
-    IFS=$OLD_IFS
+    local s parts=()
+    IFS=',' read -r -a parts <<< "$build_only_csv"
+    for s in "${parts[@]}"; do build_list=$(add "$build_list" "$(trim "$s")"); done
     for s in $all_backend; do
       contains "$build_list" "$s" || ghcr_list=$(add "$ghcr_list" "$s")
     done
@@ -612,11 +609,13 @@ YML
   # the published :8085). A `localhost` issuer is unreachable from inside the authenticator; a
   # `keycloak:8085` issuer wouldn't match the browser-facing `iss`.
   local kc_ip; kc_ip="$(detect_host_ip || true)"
-  if [[ -z "$kc_ip" ]]; then
-    echo "WARN: no host IP detected — Keycloak issuer stays localhost (browser-only; the authenticator can't reach it)." >&2
-    kc_ip="localhost"
+  if [[ -z "$kc_ip" && -z "${AUTHENTICATOR_OIDC_ISSUER:-}" ]]; then
+    echo "ERROR: no host IP detected — a localhost Keycloak issuer is unreachable" >&2
+    echo "       from the authenticator container, so login could never work." >&2
+    echo "       Get on a network, or pin AUTHENTICATOR_OIDC_ISSUER in $env_file." >&2
+    return 1
   fi
-  local kc_base="http://${kc_ip}:8085/kc"
+  local kc_base="http://${kc_ip:-localhost}:8085/kc"
 
   echo "=== Generating Keycloak realm import (deploy/compose/keycloak/realm-insight.generated.json) ==="
   # gen-realm.py's own --authenticator-redirect REPLACES its defaults rather
@@ -645,10 +644,12 @@ YML
   # - AUTHENTICATOR_OIDC_ISSUER -> what the authenticator discovers + validates `iss` against
   # redirect_uri keeps its default (the SPA origin http://localhost:3000/auth/callback,
   # which the realm registers for this client).
+  # Issuer/client values pinned in .env.compose win (a custom/external IdP);
+  # otherwise the in-stack Keycloak defaults apply.
   export KEYCLOAK_HOSTNAME="$kc_base"
-  export AUTHENTICATOR_OIDC_ISSUER="${kc_base}/realms/insight"
-  export OIDC_CLIENT_ID="insight-authenticator"
-  export OIDC_CLIENT_SECRET="insight-authenticator-dev-secret"
+  export AUTHENTICATOR_OIDC_ISSUER="${AUTHENTICATOR_OIDC_ISSUER:-${kc_base}/realms/insight}"
+  export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-insight-authenticator}"
+  export OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:-insight-authenticator-dev-secret}"
   # The login-bootstrap resolve is scoped to idp.source_type; keycloak's
   # sub differs in KIND from fakeidp's (gen-realm.py sets each realm user's
   # id to their OWN roster uuid, so sub IS that uuid — not the fixed
@@ -656,7 +657,7 @@ YML
   # under its own source_type, not the fakeidp default (see
   # deploy/seed/profiles.py::get_login_id_pairs).
   export AUTHENTICATOR_IDP_SOURCE_TYPE="keycloak"
-  echo "keycloak issuer → ${kc_base}/realms/insight (host IP; browser + authenticator reachable)"
+  echo "authenticator issuer → ${AUTHENTICATOR_OIDC_ISSUER}"
 
   # AUTH_DISABLED is a separate, blunter bypass; if it's on, real login is
   # still skipped regardless.

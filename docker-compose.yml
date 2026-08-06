@@ -383,11 +383,10 @@ services:
       APP__gears__authenticator__config__idp__client_id: "${OIDC_CLIENT_ID:-insight-authenticator}"
       APP__gears__authenticator__config__idp__client_secret: "${OIDC_CLIENT_SECRET:-}"
       # Required: the identity-resolution source_type the login-bootstrap
-      # lookup is scoped to. fakeidp's `sub` claim IS the stable external id
-      # (external_id_claim defaults to "sub"); deploy/seed/identity.py seeds
-      # the matching value_type='id' row for the dev-lead person under this
-      # same source_type.
-      APP__gears__authenticator__config__idp__source_type: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-fakeidp}"
+      # lookup is scoped to. The realm sets each user's `sub` to their own
+      # roster uuid — the stable external id; deploy/seed/identity.py seeds
+      # the matching value_type='id' rows under this same source_type.
+      APP__gears__authenticator__config__idp__source_type: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-keycloak}"
       # Callback rides the SPA's browser origin (Vite :3000) so the __Host-sid
       # cookie lands where the SPA runs; see .env.compose.example.
       APP__gears__authenticator__config__redirect_uri: "${AUTHENTICATOR_REDIRECT_URI:-http://localhost:3000/auth/callback}"
@@ -724,7 +723,7 @@ services:
       # Must match the authenticator's idp.source_type (AUTHENTICATOR_IDP_SOURCE_TYPE
       # above) — the dev-lead's login-bootstrap value_type='id' row is seeded
       # under this source_type.
-      IDP_SOURCE_TYPE: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-fakeidp}"
+      IDP_SOURCE_TYPE: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-keycloak}"
       # Selects which roster personas get a login-id fixture (fakeidp: dev lead
       # only, its fixed "fakeidp|dev"; keycloak: the whole roster, each on their
       # own uuid — see deploy/seed/profiles.py's get_login_id_pairs).
