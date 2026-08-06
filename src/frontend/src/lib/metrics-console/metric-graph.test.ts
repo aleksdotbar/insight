@@ -143,4 +143,20 @@ describe("draftIsSubmittable", () => {
     expect(draftIsSubmittable(base)).toBe(false);
     expect(draftIsSubmittable({ ...base, scale: "100" })).toBe(true);
   });
+
+  it("rejects a non-numeric ratio scale", () => {
+    const base = {
+      ...EMPTY_DRAFT,
+      metric_key: "a.b",
+      label: "L",
+      source_key: "s",
+      observation_sql: "x",
+      measures: "n, d",
+      computation: "ratio" as const,
+      numerator_measure: "n",
+      denominator_measure: "d",
+    };
+    expect(draftIsSubmittable({ ...base, scale: "abc" })).toBe(false);
+    expect(draftIsSubmittable({ ...base, scale: "  " })).toBe(false);
+  });
 });

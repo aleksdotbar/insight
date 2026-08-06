@@ -68,6 +68,77 @@ describe("MetricEditorDialog", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("edits every field and submits a complete ratio draft", async () => {
+    const { onSubmit } = setup();
+
+    await userEvent.type(screen.getByLabelText("Metric key"), "example.rate");
+    await userEvent.type(screen.getByLabelText("Label"), "Rate");
+    await userEvent.type(screen.getByLabelText("Short label"), "R");
+    await userEvent.clear(screen.getByLabelText("Entity type"));
+    await userEvent.type(screen.getByLabelText("Entity type"), "person");
+    await userEvent.type(screen.getByLabelText("Description"), "desc");
+    await userEvent.type(screen.getByLabelText("Explanation"), "why");
+    await userEvent.selectOptions(screen.getByLabelText("Format"), "percent");
+    await userEvent.selectOptions(
+      screen.getByLabelText("Direction"),
+      "higher_is_better"
+    );
+    await userEvent.selectOptions(
+      screen.getByLabelText("Computation"),
+      "ratio"
+    );
+    await userEvent.type(screen.getByLabelText("Unit"), "%");
+    await userEvent.type(screen.getByLabelText("Scale"), "100");
+    await userEvent.type(
+      screen.getByLabelText("Peer cohort key"),
+      "team"
+    );
+    await userEvent.type(
+      screen.getByLabelText("Source key"),
+      "example_source"
+    );
+    await userEvent.type(
+      screen.getByLabelText("Observation SQL"),
+      "SELECT 1"
+    );
+    await userEvent.type(screen.getByLabelText("Measures"), "num, den");
+    await userEvent.type(screen.getByLabelText("Dimensions"), "repo");
+    await userEvent.type(screen.getByLabelText("Numerator measure"), "num");
+    await userEvent.type(screen.getByLabelText("Denominator measure"), "den");
+    await userEvent.type(screen.getByLabelText("Multiplier"), "2");
+    await userEvent.type(screen.getByLabelText("Offset"), "1");
+    await userEvent.type(screen.getByLabelText("Clamp min"), "0");
+    await userEvent.type(screen.getByLabelText("Clamp max"), "5");
+
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      metric_key: "example.rate",
+      label: "Rate",
+      short_label: "R",
+      description: "desc",
+      explanation: "why",
+      format: "percent",
+      direction: "higher_is_better",
+      computation: "ratio",
+      unit: "%",
+      scale: "100",
+      peer_cohort_key: "team",
+      source_key: "example_source",
+      measures: "num, den",
+      dimensions: "repo",
+      numerator_measure: "num",
+      denominator_measure: "den",
+      transform_multiplier: "2",
+      transform_offset: "1",
+      transform_clamp_min: "0",
+      transform_clamp_max: "5",
+    });
+  });
+
   it("edit mode prefills from an existing graph and locks the key", () => {
     setup({
       mode: "edit",

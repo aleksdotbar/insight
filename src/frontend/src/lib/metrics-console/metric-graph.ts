@@ -187,7 +187,9 @@ export function draftIsSubmittable(draft: MetricDraft): boolean {
     return (
       draft.numerator_measure.trim() !== "" &&
       draft.denominator_measure.trim() !== "" &&
-      draft.scale.trim() !== ""
+      // Scale is required for a ratio and must be a real number — the same
+      // parse `draftToGraph` applies, so a non-numeric scale is not submittable.
+      toNullableNumber(draft.scale) !== null
     );
   }
   return draft.value_measure.trim() !== "";

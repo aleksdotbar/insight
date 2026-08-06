@@ -276,6 +276,44 @@ function stripOrigin(metric: CustomMetric): CustomMetricGraph {
   return graph;
 }
 
+/** A graph is well-formed enough to persist: identity, source, SQL, at least
+ *  one measure, and the input wiring its computation requires. Mirrors the
+ *  backend's create/update validation so FE tests exercise real behavior. */
+function isValidGraph(graph: CustomMetricGraph | null): graph is CustomMetricGraph {
+  if (
+    !graph?.metric_key ||
+    !graph.label ||
+    !graph.source_key ||
+    !graph.observation_sql ||
+    !Array.isArray(graph.measures) ||
+    graph.measures.length === 0 ||
+    !Array.isArray(graph.inputs) ||
+    graph.inputs.length === 0
+  ) {
+    return false;
+  }
+  if (graph.computation === "ratio") {
+    const roles = new Set(graph.inputs.map((input) => input.role));
+    return (
+      roles.has("numerator") &&
+      roles.has("denominator") &&
+      typeof graph.scale === "number"
+    );
+  }
+  return graph.inputs.some((input) => input.role === "value");
+}
+
+/** True when `source_key` already belongs to a DIFFERENT stored metric. The
+ *  backend rejects such an update/create with 409. */
+function sourceKeyTakenByOther(sourceKey: string, metricKey: string): boolean {
+  for (const metric of customMetricStore.values()) {
+    if (metric.metric_key !== metricKey && metric.source_key === sourceKey) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function customMetricHandlers() {
   return [
     http.get(METRICS_BASE, () =>
@@ -287,8 +325,16 @@ function customMetricHandlers() {
       const body = (await request
         .json()
         .catch(() => null)) as CustomMetricGraph | null;
-      if (!body?.metric_key || !body?.label || !body?.source_key) {
+      if (!isValidGraph(body)) {
         return HttpResponse.json({ error: "invalid_argument" }, { status: 400 });
+      }
+      // A duplicate key is a conflict, not an overwrite — leave the store
+      // untouched and mirror the backend's 409.
+      if (customMetricStore.has(body.metric_key)) {
+        return HttpResponse.json({ error: "already_exists" }, { status: 409 });
+      }
+      if (sourceKeyTakenByOther(body.source_key, body.metric_key)) {
+        return HttpResponse.json({ error: "source_key_conflict" }, { status: 409 });
       }
       const created: CustomMetric = { ...body, origin: "custom" };
       customMetricStore.set(created.metric_key, created);
@@ -305,10 +351,15 @@ function customMetricHandlers() {
       const body = (await request.json().catch(() => null)) as {
         metrics?: CustomMetricGraph[];
       } | null;
-      const incoming = Array.isArray(body?.metrics) ? body.metrics : [];
+      // Import is all-or-nothing: validate the whole batch first and mutate
+      // nothing if any member is malformed. Only after the batch is known good
+      // do we apply it, skipping keys that already exist.
+      if (!Array.isArray(body?.metrics) || !body.metrics.every(isValidGraph)) {
+        return HttpResponse.json({ error: "invalid_argument" }, { status: 400 });
+      }
       const skipped: string[] = [];
       let imported = 0;
-      for (const graph of incoming) {
+      for (const graph of body.metrics) {
         if (customMetricStore.has(graph.metric_key)) {
           skipped.push(graph.metric_key);
           continue;
@@ -332,10 +383,17 @@ function customMetricHandlers() {
       const body = (await request
         .json()
         .catch(() => null)) as CustomMetricGraph | null;
-      if (!body) {
+      const candidate = body ? { ...body, metric_key: key } : null;
+      // Reject an incomplete/invalid graph instead of persisting it.
+      if (!isValidGraph(candidate)) {
         return HttpResponse.json({ error: "invalid_argument" }, { status: 400 });
       }
-      const updated: CustomMetric = { ...body, metric_key: key, origin: "custom" };
+      // A source_key already claimed by a different metric is a 409, matching
+      // the backend's new collision check.
+      if (sourceKeyTakenByOther(candidate.source_key, key)) {
+        return HttpResponse.json({ error: "source_key_conflict" }, { status: 409 });
+      }
+      const updated: CustomMetric = { ...candidate, origin: "custom" };
       customMetricStore.set(key, updated);
       return HttpResponse.json(updated);
     }),
