@@ -257,11 +257,17 @@ def _check_clickhouse(target: ClickHouse, scripts: Path, tenant: str, *, force: 
             try:
                 rows, worst, unattributable = _foreign_silver_rows(client, tenant)
             except Exception as exc:
-                # A stand with no silver database yet is the normal fresh case,
-                # and the placeholder script creates it. Anything else here is
-                # still worth reporting rather than swallowing.
-                LOG.info("foreign-silver-rows check skipped: %s", exc)
+                # A guard that cannot run is not a guard that passed. The fresh
+                # stand needs no tolerance here — `system.columns` answers with
+                # an empty result for databases that do not exist yet — so
+                # anything raised is a scan that failed, and the next step would
+                # TRUNCATE tables nobody has looked at.
                 rows, worst, unattributable = 0, [], []
+                problems.append(
+                    "could not check whether the tables the silver step clears hold another "
+                    f"tenant's rows ({exc}). Refusing rather than clearing them unexamined; "
+                    f"{config.FORCE_ENV}=1 proceeds anyway."
+                )
             if rows:
                 problems.append(foreign_silver_problem(rows, worst, tenant))
             elif unattributable:

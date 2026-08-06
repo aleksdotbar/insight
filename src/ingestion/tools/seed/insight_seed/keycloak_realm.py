@@ -25,6 +25,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from . import config
 from .profiles import (
     TENANT_OTHER,
     Person,
@@ -283,13 +284,14 @@ def main() -> None:
     # get_dev_user_email() (which fail-fasts if that is also unset).
     dev_user_email = args.dev_email if args.dev_email else get_dev_user_email()
     # The compose stack's tenant. The seeder REQUIRES `TENANT_DEFAULT_ID` and
-    # keeps no default of its own (rows under the wrong tenant are invisible to
-    # every login), so this is the compose convention's only remaining home:
-    # docker-compose.yml passes the same value to the seeder, and both converge
-    # on it when nobody sets one.
-    tenant_id = os.environ.get(  # RULE-DEFAULTS-OK: the compose tenant, mirrored by docker-compose.yml's TENANT_DEFAULT_ID default so the realm's tenant_id claim matches what the seed writes
-        "TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953"
-    )
+    # Required, exactly as the seeder requires it — and read through the same
+    # parser. A default here could mint realm users whose tenant claim matches
+    # nothing the seed then writes: they would authenticate and resolve to
+    # nobody, which is the failure this whole roster-sharing exists to avoid.
+    try:
+        tenant_id = config.parse_tenant_id(os.environ)
+    except config.EnvContractError as exc:
+        raise SystemExit(f"ERROR: cannot generate the realm.\n{exc}") from exc
 
     redirects = args.authenticator_redirects or DEFAULT_AUTHENTICATOR_REDIRECTS
     realm = build_realm(dev_user_email, tenant_id, redirects, args.authenticator_secret)

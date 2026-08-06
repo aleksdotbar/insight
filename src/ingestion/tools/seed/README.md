@@ -85,7 +85,8 @@ Preflight runs before anything is written and reports every problem at once:
   names the database it looked in;
 - MariaDB or ClickHouse unreachable, or the ingestion scripts missing;
 - the target tenant already holds `persons` rows this seeder did not write
-  (every row it writes carries a `reason` starting `seed.py `);
+  (every row it writes carries a `reason` starting `"seed.py "`, trailing space
+  included);
 - any table the silver step clears holds rows for another tenant — that step
   **TRUNCATEs every table it writes**, across all tenants, so those rows would be
   destroyed. This is the one genuinely destructive thing the seeder does, and it

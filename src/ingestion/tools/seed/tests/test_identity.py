@@ -23,10 +23,6 @@ import os
 import unittest
 from typing import Any
 
-# Set before the roster is imported: `profiles` reads it at call time, but a
-# test that forgot would otherwise depend on the developer's shell.
-os.environ.setdefault("IDP_SOURCE_TYPE", "fakeidp")
-
 from insight_seed import identity, profiles
 
 _TENANT = "00000000-df51-5b42-9538-d2b56b7ee953"
@@ -91,14 +87,22 @@ class _FakeCursor:
 
 
 class SeedLoginIdsTests(unittest.TestCase):
+    """Both variables are SET, not defaulted: `profiles` reads them at call time,
+    so a value left over from the developer's shell would otherwise decide which
+    personas these tests expect."""
+
+    _ENV = ("AUTH_MODE", "IDP_SOURCE_TYPE")
+
     def setUp(self) -> None:
-        self._prev_auth_mode = os.environ.get("AUTH_MODE")
+        self._previous = {name: os.environ.get(name) for name in self._ENV}
+        os.environ["IDP_SOURCE_TYPE"] = "fakeidp"
 
     def tearDown(self) -> None:
-        if self._prev_auth_mode is None:
-            os.environ.pop("AUTH_MODE", None)
-        else:
-            os.environ["AUTH_MODE"] = self._prev_auth_mode
+        for name, value in self._previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
     def test_second_run_does_not_insert_a_duplicate(self) -> None:
         os.environ["AUTH_MODE"] = "fakeidp"

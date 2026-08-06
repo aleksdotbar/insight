@@ -476,7 +476,7 @@ tables, every `src/ingestion/scripts/migrations/*.sql` applied
 (produces the `insight.*` gold views), ~29k rows across 19 silver
 tables profile-typed per team (`class_git_*` for devs, `class_crm_*`
 for sales, …). The full per-team activity table is in
-[`src/ingestion/tools/seed/profiles.py`](src/ingestion/tools/seed/profiles.py). analytics's
+[`insight_seed/profiles.py`](src/ingestion/tools/seed/insight_seed/profiles.py). analytics's
 schema validator flips from "80 metrics error" to "80 ok".
 
 ### Compose

@@ -155,6 +155,11 @@ case "$STEP" in
   identity|silver|analytics|all) ;;
   *) die "--step must be one of identity, silver, analytics, all (got '$STEP')." ;;
 esac
+# Checked here rather than by the apiserver: this value is also the script's own
+# polling budget, and a non-numeric one turns the wait loop's arithmetic into a
+# silent zero — the run would be abandoned the moment it started.
+[[ "$DEADLINE_SECONDS" =~ ^[0-9]+$ && "$DEADLINE_SECONDS" -gt 0 ]] \
+  || die "--deadline must be a positive whole number of seconds (got '$DEADLINE_SECONDS')."
 
 # The release name is the one thing a namespace cannot answer, so the common
 # case (release named after its namespace) is assumed and reported, and the flag
