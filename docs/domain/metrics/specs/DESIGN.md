@@ -1,5 +1,35 @@
 # Technical Design — Metrics
 
+
+<!-- toc -->
+
+- [Goals](#goals)
+- [Source Measure Observation Contract](#source-measure-observation-contract)
+- [Managed Source Ownership](#managed-source-ownership)
+- [Metric Evidence Contract](#metric-evidence-contract)
+- [Computations](#computations)
+- [Storage Model](#storage-model)
+- [Builtin Seed Reconciliation](#builtin-seed-reconciliation)
+- [Result API](#result-api)
+- [Runtime Flow](#runtime-flow)
+- [Validation](#validation)
+- [Authorization](#authorization)
+- [Adding a Metric](#adding-a-metric)
+  - [Case 1: metric over an existing measure](#case-1-metric-over-an-existing-measure)
+  - [Case 2: new measure from an existing source](#case-2-new-measure-from-an-existing-source)
+  - [Case 3: new observation source](#case-3-new-observation-source)
+  - [Rules that hold for every case](#rules-that-hold-for-every-case)
+  - [Validation commands](#validation-commands)
+- [Custom Metrics](#custom-metrics)
+  - [Execution wire](#execution-wire)
+  - [Observation contract the custom SQL must emit](#observation-contract-the-custom-sql-must-emit)
+  - [Reconcile-safety of custom rows](#reconcile-safety-of-custom-rows)
+  - [Validation and execution role](#validation-and-execution-role)
+- [Frontend Contract](#frontend-contract)
+- [Non-Goals](#non-goals)
+
+<!-- /toc -->
+
 Status: active implementation contract.
 
 The metrics system computes metric result views from typed metric definitions
@@ -715,14 +745,47 @@ Future developer-side generation may use source models and formulas to produce
 the managed observation SQL and seed rows, but runtime execution still
 consumes typed definitions and source measure observations.
 
-## Custom Metric Gate
+## Custom Metrics
 
-Runtime-authored metrics require one of:
+Runtime-authored metrics are DELIVERED. A person authors a metric with
+`origin = 'custom'` through the DB and the `/v1/metrics*` REST surface (not
+`registry.yaml`, which stays the builtin seed). Its observation source is
+custom SQL (`source_kind = 'custom_observation_sql'`) that joins silver/gold
+relations and emits the observation contract below. The runtime executes such
+metrics like any other; it no longer stops at a gate that stored-but-inert
+definitions once hit.
 
-- generated managed observation SQL plus generated definition/source seed rows.
-- validated custom observation SQL that emits the source measure observation contract.
+### Execution wire
 
-Until one exists, custom definitions can be stored but cannot produce new source observations. The runtime only executes metrics whose inputs resolve to available, validated source measures.
+The compiler treats a `custom_observation_sql` source's SQL as the observation
+relation: the observation `FROM` becomes `(<custom sql>)` — the custom SELECT
+wrapped as a subquery — and the generic runtime applies the same bucketing,
+aggregation, peer-cohort, and tenant-filter wrapping around it that it applies
+to a managed observation relation. Nothing metric-key-specific is added.
+
+### Observation contract the custom SQL must emit
+
+The wrapped SELECT must project the long-format observation columns:
+
+```text
+tenant_id, source_key, entity_type, entity_id, metric_date,
+measure_key, observed_at, value, subject_key, dimensions
+```
+
+Column semantics match the Source Measure Observation Contract above.
+
+### Reconcile-safety of custom rows
+
+The builtin YAML reconciler's `disable_missing` step is scoped to
+`origin = 'builtin' AND tenant_id IS NULL`. Custom rows — `origin = 'custom'`,
+tenant-scoped — fall outside that predicate, so a reconcile pass converging
+builtins to the registry never disables or deletes a custom metric.
+
+### Validation and execution role
+
+Custom SQL passes the existing single-SELECT gate (one `SELECT`/`WITH`, no
+DDL/DML) on write and before execution, and executes as `presentation_ro`, so
+a custom metric can read the contract but can never write, alter, or drop it.
 
 ## Frontend Contract
 
@@ -747,8 +810,6 @@ Backend responses do not include chart metadata.
 
 ## Non-Goals
 
-- No custom metric authoring UI in this pass.
-- No custom SQL execution in this pass.
 - No public source labels in metric results.
 - No metric-key-specific branches in result compilation.
 - No partial responses for oversized results.
