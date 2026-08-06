@@ -120,7 +120,9 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           run_json=""
-          for attempt in $(seq 1 40); do
+          # 70 x 30s = 35min: a dependency bump invalidates the whole cargo
+          # build cache and a cold image build can exceed the old 20min window.
+          for attempt in $(seq 1 70); do
             run_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${HEAD_SHA}&per_page=100" \
               --jq '[.workflow_runs[] | select(.name == "Build & Push Container Images")] | sort_by(.run_started_at) | last // empty')
             if [ -z "$run_json" ]; then
@@ -135,7 +137,7 @@ jobs:
               echo "::error::Image-build run concluded '${conclusion}' — its artifacts can't be trusted; see $(jq -r '.html_url' <<<"$run_json")"
               exit 1
             fi
-            echo "Image-build run still in progress (attempt ${attempt}/40); retrying in 30s…"
+            echo "Image-build run still in progress (attempt ${attempt}/70); retrying in 30s…"
             sleep 30
           done
           if [ -n "$run_json" ] && [ "$(jq -r '.conclusion // ""' <<<"$run_json")" != "success" ]; then
