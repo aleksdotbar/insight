@@ -16,7 +16,8 @@ description: >
   captures them all -> per-person sums {1,2,3,4,5}; the IC case requests erin (5).
   Erin's five are 3 Task + 1 Bug + 1 Incident, so her total splits into three
   type groups that add back up to 5 — and Incident, a name neither configured
-  list covers, stays its own group instead of joining the non-bug work.
+  list covers, stays its own group instead of joining the non-bug work: 1 bug +
+  3 non-bug is one short of the 5 closed, and the missing one is the Incident.
   Empty window 2026-06 -> no items.
 
 bronze:
@@ -289,6 +290,8 @@ cases:
               - { view: peer }
               - { view: timeseries, bucket: day }
               - { view: breakdown, dimensions: [type] }
+          - { metric_key: tasks.bugs_fixed, views: [{ view: period }] }
+          - { metric_key: tasks.closed_non_bug, views: [{ view: period }] }
     expect:
       - assert: "status == 200"
       - metric: tasks.closed
@@ -314,6 +317,14 @@ cases:
       - metric: tasks.closed
         view: breakdown
         assert: "size(items.filter(v, v.entity_id == 'erin@example.com')) == 3"
+      - metric: tasks.bugs_fixed
+        view: period
+        find: { entity_id: erin@example.com }
+        equal: { value: 1 }
+      - metric: tasks.closed_non_bug
+        view: period
+        find: { entity_id: erin@example.com }
+        equal: { value: 3 }
 
   - name: tasks.closed empty window
     request:
