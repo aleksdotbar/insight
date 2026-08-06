@@ -19,7 +19,7 @@ use openidconnect::{
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
 };
 
-use crate::config::IdpConfig;
+use crate::config::{HostIdpConfig, IdpConfig};
 use crate::identity::IdpIdentity;
 
 /// What `authorize` hands back for the handler to stash in the login state.
@@ -66,13 +66,70 @@ pub enum RefreshOutcome {
     Transient(String),
 }
 
-/// The OIDC client — holds config; builds the `openidconnect` client per op
-/// (discovery is a cold-path login/callback concern).
+/// Build the HTTP client every [`OidcClient`] shares (one connection pool
+/// regardless of how many issuers the deployment serves).
+///
+/// # Errors
+/// Fails when `extra_ca_cert_path` is unreadable/empty or the `reqwest`
+/// client cannot be constructed.
+pub fn build_http(idp: &IdpConfig) -> anyhow::Result<reqwest::Client> {
+    // Do not follow redirects: the RP must never chase the IdP's 3xx itself
+    // (SSRF-safety guidance from the openidconnect docs). A total timeout is
+    // mandatory (reqwest has none by default): the background refresher runs
+    // each grant under a 30 s per-session lock, so a hung IdP connection
+    // (half-open TCP, no RST) must fail well before that — otherwise the
+    // request outlives its lock, a second worker re-runs the grant with the
+    // same one-time-use refresh token, and the IdP burns it → false logout.
+    // It also caps semaphore-permit hold time so hung calls can't wedge the
+    // whole refresher (G5).
+    let mut builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(10))
+        .connect_timeout(std::time::Duration::from_secs(5));
+    // Trust an extra internal/corporate CA for the IdP connection, on
+    // top of whichever trust store this build's TLS backend resolves by
+    // default. Explicit `.add_root_certificate()` works regardless of
+    // whether Cargo's feature unification landed on native-tls (OS trust
+    // store) or rustls (bundled webpki-roots) for this binary — unlike
+    // an OS-level trust-store file/env-var (e.g. SSL_CERT_FILE), which
+    // only applies if native-tls won and cannot be relied on here.
+    if !idp.extra_ca_cert_path.is_empty() {
+        let pem = std::fs::read(&idp.extra_ca_cert_path)
+            .with_context(|| format!("read extra_ca_cert_path {:?}", idp.extra_ca_cert_path))?;
+        // `from_pem_bundle`, not `from_pem`: the file may carry a full
+        // chain (e.g. intermediate + root); `from_pem` only parses the
+        // first certificate in the blob and silently drops the rest.
+        let certs = reqwest::Certificate::from_pem_bundle(&pem).with_context(|| {
+            format!(
+                "parse PEM cert bundle from extra_ca_cert_path {:?}",
+                idp.extra_ca_cert_path
+            )
+        })?;
+        // A whitespace/comment-only file parses to zero certs without
+        // erroring, silently leaving only the default trust store —
+        // reject it so a misconfigured mount fails loudly at startup.
+        anyhow::ensure!(
+            !certs.is_empty(),
+            "extra_ca_cert_path {:?} contained no certificates",
+            idp.extra_ca_cert_path
+        );
+        for cert in certs {
+            builder = builder.add_root_certificate(cert);
+        }
+    }
+    builder.build().context("build OIDC HTTP client")
+}
+
+/// The OIDC client for ONE issuer — holds that issuer's client registration;
+/// builds the `openidconnect` client per op (discovery is a cold-path
+/// login/callback concern). Which instance serves a request is decided by
+/// [`crate::issuers::IssuerSelector`].
 #[derive(Clone)]
 pub struct OidcClient {
     issuer_url: String,
     client_id: String,
     client_secret: String,
+    redirect_uri: String,
     tenant_claim: String,
     default_tenant_id: String,
     external_id_claim: String,
@@ -80,58 +137,10 @@ pub struct OidcClient {
 }
 
 impl OidcClient {
-    /// Build the client from the `idp.*` config. Returns an error if the HTTP
-    /// client can't be built.
-    ///
-    /// # Errors
-    /// Fails when the underlying `reqwest` client cannot be constructed.
-    pub fn new(idp: &IdpConfig) -> anyhow::Result<Self> {
-        // Do not follow redirects: the RP must never chase the IdP's 3xx itself
-        // (SSRF-safety guidance from the openidconnect docs). A total timeout is
-        // mandatory (reqwest has none by default): the background refresher runs
-        // each grant under a 30 s per-session lock, so a hung IdP connection
-        // (half-open TCP, no RST) must fail well before that — otherwise the
-        // request outlives its lock, a second worker re-runs the grant with the
-        // same one-time-use refresh token, and the IdP burns it → false logout.
-        // It also caps semaphore-permit hold time so hung calls can't wedge the
-        // whole refresher (G5).
-        let mut builder = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(std::time::Duration::from_secs(10))
-            .connect_timeout(std::time::Duration::from_secs(5));
-        // Trust an extra internal/corporate CA for the IdP connection, on
-        // top of whichever trust store this build's TLS backend resolves by
-        // default. Explicit `.add_root_certificate()` works regardless of
-        // whether Cargo's feature unification landed on native-tls (OS trust
-        // store) or rustls (bundled webpki-roots) for this binary — unlike
-        // an OS-level trust-store file/env-var (e.g. SSL_CERT_FILE), which
-        // only applies if native-tls won and cannot be relied on here.
-        if !idp.extra_ca_cert_path.is_empty() {
-            let pem = std::fs::read(&idp.extra_ca_cert_path)
-                .with_context(|| format!("read extra_ca_cert_path {:?}", idp.extra_ca_cert_path))?;
-            // `from_pem_bundle`, not `from_pem`: the file may carry a full
-            // chain (e.g. intermediate + root); `from_pem` only parses the
-            // first certificate in the blob and silently drops the rest.
-            let certs = reqwest::Certificate::from_pem_bundle(&pem).with_context(|| {
-                format!(
-                    "parse PEM cert bundle from extra_ca_cert_path {:?}",
-                    idp.extra_ca_cert_path
-                )
-            })?;
-            // A whitespace/comment-only file parses to zero certs without
-            // erroring, silently leaving only the default trust store —
-            // reject it so a misconfigured mount fails loudly at startup.
-            anyhow::ensure!(
-                !certs.is_empty(),
-                "extra_ca_cert_path {:?} contained no certificates",
-                idp.extra_ca_cert_path
-            );
-            for cert in certs {
-                builder = builder.add_root_certificate(cert);
-            }
-        }
-        let http = builder.build().context("build OIDC HTTP client")?;
-        Ok(Self {
+    /// The single-issuer (degenerate map) client, from the flat `idp.*` fields.
+    #[must_use]
+    pub fn flat(idp: &IdpConfig, redirect_uri: &str, http: reqwest::Client) -> Self {
+        Self {
             // Do NOT normalize a trailing slash: OIDC issuer comparison is a
             // byte-exact string match against the `issuer` field the IdP's
             // own discovery document returns (RFC 8414 / OIDC Discovery
@@ -144,11 +153,35 @@ impl OidcClient {
             issuer_url: idp.issuer_url.clone(),
             client_id: idp.client_id.clone(),
             client_secret: idp.client_secret.clone(),
+            redirect_uri: redirect_uri.to_owned(),
             tenant_claim: idp.tenant_claim.clone(),
             default_tenant_id: idp.default_tenant_id.clone(),
             external_id_claim: idp.external_id_claim.clone(),
             http,
-        })
+        }
+    }
+
+    /// One `idp.hosts` entry's client: the entry supplies the issuer + client
+    /// registration (and optional redirect/tenant overrides); every other
+    /// knob comes from the shared `idp.*` fields.
+    #[must_use]
+    pub fn for_host(
+        idp: &IdpConfig,
+        entry: &HostIdpConfig,
+        default_redirect_uri: &str,
+        http: reqwest::Client,
+    ) -> Self {
+        let pick = |own: &str, shared: &str| if own.is_empty() { shared } else { own }.to_owned();
+        Self {
+            issuer_url: entry.issuer_url.clone(),
+            client_id: entry.client_id.clone(),
+            client_secret: entry.client_secret.clone(),
+            redirect_uri: pick(&entry.redirect_uri, default_redirect_uri),
+            tenant_claim: idp.tenant_claim.clone(),
+            default_tenant_id: pick(&entry.default_tenant_id, &idp.default_tenant_id),
+            external_id_claim: idp.external_id_claim.clone(),
+            http,
+        }
     }
 
     /// Fetch the provider discovery metadata.
@@ -169,11 +202,7 @@ impl OidcClient {
     ///
     /// # Errors
     /// Fails on discovery / URL-construction errors.
-    pub async fn authorize(
-        &self,
-        redirect_uri: &str,
-        scopes: &[String],
-    ) -> anyhow::Result<AuthorizeStart> {
+    pub async fn authorize(&self, scopes: &[String]) -> anyhow::Result<AuthorizeStart> {
         // Built inline (not via a helper) so the endpoint type-state markers
         // from `from_provider_metadata` + `set_redirect_uri` are preserved.
         let client = CoreClient::from_provider_metadata(
@@ -182,7 +211,7 @@ impl OidcClient {
             self.secret(),
         )
         .set_redirect_uri(
-            RedirectUrl::new(redirect_uri.to_owned()).context("invalid redirect_uri")?,
+            RedirectUrl::new(self.redirect_uri.clone()).context("invalid redirect_uri")?,
         );
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -213,7 +242,6 @@ impl OidcClient {
     /// validation failure (signature / iss / aud / nonce / exp).
     pub async fn exchange_code_pkce(
         &self,
-        redirect_uri: &str,
         code: &str,
         pkce_verifier: &str,
         expected_nonce: &str,
@@ -224,7 +252,7 @@ impl OidcClient {
             self.secret(),
         )
         .set_redirect_uri(
-            RedirectUrl::new(redirect_uri.to_owned()).context("invalid redirect_uri")?,
+            RedirectUrl::new(self.redirect_uri.clone()).context("invalid redirect_uri")?,
         );
         let token = client
             .exchange_code(AuthorizationCode::new(code.to_owned()))
@@ -459,8 +487,11 @@ fn extract_external_id(raw_id_token: &str, external_id_claim: &str, sub: &str) -
     payload_string(raw_id_token, external_id_claim).filter(|v| !v.is_empty())
 }
 
-/// Read a string claim from an (already-validated) compact JWT payload.
-fn payload_string(jwt: &str, field: &str) -> Option<String> {
+/// Read a string claim from a compact JWT payload WITHOUT verification — for
+/// claims either already validated by `openidconnect` or, like the
+/// back-channel `iss` peek, used only to SELECT the verifier that then
+/// validates the token in full.
+pub(crate) fn payload_string(jwt: &str, field: &str) -> Option<String> {
     payload(jwt)?
         .get(field)?
         .as_str()
