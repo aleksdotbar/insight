@@ -10,6 +10,8 @@ name: TruffleHog Secrets
 #   - `--results=verified,unknown,unverified,filtered_unverified` — the default hides findings
 #     whose verification failed, which on a public repository is still a leak.
 #   - no `--filter-entropy` — it suppresses AWS access key IDs.
+#   - `--exclude-detectors lob` — a Lob key is `test_` followed by 35 characters, the same shape
+#     as this repository's long `test_*` function names, and Lob is not a dependency here.
 #   - raw values never reach a log, summary or artifact — this repository is public.
 
 on:
@@ -62,6 +64,7 @@ jobs:
               --no-update \
               --since-commit "$SINCE" \
               --branch "$HEAD_SHA" \
+              --exclude-detectors lob \
               --results=verified,unknown,unverified,filtered_unverified \
             > trufflehog-findings.jsonl
 
@@ -154,6 +157,7 @@ jobs:
             git file:///src \
               --json \
               --no-update \
+              --exclude-detectors lob \
               --results=verified,unknown,unverified,filtered_unverified \
             > trufflehog-findings.jsonl
 
@@ -255,6 +259,7 @@ jobs:
               --include-wikis \
               --json \
               --no-update \
+              --exclude-detectors lob \
               --results=verified,unknown,unverified,filtered_unverified \
             > trufflehog-api-findings.jsonl
 
