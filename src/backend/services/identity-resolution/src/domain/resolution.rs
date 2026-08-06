@@ -157,6 +157,7 @@ pub const BINDING_VALUE_TYPE: &str = "id";
 mod tests {
     use chrono::TimeDelta;
 
+    use super::restamp as resolution_restamp;
     use super::*;
 
     fn account(source_type: &str, account_id: &str) -> SourceAccountKey {
@@ -272,6 +273,54 @@ mod tests {
 
         assert_eq!(rows[0].created_at, ts());
         assert_eq!(rows[1].created_at, ts() + TimeDelta::microseconds(1));
+    }
+
+    #[test]
+    fn restamped_rows_move_past_the_contended_instant() {
+        // The recovery path: a row the insert refused is re-stamped after the
+        // moment two operations fought over, so the retry cannot collide again.
+        let account = account("slack", "U1");
+        let refused = vec![BindingRow {
+            account: account.clone(),
+            person_id: Uuid::from_u128(5),
+            author_person_id: Uuid::from_u128(42),
+            reason: Verb::Bind.reason_code().to_owned(),
+            created_at: ts(),
+        }];
+
+        let retry = resolution_restamp(&refused, ts() + TimeDelta::seconds(1));
+
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].created_at, ts() + TimeDelta::seconds(1));
+        assert_eq!(retry[0].account, account, "the row itself is unchanged");
+        assert_eq!(retry[0].person_id, refused[0].person_id);
+        assert_eq!(retry[0].author_person_id, refused[0].author_person_id);
+    }
+
+    #[test]
+    fn restamping_keeps_colliding_rows_apart() {
+        // Two refused rows of one source retried together must not collide
+        // with each other on the way back in.
+        let rows = vec![
+            BindingRow {
+                account: account("bamboohr", "1"),
+                person_id: Uuid::from_u128(5),
+                author_person_id: Uuid::from_u128(42),
+                reason: Verb::Merge.reason_code().to_owned(),
+                created_at: ts(),
+            },
+            BindingRow {
+                account: account("bamboohr", "2"),
+                person_id: Uuid::from_u128(5),
+                author_person_id: Uuid::from_u128(42),
+                reason: Verb::Merge.reason_code().to_owned(),
+                created_at: ts(),
+            },
+        ];
+
+        let retry = resolution_restamp(&rows, ts() + TimeDelta::seconds(1));
+
+        assert_ne!(retry[0].created_at, retry[1].created_at);
     }
 
     #[test]

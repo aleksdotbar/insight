@@ -112,7 +112,8 @@ pub struct CorrectionResponse {
     pub applied: usize,
     pub already_decided: usize,
     pub items: Vec<ItemResult>,
-    /// Set by `detach`: the freshly minted person the account now belongs to.
+    /// Set by `detach` when the account reached the new person; absent when
+    /// the write was refused, since no binding points at that id.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_person_id: Option<Uuid>,
 }
@@ -226,7 +227,13 @@ pub async fn detach(
         &req.comment,
     )
     .await?;
-    outcome.new_person_id = Some(new_person_id);
+
+    // Only name the person when the account actually reached it: a refused
+    // write leaves the account where it was, and an id no binding points at
+    // would read as a person that exists.
+    if outcome.applied > 0 {
+        outcome.new_person_id = Some(new_person_id);
+    }
 
     Ok(Json(outcome))
 }
