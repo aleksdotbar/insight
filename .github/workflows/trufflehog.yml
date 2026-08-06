@@ -43,11 +43,15 @@ jobs:
       - name: TruffleHog scan (commits added by this PR)
         # `pull_request.base.sha` lags main, so it pulls unrelated commits into range (#2025).
         # The merge ref's first parent is the current base tip — that is the PR's own range.
+        # `--since-commit` alone only prunes what the base can reach: with fetch-depth 0 the
+        # checkout carries every branch, and commits on unmerged ones are scanned too, so an
+        # unrelated branch fails this PR. `--branch` confines the walk to the merge ref.
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           SINCE="$(git rev-parse 'HEAD^1' 2>/dev/null || echo "$BASE_SHA")"
+          HEAD_SHA="$(git rev-parse HEAD)"
           echo "Scanning ${SINCE}..HEAD"
           docker run --rm \
             -v "${{ github.workspace }}:/src:ro" \
@@ -57,6 +61,7 @@ jobs:
               --json \
               --no-update \
               --since-commit "$SINCE" \
+              --branch "$HEAD_SHA" \
               --results=verified,unknown,unverified,filtered_unverified \
             > trufflehog-findings.jsonl
 
