@@ -80,10 +80,7 @@ def main() -> None:
 
     (client,) = [c for c in realm["clients"] if c["clientId"] == "insight-authenticator"]
     client.setdefault("attributes", {}).update(
-        {
-            "backchannel.logout.url": args.backchannel_url,
-            "backchannel.logout.session.required": "true",
-        }
+        {"backchannel.logout.url": args.backchannel_url, "backchannel.logout.session.required": "true"}
     )
 
     seed_user = realm["users"][0]
