@@ -403,10 +403,13 @@ cases:
         view: period
         find: { entity_id: alice@example.com }
         equal: { value: 4 }
+      # Four members close non-bug work (erin closes only bugs), so the pool is
+      # under MIN_PEER_N and the distribution stays suppressed — same shape as
+      # the bug pool above.
       - metric: tasks.closed_non_bug
         view: peer
         find: { entity_id: alice@example.com }
-        equal: { target_value: 4 }
+        equal: { target_value: 4, p25: null, median: null, p75: null, min: null, max: null, n: 4 }
       - metric: tasks.closed_non_bug
         view: timeseries
         assert: "items.exists(s, s.entity_id == 'alice@example.com' && s.points.exists(p, p.bucket_start == '2026-06-25' && double(p.value) == 4.0))"

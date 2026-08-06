@@ -11,10 +11,11 @@ schemas:
       unique_key: {type: string}
       source_id: {type: string}
       tenant_id: {type: [string, "null"]}
-      # The jira connector types the issue-type id as a JSON string, but the
-      # numeric mirror columns land as Decimal(38,9); accept number|string|null
-      # so a fixture may write either and the seeder coerces.
-      id: {type: [number, string, "null"]}
+      # The issue-type id arrives as a JSON string and lands as Nullable(String)
+      # — unlike the status dimension, whose ids the connector types as JSON
+      # numbers. Declaring `number` here makes the seeder expect Float64 and
+      # reject the real column.
+      id: {type: [string, "null"]}
       name: {type: string}
       # Original, language-independent type name; what the kind is classified
       # from, so a translated instance classifies like an untranslated one.
