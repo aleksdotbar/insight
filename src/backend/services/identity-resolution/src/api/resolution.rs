@@ -20,8 +20,10 @@ use super::AppState;
 use super::error::CorrectionError;
 use super::gate::require_admin;
 use crate::domain::resolution::{self, EXCLUDED_PERSON, Verb};
+use crate::domain::review_queue::{self, EvidenceAccount, ItemKind, Review};
 use crate::domain::seed::SourceAccountKey;
 use crate::infra::db::{ops_repo, resolution_repo};
+use crate::infra::identity_evidence::{AccountEvidence, ClickHouseEvidenceReader};
 
 /// How many accounts one bulk call may carry — a prepared matching table is
 /// pasted by a human, not streamed.
@@ -403,4 +405,255 @@ fn invalid(field: &str, message: &str) -> CanonicalError {
 fn internal(error: &anyhow::Error, message: &str) -> CanonicalError {
     tracing::error!(error = %error, "{message}");
     CanonicalError::internal(message).create()
+}
+
+/// Query knobs for the review queue.
+#[derive(Debug, Deserialize)]
+pub struct AttentionParams {
+    /// Cap on returned items (rates always cover every observed account).
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct QueueItemResponse {
+    /// `contested` | `binding_conflict` | `no_evidence`.
+    pub kind: String,
+    pub source: String,
+    pub source_id: Uuid,
+    pub account_id: String,
+    pub email: Option<String>,
+    pub username: Option<String>,
+    /// Persons this account could belong to, if any are known.
+    pub candidates: Vec<Uuid>,
+}
+
+/// Share of observed accounts per resolution state — the operator-visible match
+/// rate.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ResolutionRatesResponse {
+    pub observed: usize,
+    pub bound: usize,
+    pub pending: usize,
+    pub no_evidence: usize,
+    pub excluded: usize,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttentionResponse {
+    pub items: Vec<QueueItemResponse>,
+    pub rates: ResolutionRatesResponse,
+}
+impl toolkit::api::api_dto::ResponseApiDto for AttentionResponse {}
+
+/// `GET /v1/resolution/attention` — what needs an operator decision, derived
+/// from the evidence fold joined with current bindings, plus the match rate.
+pub async fn attention(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    axum::extract::Query(params): axum::extract::Query<AttentionParams>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    require_admin(&state.db, &ctx).await?;
+    let tenant = ctx.subject_tenant_id();
+
+    let review = build_review(&state, tenant).await?;
+
+    let limit = params.limit.map_or(DEFAULT_QUEUE_LIMIT, |l| {
+        usize::try_from(l).unwrap_or(1).clamp(1, MAX_QUEUE_LIMIT)
+    });
+
+    let items = review
+        .items
+        .into_iter()
+        .take(limit)
+        .map(|i| QueueItemResponse {
+            kind: kind_label(i.kind).to_owned(),
+            source: i.account.source_type,
+            source_id: i.account.source_id,
+            account_id: i.account.account_id,
+            email: i.email,
+            username: i.username,
+            candidates: i.candidates,
+        })
+        .collect();
+
+    Ok(Json(AttentionResponse {
+        items,
+        rates: ResolutionRatesResponse {
+            observed: review.rates.observed,
+            bound: review.rates.bound,
+            pending: review.rates.pending,
+            no_evidence: review.rates.no_evidence,
+            excluded: review.rates.excluded,
+        },
+    }))
+}
+
+/// One decision in an account's history.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct HistoryEntry {
+    pub person_id: Uuid,
+    pub author_person_id: Uuid,
+    /// `true` when a person made this decision, `false` for automation.
+    pub by_operator: bool,
+    pub reason: Option<String>,
+    pub recorded_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AccountBindingResponse {
+    pub source: String,
+    pub source_id: Uuid,
+    pub account_id: String,
+    /// The binding in force now, if the account has one.
+    pub person_id: Option<Uuid>,
+    pub history: Vec<HistoryEntry>,
+}
+impl toolkit::api::api_dto::ResponseApiDto for AccountBindingResponse {}
+
+/// `GET /v1/resolution/accounts/{source}/{source_id}/{account_id}` — why this
+/// account belongs to this person: the binding in force and every decision
+/// behind it.
+pub async fn account_binding(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    axum::extract::Path((source, source_id, account_id)): axum::extract::Path<(
+        String,
+        Uuid,
+        String,
+    )>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    require_admin(&state.db, &ctx).await?;
+    let tenant = ctx.subject_tenant_id();
+
+    let account = SourceAccountKey {
+        source_type: source.clone(),
+        source_id,
+        account_id: account_id.clone(),
+    };
+    let history = resolution_repo::binding_history(&state.db, tenant, &account)
+        .await
+        .map_err(|e| internal(&e, "failed to read the binding history"))?;
+
+    let entries: Vec<HistoryEntry> = history
+        .iter()
+        .map(|h| HistoryEntry {
+            person_id: h.person_id,
+            author_person_id: h.author_person_id,
+            by_operator: !h.author_person_id.is_nil(),
+            reason: h.reason.clone(),
+            recorded_at: super::seed::fmt_ts(h.created_at),
+        })
+        .collect();
+
+    Ok(Json(AccountBindingResponse {
+        source,
+        source_id,
+        account_id,
+        person_id: history.first().map(|h| h.person_id),
+        history: entries,
+    }))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PersonAccountEntry {
+    pub source: String,
+    pub source_id: Uuid,
+    pub account_id: String,
+    pub email: Option<String>,
+    pub username: Option<String>,
+    /// `true` when the account's current binding was made by a person.
+    pub bound_by_operator: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PersonAccountsResponse {
+    pub person_id: Uuid,
+    pub accounts: Vec<PersonAccountEntry>,
+}
+impl toolkit::api::api_dto::ResponseApiDto for PersonAccountsResponse {}
+
+/// `GET /v1/resolution/persons/{person_id}/accounts` — the matching table for
+/// one person: every account bound to them, with the values behind each link.
+pub async fn person_accounts(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    axum::extract::Path(person_id): axum::extract::Path<Uuid>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    require_admin(&state.db, &ctx).await?;
+    let tenant = ctx.subject_tenant_id();
+
+    let accounts = resolution_repo::accounts_of_person(&state.db, tenant, person_id)
+        .await
+        .map_err(|e| internal(&e, "failed to read the person's accounts"))?;
+    let bindings = resolution_repo::current_bindings(&state.db, tenant, &accounts)
+        .await
+        .map_err(|e| internal(&e, "failed to read current bindings"))?;
+    let evidence = read_evidence(&state).await?;
+
+    let entries = accounts
+        .into_iter()
+        .map(|account| {
+            let observed = evidence.iter().find(|e| e.account == account);
+            PersonAccountEntry {
+                source: account.source_type.clone(),
+                source_id: account.source_id,
+                account_id: account.account_id.clone(),
+                email: observed.and_then(|e| e.email.clone()),
+                username: observed.and_then(|e| e.username.clone()),
+                bound_by_operator: bindings
+                    .get(&account)
+                    .is_some_and(crate::domain::seed::KnownBinding::is_operator_authored),
+            }
+        })
+        .collect();
+
+    Ok(Json(PersonAccountsResponse {
+        person_id,
+        accounts: entries,
+    }))
+}
+
+const DEFAULT_QUEUE_LIMIT: usize = 100;
+const MAX_QUEUE_LIMIT: usize = 1_000;
+
+fn kind_label(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Contested => "contested",
+        ItemKind::BindingConflict => "binding_conflict",
+        ItemKind::NoEvidence => "no_evidence",
+    }
+}
+
+/// Join folded evidence with current bindings into the review.
+async fn build_review(state: &AppState, tenant: Uuid) -> Result<Review, CanonicalError> {
+    let evidence = read_evidence(state).await?;
+    let accounts: Vec<SourceAccountKey> = evidence.iter().map(|e| e.account.clone()).collect();
+    let bindings = resolution_repo::current_bindings(&state.db, tenant, &accounts)
+        .await
+        .map_err(|e| internal(&e, "failed to read current bindings"))?;
+
+    let observed = evidence
+        .into_iter()
+        .map(|e| EvidenceAccount {
+            account: e.account,
+            email: e.email,
+            username: e.username,
+            is_closed: e.is_closed,
+        })
+        .collect();
+
+    Ok(review_queue::build(observed, &bindings))
+}
+
+async fn read_evidence(state: &AppState) -> Result<Vec<AccountEvidence>, CanonicalError> {
+    let reader = ClickHouseEvidenceReader::connect(
+        &state.config.clickhouse_url,
+        &state.config.clickhouse_database,
+        &state.config.clickhouse_user,
+        &state.config.clickhouse_password,
+    );
+    reader
+        .accounts()
+        .await
+        .map_err(|e| internal(&e, "failed to read connector evidence"))
 }

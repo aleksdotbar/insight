@@ -235,3 +235,61 @@ pub async fn append_bindings(
     tracing::info!(appended, "identity correction: bindings appended");
     Ok(appended)
 }
+
+/// One appended observation in an account's history — what the explain surface
+/// shows: who bound it where, when, and why.
+#[derive(Debug, Clone)]
+pub struct BindingHistoryRow {
+    pub person_id: Uuid,
+    pub author_person_id: Uuid,
+    pub reason: Option<String>,
+    pub created_at: sea_orm::prelude::DateTime,
+}
+
+/// Every binding observation ever recorded for one account, newest first.
+///
+/// # Errors
+///
+/// Returns an error if the query fails or a stored id column is not 16 bytes.
+pub async fn binding_history(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    account: &SourceAccountKey,
+) -> anyhow::Result<Vec<BindingHistoryRow>> {
+    const SQL: &str = r"
+        SELECT person_id, author_person_id, reason, created_at
+        FROM persons
+        WHERE value_type = 'id'
+          AND insight_tenant_id = ?
+          AND insight_source_type = ?
+          AND insight_source_id = ?
+          AND value_id = ?
+        ORDER BY created_at DESC, id DESC
+    ";
+
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::MySql,
+            SQL,
+            [
+                tenant_id.as_bytes().to_vec().into(),
+                account.source_type.clone().into(),
+                account.source_id.as_bytes().to_vec().into(),
+                account.account_id.clone().into(),
+            ],
+        ))
+        .await?;
+
+    let mut history = Vec::with_capacity(rows.len());
+    for row in rows {
+        let person_id: Vec<u8> = row.try_get("", "person_id")?;
+        let author_person_id: Vec<u8> = row.try_get("", "author_person_id")?;
+        history.push(BindingHistoryRow {
+            person_id: Uuid::from_slice(&person_id)?,
+            author_person_id: Uuid::from_slice(&author_person_id)?,
+            reason: row.try_get("", "reason")?,
+            created_at: row.try_get("", "created_at")?,
+        });
+    }
+    Ok(history)
+}

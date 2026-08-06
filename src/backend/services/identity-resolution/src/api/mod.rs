@@ -151,6 +151,48 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .handler(resolution::exclude)
         .register(router, openapi);
 
+    let router = OperationBuilder::get("/v1/resolution/attention")
+        .operation_id("identity_resolution.resolution.attention")
+        .summary("Accounts awaiting an operator decision, with the resolution rates")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<resolution::AttentionResponse>(
+            openapi,
+            StatusCode::OK,
+            "Queue items and rates",
+        )
+        .standard_errors(openapi)
+        .handler(resolution::attention)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/v1/resolution/accounts/{source}/{source_id}/{account_id}")
+        .operation_id("identity_resolution.resolution.account_binding")
+        .summary("Current binding of an account and every decision behind it")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<resolution::AccountBindingResponse>(
+            openapi,
+            StatusCode::OK,
+            "Binding and history",
+        )
+        .standard_errors(openapi)
+        .handler(resolution::account_binding)
+        .register(router, openapi);
+
+    let router = OperationBuilder::get("/v1/resolution/persons/{person_id}/accounts")
+        .operation_id("identity_resolution.resolution.person_accounts")
+        .summary("Every account bound to a person, with the values behind each link")
+        .authenticated()
+        .no_license_required()
+        .json_response_with_schema::<resolution::PersonAccountsResponse>(
+            openapi,
+            StatusCode::OK,
+            "Accounts of the person",
+        )
+        .standard_errors(openapi)
+        .handler(resolution::person_accounts)
+        .register(router, openapi);
+
     // Persons-seed operations journal (read-only; the seed itself runs via the
     // `seed` CLI subcommand — CronJob / manual Job, see `crate::seed_runner`).
     // Admin-gated: caller = gateway-JWT subject, must hold the `admin` role in
