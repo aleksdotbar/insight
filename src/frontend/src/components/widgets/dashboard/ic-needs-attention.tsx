@@ -52,50 +52,41 @@ export function IcNeedsAttention({
                 <button
                   type="button"
                   onClick={() => onOpenGroup(item.group)}
-                  className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
+                  /* A grid, not a sentence: the values used to start wherever
+                     each label happened to end, so four rows put four numbers
+                     at four different x-positions. Numbers line up in their own
+                     right-aligned column now, and the comparison in the next
+                     one, so the eye reads down instead of hunting across.
+                     The value/gap columns carry a MINIMUM width because each
+                     row is its own grid: `auto` would size every row to its
+                     own content and the numbers would land wherever their
+                     labels ended, which is the thing being fixed. */
+                  className="-mx-2 grid w-[calc(100%+1rem)] grid-cols-[minmax(0,1fr)_auto_auto_auto] items-baseline gap-x-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
                 >
                   <span className="min-w-0 truncate text-foreground">
                     {item.label}
                   </span>
                   <span
                     className={cn(
-                      "shrink-0 font-semibold tabular-nums",
+                      "min-w-[5.5rem] justify-self-end text-right tabular-nums",
                       PEER_TEXT[badStatus]
                     )}
                   >
                     {item.valueText}
                   </span>
-                  {item.medianText ? (
-                    <>
-                      <span
-                        aria-hidden
-                        className="shrink-0 text-xs text-muted-foreground"
-                      >
-                        ·
-                      </span>
-                      <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-                        {item.gapText ? (
-                          <>
-                            <span
-                              className={cn(
-                                "font-medium",
-                                PEER_TEXT[badStatus]
-                              )}
-                            >
-                              {item.gapText}
-                            </span>{" "}
-                            vs{" "}
-                          </>
-                        ) : null}
+                  <span className="min-w-[9rem] justify-self-end text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                    {item.medianText ? (
+                      <>
+                        {item.gapText ? <>{item.gapText} vs </> : null}
                         median {item.medianText}
-                      </span>
-                    </>
-                  ) : null}
+                      </>
+                    ) : null}
+                  </span>
                   {/* Same standing affordance as every other openable surface:
                       a row that only reacts to hover is indistinguishable from
                       a line of text until the mouse happens to cross it. */}
                   <ChevronRight
-                    className="ml-auto size-3.5 shrink-0 self-center text-muted-foreground/50"
+                    className="size-3.5 shrink-0 self-center text-muted-foreground/50"
                     aria-hidden
                   />
                 </button>

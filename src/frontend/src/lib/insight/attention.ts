@@ -1,5 +1,6 @@
 import { formatMetricValue } from "@/lib/format";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
+import { groupHeadlineKey } from "@/lib/insight/group-data";
 import type { MetricGroup, GroupId } from "@/lib/insight/groups";
 import {
   forEntity,
@@ -38,6 +39,12 @@ export interface AttentionItem {
  * What is left is what the cards cannot tell you: a metric outside the preview
  * that is nonetheless bottom-quartile. That is the whole job of this block —
  * the thing you would otherwise miss.
+ *
+ * The card's SUMMARY line counts as shown too. It is the most prominent thing
+ * on the card and it is chosen from every metric of the group, not from the
+ * three the card lists — so excluding only the preview left the lead metric
+ * appearing twice, which is how "Lines added: 143 lines · −98% vs median"
+ * managed to be both a card headline and the first attention row.
  */
 export function metricAttentionItems(
   def: MetricGroup,
@@ -45,7 +52,9 @@ export function metricAttentionItems(
   entityId: string
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
+  const headline = groupHeadlineKey(def, byKey, entityId);
   const shownOnCard = new Set(def.card.preview);
+  if (headline) shownOnCard.add(headline);
   for (const metricConfig of def.collection.metrics) {
     if (shownOnCard.has(metricConfig.key)) continue;
     const metric = byKey.get(metricConfig.key);

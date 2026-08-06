@@ -9,6 +9,7 @@ import { usePortalPeriod } from "@/hooks/use-portal-period";
 import { availableSlices } from "@/lib/insight/slices";
 import { collectRosterAttrs } from "@/lib/insight/slices";
 import { normalizePersonId } from "@/lib/metrics/entity";
+import { useActiveZone } from "@/lib/portal/use-active-zone";
 import { useIcPerson } from "@/queries/ic-dashboard";
 
 /**
@@ -21,6 +22,12 @@ import { useIcPerson } from "@/queries/ic-dashboard";
 export function PortalTopBar() {
   const { period, customRange, setPeriod, setCustomRange } = usePortalPeriod();
   const { personId } = useViewer();
+  // The Person zone is about ONE person, and it reads nothing from the org
+  // scope. Leaving the control up meant the bar named a different person than
+  // the page — a reader saw two names and had to work out which one the
+  // numbers belonged to.
+  const { activeZone } = useActiveZone();
+  const scoped = activeZone !== "person";
   const tree = useIcPerson(personId ?? "").data ?? null;
   const dims = useMemo(
     () => availableSlices(collectRosterAttrs(tree, normalizePersonId).values()),
@@ -45,7 +52,7 @@ export function PortalTopBar() {
           scroller it pushes the overflow off the START edge, where no scroll
           gesture can reach it — Scope and Slice became unreachable. */}
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto md:flex-wrap md:justify-end md:overflow-x-visible">
-        <ScopeSelect />
+        {scoped ? <ScopeSelect /> : null}
         <SliceSelect dims={dims} />
         <PeriodSelectorBar
           period={period}

@@ -99,9 +99,10 @@ export function KpiTile({ tile, onOpenGroup }: KpiTileProps) {
       <CardFooter className="text-sm text-muted-foreground">
         {tile.gapText && tile.medianLabel ? (
           <span>
-            <span
-              className={cn("font-medium", STATUS_TEXT_CLASS[tile.gapStatus])}
-            >
+            {/* One weight for the whole line: the gap explains the value, and
+                a bolder fragment inside a grey sentence is a fourth treatment
+                earning nothing. */}
+            <span className={STATUS_TEXT_CLASS[tile.gapStatus]}>
               {tile.gapText}
             </span>{" "}
             vs {tile.medianLabel}

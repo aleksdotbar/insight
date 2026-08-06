@@ -200,7 +200,12 @@ export function MetricGroupCard({
           <GroupCardEmpty />
         ) : (
           <>
-            <p className="text-sm text-foreground/80">{summary}</p>
+            {/* Plain foreground, not a third shade between it and muted: the
+                card had black, 80% black and muted grey doing three different
+                jobs on one surface, which is how a screen ends up with a dozen
+                type treatments and reads as clutter. Two levels now — the text
+                that states something, and the text that labels it. */}
+            <p className="text-sm text-foreground">{summary}</p>
             {preview.length > 0 ? (
               <ul className="flex flex-col gap-1.5">
                 {preview.map((row) => {
