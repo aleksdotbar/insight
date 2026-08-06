@@ -32,7 +32,7 @@
   - [Resolve Person for Analytics and Backend](#resolve-person-for-analytics-and-backend)
   - [Review Pending Identity Decisions](#review-pending-identity-decisions)
   - [Merge Two Persons](#merge-two-persons)
-  - [GDPR Alias Purge](#gdpr-alias-purge)
+  - [GDPR Identity Purge](#gdpr-identity-purge)
 - [9. Acceptance Criteria](#9-acceptance-criteria)
 - [10. Dependencies](#10-dependencies)
 - [11. Assumptions](#11-assumptions)
@@ -89,6 +89,7 @@ Insight connects to 10+ external platforms (GitLab, GitHub, Jira, YouTrack, Bamb
 | Cold path | Future MatchingEngine rule evaluation when no binding exists |
 | Person domain | Separate domain owning the **golden record projection** of persons (and person-level attributes such as availability, conflicts). The MariaDB `persons` identity-attribute history table itself is owned by the identity-resolution domain (see DESIGN §3.7 and ADR-0006); the Person domain reads from it |
 | Org-chart domain | Separate domain owning `org_units` and `person_assignments` |
+| Reviewer namespace | Code-review identities as reported by platforms — a login/account id with no e-mail; resolved account-first through the id-binding map, with no e-mail bridge |
 
 ---
 
@@ -404,9 +405,9 @@ The system **MUST** allow an operator to mark an account as not belonging to any
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-review-queue`
 
-The system **MUST** surface the accounts that require an operator decision: (a) accounts whose identity evidence is contested (e.g. an e-mail claimed by more than one person), each with candidate persons and the observed values that make it contested; (b) binding divergence within an identity-value group that is **not** explained by any operator-authored decision. Divergence explained by an operator decision **MUST NOT** be surfaced. A surfaced item **MUST** disappear once a decision removes its condition, without any separate item lifecycle to maintain.
+The system **MUST** surface the accounts that require an operator decision: (a) accounts whose identity evidence is contested (e.g. an e-mail claimed by more than one person), each with candidate persons and the observed values that make it contested; (b) binding divergence within an identity-value group that is **not** explained by any operator-authored decision; (c) observed accounts with no usable identity evidence (e.g. e-mail-less) — visible and countable, never hidden. Divergence explained by an operator decision **MUST NOT** be surfaced. A surfaced item **MUST** disappear once a decision removes its condition, without any separate item lifecycle to maintain. Alongside the queue, the system **MUST** report resolution-rate shares — how many observed accounts are bound, pending, without evidence, and excluded — so the match rate is operator-visible. Deliberate MVP narrowing: there is no ignore/defer (snooze) action — an item leaves the queue only through a decision (bind, detach, exclude, or confirm); deferral state returns with the proposal store of the matcher iteration.
 
-**Rationale**: Operators need one place showing what needs attention, and it must not show what a human already settled. (Together with `cpt-ir-fr-operator-bind` and `cpt-ir-fr-operator-exclude`, supersedes the queue workflow of `cpt-ir-fr-unmapped-management`.)
+**Rationale**: Operators need one place showing what needs attention, and it must not show what a human already settled; unresolved is a first-class surface, and reported match rate is a success measure of the umbrella epic (#1873). Surfacing e-mail-less accounts closes #1776. (Together with `cpt-ir-fr-operator-bind` and `cpt-ir-fr-operator-exclude`, supersedes the queue workflow of `cpt-ir-fr-unmapped-management`.)
 
 **Actors**: `cpt-ir-actor-operator`
 
@@ -456,7 +457,7 @@ The system **MUST** let an operator view, for any account, its current binding a
 
 - [ ] `p3` - **ID**: `cpt-ir-fr-gdpr-purge`
 
-The system **MUST** support GDPR hard erasure of a person's identity data, after which the erased values **MUST NOT** be resolvable via any path.
+The system **MUST** support GDPR hard erasure of a person's identity data, after which the erased values **MUST NOT** be resolvable via any path and no plaintext copy of them may be retained anywhere, including archives. Erasure **MUST** be an explicit administrative operation, recorded in the operations journal; the append-only rule of the decision journal governs identity decisions and does not preclude lawful erasure of stored values.
 
 **Rationale**: Legal compliance with right-to-erasure requests. Identity data contains PII (emails, names, employee IDs).
 
@@ -706,30 +707,31 @@ Every operator correction **MUST** be reversible: applying a correction and then
 
 ---
 
-### GDPR Alias Purge
+### GDPR Identity Purge
 
 - [ ] `p3` - **ID**: `cpt-ir-usecase-gdpr-purge`
 
 **Actor**: `cpt-ir-actor-operator`
 
 **Preconditions**:
-- GDPR erasure request received for a specific `person_id`
-- Person's aliases exist in the `aliases` table
+- A right-to-erasure request has been received for a specific person
+- The purge flow (late phase) is implemented
 
 **Main Flow**:
-1. Operator calls `POST /purge` with `person_id` and `actor_person_id`
-2. System copies all aliases for that person to `alias_gdpr_deleted` with `purged_at` and `purged_by_person_id`
-3. System sets `is_deleted = 1` on all aliases for that person in `aliases` table
-4. System returns confirmation with count of purged aliases
+1. Operator invokes the purge for the person; the operation (actor, subject, time, reason) is recorded in the operations journal
+2. The system erases the person's stored identity values everywhere they rest: the value payloads of the person's `persons` observations, the matching `identity_inputs` evidence rows, and the legacy `aliases` rows — structural rows may survive only value-free
+3. The next journal mirror publish and gold build no longer contain the erased values; derived caches rebuild without them
+4. The purge records value-free tombstones (e.g. salted hashes) in a deny-list consulted by automation, so a re-synced copy of an erased value can never silently re-link
 
 **Postconditions**:
-- Aliases archived in `alias_gdpr_deleted`
-- Purged values no longer resolvable via the service API, the analytics mirror, or direct query
-- The next mirror publish excludes the purged values
+- Erased values are unresolvable via any path (service API, analytics mirror, direct query)
+- No plaintext copy of an erased value is retained anywhere, including archives
 
 **Alternative Flows**:
-- **No aliases found for person**: System returns success with `count: 0`
-- **Person has active merge audit**: System warns operator but proceeds (merges are alias-level, not person-level)
+- **No values found for the person**: purge succeeds with a zero count
+- **A connector re-delivers an erased value**: the deny-list blocks automatic linking; the account surfaces for operator review
+
+> The v2.0 mechanism — copying purged aliases into a plaintext `alias_gdpr_deleted` archive with a soft-delete in `aliases` — is rejected: retaining the values contradicts hard erasure, and it never touched `persons`, where the values actually rest (see DESIGN §3.7).
 
 ---
 
@@ -738,7 +740,8 @@ Every operator correction **MUST** be reversible: applying a correction and then
 - [ ] Accounts observed by connectors are bound or surfaced for review by the seed; bound accounts resolve to a `person_id` in gold builds and via the read API
 - [ ] The seed processes 100K `identity_inputs` rows without duplicates; three consecutive runs on unchanged data change nothing
 - [ ] An operator-authored binding survives a subsequent seed run and the connection of a new source, byte-for-byte
-- [ ] Quarantined accounts appear in the review queue with their candidate persons; a decision removes the item without any explicit "close" step
+- [ ] Accounts pending a decision appear in the review queue with their candidate persons; a decision removes the item without any explicit "close" step
+- [ ] Observed accounts with no identity evidence appear in the review queue (countable), never hidden; the queue reports resolution-rate shares
 - [ ] Binding divergence explained by an operator decision is not surfaced as a conflict; unexplained seed-authored divergence is
 - [ ] Merge, detach, bind (single and bulk), and exclude each append history only — no row of `persons` is ever updated or deleted
 - [ ] A correction followed by its counter-correction restores the effective bindings (reversibility)
@@ -782,7 +785,7 @@ Every operator correction **MUST** be reversible: applying a correction and then
 | Connector writes malformed `identity_inputs` rows | Seed fails or creates incorrect bindings | Write contract validation at ingestion; malformed rows logged and skipped |
 | Conservative automation (review-first for contested evidence) | Queue grows after each new connector; operator burden increases | Bulk bind for prepared matching tables; queue counts monitored; future matcher proposals reduce per-item work |
 | Operator error in corrections | Wrong merge/detach mis-attributes metrics until noticed | History is never destroyed: counter-action restores state; per-account history supports investigation; single-operator assumption limits contention |
-| E-mail-less accounts invisible to the seed | Their activity stays unattributed and off the queue | Open design question in #2180 (quarantine instead of skip); tracked by #1776 |
+| E-mail-less accounts cannot be auto-bound | Their activity stays unattributed until an operator binds them | Never hidden: surfaced in the review queue from evidence; operator `bind` covers them (#1776) |
 | Scale: large organization with > 100K persons | Seed throughput or lookup latency degrades | Benchmark at 100K+ scale; indexes sized in DESIGN §3.7 |
 | Future matcher reintroduces silent merges | Corrupted attribution, loss of operator trust | ADR-0003 invariants: proposals only, journal decisions override rules; no-fuzzy-autolink NFR |
 | Domain boundary misunderstanding | Teams accidentally put person-domain logic in identity-resolution | Clear scope documentation (§4); code review enforcement of domain boundaries |

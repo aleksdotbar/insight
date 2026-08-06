@@ -32,6 +32,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
 
 **Late-Phase Items (Future Scope)**:
 - **GDPR alias deletion**: erasure archive table and purge flow. PRD FRs: `cpt-ir-fr-gdpr-purge`. NFR: `cpt-ir-nfr-gdpr-erasure`. Schema retained as a future-table summary in DESIGN §3.7; implementation will be planned in a separate DECOMPOSITION cycle.
+- **Admin identity console**: a required product surface per the umbrella epic (#1873) — scheduled as the next step once the Feature 4 API stabilizes; not decomposed here.
 
 ---
 
@@ -255,7 +256,8 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
 
 - **Scope**:
   - Operator write verbs appending binding observations authored by the operator
-  - Derived review queue (accounts pending a decision + contested-binding groups not explained by an operator decision) with candidates and counts
+  - Derived review queue (accounts pending a decision, contested-binding groups not explained by an operator decision, and no-evidence accounts surfaced from `identity_inputs`) with candidates and counts
+  - Resolution-rate reporting (bound / pending / no-evidence / excluded shares — the operator-visible match rate of the umbrella epic)
   - Per-account binding history (explain) and per-person account listing (matching table)
   - Seed hardening: per-account bindings win over group collapse (removing the path that can silently re-derive a binding); author-aware conflict classification (bindings loader returns author); contested e-mails stop auto-linking
   - Reserved excluded-person sentinel mapped to NULL by the resolve macro
@@ -265,6 +267,7 @@ The Identity Resolution DESIGN is decomposed into four features. Features 1–2 
 
 - **Out of scope**:
   - Stored negative rules, value blocklists, proposals with confidence, automatic revert, multi-operator concurrency — deferred with explicit triggers (ADR-0003)
+  - Ignore/defer (snooze) for queue items — deliberate narrowing; returns with the proposal store
   - GDPR deletion (late phase)
 
 - **Requirements Covered**:

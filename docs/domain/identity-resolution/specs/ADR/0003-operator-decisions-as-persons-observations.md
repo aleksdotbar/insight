@@ -61,7 +61,7 @@ Recorded semantics:
 * "Confirm" (an account pending review is genuinely a separate person) is bind-to-self: the same person, re-asserted under an operator author.
 * "Exclude" (bots, service accounts) binds the account to the reserved excluded-person sentinel — a fixed, unmintable UUID defined normatively in DESIGN par. 4.3, treated by every consumer (resolve macro, read API, person domain, review queue) as "no person".
 * Undo is a counter-action (a newer binding), never a destructive revert; the journal retains the mistake, the fix, and both authors.
-* The review queue is a derived query over `persons` (accounts pending a decision plus contested-binding groups), with no persisted status columns. A divergence explained by an operator-authored binding is a resolved state, not a conflict — this classification-by-author is what keeps settled decisions out of the queue.
+* The review queue is derived from two sources joined on the account key — the `identity_inputs` evidence (every observed account, including e-mail-less ones) and the current bindings in `persons` — with no persisted status columns. A divergence explained by an operator-authored binding is a resolved state, not a conflict — this classification-by-author is what keeps settled decisions out of the queue.
 
 Required enablers shipping with the feature (this decision is incomplete without them):
 
@@ -77,7 +77,8 @@ Required enablers shipping with the feature (this decision is incomplete without
 * Good, because the journal doubles as an audit trail and as future training data for the auto-matcher (every operator decision is a labeled example).
 * Good, because the divergent-group collapse that could silently rewrite bindings is eliminated by the same hardening that protects operator rows.
 * Bad, because there is no first-class negative assertion ("never merge these two"): acceptable while the only automation never merges existing persons and a single operator is assumed, but it must be revisited (see below).
-* Bad, because n-way splits are a sequence of detaches (not atomic), reverts are manual counter-actions, and concurrent operators are last-write-wins.
+* Bad, because n-way splits are a sequence of detaches (not atomic), reverts are manual counter-actions, concurrent operators are last-write-wins, and there is no ignore/defer for queue items (a snooze needs persisted queue state; it returns with the proposal store).
+* Neutral, because GDPR erasure does not conflict with append-only: the rule governs identity decisions, while lawful erasure of stored identity values is an explicit administrative operation outside the decision journal (future purge flow), itself recorded in the `operations` journal.
 
 Revisit triggers — any of these reopens the decision in favour of a dedicated decision journal layered on top (operator rows in `persons` remain valid as materialisations, so no rework is lost):
 
@@ -129,6 +130,8 @@ This option is **deferred, not rejected**; the revisit triggers above name the c
 ## More Information
 
 Industry prior art converges on the chosen shape: decisions stored as data that the matcher re-consumes on every run (OpenSanctions/nomenklatura pairwise judgements; Senzing trusted identifiers encoded in records; Semarchy steward decisions as table rows; SortingHat locked profiles), and merge implemented as reversible linking rather than physical collapse (documented irreversible-merge pain in Segment/Mixpanel/PostHog). The reviewed design with scenarios and API shapes lives in constructorfabric/insight#2180; the umbrella vision is #1873; related edge-case requirements: #1767, #1776.
+
+When the matcher iteration lands, proposal `confidence` and `evidence` receive first-class storage (reserved column names); the journal deliberately carries no dead columns for them now — additive MariaDB migrations are cheap at that point, and operator provenance (author, reason, `operations` payload) already accumulates the training signal in the meantime. This is a deliberate, recorded deviation from the review suggestion to reserve physical columns in the MVP schema.
 
 This ADR implements the operator-flow consequence promised by [ADR-0002](0002-stable-person-id-via-persons-observations.md) ("Operator-driven flows (future PR) will create new persons rows ... with author_person_id = the operator's person_id and a descriptive reason").
 
