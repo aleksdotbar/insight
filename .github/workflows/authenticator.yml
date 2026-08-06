@@ -16,9 +16,10 @@ on:
       - "src/backend/services/authenticator/**"
       - "src/backend/libs/authenticator-sdk/**"
       # The e2e stack imports the generated compose realm (run-e2e.sh), which
-      # gen-realm.py builds from the seed roster.
+      # `insight-seed-realm` builds from the seed roster.
       - "deploy/compose/keycloak/**"
-      - "deploy/seed/profiles.py"
+      - "src/ingestion/tools/seed/insight_seed/profiles.py"
+      - "src/ingestion/tools/seed/insight_seed/keycloak_realm.py"
       # A workspace-wide dependency bump can break the authenticator build
       # without touching its sources (reqwest 0.12 -> 0.13 did, via
       # openidconnect's pinned HTTP-client impls).
@@ -60,6 +61,13 @@ jobs:
         with:
           workspaces: src/backend -> target
           key: authenticator-e2e
+
+      # run-e2e.sh generates the realm through `uv run --project`: the
+      # generator is a console script of the seed package, and uv resolves and
+      # installs it on first use. The runner has python3 but not uv.
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          cache-suffix: authenticator-e2e
 
       - name: Run the authenticator e2e suite
         # run-e2e.sh builds the authenticator (release), boots the stack
