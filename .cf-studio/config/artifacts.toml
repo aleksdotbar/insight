@@ -771,6 +771,11 @@ kind = "ADR"
 path = "docs/domain/identity-resolution/specs/ADR/0003-operator-decisions-as-persons-observations.md"
 name = "ADR-0003: Operator identity corrections as append-only persons observations"
 
+[[systems.artifacts]]
+kind = "FEATURE"
+path = "docs/domain/identity-resolution/specs/feature-manual-resolution/FEATURE.md"
+name = "Feature: Manual Identity Resolution"
+
 
 [[systems]]
 name = "Person Domain"
