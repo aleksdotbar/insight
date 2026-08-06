@@ -456,9 +456,8 @@ models:
           Array(Tuple(key, value, label)). Per-issue count measures carry `type`
           — the issue type, keyed on its locale-independent name and labelled
           with its display name, so the closed-issue total splits into parts that
-          add back up to it. A type the class dimension does not classify keeps
-          its own `__unknown__` bucket. Empty for the day-grain and duration
-          measures.
+          add back up to it. An issue whose type is not reported at all falls in
+          `__unknown__`. Empty for the day-grain and duration measures.
 
   - name: task_issue_state
     description: >

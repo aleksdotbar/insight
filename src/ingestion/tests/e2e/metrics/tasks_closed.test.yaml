@@ -153,7 +153,7 @@ bronze:
       unique_key: jira-test-TEW-4
       id_readable: TEW4
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: TEW-5
       jira_id: TEW-5

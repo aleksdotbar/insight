@@ -3,7 +3,7 @@
    `untranslatedName`), not a display name. #}
 
 {% macro task_type_name_array(names) -%}
-[{% for name in names %}'{{ name | lower }}'{{ ", " if not loop.last }}{% endfor %}]
+[{% for name in names %}'{{ name | lower | replace("'", "''") }}'{{ ", " if not loop.last }}{% endfor %}]
 {%- endmacro %}
 
 {% macro task_issue_kind(name_expr) %}

@@ -90,7 +90,7 @@ bronze:
       unique_key: jira-test-BBW-1
       id_readable: BBW1
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"bob-jira-acct","displayName":"Bob Beta"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"bob-jira-acct","displayName":"Bob Beta"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BBW-2
       jira_id: BBW-2
@@ -119,14 +119,14 @@ bronze:
       unique_key: jira-test-BCW-1
       id_readable: BCW1
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"carol-jira-acct","displayName":"Carol Gamma"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"carol-jira-acct","displayName":"Carol Gamma"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BCW-2
       jira_id: BCW-2
       unique_key: jira-test-BCW-2
       id_readable: BCW2
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"carol-jira-acct","displayName":"Carol Gamma"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"carol-jira-acct","displayName":"Carol Gamma"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BCW-3
       jira_id: BCW-3
@@ -148,21 +148,21 @@ bronze:
       unique_key: jira-test-BDW-1
       id_readable: BDW1
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"dave-jira-acct","displayName":"Dave Delta"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"dave-jira-acct","displayName":"Dave Delta"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BDW-2
       jira_id: BDW-2
       unique_key: jira-test-BDW-2
       id_readable: BDW2
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"dave-jira-acct","displayName":"Dave Delta"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"dave-jira-acct","displayName":"Dave Delta"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BDW-3
       jira_id: BDW-3
       unique_key: jira-test-BDW-3
       id_readable: BDW3
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"dave-jira-acct","displayName":"Dave Delta"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"dave-jira-acct","displayName":"Dave Delta"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BDW-4
       jira_id: BDW-4
@@ -177,28 +177,28 @@ bronze:
       unique_key: jira-test-BEW-1
       id_readable: BEW1
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BEW-2
       jira_id: BEW-2
       unique_key: jira-test-BEW-2
       id_readable: BEW2
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BEW-3
       jira_id: BEW-3
       unique_key: jira-test-BEW-3
       id_readable: BEW3
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
     - $ref: templates/jira_task.yaml#/templates/jira_issue
       id: BEW-4
       jira_id: BEW-4
       unique_key: jira-test-BEW-4
       id_readable: BEW4
       created: "2026-01-05T09:00:00"
-      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10004","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
+      custom_fields_json: '{"status":{"id":"6","name":"Closed"},"issuetype":{"id":"10000","name":"Bug"},"assignee":{"accountId":"erin-jira-acct","displayName":"Erin Epsilon"}}'
 
   bronze_jira.jira_issue_history:
     # ── Alice Alpha (rank 1) ──

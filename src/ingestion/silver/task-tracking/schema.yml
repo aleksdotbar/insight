@@ -116,10 +116,6 @@ models:
         description: "Type display name as the source reports it; the label Gold shows for the type dimension."
       - name: untranslated_name
         description: "Locale-independent type name where the source has one (Jira); NULL otherwise."
-      - name: hierarchy_level
-        description: "Source structural level (below/at/above the standard work level) where reported; no measure reads it yet."
-      - name: is_subtask
-        description: "Source subtask flag where reported; no measure reads it yet."
       - name: issue_kind
         description: "Reconciled type kind: bug | other | unknown. `unknown` means the type name matched neither configured list and is reported as its own bucket, never as non-bug work."
         tests:

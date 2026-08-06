@@ -91,6 +91,11 @@ vars:
     - cosmetics
     - usability problem
     - performance problem
+  # Custom-field names carrying the issue type, for sources that model it as a
+  # field rather than a global type table (YouTrack). Canonical field names,
+  # compared case-insensitively — never a localized name.
+  task_issue_type_field_names:
+    - type
   task_non_bug_type_names:
     - task
     - sub-task

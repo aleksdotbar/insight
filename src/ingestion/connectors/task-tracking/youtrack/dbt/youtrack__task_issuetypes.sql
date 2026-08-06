@@ -22,7 +22,8 @@ WITH type_fields AS (
         pcf.bundle_values_json                                  AS bundle_values_json,
         pcf._airbyte_extracted_at                               AS _airbyte_extracted_at
     FROM {{ source('bronze_youtrack', 'youtrack_project_custom_fields') }} pcf
-    WHERE toString(pcf.field_name) = 'Type'
+    WHERE has({{ task_type_name_array(var('task_issue_type_field_names')) }},
+              lower(trimBoth(ifNull(toString(pcf.field_name), ''))))
       AND (lower(toString(pcf.value_type)) = 'enum'
            OR toString(pcf.field_type_id) LIKE 'enum%')
 )
@@ -33,8 +34,6 @@ SELECT
     JSONExtractString(val_raw, 'id')                            AS issue_type_id,
     JSONExtractString(val_raw, 'name')                          AS issue_type_name,
     CAST(NULL AS Nullable(String))                              AS untranslated_name,
-    CAST(NULL AS Nullable(Int32))                               AS hierarchy_level,
-    CAST(NULL AS Nullable(Bool))                                AS is_subtask,
     {{ task_issue_kind("JSONExtractString(val_raw, 'name')") }} AS issue_kind,
     toDateTime64(tf._airbyte_extracted_at, 3)                   AS collected_at,
     toUnixTimestamp64Milli(tf._airbyte_extracted_at)            AS _version

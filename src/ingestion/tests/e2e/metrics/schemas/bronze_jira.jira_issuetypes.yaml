@@ -1,7 +1,7 @@
 # Reusable JSON schema for bronze_jira.jira_issuetypes (the issue-type lookup
-# from GET /rest/api/3/issuetype). Columns mirror the AddFields in
-# connectors/task-tracking/jira/connector.yaml (jira_issuetypes stream) that
-# jira__task_issuetypes.sql reads to build silver.class_task_issuetypes.
+# from GET /rest/api/3/issuetype): the API fields jira__task_issuetypes.sql
+# reads to build silver.class_task_issuetypes, plus the connector's identity
+# columns.
 schemas:
   bronze_jira.jira_issuetypes:
     $schema: http://json-schema.org/draft-07/schema#
@@ -14,8 +14,6 @@ schemas:
       id: {type: [string, "null"]}
       name: {type: string}
       untranslatedName: {type: [string, "null"]}
-      subtask: {type: [boolean, "null"]}
-      hierarchyLevel: {type: [number, string, "null"]}
       collected_at: {type: [string, "null"]}
       _airbyte_raw_id: {type: string}
       _airbyte_extracted_at: {type: string, format: date-time}
