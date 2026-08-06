@@ -22,7 +22,10 @@ pub enum ItemKind {
     /// The account's identity value is shared by accounts bound to different
     /// persons, with no operator decision explaining the divergence.
     BindingConflict,
-    /// The account carries no usable identity evidence — visible, never hidden.
+    /// The account carries no identity evidence automation can match on —
+    /// e-mail is the only matching key today, so a username-only account is
+    /// here too (shown with its username). Visible, never hidden: nothing
+    /// will ever bind these but an operator.
     NoEvidence,
 }
 
@@ -92,7 +95,7 @@ pub fn build(
         match bindings.get(&account.account) {
             Some(binding) if binding.person_id == EXCLUDED_PERSON => rates.excluded += 1,
             Some(_) => rates.bound += 1,
-            None if !has_evidence(account) => {
+            None if !has_matchable_evidence(account) => {
                 rates.no_evidence += 1;
                 items.push(item(ItemKind::NoEvidence, account, Vec::new()));
             }
@@ -102,8 +105,9 @@ pub fn build(
                     rates.pending += 1;
                     items.push(item(ItemKind::Contested, account, candidates));
                 } else {
-                    // One candidate or none: automation will bind it on its next
-                    // run, so it is not the operator's problem yet.
+                    // One candidate or none: the account has an e-mail, so
+                    // automation will bind it on its next run — not the
+                    // operator's problem yet.
                     rates.pending += 1;
                 }
             }
@@ -186,8 +190,11 @@ fn candidates_for(
     persons
 }
 
-fn has_evidence(account: &EvidenceAccount) -> bool {
-    account.email.is_some() || account.username.is_some()
+// A username is displayed but cannot match anyone (the seed links by e-mail
+// only), so counting it as evidence would leave a username-only account
+// invisible forever: pending, never surfaced, never auto-bound.
+fn has_matchable_evidence(account: &EvidenceAccount) -> bool {
+    account.email.is_some()
 }
 
 fn item(kind: ItemKind, account: &EvidenceAccount, candidates: Vec<Uuid>) -> QueueItem {
@@ -243,6 +250,23 @@ mod tests {
         assert_eq!(review.items[0].kind, ItemKind::NoEvidence);
         assert_eq!(review.rates.no_evidence, 1);
         assert_eq!(review.rates.observed, 1);
+    }
+
+    #[test]
+    fn a_username_only_account_is_surfaced_because_nothing_can_match_it() {
+        // A username is shown to the operator but the seed links by e-mail
+        // only: were the username counted as evidence, this account would sit
+        // in `pending` forever with no queue item and no automation to come.
+        let mut orphan = observed("github", "gh-1", None);
+        orphan.username = Some("octocat".to_owned());
+
+        let review = build(vec![orphan], &HashMap::new());
+
+        assert_eq!(review.items.len(), 1);
+        assert_eq!(review.items[0].kind, ItemKind::NoEvidence);
+        assert_eq!(review.items[0].username.as_deref(), Some("octocat"));
+        assert_eq!(review.rates.no_evidence, 1);
+        assert_eq!(review.rates.pending, 0);
     }
 
     #[test]
