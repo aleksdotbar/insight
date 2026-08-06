@@ -75,8 +75,8 @@ time = { workspace = true }
 jsonwebtoken = { workspace = true }
 p256 = { version = "0.14", features = ["pkcs8", "pem", "ecdsa", "getrandom"] }
 sha2 = "0.11"
-base64 = "0.22"
-rand = "0.8"
+base64 = "0.23"
+rand = "0.10"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

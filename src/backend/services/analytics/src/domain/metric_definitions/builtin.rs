@@ -204,6 +204,19 @@ mod tests {
     }
 
     #[test]
+    fn evidence_refs_parse_as_evidence_relations() {
+        use crate::domain::metric_definitions::definition::EvidenceRelation;
+        for builtin_source in builtin_sources() {
+            assert!(
+                EvidenceRelation::parse(&builtin_source.source.evidence_ref).is_some(),
+                "builtin source {} declares an invalid evidence relation {:?}",
+                builtin_source.source.key,
+                builtin_source.source.evidence_ref,
+            );
+        }
+    }
+
+    #[test]
     fn every_source_declares_at_least_one_measure() {
         for builtin_source in builtin_sources() {
             assert!(

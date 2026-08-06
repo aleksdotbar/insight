@@ -756,6 +756,16 @@ kind = "DECOMPOSITION"
 path = "docs/domain/identity-resolution/specs/DECOMPOSITION.md"
 name = "Identity Resolution Decomposition"
 
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/domain/identity-resolution/specs/ADR/0002-stable-person-id-via-persons-observations.md"
+name = "ADR-0002: Stable person_id via append-only persons observations"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/domain/identity-resolution/specs/ADR/0003-operator-decisions-as-persons-observations.md"
+name = "ADR-0003: Operator identity corrections as append-only persons observations"
+
 
 [[systems]]
 name = "Person Domain"

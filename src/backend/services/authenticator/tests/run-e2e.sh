@@ -28,7 +28,11 @@ AUTH_PORT=8083
 TOKEN_PORT=8093
 AUTH2_PORT=8085
 TOKEN2_PORT=8095
+AUTH3_PORT=8087
+TOKEN3_PORT=8097
 IDP_PORT=8084
+# 8086 avoided: a common local-daemon default (InfluxDB) collides with it.
+IDP2_PORT=8088
 IDENTITY_PORT=8092
 REDIS_CT=authenticator-e2e-redis
 pids=()
@@ -40,6 +44,7 @@ cleanup() {
   [[ -n "${KEYS_DIR:-}" ]] && rm -rf "$KEYS_DIR"
   [[ -n "${SVC_KEYS_DIR:-}" ]] && rm -rf "$SVC_KEYS_DIR"
   [[ -n "${AUTH2_CONFIG:-}" ]] && rm -f "$AUTH2_CONFIG"
+  [[ -n "${AUTH3_CONFIG:-}" ]] && rm -f "$AUTH3_CONFIG"
 }
 trap cleanup EXIT
 
@@ -85,6 +90,13 @@ FAKEIDP_ISSUER="http://localhost:$IDP_PORT" FAKEIDP_BIND="0.0.0.0:$IDP_PORT" \
   ./target/release/fakeidp >/tmp/authenticator-e2e-fakeidp.log 2>&1 &
 pids+=($!)
 wait_ready fakeidp "http://localhost:$IDP_PORT/.well-known/openid-configuration"
+
+echo "==> fakeidp #2 :$IDP2_PORT (the second issuer of the host-keyed map, ADR-0003)"
+FAKEIDP_ISSUER="http://localhost:$IDP2_PORT" FAKEIDP_BIND="0.0.0.0:$IDP2_PORT" \
+  FAKEIDP_DEFAULT_AUD=insight-authenticator \
+  ./target/release/fakeidp >/tmp/authenticator-e2e-fakeidp2.log 2>&1 &
+pids+=($!)
+wait_ready fakeidp2 "http://localhost:$IDP2_PORT/.well-known/openid-configuration"
 
 echo "==> identity stub :$IDENTITY_PORT (resolves any email/external-id to a person)"
 python3 "$HERE/identity-stub.py" "127.0.0.1:$IDENTITY_PORT" >/tmp/authenticator-e2e-identity.log 2>&1 &
@@ -143,6 +155,32 @@ if ! wait_ready authenticator2 "http://localhost:$AUTH2_PORT/.well-known/jwks.js
   exit 1
 fi
 
+echo "==> authenticator #3 :$AUTH3_PORT (host-keyed issuer map, ADR-0003)"
+# Two hosts -> two issuers; the flat idp client fields stay empty (map mode
+# replaces them). The map rides ONE env var as a JSON string — exactly the
+# shape a deployment would use.
+AUTH3_CONFIG="$(mktemp "${TMPDIR:-/tmp}/authenticator-e2e-cfg3.XXXXXX")"
+sed -e "s/$AUTH_PORT/$AUTH3_PORT/g" -e "s/$TOKEN_PORT/$TOKEN3_PORT/g" \
+    -e 's#/tmp/authenticator-grpc#/tmp/authenticator-e2e3-grpc#' \
+  services/authenticator/config/insight.yaml > "$AUTH3_CONFIG"
+APP__gears__authenticator__config__redis_url=redis://localhost:6399 \
+APP__gears__authenticator__config__signing_keys_path="$KEYS_DIR" \
+APP__gears__authenticator__config__identity_url="http://localhost:$IDENTITY_PORT" \
+APP__gears__authenticator__config__gateway_issuer=http://localhost:8080 \
+APP__gears__authenticator__config__idp__source_type=faketest \
+APP__gears__authenticator__config__idp__hosts="{\"tenant-a.example\": {\"issuer_url\": \"http://localhost:$IDP_PORT\", \"client_id\": \"insight-authenticator\"}, \"tenant-b.example\": {\"issuer_url\": \"http://localhost:$IDP2_PORT\", \"client_id\": \"insight-authenticator\"}}" \
+APP__gears__authenticator__config__redirect_uri="http://localhost:$AUTH3_PORT/auth/callback" \
+APP__gears__authenticator__config__service_tokens__public_key_dir="$SVC_KEYS_DIR" \
+  ./target/release/authenticator -c "$AUTH3_CONFIG" run \
+  >/tmp/authenticator-e2e-auth3.log 2>&1 &
+pids+=($!)
+
+echo "==> wait for authenticator #3 readiness"
+if ! wait_ready authenticator3 "http://localhost:$AUTH3_PORT/.well-known/jwks.json"; then
+  tail -20 /tmp/authenticator-e2e-auth3.log >&2 || true
+  exit 1
+fi
+
 echo "==> run the login loop"
 AUTH_BASE="http://localhost:$AUTH_PORT" E2E_USER=dev@company.nonpresent \
   cargo test -p authenticator --test e2e_login_loop -- --ignored --nocapture
@@ -160,9 +198,19 @@ AUTH_BASE="http://localhost:$AUTH_PORT" \
   cargo test -p authenticator --test e2e_unauthorized -- --ignored --nocapture
 
 echo "==> run the __override view-as loop (#1941)"
+# --test-threads=1: every test impersonates as the same principal, and one of
+# them exercises DELETE /auth/sessions (revoke-all), which by design reaches
+# the sibling tests' view-as sessions when they run concurrently.
 AUTH_BASE="http://localhost:$AUTH_PORT" AUTH_BASE_DISABLED="http://localhost:$AUTH2_PORT" \
   E2E_USER=dev@company.nonpresent \
-  cargo test -p authenticator --test e2e_override -- --ignored --nocapture
+  cargo test -p authenticator --test e2e_override -- --ignored --nocapture --test-threads=1
+
+echo "==> run the host-keyed issuer map loop (ADR-0003)"
+AUTH_BASE="http://localhost:$AUTH3_PORT" AUTH_FLAT_BASE="http://localhost:$AUTH_PORT" \
+  AUTH3_LOG=/tmp/authenticator-e2e-auth3.log \
+  FAKEIDP_PUBLIC="http://localhost:$IDP_PORT" FAKEIDP2_PUBLIC="http://localhost:$IDP2_PORT" \
+  E2E_USER=dev@company.nonpresent \
+  cargo test -p authenticator --test e2e_hostmap -- --ignored --nocapture
 
 echo "==> run the back-channel logout loop (step 10.3)"
 AUTH_BASE="http://localhost:$AUTH_PORT" FAKEIDP_PUBLIC="http://localhost:$IDP_PORT" \

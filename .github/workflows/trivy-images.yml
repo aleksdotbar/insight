@@ -41,7 +41,7 @@ jobs:
           - insight-gateway
           - insight-identity-resolution
           # Frontend (nginx + the Vite bundle)
-          - insight-front
+          - insight-frontend
           # Python tooling
           - insight-toolbox
           - insight-jira-enrich
