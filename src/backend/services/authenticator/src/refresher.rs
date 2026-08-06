@@ -370,7 +370,7 @@ fn jitter(window: u64) -> i64 {
         return 0;
     }
     let w = i64::try_from(window).unwrap_or(0);
-    rand::Rng::gen_range(&mut rand::thread_rng(), -w..=w)
+    rand::RngExt::random_range(&mut rand::rng(), -w..=w)
 }
 
 fn now_secs() -> u64 {

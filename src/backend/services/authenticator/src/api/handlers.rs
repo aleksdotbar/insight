@@ -20,7 +20,7 @@ use axum::response::{IntoResponse as _, Response};
 use axum_extra::extract::cookie::CookieJar;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
-use rand::RngCore as _;
+use rand::Rng as _;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -1485,7 +1485,7 @@ fn now_secs() -> u64 {
 /// A CSPRNG token (256 bits, base64url) — session token, CSRF token, state, nonce.
 fn csprng_token() -> String {
     let mut raw = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut raw);
+    rand::rng().fill_bytes(&mut raw);
     B64.encode(raw)
 }
 
@@ -1495,7 +1495,7 @@ fn jitter_seconds(window: u64) -> i64 {
         return 0;
     }
     let w = i64::try_from(window).unwrap_or(0);
-    rand::Rng::gen_range(&mut rand::thread_rng(), -w..=w)
+    rand::RngExt::random_range(&mut rand::rng(), -w..=w)
 }
 
 /// Read `exp` from a JWT without verifying (it is our own token).
