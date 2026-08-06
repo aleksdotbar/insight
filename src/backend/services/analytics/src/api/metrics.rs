@@ -10,6 +10,7 @@
 //! exists (idempotent).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Extension, Path};
@@ -23,16 +24,23 @@ use super::AppState;
 use super::error::CustomMetricError;
 use crate::domain::metric_crud::{
     CustomMetric, CustomMetricListResponse, ExportCustomMetricsResponse, GraphViolation,
-    ImportCustomMetricsRequest, ImportCustomMetricsResponse, MAX_IMPORT_METRICS, WriteOutcome,
-    create_custom_metric, delete_custom_metric, export_custom_metrics, fetch_custom_metric,
-    list_custom_metrics as list_custom_metrics_repo, normalize_observation_sql,
-    replace_custom_metric, validate_graph,
+    ImportCustomMetricsRequest, ImportCustomMetricsResponse, MAX_IMPORT_METRICS, ReplaceOutcome,
+    WriteOutcome, create_custom_metric, delete_custom_metric, export_custom_metrics,
+    fetch_custom_metric, import_custom_metrics, list_custom_metrics as list_custom_metrics_repo,
+    normalize_observation_sql, replace_custom_metric, validate_graph,
 };
 
 /// The observation-contract columns a custom source's SQL must emit. Probed as
 /// a `LIMIT 0` projection so a malformed source fails on write, not at render.
 const OBSERVATION_CONTRACT_COLUMNS: &str = "tenant_id, source_key, entity_type, entity_id, \
     metric_date, measure_key, observed_at, value, subject_key, dimensions";
+
+/// ClickHouse-side execution cap for the observation probe (seconds).
+const PROBE_MAX_EXECUTION_SECS: u32 = 5;
+/// ClickHouse-side row-scan cap for the observation probe.
+const PROBE_MAX_ROWS_TO_READ: u32 = 1;
+/// Outer wall-clock deadline for the observation probe.
+const PROBE_DEADLINE: Duration = Duration::from_secs(10);
 
 pub async fn list_custom_metrics(
     Extension(state): Extension<Arc<AppState>>,
@@ -94,15 +102,17 @@ pub async fn update_custom_metric_handler(
     validate_graph(&graph).map_err(invalid_graph)?;
     probe_observation_sql(&state, &graph.observation_sql).await?;
 
-    let replaced = replace_custom_metric(&state.db, tenant_id, &metric_key, &graph)
+    match replace_custom_metric(&state.db, tenant_id, &metric_key, &graph)
         .await
-        .map_err(db_error)?;
-    if !replaced {
-        return Err(not_found(&metric_key));
+        .map_err(db_error)?
+    {
+        ReplaceOutcome::Replaced => {
+            let updated = reload(&state, tenant_id, &metric_key).await?;
+            Ok(Json(updated))
+        }
+        ReplaceOutcome::NotFound => Err(not_found(&metric_key)),
+        ReplaceOutcome::SourceConflict => Err(source_conflict(&graph.source_key)),
     }
-
-    let updated = reload(&state, tenant_id, &metric_key).await?;
-    Ok(Json(updated))
 }
 
 pub async fn delete_custom_metric_handler(
@@ -152,17 +162,10 @@ pub async fn import_custom_metrics_handler(
         probe_observation_sql(&state, &graph.observation_sql).await?;
     }
 
-    let mut imported = 0;
-    let mut skipped = Vec::new();
-    for graph in &graphs {
-        match create_custom_metric(&state.db, tenant_id, graph)
-            .await
-            .map_err(db_error)?
-        {
-            WriteOutcome::Created => imported += 1,
-            WriteOutcome::AlreadyExists => skipped.push(graph.metric_key.clone()),
-        }
-    }
+    let skipped = import_custom_metrics(&state.db, tenant_id, &graphs)
+        .await
+        .map_err(db_error)?;
+    let imported = graphs.len() - skipped.len();
 
     Ok(Json(ImportCustomMetricsResponse { imported, skipped }))
 }
@@ -175,12 +178,26 @@ pub async fn import_custom_metrics_handler(
 /// write. The raw engine message is logged, never returned, so ClickHouse
 /// internals do not leak to the client.
 async fn probe_observation_sql(state: &AppState, sql: &str) -> Result<(), CanonicalError> {
-    let probe = format!("SELECT {OBSERVATION_CONTRACT_COLUMNS} FROM ({sql}) LIMIT 0");
-    let cursor = state.ch.query(&probe).fetch_bytes("JSONEachRow");
-    let outcome = match cursor {
-        Ok(mut cursor) => cursor.collect().await.map(|_| ()),
-        Err(error) => Err(error),
+    // The probe runs author-supplied SQL, so it is bounded twice: ClickHouse
+    // `SETTINGS` cap the work the engine will do, and an outer wall-clock
+    // deadline caps a stalled connection — neither the engine nor the request
+    // thread can be held open by an expensive source.
+    let probe = format!(
+        "SELECT {OBSERVATION_CONTRACT_COLUMNS} FROM ({sql}) LIMIT 0 \
+         SETTINGS max_execution_time = {PROBE_MAX_EXECUTION_SECS}, max_result_rows = 0, \
+         max_rows_to_read = {PROBE_MAX_ROWS_TO_READ}, timeout_overflow_mode = 'throw'"
+    );
+
+    let run = async {
+        let mut cursor = state.ch.query(&probe).fetch_bytes("JSONEachRow")?;
+        cursor.collect().await.map(|_| ())
     };
+
+    let outcome = match tokio::time::timeout(PROBE_DEADLINE, run).await {
+        Ok(result) => result.map_err(|error| error.to_string()),
+        Err(_elapsed) => Err(format!("probe exceeded {PROBE_DEADLINE:?}")),
+    };
+
     outcome.map_err(|error| {
         tracing::warn!(error = %error, "custom observation SQL failed the column probe");
         invalid_observation()
@@ -226,6 +243,12 @@ fn not_found(metric_key: &str) -> CanonicalError {
 fn conflict(metric_key: &str) -> CanonicalError {
     CustomMetricError::already_exists("custom metric already exists")
         .with_resource(metric_key.to_owned())
+        .create()
+}
+
+fn source_conflict(source_key: &str) -> CanonicalError {
+    CustomMetricError::already_exists("source_key already belongs to another custom metric")
+        .with_resource(source_key.to_owned())
         .create()
 }
 

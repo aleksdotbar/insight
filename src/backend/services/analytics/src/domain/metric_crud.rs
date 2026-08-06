@@ -21,7 +21,7 @@ use crate::domain::metric_definitions::definition::{
     MetricComputation, MetricDirection, MetricFormat, MetricInputRole, ValueTransform,
 };
 use crate::domain::metric_key::parse_metric_key;
-use crate::domain::query_gate::validate_single_select;
+use crate::domain::query_gate::validate_custom_observation_sql;
 
 /// Upper bounds on an authored graph — every unbounded input is capped at the
 /// edge so one request cannot fan out into an unbounded write.
@@ -32,6 +32,11 @@ const MAX_OBSERVATION_SQL_BYTES: usize = 64 * 1024;
 
 /// Maximum metrics accepted by a single import request.
 pub const MAX_IMPORT_METRICS: usize = 500;
+
+/// Upper bound on how many custom metrics `GET /v1/metrics` and
+/// `GET /v1/metrics/export` return, so neither the response nor the export's
+/// per-metric fetch fan-out is unbounded.
+const MAX_LIST_METRICS: usize = 1000;
 
 // ── DTOs ─────────────────────────────────────────────────────
 
@@ -232,7 +237,7 @@ fn validate_observation_sql(graph: &CustomMetric) -> Result<(), GraphViolation> 
             format!("must be at most {MAX_OBSERVATION_SQL_BYTES} bytes"),
         ));
     }
-    validate_single_select(&graph.observation_sql)
+    validate_custom_observation_sql(&graph.observation_sql)
         .map_err(|reason| violation("observation_sql", reason))
 }
 
@@ -303,22 +308,34 @@ pub async fn create_custom_metric(
     tenant_id: Uuid,
     graph: &CustomMetric,
 ) -> Result<WriteOutcome, DbErr> {
-    if metric_exists(db, tenant_id, &graph.metric_key).await?
-        || source_exists(db, tenant_id, &graph.source_key).await?
+    let txn = db.begin().await?;
+    // The existence checks run inside the transaction that inserts, so two
+    // concurrent creates of the same key cannot both pass them.
+    if metric_exists(&txn, tenant_id, &graph.metric_key).await?
+        || source_exists(&txn, tenant_id, &graph.source_key).await?
     {
+        txn.rollback().await?;
         return Ok(WriteOutcome::AlreadyExists);
     }
 
-    let txn = db.begin().await?;
     insert_graph(&txn, tenant_id, graph).await?;
     txn.commit().await?;
 
     Ok(WriteOutcome::Created)
 }
 
+/// The result of a replace: the metric was replaced, no custom metric existed
+/// under the key, or the new graph's `source_key` already belongs to another of
+/// the tenant's custom metrics.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReplaceOutcome {
+    Replaced,
+    NotFound,
+    SourceConflict,
+}
+
 /// Replace an existing custom metric with a validated graph, in one
-/// transaction. Returns `false` (no write) when the tenant has no custom metric
-/// under `metric_key`. The path `metric_key` is authoritative; the body's is
+/// transaction. The path `metric_key` is authoritative; the body's is
 /// overwritten with it before this call.
 ///
 /// # Errors
@@ -329,16 +346,51 @@ pub async fn replace_custom_metric(
     tenant_id: Uuid,
     metric_key: &str,
     graph: &CustomMetric,
-) -> Result<bool, DbErr> {
+) -> Result<ReplaceOutcome, DbErr> {
     let txn = db.begin().await?;
     let deleted = delete_graph(&txn, tenant_id, metric_key).await?;
     if !deleted {
         txn.rollback().await?;
-        return Ok(false);
+        return Ok(ReplaceOutcome::NotFound);
+    }
+    // The old source is gone with the old graph, so a reused source_key is fine;
+    // a source_key belonging to a *different* custom metric is a conflict, the
+    // same invariant create enforces.
+    if source_exists(&txn, tenant_id, &graph.source_key).await? {
+        txn.rollback().await?;
+        return Ok(ReplaceOutcome::SourceConflict);
     }
     insert_graph(&txn, tenant_id, graph).await?;
     txn.commit().await?;
-    Ok(true)
+    Ok(ReplaceOutcome::Replaced)
+}
+
+/// Import a validated batch as `origin='custom'` metrics for `tenant_id` in one
+/// transaction — either every new graph lands or none does. Returns the
+/// `metric_key`s skipped because the tenant already owns them (or the same key
+/// appears twice in the batch).
+///
+/// # Errors
+///
+/// Returns [`DbErr`] on any database failure; on error nothing is written.
+pub async fn import_custom_metrics(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    graphs: &[CustomMetric],
+) -> Result<Vec<String>, DbErr> {
+    let txn = db.begin().await?;
+    let mut skipped = Vec::new();
+    for graph in graphs {
+        if metric_exists(&txn, tenant_id, &graph.metric_key).await?
+            || source_exists(&txn, tenant_id, &graph.source_key).await?
+        {
+            skipped.push(graph.metric_key.clone());
+            continue;
+        }
+        insert_graph(&txn, tenant_id, graph).await?;
+    }
+    txn.commit().await?;
+    Ok(skipped)
 }
 
 /// Delete a tenant's custom metric (definition + its custom source) by
@@ -553,23 +605,25 @@ pub async fn list_custom_metrics(
         "SELECT metric_key, label, computation_type, entity_type \
          FROM metric_definitions \
          WHERE origin = 'custom' AND tenant_id = ? \
-         ORDER BY metric_key",
-        [uuid_value(tenant_id)],
+         ORDER BY metric_key \
+         LIMIT ?",
+        [uuid_value(tenant_id), Value::from(MAX_LIST_METRICS as u64)],
     ))
     .all(db)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .filter_map(|row| {
-            Some(CustomMetricSummary {
-                metric_key: row.metric_key,
-                label: row.label,
-                computation: MetricComputation::from_db(&row.computation_type)?,
-                entity_type: row.entity_type,
-            })
-        })
-        .collect())
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        let computation = MetricComputation::from_db(&row.computation_type)
+            .ok_or_else(|| corrupt_value("computation_type", &row.computation_type))?;
+        items.push(CustomMetricSummary {
+            metric_key: row.metric_key,
+            label: row.label,
+            computation,
+            entity_type: row.entity_type,
+        });
+    }
+    Ok(items)
 }
 
 /// A tenant's custom metric graph by `metric_key`, or `None` when absent
@@ -593,7 +647,7 @@ pub async fn fetch_custom_metric(
     let dimensions = fetch_dimension_keys(db, row.definition_id).await?;
     let inputs = fetch_input_rows(db, row.definition_id).await?;
 
-    Ok(Some(row.into_graph(source, measures, dimensions, inputs)))
+    Ok(Some(row.into_graph(source, measures, dimensions, inputs)?))
 }
 
 /// The tenant's full custom metric graphs (for export).
@@ -648,13 +702,17 @@ struct SourceRow {
 }
 
 impl DefinitionRow {
+    /// Rebuild the portable graph from stored rows, failing loud on any value
+    /// that does not round-trip. A corrupt row must not be silently reshaped
+    /// into a different metric — export would otherwise carry the substitute to
+    /// another stand.
     fn into_graph(
         self,
         source: SourceRow,
         measures: Vec<String>,
         dimensions: Vec<String>,
         inputs: Vec<CustomMetricInput>,
-    ) -> CustomMetric {
+    ) -> Result<CustomMetric, DbErr> {
         let transform = ValueTransform {
             multiplier: self.transform_multiplier,
             offset: self.transform_offset,
@@ -662,7 +720,17 @@ impl DefinitionRow {
             clamp_max: self.transform_clamp_max,
         };
 
-        CustomMetric {
+        let format = MetricFormat::from_db(&self.format)
+            .ok_or_else(|| corrupt_value("format", &self.format))?;
+        let direction = MetricDirection::from_db(&self.direction)
+            .ok_or_else(|| corrupt_value("direction", &self.direction))?;
+        let computation = MetricComputation::from_db(&self.computation_type)
+            .ok_or_else(|| corrupt_value("computation_type", &self.computation_type))?;
+        let observation_sql = source
+            .observation_sql
+            .ok_or_else(|| corrupt_value("observation_sql", "NULL"))?;
+
+        Ok(CustomMetric {
             metric_key: self.metric_key,
             label: self.label,
             short_label: self.short_label,
@@ -670,22 +738,26 @@ impl DefinitionRow {
             explanation: self.explanation,
             entity_type: self.entity_type,
             unit: self.unit,
-            format: MetricFormat::from_db(&self.format).unwrap_or(MetricFormat::Integer),
-            direction: MetricDirection::from_db(&self.direction)
-                .unwrap_or(MetricDirection::Neutral),
-            computation: MetricComputation::from_db(&self.computation_type)
-                .unwrap_or(MetricComputation::Sum),
+            format,
+            direction,
+            computation,
             scale: self.scale,
             peer_cohort_key: self.peer_cohort_key,
             transform: (!transform.is_identity()).then_some(transform),
             source_key: source.source_key,
-            observation_sql: source.observation_sql.unwrap_or_default(),
+            observation_sql,
             measures,
             dimensions,
             inputs,
             origin: Some("custom".to_owned()),
-        }
+        })
     }
+}
+
+/// A stored custom-metric value that does not round-trip through its `from_db`
+/// parser: a corrupt row, surfaced loud rather than reshaped.
+fn corrupt_value(field: &str, value: &str) -> DbErr {
+    DbErr::Custom(format!("corrupt custom metric row: {field} = {value:?}"))
 }
 
 async fn fetch_definition_row<C: ConnectionTrait>(
@@ -789,17 +861,17 @@ async fn fetch_input_rows<C: ConnectionTrait>(
         [uuid_value(definition_id)],
     ))
     .all(conn)
-    .await
-    .map(|rows| {
-        rows.into_iter()
-            .filter_map(|row| {
-                Some(CustomMetricInput {
-                    role: MetricInputRole::from_db(&row.input_role)?,
-                    measure_key: row.measure_key,
-                })
-            })
-            .collect()
+    .await?
+    .into_iter()
+    .map(|row| {
+        let role = MetricInputRole::from_db(&row.input_role)
+            .ok_or_else(|| corrupt_value("input_role", &row.input_role))?;
+        Ok(CustomMetricInput {
+            role,
+            measure_key: row.measure_key,
+        })
     })
+    .collect()
 }
 
 async fn fetch_custom_ids<C: ConnectionTrait>(
@@ -1009,5 +1081,71 @@ mod tests {
             measure_key: "not_declared".to_owned(),
         }];
         assert_eq!(rejected_field(&graph), "inputs");
+    }
+
+    fn definition_row() -> DefinitionRow {
+        DefinitionRow {
+            definition_id: Uuid::now_v7(),
+            metric_key: "custom.example".to_owned(),
+            label: "Example".to_owned(),
+            short_label: None,
+            description: None,
+            explanation: None,
+            unit: None,
+            format: "integer".to_owned(),
+            direction: "neutral".to_owned(),
+            entity_type: "person".to_owned(),
+            computation_type: "sum".to_owned(),
+            scale: None,
+            transform_multiplier: None,
+            transform_offset: None,
+            transform_clamp_min: None,
+            transform_clamp_max: None,
+            peer_cohort_key: None,
+        }
+    }
+
+    fn source_row() -> SourceRow {
+        SourceRow {
+            source_id: Uuid::now_v7(),
+            source_key: "custom_example".to_owned(),
+            observation_sql: Some("SELECT 1".to_owned()),
+        }
+    }
+
+    #[test]
+    fn into_graph_rebuilds_a_valid_row_and_stamps_origin() {
+        let graph = definition_row()
+            .into_graph(source_row(), vec!["events".to_owned()], vec![], vec![])
+            .unwrap_or_else(|error| panic!("valid row must rebuild: {error}"));
+        assert_eq!(graph.origin.as_deref(), Some("custom"));
+        assert_eq!(graph.observation_sql, "SELECT 1");
+        assert_eq!(graph.measures, vec!["events".to_owned()]);
+    }
+
+    #[test]
+    fn into_graph_fails_loud_on_corrupt_stored_values() {
+        for mutate in [
+            (|row: &mut DefinitionRow| row.format = "bogus".to_owned()) as fn(&mut DefinitionRow),
+            |row: &mut DefinitionRow| row.direction = "bogus".to_owned(),
+            |row: &mut DefinitionRow| row.computation_type = "bogus".to_owned(),
+        ] {
+            let mut row = definition_row();
+            mutate(&mut row);
+            assert!(
+                row.into_graph(source_row(), vec![], vec![], vec![])
+                    .is_err(),
+                "a corrupt enum must not be silently reshaped"
+            );
+        }
+
+        let mut source = source_row();
+        source.observation_sql = None;
+        assert!(
+            definition_row()
+                .into_graph(source, vec![], vec![], vec![])
+                .is_err(),
+            "a NULL observation_sql on a custom source is corrupt"
+        );
     }
 }
