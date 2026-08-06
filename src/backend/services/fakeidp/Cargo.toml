@@ -42,10 +42,10 @@ jsonwebtoken = { workspace = true }
 serde_yaml = { workspace = true }
 # Test-double-only deps (kept out of the shared table on purpose — nothing in
 # production links these).
-rsa = { version = "0.9", features = ["pem"] }
+rsa = { version = "0.9", features = ["pem", "getrandom"] }
 sha2 = "0.11"
 base64 = "0.23"
-rand = "0.8"
+rand = "0.10"
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json"] }

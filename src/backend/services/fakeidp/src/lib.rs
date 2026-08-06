@@ -30,7 +30,7 @@ use axum::{
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-use rand::RngCore;
+use rand::Rng as _;
 use rsa::RsaPrivateKey;
 use rsa::pkcs8::{EncodePrivateKey, LineEnding};
 use rsa::traits::PublicKeyParts;
@@ -206,7 +206,7 @@ impl AppState {
 /// not our own gateway JWT, and consumers fetch `/jwks` at runtime — so a fresh
 /// key per boot is exactly right and keeps key material out of the repo.
 fn generate_signing_material() -> (EncodingKey, Value) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rsa::rand_core::OsRng;
     let priv_key = RsaPrivateKey::new(&mut rng, 2048).expect("generate RSA key");
     let pem = priv_key
         .to_pkcs8_pem(LineEnding::LF)
@@ -240,7 +240,7 @@ fn now() -> u64 {
 /// Opaque, unguessable token (authorization code / access token / refresh token).
 fn opaque() -> String {
     let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

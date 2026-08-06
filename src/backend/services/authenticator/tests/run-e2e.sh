@@ -198,9 +198,12 @@ AUTH_BASE="http://localhost:$AUTH_PORT" \
   cargo test -p authenticator --test e2e_unauthorized -- --ignored --nocapture
 
 echo "==> run the __override view-as loop (#1941)"
+# --test-threads=1: every test impersonates as the same principal, and one of
+# them exercises DELETE /auth/sessions (revoke-all), which by design reaches
+# the sibling tests' view-as sessions when they run concurrently.
 AUTH_BASE="http://localhost:$AUTH_PORT" AUTH_BASE_DISABLED="http://localhost:$AUTH2_PORT" \
   E2E_USER=dev@company.nonpresent \
-  cargo test -p authenticator --test e2e_override -- --ignored --nocapture
+  cargo test -p authenticator --test e2e_override -- --ignored --nocapture --test-threads=1
 
 echo "==> run the host-keyed issuer map loop (ADR-0003)"
 AUTH_BASE="http://localhost:$AUTH3_PORT" AUTH_FLAT_BASE="http://localhost:$AUTH_PORT" \
