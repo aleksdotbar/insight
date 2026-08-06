@@ -1,7 +1,7 @@
 name: Authenticator — e2e, endpoint coverage
 
-# The authenticator's end-to-end suite (tests/run-e2e.sh: Redis in docker,
-# fakeidp + two authenticator instances as local release binaries, the eight
+# The authenticator's end-to-end suite (tests/run-e2e.sh: Redis + Keycloak in
+# docker, three authenticator instances as local release binaries, the ten
 # e2e_*.rs loops) plus the endpoint coverage gate on top of it: the suite's
 # shared client (tests/common/mod.rs) records every request against the
 # authenticator into a ledger, and the gate job matches that ledger against
@@ -14,8 +14,11 @@ on:
     branches: [main]
     paths:
       - "src/backend/services/authenticator/**"
-      - "src/backend/services/fakeidp/**"
       - "src/backend/libs/authenticator-sdk/**"
+      # The e2e stack imports the generated compose realm (run-e2e.sh), which
+      # gen-realm.py builds from the seed roster.
+      - "deploy/compose/keycloak/**"
+      - "deploy/seed/profiles.py"
       # A workspace-wide dependency bump can break the authenticator build
       # without touching its sources (reqwest 0.12 -> 0.13 did, via
       # openidconnect's pinned HTTP-client impls).
@@ -59,8 +62,9 @@ jobs:
           key: authenticator-e2e
 
       - name: Run the authenticator e2e suite
-        # run-e2e.sh builds fakeidp + authenticator (release), boots the stack,
-        # runs every e2e_*.rs loop serially, and leaves the coverage ledger at
+        # run-e2e.sh builds the authenticator (release), boots the stack
+        # (Redis + Keycloak with the imported generated realm), runs every
+        # e2e_*.rs loop serially, and leaves the coverage ledger at
         # $E2E_COVERAGE_LEDGER (tests/common/mod.rs writes it per response).
         env:
           E2E_COVERAGE_LEDGER: ${{ github.workspace }}/observed_authenticator_endpoints.json
