@@ -15,7 +15,10 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait, Value};
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbBackend, Statement,
+    TransactionTrait, Value,
+};
 use uuid::Uuid;
 
 use crate::domain::seed::{KnownBinding, SeedObservationRow, SourceAccountKey, normalize_email};
@@ -242,36 +245,21 @@ pub async fn latest_email_to_person(
     Ok(map)
 }
 
-/// Apply a seed's resolved observations: `INSERT IGNORE` each into `persons`,
-/// then rebuild the tenant's `account_person_map` and `org_chart` — all in one
-/// transaction, so the log and the derived caches are never left
-/// cross-inconsistent. `author_person_id` stamps the computed `org_chart`
-/// no-parent rows (the seed operation's author). Returns the number of
-/// observation rows actually inserted (duplicates are ignored).
+/// Rebuild the tenant's derived caches inside an open transaction: the SCD2
+/// `account_person_map` and `org_chart`, both re-derived from `persons`. Shared
+/// by the persons-seed and the operator corrections so a journal write and its
+/// caches always commit together. Returns the `org_chart` rows written.
 ///
 /// # Errors
 ///
-/// Returns an error if any statement fails; the transaction is rolled back.
-// The length is dominated by the verbatim org_chart CTE string constant, not
-// control flow — keeping the SQL inline (co-located, greppable) over hoisting it.
-#[allow(clippy::too_many_lines)]
-pub async fn apply(
-    db: &DatabaseConnection,
+/// Returns an error if any statement fails; the transaction is the caller's to
+/// roll back.
+#[allow(clippy::too_many_lines)] // dominated by the verbatim org_chart CTE
+pub(crate) async fn rebuild_derived_caches(
+    txn: &DatabaseTransaction,
     tenant_id: Uuid,
     author_person_id: Uuid,
-    rows: &[SeedObservationRow],
-) -> anyhow::Result<ApplyCounts> {
-    // Idempotent insert — uq_person_observation dedups a re-emitted identical
-    // observation; INSERT IGNORE swallows the duplicate-key error. Batched
-    // (multi-row VALUES) so N observations cost ~N/INSERT_CHUNK round-trips
-    // instead of N — 25k+ single-row inserts over a remote pool take minutes;
-    // batches take seconds. Same semantics as per-row INSERT IGNORE.
-    const INSERT_PREFIX: &str = "INSERT IGNORE INTO persons \
-        (value_type, insight_source_type, insight_source_id, insight_tenant_id, \
-         value_id, value_full_text, value, person_id, author_person_id, reason, \
-         created_at) VALUES ";
-    const ROW_TUPLE: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    const INSERT_CHUNK: usize = 500; // 500 rows × 11 cols = 5500 binds (< 65535)
+) -> anyhow::Result<u64> {
     const DELETE_APM: &str = "DELETE FROM account_person_map WHERE insight_tenant_id = ?";
     const INSERT_APM: &str = r"
         INSERT INTO account_person_map
@@ -514,36 +502,6 @@ pub async fn apply(
 
     let tenant_bytes = tenant_id.as_bytes().to_vec();
     let author_bytes = author_person_id.as_bytes().to_vec();
-    let txn = db.begin().await?;
-
-    let mut inserted = 0u64;
-    for chunk in rows.chunks(INSERT_CHUNK) {
-        let values = vec![ROW_TUPLE; chunk.len()].join(", ");
-        let sql = format!("{INSERT_PREFIX}{values}");
-        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 11);
-        for r in chunk {
-            params.push(r.value_type.clone().into());
-            params.push(r.source_type.clone().into());
-            params.push(r.source_id.as_bytes().to_vec().into());
-            params.push(tenant_bytes.clone().into());
-            params.push(r.value_id.clone().into());
-            params.push(r.value_full_text.clone().into());
-            params.push(r.value.clone().into());
-            params.push(r.person_id.as_bytes().to_vec().into());
-            params.push(r.author_person_id.as_bytes().to_vec().into());
-            params.push(r.reason.clone().into());
-            params.push(r.created_at.into());
-        }
-        let res = txn
-            .execute(Statement::from_sql_and_values(
-                DbBackend::MySql,
-                &sql,
-                params,
-            ))
-            .await?;
-        inserted += res.rows_affected();
-    }
-    tracing::info!(inserted, "persons-seed apply: observations inserted");
 
     // Rebuild account_person_map for the tenant (delete + reinsert).
     txn.execute(Statement::from_sql_and_values(
@@ -588,6 +546,73 @@ pub async fn apply(
         org_chart_rows_rebuilt,
         "persons-seed apply: org_chart rebuilt"
     );
+
+    Ok(org_chart_rows_rebuilt)
+}
+
+/// Apply a seed's resolved observations: `INSERT IGNORE` each into `persons`,
+/// then rebuild the tenant's `account_person_map` and `org_chart` — all in one
+/// transaction, so the log and the derived caches are never left
+/// cross-inconsistent. `author_person_id` stamps the computed `org_chart`
+/// no-parent rows (the seed operation's author). Returns the number of
+/// observation rows actually inserted (duplicates are ignored).
+///
+/// # Errors
+///
+/// Returns an error if any statement fails; the transaction is rolled back.
+// The length is dominated by the verbatim org_chart CTE string constant, not
+// control flow — keeping the SQL inline (co-located, greppable) over hoisting it.
+#[allow(clippy::too_many_lines)]
+pub async fn apply(
+    db: &DatabaseConnection,
+    tenant_id: Uuid,
+    author_person_id: Uuid,
+    rows: &[SeedObservationRow],
+) -> anyhow::Result<ApplyCounts> {
+    // Idempotent insert — uq_person_observation dedups a re-emitted identical
+    // observation; INSERT IGNORE swallows the duplicate-key error. Batched
+    // (multi-row VALUES) so N observations cost ~N/INSERT_CHUNK round-trips
+    // instead of N — 25k+ single-row inserts over a remote pool take minutes;
+    // batches take seconds. Same semantics as per-row INSERT IGNORE.
+    const INSERT_PREFIX: &str = "INSERT IGNORE INTO persons \
+        (value_type, insight_source_type, insight_source_id, insight_tenant_id, \
+         value_id, value_full_text, value, person_id, author_person_id, reason, \
+         created_at) VALUES ";
+    const ROW_TUPLE: &str = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    const INSERT_CHUNK: usize = 500; // 500 rows × 11 cols = 5500 binds (< 65535)
+    let tenant_bytes = tenant_id.as_bytes().to_vec();
+    let txn = db.begin().await?;
+
+    let mut inserted = 0u64;
+    for chunk in rows.chunks(INSERT_CHUNK) {
+        let values = vec![ROW_TUPLE; chunk.len()].join(", ");
+        let sql = format!("{INSERT_PREFIX}{values}");
+        let mut params: Vec<Value> = Vec::with_capacity(chunk.len() * 11);
+        for r in chunk {
+            params.push(r.value_type.clone().into());
+            params.push(r.source_type.clone().into());
+            params.push(r.source_id.as_bytes().to_vec().into());
+            params.push(tenant_bytes.clone().into());
+            params.push(r.value_id.clone().into());
+            params.push(r.value_full_text.clone().into());
+            params.push(r.value.clone().into());
+            params.push(r.person_id.as_bytes().to_vec().into());
+            params.push(r.author_person_id.as_bytes().to_vec().into());
+            params.push(r.reason.clone().into());
+            params.push(r.created_at.into());
+        }
+        let res = txn
+            .execute(Statement::from_sql_and_values(
+                DbBackend::MySql,
+                &sql,
+                params,
+            ))
+            .await?;
+        inserted += res.rows_affected();
+    }
+    tracing::info!(inserted, "persons-seed apply: observations inserted");
+
+    let org_chart_rows_rebuilt = rebuild_derived_caches(&txn, tenant_id, author_person_id).await?;
 
     txn.commit().await?;
     Ok(ApplyCounts {

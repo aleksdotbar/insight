@@ -5,11 +5,12 @@
 //! deviation: divergent e-mail groups keep per-account bindings (classified by
 //! binding author) instead of collapsing onto the first binding.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use chrono::TimeDelta;
 use sea_orm::prelude::DateTime;
 use uuid::Uuid;
+
+use super::observation_slot::SlotAllocator;
 
 /// Identifies one source-native account: the source instance (`source_type` +
 /// `source_id`) plus the account's native id within it.
@@ -409,7 +410,7 @@ pub fn assignments_to_rows(
     author_person_id: Uuid,
 ) -> Vec<SeedObservationRow> {
     let mut rows = Vec::new();
-    let mut taken: HashSet<ObservationKey> = HashSet::new();
+    let mut slots = SlotAllocator::new();
 
     for assignment in assignments {
         let reason = if assignment.kind == AssignmentKind::LinkedByEmail {
@@ -424,7 +425,13 @@ pub fn assignments_to_rows(
                     continue; // oversized — dropped per the routing rule
                 }
 
-                let created_at = next_free_slot(&mut taken, assignment.person_id, obs);
+                let created_at = slots.claim(
+                    assignment.person_id,
+                    &obs.source_type,
+                    obs.source_id,
+                    &obs.value_type,
+                    obs.synced_at,
+                );
 
                 rows.push(SeedObservationRow {
                     value_type: obs.value_type.clone(),
@@ -444,39 +451,10 @@ pub fn assignments_to_rows(
     rows
 }
 
-/// The columns of `uq_person_observation` this builder controls (the tenant is
-/// bound once per run by the caller).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ObservationKey {
-    person_id: Uuid,
-    source_type: String,
-    source_id: Uuid,
-    value_type: String,
-    created_at: DateTime,
-}
-
-/// Claim the observation's own timestamp, or the next whole microsecond that is
-/// still free for this key.
-fn next_free_slot(
-    taken: &mut HashSet<ObservationKey>,
-    person_id: Uuid,
-    obs: &IdentityInputRow,
-) -> DateTime {
-    let mut key = ObservationKey {
-        person_id,
-        source_type: obs.source_type.clone(),
-        source_id: obs.source_id,
-        value_type: obs.value_type.clone(),
-        created_at: obs.synced_at,
-    };
-    while !taken.insert(key.clone()) {
-        key.created_at += TimeDelta::microseconds(1);
-    }
-    key.created_at
-}
-
 #[cfg(test)]
 mod tests {
+    use chrono::TimeDelta;
+
     use super::*;
 
     fn prof(source_type: &str, account_id: &str, email: Option<&str>, closed: bool) -> SeedProfile {
