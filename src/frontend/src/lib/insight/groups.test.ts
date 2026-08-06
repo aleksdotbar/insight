@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   GROUPS,
   groupIdForMetricKey,
+  type DrilldownBlock,
   type GroupId,
   type MetricGroup,
 } from "@/lib/insight/groups";
@@ -31,7 +32,8 @@ describe("groups registry", () => {
   it("splits closed issues by type, capped with a remainder group", () => {
     const taskDelivery = groupById("task_delivery");
     const byType = taskDelivery.drilldown.find(
-      (block) => block.view === "timeseries" && block.id === "closed-by-type"
+      (block): block is Extract<DrilldownBlock, { view: "timeseries" }> =>
+        block.view === "timeseries" && block.id === "closed-by-type"
     );
     expect(byType?.metrics).toEqual(["tasks.closed"]);
     expect(byType?.groupBy).toEqual({
