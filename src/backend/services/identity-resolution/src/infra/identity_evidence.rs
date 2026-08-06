@@ -178,10 +178,16 @@ impl ClickHouseEvidenceReader {
     }
 }
 
-/// ClickHouse reports an absent table as `UNKNOWN_TABLE` (code 60).
+/// ClickHouse reports an absent table as `UNKNOWN_TABLE` (code 60) — and a
+/// fresh install lacks the whole `identity` database until its first build,
+/// which reads as `UNKNOWN_DATABASE` (code 81). Both mean "nothing observed
+/// yet", never a failure to answer.
 fn is_missing_relation(error: &clickhouse::error::Error) -> bool {
     let message = error.to_string();
-    message.contains("UNKNOWN_TABLE") || message.contains("code: 60")
+    message.contains("UNKNOWN_TABLE")
+        || message.contains("code: 60")
+        || message.contains("UNKNOWN_DATABASE")
+        || message.contains("code: 81")
 }
 
 fn non_empty(value: String) -> Option<String> {
@@ -205,6 +211,33 @@ mod tests {
             email: email.to_owned(),
             username: username.to_owned(),
         }
+    }
+
+    #[test]
+    fn an_absent_database_reads_as_no_observations_like_an_absent_table() {
+        // A fresh install has neither `identity.identity_inputs` nor the
+        // `identity` database itself — dbt creates both on its first build.
+        for (label, message) in [
+            (
+                "absent table",
+                "Code: 60. DB::Exception: ... (UNKNOWN_TABLE)",
+            ),
+            (
+                "absent database",
+                "Code: 81. DB::Exception: Database identity does not exist. (UNKNOWN_DATABASE)",
+            ),
+        ] {
+            let error = clickhouse::error::Error::BadResponse(message.to_owned());
+            assert!(
+                is_missing_relation(&error),
+                "should read as missing: {label}"
+            );
+        }
+
+        let real = clickhouse::error::Error::BadResponse(
+            "Code: 241. DB::Exception: Memory limit exceeded".to_owned(),
+        );
+        assert!(!is_missing_relation(&real), "a real failure must surface");
     }
 
     #[test]
