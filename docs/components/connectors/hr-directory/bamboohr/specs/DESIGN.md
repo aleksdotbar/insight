@@ -38,9 +38,9 @@
 
 ### 1.1 Architectural Vision
 
-The BambooHR connector is an Airbyte declarative manifest connector (YAML, no custom code) that extracts HR directory data from the BambooHR REST API v1. It produces three Bronze streams:
+The BambooHR connector is a Python CDK source that extracts HR directory data from the BambooHR REST API v1. It produces three Bronze streams:
 
-1. **`employees`** — employee directory via the custom report endpoint (`POST /reports/custom`), collecting insights-relevant fields only.
+1. **`employees`** — employee directory via the custom report endpoint (`POST /reports/custom`), collecting every field BambooHR defines.
 2. **`leave_requests`** — time-off requests via `GET /time_off/requests` with fixed date range.
 3. **`meta_fields`** — field metadata (standard + custom field definitions) via `GET /meta/fields`.
 
@@ -82,8 +82,8 @@ The BambooHR connector is an Airbyte declarative manifest connector (YAML, no cu
 |-------|---------------|------------|
 | Source API | BambooHR REST API v1 endpoints | REST / JSON |
 | Authentication | API key via Authorization header | `BasicHttpAuthenticator` |
-| Connector | Stream definitions, incremental sync, error handling | Airbyte declarative manifest (YAML) |
-| Execution | Container runtime | Airbyte Declarative Connector framework (CDK v6.44+) |
+| Connector | Stream definitions, field discovery, error handling | Python CDK source (`source_bamboohr`) |
+| Execution | Container runtime | Airbyte Python CDK |
 | Bronze | Raw data storage with source-native schema | Destination connector (ClickHouse) |
 
 ---
@@ -96,7 +96,7 @@ The BambooHR connector is an Airbyte declarative manifest connector (YAML, no cu
 
 - [ ] `p1` - **ID**: `cpt-insightspec-principle-bhr-one-stream-per-endpoint`
 
-Each stream maps to exactly one BambooHR API endpoint. This keeps the manifest simple, debuggable, and aligned with Airbyte's stream-per-resource model.
+Each stream maps to exactly one BambooHR API endpoint. This keeps the connector simple, debuggable, and aligned with Airbyte's stream-per-resource model. The `employees` stream reads `GET /meta/fields` first to build its request, which is a request-construction step rather than a second resource.
 
 #### Source-Native Schema
 
@@ -150,17 +150,17 @@ All streams use full refresh sync. The custom report endpoint does not support s
 
 ### 3.2 Component Model
 
-#### BambooHR Connector Manifest
+#### BambooHR CDK Source
 
-- [ ] `p1` - **ID**: `cpt-insightspec-component-bhr-manifest`
+- [ ] `p1` - **ID**: `cpt-insightspec-component-bhr-source`
 
 ##### Why this component exists
 
-Defines the complete BambooHR connector as a YAML declarative manifest — the single artifact required to extract HR data from BambooHR into the Insight platform's Bronze layer.
+Extracts HR data from BambooHR into the Insight platform's Bronze layer. BambooHR has no request form that returns every employee field, so the field list is built per sync from the field-metadata endpoint — a per-sync request construction that a declarative manifest cannot express.
 
 ##### Responsibility scope
 
-Defines 3 streams with: API key auth via `Authorization` header, POST request for custom reports, GET requests for time-off and metadata, `NoPagination` (full dataset responses), full refresh sync on all streams, `CompositeErrorHandler` for 429/503/5XX, `AddFields` for `tenant_id`, `_source`, and `_extracted_at`, and inline JSON schemas for all streams.
+Defines 3 streams with: API key auth via HTTP Basic, POST request for custom reports, GET requests for time-off and metadata, no pagination (full dataset responses), full refresh sync on all streams, retry with `Retry-After`-aware backoff for 408/429/5XX, immediate failure with an actionable message for 401/403, the `tenant_id` / `source_id` / `unique_key` framework fields, and inline JSON schemas for all streams.
 
 ##### Responsibility boundaries
 
@@ -286,7 +286,7 @@ None within this artifact. At runtime, the connector is executed by the Airbyte 
 | Dependency | Interface Used | Purpose |
 |-----------|---------------|---------|
 | BambooHR REST API v1 | HTTPS / JSON | Source system for employee, leave, and metadata extraction |
-| Airbyte Declarative Connector framework (CDK v6.44+) | Container runtime | Executes the YAML manifest |
+| Airbyte Python CDK | Container runtime | Executes the connector image |
 | ClickHouse destination connector | Airbyte protocol | Writes extracted records to Bronze tables |
 
 ### 3.6 Interactions & Sequences
@@ -435,8 +435,8 @@ Monitoring table — not an analytics source.
 
 ```
 Connection: bamboohr-{domain}
-├── Source image: airbyte/source-declarative-manifest
-├── Manifest: src/ingestion/connectors/hr-directory/bamboohr/connector.yaml
+├── Source image: ghcr.io/constructorfabric/source-bamboohr-insight
+├── Source: src/ingestion/connectors/hr-directory/bamboohr/source_bamboohr/
 ├── Descriptor: src/ingestion/connectors/hr-directory/bamboohr/descriptor.yaml
 ├── Source config: tenant_id, api_key, domain
 ├── Configured catalog: 3 streams (all full refresh)
@@ -474,7 +474,7 @@ BambooHR `id` and `supervisorEId` are BambooHR-internal identifiers — retained
 
 2. **Nested response objects**: Leave requests contain nested `status`, `type`, `amount`, `dates`, and `notes` objects. These are stored as JSON strings in Bronze, preserving the full source-native structure for Silver-layer extraction.
 
-3. **Custom report field list**: The employee field list is hardcoded in the manifest. To add custom fields, the manifest must be updated with additional field names (discovered via `meta_fields`).
+3. **Custom report field list**: The employee field list is built per sync from `GET /meta/fields` — every non-deprecated field except a fixed sensitive-field exclusion list is requested, so customer-defined fields need no configuration. The bronze columns the stream declares are always requested, whatever the field metadata returns. Fields outside those columns are preserved in `raw_data`, which is what the SCD2 snapshot hashes and the field-level history diffs, so a custom field is versioned and dated like any standard one.
 
 4. **Department hierarchy**: BambooHR does not expose a dedicated departments endpoint with parent-child relationships. Department names are available inline in employee records. Org hierarchy construction from department data requires the Silver layer to infer relationships from `department` + `division` fields or from `supervisorEmail` chains.
 
@@ -491,7 +491,7 @@ BambooHR `id` and `supervisorEId` are BambooHR-internal identifiers — retained
 
 ## 6. Non-Applicability Statements
 
-- **Custom Python components**: Not required. All BambooHR extraction patterns are handled by declarative manifest components.
+- **Field-level collection policy as configuration**: Not offered. The sensitive-field exclusion list is fixed in the connector, so no deployment can widen collection by editing a Secret. Customer-defined fields carry no classification in BambooHR's field metadata, so the exclusion covers standard field aliases only.
 - **OAuth 2.0**: Not implemented. API key authentication is sufficient for read-only extraction.
 - **Pagination**: Not applicable. BambooHR endpoints return complete datasets.
 - **Webhook / real-time streaming**: Not applicable. BambooHR does not offer webhooks for data change notifications.
