@@ -5,10 +5,11 @@
 # so iterating on seed.py doesn't require a rebuild; rebuild when
 # pyproject.toml or the packaged sources change.
 
-# Python 3.13 to match this seeder's pyproject (ruff target-version /
-# mypy python_version = 3.13). dbt's dependency chain (dbt-common ->
-# mashumaro) does not import on 3.14 yet, and dependabot.yml ignores that
-# bump until it does.
+# Above the package's >=3.12 floor rather than at it: this image is only the
+# compose runner, and the floor exists for the toolbox image (python:3.12-slim)
+# that carries the same package into a cluster. dbt's dependency chain
+# (dbt-common -> mashumaro) does not import on 3.14 yet, and dependabot.yml
+# ignores that bump until it does.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -27,19 +28,18 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl bash \
     && rm -rf /var/lib/apt/lists/*
 
-# Source is copied before the install so the build backend can package the
-# flat modules + generators/. At runtime the source is bind-mounted (see
-# docker-compose.yml seed-sample service); these COPY lines are also the
-# fallback for `docker build && docker run` without a volume — exercised only
-# by ad-hoc inspection, so the `generators/` package must come along or
-# `silver.py`'s `from generators import ...` fails at import time.
+# Source is copied before the install so the build backend can package it. At
+# runtime the tool directory is bind-mounted over /app (see docker-compose.yml
+# seed-sample service); this COPY is also the fallback for
+# `docker build && docker run` without a volume.
 COPY pyproject.toml .
-COPY *.py ./
-COPY generators ./generators/
+COPY insight_seed ./insight_seed/
 RUN pip install .
 
 RUN useradd -U -u 1000 -m appuser
 USER 1000
 
-ENTRYPOINT ["python", "seed.py"]
+# `-m` rather than a path: /app is the package's parent both in the image and
+# under the bind mount, so the same invocation works either way.
+ENTRYPOINT ["python", "-m", "insight_seed"]
 CMD ["all"]

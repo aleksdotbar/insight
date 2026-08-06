@@ -117,7 +117,7 @@ jobs:
           fi
           changed="$(git diff --name-only "$BASE" "$HEAD")"
           echo "$changed" | sed 's/^/  /'
-          if echo "$changed" | grep -qE '^(tests/(stand|lib)/|tests/pyproject\.toml|tests/uv\.lock|deploy/(seed|compose)/|docker-compose\.yml|dev-compose\.sh|src/backend/|src/frontend/helm/|docs/components/backend/.*/openapi\.json|\.github/workflows/e2e-stand\.yml|\.github/workflows/scripts/redact-playwright-trace\.py)'; then
+          if echo "$changed" | grep -qE '^(tests/(stand|lib)/|tests/pyproject\.toml|tests/uv\.lock|deploy/compose/|src/ingestion/tools/seed/|docker-compose\.yml|dev-compose\.sh|src/backend/|src/frontend/helm/|docs/components/backend/.*/openapi\.json|\.github/workflows/e2e-stand\.yml|\.github/workflows/scripts/redact-playwright-trace\.py)'; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"

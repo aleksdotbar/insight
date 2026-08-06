@@ -82,7 +82,7 @@ one and only one tenant per token.
 artifact rebuilt from the seed roster on every `up`. To change realm
 shape, edit the generator's inputs:
 
-- [`deploy/seed/profiles.py`](../../seed/profiles.py) — the roster (`build_roster`),
+- [`src/ingestion/tools/seed/profiles.py`](../../../src/ingestion/tools/seed/profiles.py) — the roster (`build_roster`),
   team/role assignments, dev-lead email resolution.
 - [`gen-realm.py`](./gen-realm.py) — the realm generator (clients, protocol mappers,
   role mapping). The `insight-authenticator` client redirect + secret are parameters

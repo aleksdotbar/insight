@@ -1,8 +1,9 @@
 """Seed manifest — the machine-readable description of a seeded stand.
 
-Written to the fixed path `deploy/seed/manifest.json` (`/app/manifest.json`
-in the seed container, the same file through the bind mount). Downstream test
-phases read that path; it is frozen and has no env knob.
+Written to one fixed path — `manifest.json` at the tool root, beside this
+package (`/app/manifest.json` in the compose seed container, the same file
+through the bind mount). Downstream test phases read that path; it is frozen
+and has no env knob.
 
 The builder is a PURE FUNCTION of (roster, supplied env, committed
 constants). It queries neither MariaDB nor ClickHouse. That is what lets the
@@ -25,8 +26,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import profiles
-from golden_metrics import GOLDEN_METRICS, GOLDEN_METRICS_NOTE
+from . import config, profiles
+from .golden_metrics import GOLDEN_METRICS, GOLDEN_METRICS_NOTE
 
 MANIFEST_VERSION = 1
 
@@ -79,6 +80,9 @@ CANONICAL_ENV: dict[str, str] = {
     "SEED_DAYS": "60",
     "AUTH_MODE": "",
     "AUTHENTICATOR_OIDC_ISSUER": "",
+    # The canonical stand carries the cross-tenant refusal fixture, so the
+    # committed PROFILE.md describes a compose stand — the one the suite reads.
+    config.CROSS_TENANT_FIXTURE_ENV: "1",
 }
 
 # Literals that must never reach the manifest. Checked before the file is
@@ -94,30 +98,36 @@ _FORBIDDEN_LITERALS = frozenset(
 )
 _FORBIDDEN_KEY_SUBSTRINGS = ("password", "secret", "token", "credential", "passwd")
 
+#: The tool directory: the package's home, holding the artifacts it writes
+#: (`manifest.json`) and the ones it renders (`PROFILE.md`).
+_TOOL_ROOT = Path(__file__).resolve().parents[1]
+
 
 def manifest_path() -> Path:
-    """The frozen manifest location. No env knob by design."""
-    return Path(__file__).resolve().parent / "manifest.json"
+    """The frozen manifest location. No env knob by design.
+
+    The tool directory, not the package directory: the manifest is a per-stand
+    artifact this package produces, and its readers (the stand suite, the
+    compose bind mount) name that path.
+    """
+    return _TOOL_ROOT / "manifest.json"
 
 
-def _anchor(env: Mapping[str, str]) -> _dt.date:
-    raw = (env.get("SEED_ANCHOR_DATE") or "").strip()
-    if raw and raw.lower() != "today":
-        return _dt.date.fromisoformat(raw)
-    return _dt.datetime.now(_dt.UTC).date() - _dt.timedelta(days=1)
-
-
-def _days(env: Mapping[str, str]) -> int:
-    raw = (env.get("SEED_DAYS") or "").strip()
-    return int(raw) if raw else 60
+# The window comes from `config`, the same reader the generators use, so the
+# window this document reports and the dates the rows carry cannot disagree —
+# two independent `now()` calls straddling UTC midnight is exactly how they
+# would.
+_anchor = config.parse_anchor_date
+_days = config.parse_seed_days
 
 
 def seed_revision() -> str:
     """Content hash over the seed package's Python sources.
 
-    Identifies the generator code that produced a stand, with no git
-    dependency and no clock. Any edit under deploy/seed changes it, which is
-    the point: it is what makes a committed PROFILE.md detectably stale.
+    Identifies the generator code that produced a stand, with no git dependency
+    and no clock. Any edit to the package changes it, which is the point: it is
+    what makes a committed PROFILE.md detectably stale. Tests are deliberately
+    outside the hash — they cannot change what a run writes.
     """
     root = Path(__file__).resolve().parent
     digest = hashlib.sha256()
@@ -256,10 +266,15 @@ def build_manifest(
     days = _days(env)
     window_start = anchor - _dt.timedelta(days=days - 1)
 
-    personas = [
-        _persona(p)
-        for p in (*profiles.build_roster(dev_email), *profiles.build_other_tenant_roster())
-    ]
+    # The second tenant's person appears here only when the seed run actually
+    # wrote them (`identity.py` reads the same switch). Advertising a fixture
+    # whose row does not exist would turn every test that declares
+    # `requires_seed("other_tenant_lead")` from a skip into a failure.
+    roster = list(profiles.build_roster(dev_email))
+    if config.cross_tenant_fixture_enabled(env):
+        roster += profiles.build_other_tenant_roster()
+
+    personas = [_persona(p) for p in roster]
 
     auth_mode = (env.get("AUTH_MODE") or "").strip().lower()
     issuer = (env.get("AUTHENTICATOR_OIDC_ISSUER") or "").strip()

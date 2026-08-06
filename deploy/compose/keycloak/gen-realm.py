@@ -2,7 +2,7 @@
 """Generate the `insight` Keycloak realm from the seeded 25-person org.
 
 Reads the same roster builder the DB seeder uses
-(`deploy/seed/profiles.py::build_roster`) so every user in the realm
+(`src/ingestion/tools/seed/profiles.py::build_roster`) so every user in the realm
 matches a row in `identity.persons`, then emits an importable Keycloak
 realm JSON: 26 users (the 25-person org plus the admin operator), the
 `insight` + `insight-authenticator` clients, their 5 shared protocol
@@ -21,12 +21,19 @@ import os
 import sys
 from pathlib import Path
 
-# `deploy/seed` is a sibling package (not installed), so it has to be put on
-# sys.path explicitly to import `profiles` from this script's location.
-_SEED_DIR = Path(__file__).resolve().parents[2] / "seed"
-sys.path.insert(0, str(_SEED_DIR))
+# The seed package (not installed) has to be put on sys.path explicitly to
+# import it from this script's location. parents[3] = repo root; the entry
+# added is the package's PARENT, so `insight_seed` imports as itself.
+_SEED_TOOL_DIR = Path(__file__).resolve().parents[3] / "src/ingestion/tools/seed"
+sys.path.insert(0, str(_SEED_TOOL_DIR))
 
-from profiles import TENANT_OTHER, Person, build_other_tenant_roster, build_roster, get_dev_user_email  # noqa: E402
+from insight_seed.profiles import (  # noqa: E402
+    TENANT_OTHER,
+    Person,
+    build_other_tenant_roster,
+    build_roster,
+    get_dev_user_email,
+)
 
 REALM_NAME = "insight"
 DEV_PASSWORD = "insight-dev"
@@ -247,10 +254,12 @@ def main() -> None:
     # Explicit --dev-email wins; otherwise fall back to DEV_USER_EMAIL via
     # get_dev_user_email() (which fail-fasts if that is also unset).
     dev_user_email = args.dev_email if args.dev_email else get_dev_user_email()
-    # Same fallback value as deploy/seed/identity.py's run() — that script's
-    # own TENANT_DEFAULT_ID lookup carries the identical default, so this
-    # mirrors (rather than introduces) that convention.
-    tenant_id = os.environ.get(  # RULE-DEFAULTS-OK: mirrors deploy/seed/identity.py's TENANT_DEFAULT_ID default, so the realm's tenant_id claim converges with an un-configured seed run
+    # The compose stack's tenant. The seeder REQUIRES `TENANT_DEFAULT_ID` and
+    # keeps no default of its own (rows under the wrong tenant are invisible to
+    # every login), so this is the compose convention's only remaining home:
+    # docker-compose.yml passes the same value to the seeder, and both converge
+    # on it when nobody sets one.
+    tenant_id = os.environ.get(  # RULE-DEFAULTS-OK: the compose tenant, mirrored by docker-compose.yml's TENANT_DEFAULT_ID default so the realm's tenant_id claim matches what the seed writes
         "TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953"
     )
 

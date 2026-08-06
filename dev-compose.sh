@@ -464,7 +464,7 @@ cmd_up() {
     echo "      Remove AUTH_MODE from $env_file to silence this." >&2
   fi
   AUTH_MODE="keycloak"
-  # The seed-sample container reads AUTH_MODE too (deploy/seed/profiles.py's
+  # The seed-sample container reads AUTH_MODE too (src/ingestion/tools/seed/profiles.py's
   # get_login_id_pairs) to pick which roster personas get a login-id fixture —
   # export so the child `docker compose` process's env-var interpolation sees it.
   export AUTH_MODE
@@ -655,7 +655,7 @@ YML
   # id to their OWN roster uuid, so sub IS that uuid — not the fixed
   # "fakeidp|dev" string fakeidp issues), so it must be seeded/looked-up
   # under its own source_type, not the fakeidp default (see
-  # deploy/seed/profiles.py::get_login_id_pairs).
+  # src/ingestion/tools/seed/profiles.py::get_login_id_pairs).
   export AUTHENTICATOR_IDP_SOURCE_TYPE="keycloak"
   echo "authenticator issuer → ${AUTHENTICATOR_OIDC_ISSUER}"
 
@@ -1097,7 +1097,7 @@ Without that bounce, every metric stays cached at the boot-time
 and section badges read "no peer data" everywhere.
 Tracking upstream as constructorfabric/insight#1307.
 
-See deploy/seed/README.md for the ruff/mypy/venv setup.
+See src/ingestion/tools/seed/README.md for the ruff/mypy/venv setup.
 EOF
 }
 
@@ -1475,7 +1475,7 @@ test_stand_write_env() {
 #
 # The list is committed rather than derived. It was read off the evidence
 # models' own sources (src/ingestion/gold/<family>_metric_evidence.sql) against
-# what deploy/seed/generators/ writes:
+# what src/ingestion/tools/seed/generators/ writes:
 #
 #   task    <- task_issue_state / task_status_spans / task_worklog_flow  (task.py)
 #   git     <- class_git_{commits,file_changes,pull_requests,…}          (git.py)
@@ -1623,7 +1623,7 @@ test_stand_test_in_image() {
     return 1
   fi
 
-  local manifest="deploy/seed/manifest.json"
+  local manifest="src/ingestion/tools/seed/manifest.json"
   [[ -f "$manifest" ]] || {
     echo "ERROR: $manifest not found — seed the stand first: ./dev-compose.sh test-stand seed" >&2
     return 1; }
@@ -1648,7 +1648,11 @@ test_stand_test_in_image() {
     --user "$(id -u):$(id -g)"
     --network "container:${TEST_STAND_GATEWAY_CONTAINER}"
     -e "INSIGHT_STAND_BASE_URL=http://localhost:${TEST_STAND_GATEWAY_CONTAINER_PORT}"
-    -v "$PWD/${manifest}:/deploy/seed/manifest.json:ro"
+    # Mounted at a stable path and NAMED, rather than reproducing the suite's
+    # own repo-relative arithmetic inside an image where the tree lives at
+    # /tests and there is nothing above it.
+    -v "$PWD/${manifest}:/stand/manifest.json:ro"
+    -e "INSIGHT_STAND_MANIFEST=/stand/manifest.json"
     -v "$PWD/${TEST_STAND_ARTIFACT_DIR}:/tests/${TEST_STAND_ARTIFACT_DIR}"
     # Named, not inferred. The suite otherwise resolves this by walking up from
     # its own file to the directory holding `tests/` — which is the repo root in

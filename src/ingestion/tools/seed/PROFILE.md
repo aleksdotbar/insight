@@ -1,11 +1,11 @@
 <!-- GENERATED FILE — do not hand-edit.
-     Regenerate: python3 deploy/seed/render_profile.py
-     Verify:     python3 deploy/seed/render_profile.py --check
-     Content is derived from deploy/seed/manifest.py + profiles.py. -->
+     Regenerate: python3 -m insight_seed.render_profile
+     Verify:     python3 -m insight_seed.render_profile --check
+     Content is derived from insight_seed/manifest.py + profiles.py. -->
 
 # Seed Profile
 
-What a stand seeded by `deploy/seed` contains. Generated from the same
+What a stand seeded by the seeder contains. Generated from the same
 builder that writes `manifest.json`, so the two cannot disagree.
 
 ## Stand summary
@@ -17,7 +17,7 @@ builder that writes `manifest.json`, so the two cannot disagree.
 | realm | `insight` |
 | anchor_date | `2026-06-30` |
 | data_window | `2026-05-02..2026-06-30` |
-| seed_revision | `35aeb2b31c302e8a` |
+| seed_revision | `4d34657f4b488c01` |
 | manifest_version | 1 |
 
 `anchor_date` is the last day carrying seeded activity. It is resolved
@@ -96,7 +96,7 @@ renaming one breaks every test that declares it.
 
 Rows the product provisions by operator or migration, so no endpoint
 creates them and no test fixture can either — the suite holds no
-database connection. Seeded by `deploy/seed/analytics.py` and named
+database connection. Seeded by `insight_seed/analytics.py` and named
 here so a test reads the name rather than hardcoding one.
 
 **No tenant `metric_definitions` override.** Nothing proves the listing
@@ -107,11 +107,11 @@ resolves a tenant's label over the product default.
 **None.** The golden set is empty, and that is a deliberate state
 rather than an oversight.
 
-> empty: no measured inventory records an exact expected value; see deploy/seed/golden_metrics.py for the criteria to add one
+> empty: no measured inventory records an exact expected value; see insight_seed/golden_metrics.py for the criteria to add one
 
 A test suite consuming this manifest therefore asserts no metric
 values. That is a visible gap; a populated-but-guessed set would be a
-silent wrong answer. See `deploy/seed/golden_metrics.py` for the
+silent wrong answer. See `insight_seed/golden_metrics.py` for the
 criteria an entry must meet before it is added.
 
 ## Capabilities

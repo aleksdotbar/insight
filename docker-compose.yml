@@ -384,8 +384,8 @@ services:
       APP__gears__authenticator__config__idp__client_secret: "${OIDC_CLIENT_SECRET:-}"
       # Required: the identity-resolution source_type the login-bootstrap
       # lookup is scoped to. The realm sets each user's `sub` to their own
-      # roster uuid — the stable external id; deploy/seed/identity.py seeds
-      # the matching value_type='id' rows under this same source_type.
+      # roster uuid — the stable external id; src/ingestion/tools/seed/identity.py
+      # seeds the matching value_type='id' rows under this same source_type.
       APP__gears__authenticator__config__idp__source_type: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-keycloak}"
       # Callback rides the SPA's browser origin (Vite :3000) so the __Host-sid
       # cookie lands where the SPA runs; see .env.compose.example.
@@ -701,7 +701,7 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-insight}-seed-sample
     networks: [insight]
     build:
-      context: deploy/seed
+      context: src/ingestion/tools/seed
       dockerfile: Dockerfile
     # The image pins USER 1000. That is unambiguous where it was chosen — as a
     # k8s Job the seed mounts nothing from a host — but compose bind-mounts the
@@ -726,7 +726,7 @@ services:
       IDP_SOURCE_TYPE: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-keycloak}"
       # Selects which roster personas get a login-id fixture (fakeidp: dev lead
       # only, its fixed "fakeidp|dev"; keycloak: the whole roster, each on their
-      # own uuid — see deploy/seed/profiles.py's get_login_id_pairs).
+      # own uuid — see src/ingestion/tools/seed/profiles.py's get_login_id_pairs).
       # dev-compose.sh exports this; keycloak is the only mode it runs.
       AUTH_MODE: "${AUTH_MODE:-keycloak}"
       # MariaDB — falls back to the local docker service name/port; the
@@ -735,6 +735,14 @@ services:
       MARIADB_PORT: "${MARIADB_INTERNAL_PORT:-3306}"
       MARIADB_USER: "${MARIADB_USER:-insight}"
       MARIADB_PASSWORD: "${MARIADB_PASSWORD:-insight-local}"
+      # Required by the seeder, with no default in code: which database holds the
+      # analytics catalogue tables is a per-stand fact. Here it is a database of
+      # its own; a chart-deployed stand keeps them in `mariadb.database`.
+      MARIADB_ANALYTICS_DB: "${MARIADB_ANALYTICS_DB:-analytics}"
+      # The second-tenant refusal fixture. ON here because tests/stand asserts
+      # cross-tenant refusal against it; a cluster stand turns it off, where a
+      # second tenant would abort identity-resolution's scheduled projection.
+      SEED_CROSS_TENANT_FIXTURE: "${SEED_CROSS_TENANT_FIXTURE:-1}"
       # ClickHouse — same convention as MariaDB above.
       CLICKHOUSE_HOST: "${CLICKHOUSE_HOST:-clickhouse}"
       CLICKHOUSE_HTTP_PORT: "${CLICKHOUSE_INTERNAL_HTTP_PORT:-8123}"
@@ -766,7 +774,7 @@ services:
       # NOT read-only: the seed writes manifest.json back into this directory
       # at the end of a successful run, and downstream test phases read it
       # from that fixed path.
-      - ./deploy/seed:/app
+      - ./src/ingestion/tools/seed:/app
       # Schema + gold inputs: the SAME scripts the k8s clickhouse-migrate
       # Hook Job runs — create-bronze-placeholders.sh (+ lib/ch-exec.sh),
       # apply-ch-migrations.sh, migrations/*.sql — plus the full dbt project

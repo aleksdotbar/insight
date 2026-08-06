@@ -70,7 +70,7 @@ ADMIN_OPERATOR_FIXTURE: Final[str] = "admin_operator"
 
 #: The manifest fixture name for the second tenant's only person. Their whole
 #: purpose is to be a caller the product refuses, so they hold no role, no team
-#: and no org-chart edge — see `deploy/seed/profiles.py::build_other_tenant_roster`.
+#: and no org-chart edge — see `src/ingestion/tools/seed/profiles.py::build_other_tenant_roster`.
 OTHER_TENANT_FIXTURE: Final[str] = "other_tenant_lead"
 
 

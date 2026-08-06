@@ -1,7 +1,7 @@
-# Package metadata, dependencies, and tool config for the Insight
-# sample-data seeder. Lives next to the code so `ruff check .` and `mypy .`
-# work from the dir, and `pip install .` builds the flat module + generators
-# package straight from here.
+# Package metadata, dependencies, and tool config for the Insight sample-data
+# seeder. Lives at the tool root so `ruff check .` and `mypy .` cover both the
+# `insight_seed` package and its `tests/`, and `pip install .` builds the
+# package (only the package — tests are not shipped).
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -10,8 +10,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "insight-seed"
 version = "0.1.0"
-description = "Insight sample-data seeder for the local docker-compose stack."
-requires-python = ">=3.13"
+description = "Insight sample-data seeder for the compose stack and Kubernetes test stands."
+# 3.12, not 3.13: this package ships inside the toolbox image
+# (tools/toolbox/Dockerfile), which is python:3.12-slim, and the rest of the
+# ingestion tree pins the same direction (tests/connectors caps at <3.13). No
+# 3.13-only syntax or API is used here, so the floor costs nothing.
+requires-python = ">=3.12"
 dependencies = [
     "PyMySQL==1.2.0",
     "clickhouse-connect==1.6.0",
@@ -32,16 +36,19 @@ dev = [
     "types-PyMySQL==1.2.0.20260724",
 ]
 
-# Flat layout: top-level modules plus the generators/ package.
-[tool.setuptools]
-py-modules = ["seed", "silver", "identity", "profiles"]
+# The entry point every runner uses: `python3 -m insight_seed <step>` from this
+# directory, which is also what the container images and the Kubernetes Job run.
+# The console script is for an installed copy.
+[project.scripts]
+insight-seed = "insight_seed.__main__:main"
 
+# One importable package; `tests/` stays out of the distribution.
 [tool.setuptools.packages.find]
-include = ["generators*"]
+include = ["insight_seed*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py312"
 
 [tool.ruff.lint]
 # Pragmatic strict set: pycodestyle, pyflakes, isort, bugbear, comprehensions,
@@ -66,7 +73,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.12"
 strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true

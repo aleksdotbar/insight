@@ -22,10 +22,19 @@ RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linu
 RUN curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" \
     -o /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl
 
-# dbt-clickhouse
-RUN pip install --no-cache-dir dbt-clickhouse
+# dbt-clickhouse, plus the two database drivers the sample-data seeder
+# (tools/seed, COPYed in below) needs on top of it. Same layer on purpose: the
+# seeder is part of what this image is for, not an afterthought bolted on at
+# run time.
+RUN pip install --no-cache-dir \
+    dbt-clickhouse \
+    'PyMySQL==1.2.0' \
+    'clickhouse-connect==1.6.0'
 
-# Copy entire ingestion project
+# Copy entire ingestion project. This is also how the seeder ships: it lives at
+# tools/seed inside this tree, so `seed-stand.sh` can run it from
+# /ingestion/tools/seed against the same scripts/ and dbt/ the migrations use —
+# one image, one version, no drift between seeder and migration SQL.
 COPY . /ingestion
 WORKDIR /ingestion
 

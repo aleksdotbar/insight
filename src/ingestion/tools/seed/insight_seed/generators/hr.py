@@ -14,7 +14,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from generators.base import (
+from ..profiles import Person
+from .base import (
     bulk_insert,
     clamp,
     days_window,
@@ -24,7 +25,6 @@ from generators.base import (
     truncate,
     weekday_multiplier,
 )
-from profiles import Person
 
 if TYPE_CHECKING:
     import clickhouse_connect.driver.client
@@ -43,9 +43,16 @@ def seed_focus_metrics(
 ) -> int:
     truncate(client, "silver", "class_focus_metrics")
     cols = [
-        "insight_tenant_id", "email", "day", "unique_key",
-        "meetings_count", "meeting_hours", "working_hours_per_day",
-        "focus_time_pct", "dev_time_h", "_version",
+        "insight_tenant_id",
+        "email",
+        "day",
+        "unique_key",
+        "meetings_count",
+        "meeting_hours",
+        "working_hours_per_day",
+        "focus_time_pct",
+        "dev_time_h",
+        "_version",
     ]
     rows: list[tuple[object, ...]] = []
     version = 1
@@ -63,17 +70,26 @@ def seed_focus_metrics(
             # heavy day, generally less.
             m_hours = clamp(
                 rng.gauss(1.5 * persona * weekday_multiplier(d), 0.8),
-                0, min(wh * 0.7, 6),
+                0,
+                min(wh * 0.7, 6),
             )
             m_count = round(m_hours * 1.5)
             focus_pct = 0.0 if wh < 1 else clamp((wh - m_hours) / wh * 100, 0, 100)
             dev_h = clamp(wh - m_hours, 0, 10)
-            rows.append((
-                tenant_uuid, p.email, d,
-                deterministic_uuid("focus", p.uuid, d.isoformat()),
-                m_count, round(m_hours, 2), round(wh, 2),
-                round(focus_pct, 2), round(dev_h, 2), version,
-            ))
+            rows.append(
+                (
+                    tenant_uuid,
+                    p.email,
+                    d,
+                    deterministic_uuid("focus", p.uuid, d.isoformat()),
+                    m_count,
+                    round(m_hours, 2),
+                    round(wh, 2),
+                    round(focus_pct, 2),
+                    round(dev_h, 2),
+                    version,
+                )
+            )
     return bulk_insert(client, "silver", "class_focus_metrics", cols, rows)
 
 

@@ -1,8 +1,10 @@
-#!/usr/bin/env python3
 """Generate (or verify) the committed `PROFILE.md`.
 
-    python3 deploy/seed/render_profile.py            # write PROFILE.md
-    python3 deploy/seed/render_profile.py --check    # fail if it is stale
+    python3 -m insight_seed.render_profile            # write PROFILE.md
+    python3 -m insight_seed.render_profile --check    # fail if it is stale
+
+Run from the tool directory (`src/ingestion/tools/seed`), or with it on
+`PYTHONPATH`.
 
 Both render against `manifest.CANONICAL_ENV`, not the ambient environment, so
 the committed page is a function of committed bytes: it does not embed one
@@ -21,12 +23,8 @@ from __future__ import annotations
 import argparse
 import difflib
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import manifest
-import profile_md
+from . import manifest, profile_md
 
 
 def _rendered() -> str:

@@ -1,61 +1,34 @@
 """Idempotency + roster-scope tests for `identity.seed_login_ids`.
 
-No pytest / DB fixture in this package (deploy/seed has no existing test
-harness) — a stdlib `unittest` test against a minimal fake cursor is enough to
-lock two regressions:
+A stdlib `unittest` test against a minimal fake cursor, locking two
+regressions:
 
 1. Idempotency: migration 004 (`004_persons_relax_constraints.sql`) put
    `created_at` in `persons`' unique key, so `INSERT IGNORE` alone no longer
    dedupes a re-run (each insert gets a fresh `created_at`, so the unique key
-   never collides). `seed_login_ids` must check for an existing row
-   explicitly, per pair, before inserting.
+   never collides). Every writer must check for an existing row explicitly.
 2. Roster scope: fakeidp only defines a fixed dev-lead identity, but a
    Keycloak realm seeds the WHOLE roster (gen-realm.py pins every realm
    user's id to their own roster uuid) — `seed_login_ids` must seed a row per
    roster member under `AUTH_MODE=keycloak`, not just the dev lead.
 
-`pymysql` isn't installed in every environment this runs in (it's only a
-runtime dependency of the seed container image) — a minimal stand-in is
-injected into `sys.modules` before importing `identity` so this test has no
-external dependency beyond the stdlib.
+From the tool directory:
 
-Primary, always-works invocation, from anywhere:
-`python3 -m unittest deploy/seed/test_identity.py -v`. `python3 -m unittest
-discover -s deploy/seed` also works in most setups, but `discover` additionally
-requires the start dir to be importable as a top-level package in some
-Python/cwd combinations (no `__init__.py` here by design — `deploy/seed` is a
-flat-module package, see pyproject.toml's `py-modules`) — if that fails in
-your environment, use the primary invocation above.
+    python3 -m unittest discover -s tests -t .
+    python3 -m unittest tests.test_identity -v
 """
 
 from __future__ import annotations
 
 import os
-import sys
-import types
 import unittest
 from typing import Any
 
+from . import conftest  # noqa: F401 — sys.path + driver stubs, before the imports below
+
 os.environ.setdefault("IDP_SOURCE_TYPE", "fakeidp")
 
-# `identity`/`profiles` are flat modules (no package __init__), so importing
-# them by name only works when deploy/seed is on sys.path. unittest's
-# file-path invocation (`python3 -m unittest path/to/test_identity.py`) does
-# NOT add the file's own directory the way `discover` does — add it
-# explicitly so both invocation styles resolve `import identity` the same way.
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-if _THIS_DIR not in sys.path:
-    sys.path.insert(0, _THIS_DIR)
-
-if "pymysql" not in sys.modules:
-    _pymysql_stub = types.ModuleType("pymysql")
-    _pymysql_stub.cursors = types.SimpleNamespace(Cursor=object)  # type: ignore[attr-defined]
-    _pymysql_stub.connections = types.SimpleNamespace(Connection=object)  # type: ignore[attr-defined]
-    _pymysql_stub.connect = lambda **_kwargs: None  # type: ignore[attr-defined]
-    sys.modules["pymysql"] = _pymysql_stub
-
-import identity  # noqa: E402 — stub/env setup above must run first
-import profiles  # noqa: E402 — stub/env setup above must run first
+from insight_seed import identity, profiles
 
 _TENANT = "00000000-df51-5b42-9538-d2b56b7ee953"
 
@@ -133,8 +106,9 @@ class SeedLoginIdsTests(unittest.TestCase):
         cur = _FakeCursor()
         roster = _roster()
 
-        first_run_count = identity.seed_login_ids(cur, _TENANT, roster)
-        second_run_count = identity.seed_login_ids(cur, _TENANT, roster)
+        # The fake cursor implements only what these writers call.
+        first_run_count = identity.seed_login_ids(cur, _TENANT, roster)  # type: ignore[arg-type]
+        second_run_count = identity.seed_login_ids(cur, _TENANT, roster)  # type: ignore[arg-type]
 
         self.assertEqual(first_run_count, 1, "fakeidp seeds only the dev lead")
         self.assertEqual(second_run_count, 0, "re-run must be a no-op, not a duplicate insert")
@@ -145,11 +119,13 @@ class SeedLoginIdsTests(unittest.TestCase):
         cur = _FakeCursor()
         roster = _roster()
 
-        first_run_count = identity.seed_login_ids(cur, _TENANT, roster)
-        second_run_count = identity.seed_login_ids(cur, _TENANT, roster)
+        # The fake cursor implements only what these writers call.
+        first_run_count = identity.seed_login_ids(cur, _TENANT, roster)  # type: ignore[arg-type]
+        second_run_count = identity.seed_login_ids(cur, _TENANT, roster)  # type: ignore[arg-type]
 
         self.assertEqual(
-            first_run_count, len(roster),
+            first_run_count,
+            len(roster),
             "keycloak seeds every roster persona (gen-realm.py registers all of them)",
         )
         self.assertEqual(second_run_count, 0, "re-run must be a no-op for every pair")

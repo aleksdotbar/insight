@@ -53,5 +53,5 @@ GOLDEN_METRICS: list[dict[str, Any]] = []
 # from "measured and genuinely zero".
 GOLDEN_METRICS_NOTE = (
     "empty: no measured inventory records an exact expected value; "
-    "see deploy/seed/golden_metrics.py for the criteria to add one"
+    "see insight_seed/golden_metrics.py for the criteria to add one"
 )
