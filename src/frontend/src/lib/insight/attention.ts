@@ -25,14 +25,29 @@ export interface AttentionItem {
   relGap: number;
 }
 
-/** Metric-collection results → attention items; direction rides the wire. */
+/**
+ * Metric-collection results → attention items; direction rides the wire.
+ *
+ * Only metrics the section card does NOT already show. A card carries its
+ * `preview` rows in the same colours and a "N behind peers" badge over them, so
+ * repeating those rows above put every such finding on the screen twice — and
+ * a reader counts red marks, not facts. Two numbers for one problem read as two
+ * problems: the person-page screenshot that started this had eleven red marks
+ * over six distinct findings.
+ *
+ * What is left is what the cards cannot tell you: a metric outside the preview
+ * that is nonetheless bottom-quartile. That is the whole job of this block —
+ * the thing you would otherwise miss.
+ */
 export function metricAttentionItems(
   def: MetricGroup,
   byKey: Map<string, NormalizedMetricResult>,
   entityId: string
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
+  const shownOnCard = new Set(def.card.preview);
   for (const metricConfig of def.collection.metrics) {
+    if (shownOnCard.has(metricConfig.key)) continue;
     const metric = byKey.get(metricConfig.key);
     if (!metric || metric.direction === "neutral") continue;
     const data = forEntity(metric, entityId);

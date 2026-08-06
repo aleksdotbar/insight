@@ -92,3 +92,21 @@ describe("metricAttentionItems", () => {
     ).toHaveLength(0);
   });
 });
+
+describe("what the section card already shows", () => {
+  it("is left to the card — the block never repeats a preview row", () => {
+    // A card carries its preview rows in the same colours plus a "N behind
+    // peers" badge over them. Repeating those here put one finding on the
+    // screen twice, and a reader counts red marks, not facts.
+    const onCard: MetricGroup = { ...AI_DEF, card: { preview: ["ai.active_days"] } };
+    expect(metricAttentionItems(onCard, normalizeMetricResults([aiMetric(2)]), "me@x.com")).toEqual([]);
+  });
+
+  it("still surfaces a bottom-quartile metric the card omits", () => {
+    // The block's whole job: the finding you would otherwise miss, because it
+    // sits outside the three rows the card had room for.
+    const offCard: MetricGroup = { ...AI_DEF, card: { preview: ["ai.cost"] } };
+    const items = metricAttentionItems(offCard, normalizeMetricResults([aiMetric(2)]), "me@x.com");
+    expect(items.map((i) => i.key)).toEqual(["ai.active_days"]);
+  });
+});
