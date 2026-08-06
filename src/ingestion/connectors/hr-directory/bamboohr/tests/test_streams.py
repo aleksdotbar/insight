@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from conftest import SOURCE, TENANT, FakeClient, meta_field
-from source_bamboohr.streams.employees import SCHEMA, EmployeesStream
+from conftest import SOURCE, TENANT, FakeClient, custom_report, meta_field
+from source_bamboohr.streams.employees import MAX_REPORT_FIELDS, SCHEMA, EmployeesStream
 from source_bamboohr.streams.leave_requests import LeaveRequestsStream
 from source_bamboohr.streams.meta_fields import MetaFieldsStream
 
@@ -16,8 +16,13 @@ EMPLOYEE = {
 }
 
 
-def employees_stream(rows, meta=()):
-    client = FakeClient({"meta/fields": list(meta), "reports/custom": {"employees": rows}})
+def employees_stream(rows, meta=(), omit=None, declare_columns=True):
+    client = FakeClient(
+        {
+            "meta/fields": list(meta),
+            "reports/custom": custom_report(rows, omit=omit, declare_columns=declare_columns),
+        }
+    )
     return EmployeesStream(client=client, tenant_id=TENANT, source_id=SOURCE), client
 
 
@@ -80,12 +85,74 @@ class TestEmployeeReportRequest:
         assert "customTeam" in body["fields"]
         assert body["fields"].count("jobTitle") == 1
 
+    def test_a_field_list_within_the_limit_is_one_request(self):
+        meta = [meta_field(4000 + n, alias=f"custom{n}") for n in range(50)]
+        stream, client = employees_stream([EMPLOYEE], meta=meta)
+        read(stream)
+
+        assert len([c for c in client.calls if c[0] == "POST"]) == 1
+
+    def test_a_field_list_over_the_limit_is_split_into_accepted_requests(self):
+        meta = [meta_field(4000 + n, alias=f"custom{n}") for n in range(MAX_REPORT_FIELDS + 60)]
+        stream, client = employees_stream([EMPLOYEE], meta=meta)
+        read(stream)
+
+        posts = [body["fields"] for verb, _, body in client.calls if verb == "POST"]
+        assert len(posts) > 1
+        for batch in posts:
+            assert len(batch) <= MAX_REPORT_FIELDS, f"batch of {len(batch)} exceeds the API limit"
+            assert batch[0] == "id", "every batch needs the id to merge on"
+
+    def test_a_split_request_still_yields_one_record_per_employee(self):
+        meta = [meta_field(4000 + n, alias=f"custom{n}") for n in range(MAX_REPORT_FIELDS + 60)]
+        rows = [{"id": "1", "custom0": "a"}, {"id": "2", "custom0": "b"}]
+        stream, _ = employees_stream(rows, meta=meta)
+
+        assert [r["unique_key"] for r in read(stream)] == [f"{TENANT}-{SOURCE}-1", f"{TENANT}-{SOURCE}-2"]
+
+    def test_a_split_request_merges_every_batch_into_the_payload(self):
+        meta = [meta_field(4000 + n, alias=f"custom{n}") for n in range(MAX_REPORT_FIELDS + 60)]
+        last = f"custom{MAX_REPORT_FIELDS + 59}"
+        stream, _ = employees_stream([{"id": "1", "custom0": "first", last: "last"}], meta=meta)
+        (record,) = read(stream)
+
+        assert record["raw_data"]["custom0"] == "first"
+        assert record["raw_data"][last] == "last", "a later batch's fields must survive the merge"
+
     def test_a_report_response_without_employees_is_an_error(self):
         client = FakeClient({"meta/fields": [], "reports/custom": {}})
         stream = EmployeesStream(client=client, tenant_id=TENANT, source_id=SOURCE)
 
         with pytest.raises(RuntimeError, match="employees"):
             read(stream)
+
+
+class TestSilentlyOmittedFields:
+    def test_a_withheld_custom_field_warns_and_the_sync_continues(self, caplog):
+        meta = [meta_field(4001, alias="customTeam")]
+        stream, _ = employees_stream([EMPLOYEE], meta=meta, omit={"customTeam"})
+
+        with caplog.at_level("WARNING"):
+            (record,) = read(stream)
+
+        assert record["unique_key"] == f"{TENANT}-{SOURCE}-42"
+        assert "customTeam" in caplog.text
+
+    def test_a_withheld_bronze_column_stops_the_sync(self):
+        stream, _ = employees_stream([EMPLOYEE], omit={"workEmail"})
+
+        with pytest.raises(RuntimeError, match="workEmail"):
+            read(stream)
+
+    def test_a_report_that_declares_no_columns_is_not_read_as_data_loss(self):
+        meta = [meta_field(4001, alias="customTeam")]
+        stream, _ = employees_stream([EMPLOYEE], meta=meta, declare_columns=False)
+
+        assert len(read(stream)) == 1, "an unverifiable answer must not fail the stream"
+
+    def test_a_column_no_employee_carries_is_not_an_omission(self):
+        stream, _ = employees_stream([{"id": "42"}])
+        assert len(read(stream)) == 1
 
 
 class TestLeaveRequests:

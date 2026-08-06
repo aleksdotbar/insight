@@ -78,6 +78,17 @@ the field metadata returns; every field the report answers with — declared col
 not — is preserved in `raw_data`, which is what change detection and the field-level
 history read.
 
+BambooHR caps a custom report at 400 fields and answers a larger request with a
+`400`, so an account defining more than that is read in several requests and the
+rows merged on employee id.
+
+Requested fields the API key cannot read are dropped from the report silently, with
+the call still succeeding. The connector compares the report's declared columns
+against what it asked for: a missing bronze column stops the sync, because
+publishing it empty would clear identity values downstream, while a missing
+discovered field is logged and the sync continues. A report that declares no
+columns at all is not treated as either.
+
 `SENSITIVE_FIELDS` in `source_bamboohr/streams/employees.py` is the exception:
 government identifiers, protected demographics, personal contact details, street
 address, photos, social profiles, and compensation amounts are never requested and

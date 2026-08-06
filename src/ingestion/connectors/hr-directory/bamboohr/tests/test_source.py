@@ -37,6 +37,13 @@ class TestCheckConnection:
         assert not ok, f"should reject {field}={value!r}"
         assert field in message
 
+    def test_a_domain_that_is_not_a_subdomain_is_rejected_by_name(self, monkeypatch):
+        ok, message = SourceBamboohr().check_connection(
+            logger, {**CONFIG, "bamboohr_domain": "evil.example.com"}
+        )
+        assert not ok
+        assert "bamboohr_domain" in message
+
     def test_a_reachable_instance_passes(self, probe):
         probe(FakeClient({"meta/fields": []}))
         assert SourceBamboohr().check_connection(logger, CONFIG) == (True, None)

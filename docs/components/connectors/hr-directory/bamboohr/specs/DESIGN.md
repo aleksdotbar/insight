@@ -46,7 +46,9 @@ The BambooHR connector is a Python CDK source that extracts HR directory data fr
 
 **Authentication**: API key injected as `Authorization: Basic {base64(key:x)}` header via `BasicHttpAuthenticator`.
 
-**Pagination**: None. BambooHR returns full datasets per request. The custom report and time-off endpoints are bounded by account size and date range respectively.
+**Pagination**: None. BambooHR returns full datasets per request. The custom report and time-off endpoints are bounded by account size and date range respectively. The custom report caps the request at 400 fields, so an account defining more is read in several requests and the rows merged on employee id.
+
+**Partial reads**: Requested fields the credential cannot read are omitted from the report while the call still succeeds. The declared columns are compared against the request: a missing Bronze column fails the stream, since publishing it empty would clear identity values downstream; a missing discovered field is logged and the sync proceeds. A report that declares no columns is treated as unverifiable rather than as loss.
 
 **Sync mode**: Full refresh on all streams. BambooHR returns current-state records only — no reliable incremental mechanism. The `lastChanged` field is collected to enable future client-side incremental sync if needed.
 

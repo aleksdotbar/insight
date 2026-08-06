@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from airbyte_cdk.models import SyncMode
@@ -12,6 +12,13 @@ from source_bamboohr.client import BambooClient
 logger = logging.getLogger("airbyte")
 
 REPORT_TITLE = "Insight Employee Sync"
+
+EMPLOYEE_ID_FIELD = "id"
+
+# BambooHR rejects a custom report asking for more than 400 fields with a 400,
+# which no retry recovers: an account defining more fields than that would lose
+# the whole stream rather than the overflow.
+MAX_REPORT_FIELDS = 400
 
 NULLABLE_STR: Mapping[str, Any] = {"type": ["string", "null"]}
 
@@ -107,6 +114,68 @@ def report_fields(meta_fields: Any) -> tuple[str, ...]:
     return tuple(keys)
 
 
+def field_batches(fields: Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    """Split a field list into requests BambooHR will accept. Every batch carries
+    the employee id so the rows can be merged back into one record."""
+    if len(fields) <= MAX_REPORT_FIELDS:
+        return (tuple(fields),)
+
+    rest = [name for name in fields if name != EMPLOYEE_ID_FIELD]
+    per_batch = MAX_REPORT_FIELDS - 1
+
+    return tuple(
+        (EMPLOYEE_ID_FIELD, *rest[start : start + per_batch])
+        for start in range(0, len(rest), per_batch)
+    )
+
+
+def returned_fields(payload: Mapping[str, Any], rows: Sequence[Any]) -> set[str] | None:
+    """Field keys the report answered with, or None when it did not declare its
+    columns. None is not "nothing came back" — it means the completeness of this
+    batch cannot be judged, and guessing would turn an unreadable answer into a
+    reported data loss."""
+    columns = payload.get("fields")
+    if not isinstance(columns, list):
+        return None
+
+    answered = {str(column["id"]) for column in columns if isinstance(column, Mapping) and "id" in column}
+
+    # A column the report declares but no row carries is still answered; a key a
+    # row carries that the declaration missed is answered too.
+    for row in rows:
+        if isinstance(row, Mapping):
+            answered.update(row.keys())
+
+    return answered
+
+
+def _report_omissions(requested: Sequence[str], answered: set[str]) -> None:
+    """BambooHR silently drops requested fields the credential cannot read and
+    still answers 200, so a shrinking payload is indistinguishable from cleared
+    values downstream: the snapshot versions on the change and the field history
+    dates it as a clear. A bronze column going missing would do that to identity
+    resolution, so it stops the sync; a discovered field going missing costs one
+    attribute's history and is only worth an operator's attention."""
+    missing = [name for name in requested if name not in answered]
+    if not missing:
+        return
+
+    missing_columns = [name for name in missing if name in BUSINESS_FIELDS]
+    if missing_columns:
+        raise RuntimeError(
+            f"BambooHR omitted {len(missing_columns)} declared employee column(s) from the report: "
+            f"{', '.join(missing_columns)}. The API key likely lost access to them; publishing them "
+            "as empty would clear the values downstream."
+        )
+
+    logger.warning(
+        "BambooHR omitted %d requested field(s) from the report; their recorded values will be "
+        "cleared until access is restored: %s",
+        len(missing),
+        ", ".join(missing[:10]),
+    )
+
+
 def _request_key(field: Mapping[str, Any]) -> str | None:
     alias = str(field.get("alias") or "").strip()
     if alias:
@@ -136,32 +205,51 @@ class EmployeesStream(Stream):
         stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         fields = report_fields(self._client.get("meta/fields"))
-        logger.info("BambooHR employee report requests %d fields", len(fields))
+        batches = field_batches(fields)
+        logger.info(
+            "BambooHR employee report requests %d fields in %d request(s)", len(fields), len(batches)
+        )
 
-        payload = self._client.post("reports/custom", {"title": REPORT_TITLE, "fields": list(fields)})
-        rows = payload.get("employees") if isinstance(payload, Mapping) else None
-        if not isinstance(rows, list):
-            raise RuntimeError("BambooHR custom report response carries no 'employees' collection")
+        merged: dict[str, dict[str, Any]] = {}
+        answered: set[str] = set()
+        verifiable: set[str] = set()
 
-        count = 0
+        for batch in batches:
+            payload = self._client.post("reports/custom", {"title": REPORT_TITLE, "fields": list(batch)})
+            rows = payload.get("employees") if isinstance(payload, Mapping) else None
+            if not isinstance(rows, list):
+                raise RuntimeError("BambooHR custom report response carries no 'employees' collection")
+
+            batch_fields = returned_fields(payload, rows)
+            if batch_fields is not None:
+                answered |= batch_fields
+                verifiable.update(batch)
+
+            self._merge(merged, rows)
+
+        _report_omissions([name for name in fields if name in verifiable], answered)
+
+        for row in merged.values():
+            yield self._to_record(row)
+
+        logger.info("BambooHR employees stream emitted %d records", len(merged))
+
+    @staticmethod
+    def _merge(merged: dict[str, dict[str, Any]], rows: Sequence[Any]) -> None:
         for row in rows:
-            record = self._to_record(row)
-            if record is not None:
-                count += 1
-                yield record
+            if not isinstance(row, Mapping):
+                logger.warning("Skipping BambooHR employee row that is not an object")
+                continue
 
-        logger.info("BambooHR employees stream emitted %d records", count)
+            employee_id = row.get("id")
+            if employee_id is None or str(employee_id).strip() == "":
+                logger.warning("Skipping BambooHR employee row without an id")
+                continue
 
-    def _to_record(self, row: Any) -> Mapping[str, Any] | None:
-        if not isinstance(row, Mapping):
-            logger.warning("Skipping BambooHR employee row that is not an object")
-            return None
+            merged.setdefault(str(employee_id), {}).update(row)
 
-        employee_id = row.get("id")
-        if employee_id is None or str(employee_id).strip() == "":
-            logger.warning("Skipping BambooHR employee row without an id")
-            return None
-
+    def _to_record(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
+        employee_id = row["id"]
         payload = {key: value for key, value in sorted(row.items()) if key not in SENSITIVE_FIELDS}
 
         record: dict[str, Any] = {name: row.get(name) for name in BUSINESS_FIELDS}
