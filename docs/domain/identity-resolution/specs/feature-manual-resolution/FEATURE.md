@@ -205,6 +205,8 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 
 **Input**: an account reference — either source type + account id, or an observed value (e-mail / username)
 
+> Scope note: the first iteration accepts the direct form only; value addressing (and with it the bulk import of a prepared matching table) is reserved — the per-item skip reasons below are its contract.
+
 **Output**: exactly one account key, or a machine-readable skip reason
 
 **Steps**:
@@ -399,7 +401,7 @@ The system **MUST** resolve `person_id` account-first on the source-instance-sco
 - [ ] Re-submitting an identical operator decision (including a re-uploaded bulk file) changes nothing and is reported as a no-op
 - [ ] A merge rebinds every account of the absorbed person; a detach works on an account with no prior merge record
 - [ ] A correction followed by its counter-correction restores the effective bindings
-- [ ] Bulk rows addressed by a value that resolves to zero or several accounts are skipped with a machine-readable reason and remain in the queue
+- [ ] Bulk rows addressed by a value that resolves to zero or several accounts are skipped with a machine-readable reason and remain in the queue (with value addressing; the direct form ships first)
 - [ ] Two accounts of one source bound to one person in one operation both persist (distinct timestamps)
 - [ ] The queue surfaces pending, binding-conflict and no-evidence items, suppresses operator-settled divergence, hides excluded accounts, and reports resolution-rate shares
 - [ ] Accounts whose latest evidence event is a closure do not appear in the queue

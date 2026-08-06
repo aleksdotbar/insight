@@ -30,6 +30,13 @@ use crate::infra::identity_evidence::{AccountEvidence, ClickHouseEvidenceReader}
 const MAX_BULK_ITEMS: usize = 1_000;
 
 /// A source-native account, as named by the caller.
+///
+/// Addressing by an observed value (e-mail / username) instead of the account
+/// triple is the reserved extension for importing a prepared matching table:
+/// the fields arrive optional, exactly one form is required per item, a value
+/// resolving to zero or several active accounts is reported per item and never
+/// guessed. The response already carries per-item outcomes, so adding it does
+/// not change the shape of this contract.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct AccountRef {
     /// Connector type, e.g. `github`.
@@ -92,6 +99,8 @@ pub struct ItemResult {
     pub account_id: String,
     /// `applied` — a binding observation was appended;
     /// `already_decided` — the same operator decision is already recorded.
+    /// Open vocabulary: value-addressed items will report their skip reasons
+    /// (`ambiguous_value`, `unknown_value`) here.
     pub outcome: String,
 }
 
