@@ -99,8 +99,9 @@ def supports_seed_cli(implementation: str) -> bool:
 
 def supports_persons_sync(implementation: str) -> bool:
     """Whether the binary has the `sync` subcommand (copy the `persons` log
-    into ClickHouse `identity.identity_persons`, the metrics email→person_id
-    resolve source) + its GET journal routes. A NEW Rust-only surface,
+    into ClickHouse `identity.identity_persons`, one half of the metrics
+    resolve source — the other half is the connector evidence in
+    `identity.identity_inputs`, which says which account carries an email) + its GET journal routes. A NEW Rust-only surface,
     deliberately never backported to the frozen, outgoing .NET service."""
     return implementation == "rust"
 

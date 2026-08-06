@@ -7,18 +7,41 @@
       LEFT JOIN ({{ resolve_person_id() }}) AS identity_map
           ON identity_map.email = <entity_id expression>
 
-  Emits (email, person_id), one row per email. Resolution rule v1 —
-  latest-observation-wins: the newest `value_type='email'` row per normalized
-  email claims it (`created_at DESC, id DESC`; the id tiebreak makes
-  same-instant observations deterministic, matching the service's own
-  reader ordering). No tenant filter — single-tenant reality (#1550); the
-  tenant column is in the log when that changes.
+  Emits (email, person_id), one row per email. The claim is ACCOUNT-DERIVED:
+  an email resolves through the accounts that carry it, not through a
+  standalone email observation. Every account's current binding is the latest
+  `value_type='id'` row for it; an email's claimants are the persons those
+  accounts are bound to; the email resolves only when they agree.
+
+  Why not latest-email-wins (rule v1): operator corrections are recorded as
+  bindings — `value_type='id'` rows — so a merge or a detach left the email
+  map untouched and never reached the metrics. Reading the map through
+  bindings is what makes a correction re-attribute activity on the next build.
+  It also makes a shared value fail safe: an email carried by accounts of two
+  different people has two claimants and resolves to NOBODY, instead of the
+  latest observation silently awarding it to one of them.
+
+  Accounts the source has deactivated still claim: closure means the account
+  is gone from the source, not that its history stops belonging to the person.
+  Excluded accounts (bots, CI, service accounts — bound to the reserved
+  excluded person) claim nothing, so their emails resolve to no one.
+
+  No tenant filter — single-tenant reality (#1550); the tenant column is in
+  the log when that changes. And no join on tenant between the two stores:
+  `identity_inputs` carries a producer-side hashed tenant that never equals
+  the journal's, so the account triple is the only sound key across them.
 
   This macro is deliberately the ONLY place resolution semantics live.
   Future smarts — per-source maps ("this email as seen by git sources"),
   tenant scoping, as_of resolution off `created_at` — change this body and
   every consuming model picks it up on the next build. Consumers must not
   re-derive person_id any other way.
+
+  NOT YET account-first: gold facts carry an email, never the account that
+  produced it (`entity_id` is an email everywhere — see the evidence models),
+  so there is nothing to key an account-first lookup on. Propagating source
+  account ids through silver is its own piece of work; until then this map is
+  how corrections reach gold.
 
   NORMALIZATION CONTRACT: `lower(trimBoth(...))` on BOTH sides, enforced in
   the join itself — resolved_person_id_join() applies the same expression to
@@ -36,17 +59,57 @@
 
 {% macro resolve_person_id() %}
     SELECT
-        lower(trimBoth(value_effective)) AS email,
-        person_id
-    FROM identity.identity_persons
-    WHERE value_type = 'email'
-      AND value_effective IS NOT NULL
-      AND trimBoth(value_effective) != ''
-    ORDER BY
-        email,
-        created_at DESC,
-        id DESC
-    LIMIT 1 BY email
+        ae.email                             AS email,
+        any(cb.person_id)                    AS person_id
+    FROM (
+        SELECT
+            insight_source_type              AS source_type,
+            insight_source_id                AS source_id,
+            source_account_id                AS account_id,
+            argMaxIf(
+                lower(trimBoth(value)),
+                _synced_at,
+                value_type = 'email' AND operation_type = 'UPSERT' AND value != ''
+            )                                AS email
+        FROM identity.identity_inputs
+        WHERE coalesce(source_account_id, '') != ''
+        GROUP BY source_type, source_id, account_id
+    ) AS ae
+    INNER JOIN (
+        SELECT
+            insight_source_type              AS source_type,
+            insight_source_id                AS source_id,
+            trimBoth(value_effective)        AS account_id,
+            person_id
+        FROM identity.identity_persons
+        WHERE value_type = 'id'
+          AND value_effective IS NOT NULL
+          AND trimBoth(value_effective) != ''
+        ORDER BY
+            source_type,
+            source_id,
+            account_id,
+            created_at DESC,
+            id DESC
+        LIMIT 1 BY source_type, source_id, account_id
+    ) AS cb
+        ON cb.source_type = ae.source_type
+       AND cb.source_id = ae.source_id
+       AND cb.account_id = ae.account_id
+    WHERE ae.email != ''
+      AND cb.person_id != {{ excluded_person_id() }}
+    GROUP BY ae.email
+    HAVING uniqExact(cb.person_id) = 1
+{% endmacro %}
+
+{#-
+  The reserved person meaning "not a human" (bots, CI, service accounts). One
+  global constant, unmintable — UUIDv7 never produces an all-ones value — and
+  the service binds excluded accounts to it. Every consumer reads it as no
+  person; here that means such an account claims no email.
+-#}
+{% macro excluded_person_id() %}
+    toUUID('ffffffff-ffff-ffff-ffff-ffffffffffff')
 {% endmacro %}
 
 {#-
