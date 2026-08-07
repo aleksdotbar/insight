@@ -320,13 +320,26 @@ jobs:
       # failures (and coverage artifacts) vanish with it.
       fail-fast: false
       matrix:
-        # Shards of the metrics suite, one isolated stack per leg. The slice is
-        # computed at run time from the checked-out metrics/*.test.yaml listing
-        # (round-robin over the sorted names — see the run step), so every yaml
-        # lands in EXACTLY one shard by construction and a newly added test
-        # distributes automatically. Resizing = editing this list; the run step
-        # derives the total from strategy.job-total.
-        shard: [0, 1, 2, 3]
+        # Shards of the metrics suite, one isolated stack per leg, sliced BY
+        # FIXTURE FAMILY (filename prefix), not round-robin. Families must not
+        # split across shards: fixtures leak state to LATER tests in the same
+        # session through table existence — e.g. every ai_* silver build
+        # eagerly selects assert_cursor_event_cost_attributed (dbt's default
+        # indirect selection), whose ephemeral ref compiles to a read of the
+        # cursor staging tables, and those only exist once a cursor-seeding
+        # fixture (ai_active_days, alphabetically first) has run in the same
+        # session. Grouping a family keeps its alphabetical order — exactly
+        # the serial lane's semantics. (Round-robin sharding was tried and
+        # tripped precisely this: dbt indirect-selection modes don't help —
+        # `cautious`/`buildable` would silently deselect that test everywhere
+        # because its ephemeral parent is never in any build's selection.)
+        #
+        # `rest` is the complement of the named prefixes (see the run step),
+        # so every yaml lands in EXACTLY one shard by construction and a new
+        # test — even with a brand-new prefix — can never silently fall out
+        # of CI. Rebalancing = promoting a prefix out of `rest` into its own
+        # leg here AND excluding it in the run step's `rest` branch.
+        shard: [ai, collab, tasks, rest]
 
     defaults:
       run:
@@ -372,11 +385,12 @@ jobs:
       # This lane runs only the metrics/ suite — the bronze→dbt→gold→API metric
       # fixtures (the yaml rig) — split across the shard matrix: each leg gets
       # its own runner VM, hence its own ClickHouse/MariaDB/dbt target/analytics
-      # — full isolation with zero changes to the session rig. The slice is a
-      # round-robin over the sorted yaml listing, expanded into explicit pytest
-      # node ids: exhaustive by construction (no `-k` substring traps — an id
-      # that is a prefix of another cannot leak across shards, and a new test
-      # can never silently fall out of CI).
+      # — full isolation with zero changes to the session rig. The slice is
+      # this shard's fixture family (see the matrix comment for why families
+      # must stay whole), expanded into explicit pytest node ids: exhaustive by
+      # construction (no `-k` substring traps — an id that is a prefix of
+      # another cannot leak across shards, and a new test can never silently
+      # fall out of CI thanks to the complement `rest` shard).
       #
       # WITHIN a shard the tests still run serially: the session rig is not
       # xdist-safe (see conftest.py — per-worker analytics spawns race SeaORM
@@ -401,20 +415,24 @@ jobs:
       # one of them.
       - name: E2E suite — metrics shard
         env:
-          SHARD_INDEX: ${{ matrix.shard }}
-          SHARD_TOTAL: ${{ strategy.job-total }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
+          # `rest` must exclude exactly the prefixes that have their own matrix
+          # leg — keep this list in lockstep with `matrix.shard` above.
+          case "$SHARD" in
+            rest) filter=(grep -v -e '^metrics/ai_' -e '^metrics/collab_' -e '^metrics/tasks_') ;;
+            *)    filter=(grep -e "^metrics/${SHARD}_") ;;
+          esac
           nodes=()
           while IFS= read -r stem; do
             nodes+=("metrics/test_fixtures.py::test_metric_smoke[${stem}]")
-          done < <(printf '%s\n' metrics/*.test.yaml | sort \
-                     | awk -v n="$SHARD_TOTAL" -v i="$SHARD_INDEX" '(NR - 1) % n == i' \
+          done < <(printf '%s\n' metrics/*.test.yaml | "${filter[@]}" | sort \
                      | xargs -n1 basename | sed 's/\.test\.yaml$//')
           # Fail loudly on an empty slice — pytest exits 4 on unknown node ids
           # but an empty arg list would silently run the FULL suite instead.
-          [ "${#nodes[@]}" -gt 0 ] || { echo "::error::shard ${SHARD_INDEX}/${SHARD_TOTAL} selected no tests"; exit 1; }
-          printf 'shard %s/%s → %s tests\n' "$SHARD_INDEX" "$SHARD_TOTAL" "${#nodes[@]}"
+          [ "${#nodes[@]}" -gt 0 ] || { echo "::error::shard ${SHARD} selected no tests"; exit 1; }
+          printf 'shard %s → %s tests\n' "$SHARD" "${#nodes[@]}"
           printf '  %s\n' "${nodes[@]}"
           ./e2e.sh test "${nodes[@]}" --tb=short -q
 
