@@ -1,14 +1,16 @@
 """The GitHub-brokered login path, end to end.
 
-`persons_repo::resolve_person_id_by_source_any_tenant` is what an SSO callback
-actually calls, and nothing in this suite exercised it — every other identity
-test resolves by email through the admin `__override` route. That left the
-login-bootstrap contract (`value_type='id'` + `insight_source_type` +
-byte-exact `value_id`) untested for any source.
+`tests/stand/api/identity/test_internal.py` already covers what
+`/internal/persons/by-external-id` does with a row that exists: a service
+principal resolves it, a person is refused. It says nothing about where that
+row comes from — it reads a seeded manifest fixture, not a connector.
 
-These tests seed the GitHub member roster through the REAL path (bronze ->
-github-directory connector dbt models -> the shared `identity_inputs` union),
-then resolve exactly the way the authenticator does.
+These tests cover the other half. They seed the GitHub member roster through
+the REAL path (bronze -> github-directory connector dbt models -> the shared
+`identity_inputs` union) and then resolve the way the authenticator does, so a
+break anywhere in the chain that produces the binding surfaces here rather than
+as a 403 at login. The second test pins the casing contract, which no endpoint
+test can see because it depends on what the connector wrote.
 """
 
 from __future__ import annotations
