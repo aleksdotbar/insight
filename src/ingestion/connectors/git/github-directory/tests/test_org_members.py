@@ -47,7 +47,9 @@ def _body(cursor: str | None = None) -> dict:
     return {"query": _query(), "variables": variables}
 
 
-def _page(edges: list[dict], *, has_next: bool = False, end_cursor: str | None = None):
+def _page(
+    edges: list[dict], *, has_next: bool = False, end_cursor: str | None = None
+) -> HttpResponse:
     return HttpResponse(
         body=json.dumps(
             {

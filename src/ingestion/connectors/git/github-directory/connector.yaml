@@ -219,6 +219,7 @@ spec:
     properties:
       insight_tenant_id:
         type: string
+        minLength: 1
         title: Insight Tenant ID
         description: Tenant isolation identifier, injected as `tenant_id` on every record.
         order: 0
@@ -240,8 +241,13 @@ spec:
       github_organizations:
         type: array
         title: Organizations
+        # An empty list yields zero partitions, so the sync would succeed while
+        # collecting nothing and every GitHub login would keep failing with no
+        # error to point at.
+        minItems: 1
         items:
           type: string
+          minLength: 1
         description: GitHub organization logins whose members form the directory.
         order: 3
     additionalProperties: true

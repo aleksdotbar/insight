@@ -18,10 +18,19 @@
 -- lookup matches. `email` is null for most members unless the token carries
 -- `user:email`, so resolution leans on the id binding and display_name.
 --
--- No deactivation condition applies: GitHub exposes no per-member disabled
--- flag, a removed member simply stops appearing in the full-refresh roster.
--- The condition below is intentionally unsatisfiable rather than absent so
--- the macro's DELETE branch stays wired and a real signal can replace it.
+-- No deactivation condition applies, and none can be expressed here: the
+-- macro's DELETE branch selects `FROM history WHERE <condition>`, so it fires
+-- only on a CHANGE. A member removed from the org produces no change at all —
+-- they stop appearing in the roster, their last bronze row survives under
+-- ReplacingMergeTree, and the snapshot therefore emits nothing to match on.
+-- Detecting removal needs a roster diff across syncs, which is a new model
+-- rather than a predicate. The condition below is intentionally unsatisfiable
+-- so the branch stays wired for whatever supplies that signal.
+--
+-- Consequence until then: a departed member keeps an active GitHub binding.
+-- Revocation has to come from the IdP or from the HR source that owns person
+-- status — this connector must not be the only thing standing between a
+-- former member and a session.
 
 {{ identity_inputs_from_history(
     fields_history_ref=ref('github_directory__org_members_fields_history'),

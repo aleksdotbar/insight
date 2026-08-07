@@ -29,7 +29,7 @@ returns 403 — indistinguishable from a permissions problem.
 
 The dbt chain here closes that gap:
 
-```
+```text
 bronze_github_directory.org_members
   → github_directory__org_members_snapshot      SCD2 versions
   → github_directory__org_members_fields_history  per-field changes
@@ -99,6 +99,19 @@ and display name rather than the email.
 A member of two configured orgs produces one bronze row per org and a single
 identity entity — both rows carry the same normalized login. The duplicate
 observations are harmless; the latest wins.
+
+## Limitation: removal is not observed
+
+Removing someone from the organization does **not** deactivate their binding.
+GitHub exposes no per-member disabled flag — a removed member simply stops
+appearing in the roster — and the identity macro's deactivation branch fires on
+field *changes*, so an absence produces nothing to match on. Detecting it needs
+a roster diff across syncs, which is a separate model.
+
+Until that exists, treat this connector as an account *directory*, not an
+authorization source: revocation must come from the IdP or from the HR source
+that owns person status. Do not let a GitHub binding be the only thing standing
+between a former member and a session.
 
 ## Development
 
