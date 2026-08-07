@@ -88,13 +88,19 @@ Whichever claim is used, its value must arrive lowercased to match.
 
 | Field | Required | Notes |
 |---|---|---|
-| `github_token` | yes | `read:org`; add `user:email` to collect member emails |
+| `github_token` | yes | `read:org` **and** `user:email` (or `read:user`) — both required |
 | `github_organizations` | yes | JSON array of org logins |
 | `insight_tenant_id` / `insight_source_id` | yes | injected by the reconcile loop |
 
-`email` is null for most members unless the token carries `user:email` and the
-member's org email is verified, so identity resolution leans on the id binding
-and display name rather than the email.
+`user:email` is not optional. GitHub validates the whole GraphQL document
+before executing it and rejects it outright when the token cannot read the
+`email` field, so a `read:org`-only token collects nothing at all rather than
+returning members with null emails. The connector fails the check with GitHub's
+own message in that case.
+
+Even with the scope, `email` is only populated where the member's org email is
+verified and visible, so it is frequently null. Identity resolution therefore
+leans on the id binding and display name.
 
 A member of two configured orgs produces one bronze row per org and a single
 identity entity — both rows carry the same normalized login. The duplicate

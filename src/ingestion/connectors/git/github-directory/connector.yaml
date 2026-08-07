@@ -53,6 +53,16 @@ definitions:
         - type: HttpResponseFilter
           action: RATE_LIMITED
           predicate: "{{ (response.get('errors') or []) | selectattr('type', 'equalto', 'RATE_LIMITED') | list | length > 0 }}"
+        # Any other GraphQL error still arrives as HTTP 200, and a
+        # query-level one (bad credentials, missing scope, unauthorized org)
+        # omits `data` entirely. Without this the record extractor simply
+        # finds nothing, the sync reports zero members, and the first symptom
+        # is an unreadable interpolation error from the paginator. Fail with
+        # what GitHub actually said instead.
+        - type: HttpResponseFilter
+          action: FAIL
+          predicate: "{{ (response.get('errors') or []) | length > 0 }}"
+          error_message: "GitHub GraphQL error: {{ (response.get('errors') or []) | map(attribute='message') | join('; ') }}"
         - type: HttpResponseFilter
           action: RETRY
           http_codes: [500, 502, 503, 504]
@@ -234,9 +244,13 @@ spec:
         title: GitHub Token
         airbyte_secret: true
         description: |
-          Personal access token or GitHub App installation token with `read:org`.
-          Add `user:email` if member emails should be collected — without it the
-          `email` field is null for every member.
+          Personal access token or GitHub App installation token with BOTH
+          `read:org` and `user:email` (or `read:user`).
+
+          `user:email` is not optional: GitHub validates the whole GraphQL
+          document up front and rejects it outright when the token cannot read
+          the `email` field, so a `read:org`-only token collects nothing at all
+          rather than returning members with null emails.
         order: 2
       github_organizations:
         type: array

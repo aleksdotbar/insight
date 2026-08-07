@@ -177,6 +177,43 @@ def test_schema_conformance(http_mocker: HttpMocker) -> None:
     assert_records_conform(output.records, CONNECTOR, _STREAM)
 
 
+def test_fails_loudly_on_a_graphql_query_error(http_mocker: HttpMocker) -> None:
+    """A query-level GraphQL error arrives as HTTP 200 and omits `data`
+    entirely — GitHub validates the document before executing it, so an
+    insufficient scope rejects the whole query rather than nulling a field.
+
+    Without an explicit filter the extractor just finds nothing: the sync
+    reports zero members and the first visible symptom is an interpolation
+    error from the paginator, several layers from the cause.
+    """
+    config = GitHubDirectoryConfigBuilder().build()
+    http_mocker.post(
+        HttpRequest(GRAPHQL_URL, body=_body()),
+        HttpResponse(
+            body=json.dumps(
+                {
+                    "errors": [
+                        {
+                            "type": "INSUFFICIENT_SCOPES",
+                            "message": "Your token has not been granted the required scopes.",
+                        }
+                    ]
+                }
+            ),
+            status_code=200,
+        ),
+    )
+
+    output = read_stream(CONNECTOR, _STREAM, config, expecting_exception=True)
+
+    assert not output.records
+    assert output.errors
+    assert "required scopes" in str(output.errors), (
+        "GitHub's own message must reach the operator — a generic failure sends "
+        f"them looking in the wrong place: {output.errors}"
+    )
+
+
 def test_retries_graphql_rate_limit(http_mocker: HttpMocker) -> None:
     """GraphQL reports throttling as HTTP 200 with errors[].type=RATE_LIMITED,
     which no status-code filter can see."""
