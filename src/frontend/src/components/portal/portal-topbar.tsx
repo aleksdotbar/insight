@@ -1,7 +1,5 @@
 import { HelpCircle } from "lucide-react";
-import { useMemo } from "react";
 
-import { useViewer } from "@/auth";
 import { ScopeSelect } from "@/components/portal/scope-select";
 import { SliceSelect } from "@/components/portal/slice-select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -13,12 +11,8 @@ import {
 } from "@/components/ui/tooltip";
 import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
 import { usePortalPeriod } from "@/hooks/use-portal-period";
-import { collectRosterAttrs } from "@/lib/insight/slices";
-import { catalogAttributes, cohortOptions } from "@/lib/portal/cohort-options";
-import { useMetricDefinitionsResponse } from "@/queries/metric-definitions";
-import { normalizePersonId } from "@/lib/metrics/entity";
 import { useActiveZone } from "@/lib/portal/use-active-zone";
-import { useIcPerson } from "@/queries/ic-dashboard";
+import { useCohortOptions } from "@/lib/portal/use-cohort-options";
 
 /**
  * Global portal bar — the two cross-cutting controls live here so every zone
@@ -29,26 +23,16 @@ import { useIcPerson } from "@/queries/ic-dashboard";
  */
 export function PortalTopBar() {
   const { period, customRange, setPeriod, setCustomRange } = usePortalPeriod();
-  const { personId } = useViewer();
   // The Person zone is about ONE person, and it reads nothing from the org
   // scope. Leaving the control up meant the bar named a different person than
   // the page — a reader saw two names and had to work out which one the
   // numbers belonged to.
   const { activeZone } = useActiveZone();
   const scoped = activeZone !== "person";
-  const tree = useIcPerson(personId ?? "").data ?? null;
   // The server's catalog when it has one, the viewer's roster until then —
-  // decided in `cohortOptions`, not here. See its note for why the roster
-  // alone cannot serve a reader without reports.
-  const { data: definitions } = useMetricDefinitionsResponse();
-  const { dims } = useMemo(
-    () =>
-      cohortOptions(
-        catalogAttributes(definitions),
-        collectRosterAttrs(tree, normalizePersonId).values()
-      ),
-    [definitions, tree]
-  );
+  // decided in `useCohortOptions`, which also owns which selection is in
+  // effect so this control and the comparison cannot disagree.
+  const { dims } = useCohortOptions();
 
   return (
     // Sticky to the scroll container (`SidebarInset` owns the overflow): scope,
