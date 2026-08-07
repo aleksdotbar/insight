@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/tooltip";
 import { PeriodSelectorBar } from "@/components/widgets/period-selector-bar";
 import { usePortalPeriod } from "@/hooks/use-portal-period";
-import { availableSlices } from "@/lib/insight/slices";
 import { collectRosterAttrs } from "@/lib/insight/slices";
+import { catalogAttributes, cohortOptions } from "@/lib/portal/cohort-options";
+import { useMetricDefinitionsResponse } from "@/queries/metric-definitions";
 import { normalizePersonId } from "@/lib/metrics/entity";
 import { useActiveZone } from "@/lib/portal/use-active-zone";
 import { useIcPerson } from "@/queries/ic-dashboard";
@@ -36,9 +37,17 @@ export function PortalTopBar() {
   const { activeZone } = useActiveZone();
   const scoped = activeZone !== "person";
   const tree = useIcPerson(personId ?? "").data ?? null;
-  const dims = useMemo(
-    () => availableSlices(collectRosterAttrs(tree, normalizePersonId).values()),
-    [tree],
+  // The server's catalog when it has one, the viewer's roster until then —
+  // decided in `cohortOptions`, not here. See its note for why the roster
+  // alone cannot serve a reader without reports.
+  const { data: definitions } = useMetricDefinitionsResponse();
+  const { dims } = useMemo(
+    () =>
+      cohortOptions(
+        catalogAttributes(definitions),
+        collectRosterAttrs(tree, normalizePersonId).values()
+      ),
+    [definitions, tree]
   );
 
   return (
