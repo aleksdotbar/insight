@@ -5,7 +5,6 @@ import { useMetricEvidenceOptional } from "@/components/metric-evidence-context"
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { MetricName } from "@/components/widgets/metric-help-tooltip";
-import { PeerMark } from "@/components/widgets/metric-views/peer-mark";
 import { silentDays, stripDays, type StripDay } from "@/lib/insight/day-strip";
 import { metricComparisons } from "@/lib/insight/metric-comparison";
 import { metricHelp } from "@/lib/insight/metric-help";
@@ -19,7 +18,6 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
-import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import { useMetricDetail } from "@/queries/metric-detail";
 import { cn } from "@/lib/utils";
 
@@ -75,25 +73,21 @@ export function MetricActivity({
               period comes first because it is the one they can act on; the
               cohort follows, because they did not choose it and cannot see
               who is in it. */}
-          <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
-            <span>
-              {[
-                against.change
-                  ? `${against.change} since last ${periodNoun}`
-                  : null,
-                against.median ? `team ${against.median}` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-            {/* The same mark the list further down carries, so "how unlike
-                the group am I" is read one way wherever it appears. */}
-            <PeerMark
-              standing={derivePeerStanding(metric.direction, data)}
-              metricLabel={metric.label}
-              format={metric.format}
-              unit={metric.unit}
-            />
+          {/* No standing mark here, though the list below carries one on
+              every row. What makes that mark readable is the shared line the
+              list draws behind it: a dot means something against a visible
+              middle and nothing at all on its own. Three rows would not earn
+              a line of their own either — the mark exists to make fifteen
+              rows scannable, and here both comparisons are already in words. */}
+          <div className="text-xs text-muted-foreground">
+            {[
+              against.change
+                ? `${against.change} since last ${periodNoun}`
+                : null,
+              against.median ? `team ${against.median}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </div>
         </div>
       </header>
