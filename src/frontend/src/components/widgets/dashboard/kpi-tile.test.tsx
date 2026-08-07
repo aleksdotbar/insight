@@ -22,7 +22,10 @@ function tile(overrides: Partial<KpiTileData> = {}): KpiTileData {
     medianLabel: "median 11",
     gapText: null,
     gapStatus: "neutral",
-    context: "Days with any AI tool activity",
+    help: {
+      description: "Days with any AI tool activity",
+      explanation: "Counted from tool events, one day per person.",
+    },
     groupId: "ai_adoption",
     ...overrides,
   };
@@ -83,5 +86,21 @@ describe("KpiTilePlaceholder", () => {
     render(<KpiTilePlaceholder />);
     expect(screen.getByText("Coming soon")).toBeInTheDocument();
   });
-});
 
+  it("explains the metric on hover, in the catalog's own words", async () => {
+    // The number alone is not readable: a viewer meeting "14" has no way to
+    // learn what it counts. The tile itself is the trigger, so the answer is
+    // one pointer-rest away instead of one more icon per tile.
+    render(<KpiTile tile={tile()} onOpenGroup={vi.fn()} />);
+    await userEvent.hover(screen.getByRole("button"));
+    const tip = await screen.findByTestId("metric-help");
+    expect(tip).toHaveTextContent("Days with any AI tool activity");
+    expect(tip).toHaveTextContent("Counted from tool events");
+  });
+
+  it("opens nothing for a metric the catalog says nothing about", async () => {
+    render(<KpiTile tile={tile({ help: null })} onOpenGroup={vi.fn()} />);
+    await userEvent.hover(screen.getByRole("button"));
+    expect(screen.queryByTestId("metric-help")).not.toBeInTheDocument();
+  });
+});

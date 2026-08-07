@@ -1,6 +1,7 @@
 import { formatMetricValue, splitMetricValue } from "@/lib/format";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
 import type { MetricGroup, GroupId } from "@/lib/insight/groups";
+import { metricHelp, type MetricHelpText } from "@/lib/insight/metric-help";
 import {
   forEntity,
   type NormalizedMetricResult,
@@ -32,6 +33,8 @@ export interface AttentionItem {
   medianText: string | null;
   /** Scale of divergence from the median ("16×", "−40%"); null at the median. */
   gapText: string | null;
+  /** The catalog's own words for the metric; null when it supplies none. */
+  help: MetricHelpText | null;
   relGap: number;
 }
 
@@ -126,6 +129,7 @@ export function metricAttentionItems(
         format: metric.format,
         unit: metric.unit,
       }),
+      help: metricHelp(metric),
       relGap,
     });
   }

@@ -19,6 +19,7 @@ function item(overrides: Partial<AttentionItem> = {}): AttentionItem {
     valueUnit: "days",
     medianText: "11 days",
     gapText: "-82%",
+    help: null,
     relGap: 0.8,
     ...overrides,
   };
@@ -77,5 +78,27 @@ describe("IcNeedsAttention", () => {
     );
     render(<IcNeedsAttention items={items} onOpenGroup={vi.fn()} />);
     expect(screen.getByText("Show 3 more")).toBeInTheDocument();
+  });
+
+  it("explains a row's metric on hover", async () => {
+    // The row names a metric and a number; what the metric MEANS lives in the
+    // catalog, and the row is the only place a reader meets it.
+    render(
+      <IcNeedsAttention
+        items={[
+          item({
+            help: {
+              description: "Days with any AI tool activity",
+              explanation: null,
+            },
+          }),
+        ]}
+        onOpenGroup={vi.fn()}
+      />,
+    );
+    await userEvent.hover(screen.getByRole("button"));
+    expect(await screen.findByTestId("metric-help")).toHaveTextContent(
+      "Days with any AI tool activity",
+    );
   });
 });

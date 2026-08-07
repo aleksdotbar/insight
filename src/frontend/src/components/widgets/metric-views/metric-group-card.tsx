@@ -1,4 +1,5 @@
 import { ChevronRight } from "lucide-react";
+import { MetricName } from "@/components/widgets/metric-help-tooltip";
 import {
   Card,
   CardContent,
@@ -13,7 +14,10 @@ import { useSettings } from "@/hooks/use-settings";
 import { formatMetricValue } from "@/lib/format";
 import type { MetricGroup } from "@/lib/insight/groups";
 import { peerStatusToStatus } from "@/lib/insight/peer-status";
-import { forEntity, type NormalizedMetricResult } from "@/lib/metrics/collection";
+import {
+  forEntity,
+  type NormalizedMetricResult,
+} from "@/lib/metrics/collection";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
 import {
   derivePeerStanding,
@@ -25,10 +29,7 @@ import {
   rankCounts,
   sectionStandingPhrase,
 } from "@/lib/scoring";
-import {
-  STATUS_BG_CLASS,
-  applyFocusStatus,
-} from "@/lib/status";
+import { STATUS_BG_CLASS, applyFocusStatus } from "@/lib/status";
 import type { MetricCollectionResult } from "@/queries/metric-results";
 import { cn } from "@/lib/utils";
 
@@ -166,7 +167,7 @@ export function MetricGroupCard({
         // Header→content on the card's own 12px rhythm (the preview stack's
         // gap-3), not the default 24px section gap.
         "gap-3",
-        !isEmpty && "text-left transition-colors hover:bg-accent/50",
+        !isEmpty && "text-left transition-colors hover:bg-accent/50"
       )}
     >
       <CardHeader>
@@ -193,7 +194,7 @@ export function MetricGroupCard({
                 <span
                   className={cn(
                     "size-1.5 shrink-0 rounded-full",
-                    STATUS_BG_CLASS[status],
+                    STATUS_BG_CLASS[status]
                   )}
                   aria-hidden
                 />
@@ -213,7 +214,7 @@ export function MetricGroupCard({
                 {preview.map((row) => {
                   const previewStatus = applyFocusStatus(
                     peerStatusToStatus(row.rank),
-                    focusMode,
+                    focusMode
                   );
                   // Only the lead carries its comparison: it is the reason the
                   // card is worth opening, and putting "vs median" on every row
@@ -225,30 +226,31 @@ export function MetricGroupCard({
                       key={row.metric.metric_key}
                       className="flex flex-col gap-0.5 text-sm"
                     >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "size-2 shrink-0 rounded-full",
-                          STATUS_BG_CLASS[previewStatus],
-                        )}
-                        aria-hidden
-                      />
-                      <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                        {row.metric.label}
-                      </span>
-                      {/* The dot carries the standing; the number stays a
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "size-2 shrink-0 rounded-full",
+                            STATUS_BG_CLASS[previewStatus]
+                          )}
+                          aria-hidden
+                        />
+                        <MetricName
+                          metric={row.metric}
+                          className="min-w-0 flex-1 truncate text-muted-foreground"
+                        />
+                        {/* The dot carries the standing; the number stays a
                           number. Colouring both put two marks on one row, and
                           a card of five rows then read as five problems
                           instead of one section worth opening. */}
-                      <span className="shrink-0 font-medium tabular-nums">
-                        {row.value != null
-                          ? formatMetricValue(
-                              row.value,
-                              row.metric.format,
-                              row.metric.unit,
-                            )
-                          : "—"}
-                      </span>
+                        <span className="shrink-0 font-medium tabular-nums">
+                          {row.value != null
+                            ? formatMetricValue(
+                                row.value,
+                                row.metric.format,
+                                row.metric.unit
+                              )
+                            : "—"}
+                        </span>
                       </span>
                       {/* Under the row, not beside it: a card is a quarter of
                           the content width, and a third column there truncated
@@ -283,9 +285,7 @@ function pickHeadlineRow(rows: CardRow[]): CardRow | null {
     .reduce<CardRow | null>((best, row) => {
       if (!best) return row;
       if (HEADLINE_TIER[row.rank] !== HEADLINE_TIER[best.rank])
-        return HEADLINE_TIER[row.rank] > HEADLINE_TIER[best.rank]
-          ? row
-          : best;
+        return HEADLINE_TIER[row.rank] > HEADLINE_TIER[best.rank] ? row : best;
       return row.standing.severity > best.standing.severity ? row : best;
     }, null);
   return ranked ?? rows.find((row) => row.value != null) ?? null;
@@ -312,4 +312,3 @@ function gapPhrase(row: CardRow): string | null {
   });
   return gap == null ? null : `${gap} vs median`;
 }
-

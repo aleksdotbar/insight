@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { MetricHelpTooltip } from "@/components/widgets/metric-help-tooltip";
 import { useSettings } from "@/hooks/use-settings";
 import type { AttentionItem } from "@/lib/insight/attention";
 import type { GroupId } from "@/lib/insight/groups";
@@ -49,61 +50,63 @@ export function IcNeedsAttention({
           <ul className="grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2">
             {visible.map((item) => (
               <li key={`${item.group}-${item.key}`}>
-                <button
-                  type="button"
-                  onClick={() => onOpenGroup(item.group)}
-                  /* A grid, not a sentence: the values used to start wherever
-                     each label happened to end, so four rows put four numbers
-                     at four different x-positions. Numbers line up in their own
-                     right-aligned column now, and the comparison in the next
-                     one, so the eye reads down instead of hunting across.
-                     The label column is FIXED rather than stretching: a 1fr
-                     label pushed its own value to the far edge of the row, and
-                     alignment bought at the cost of putting a number a hand's
-                     width from the thing it measures is a bad trade. Fixed
-                     columns give both — every value under the last, and each
-                     next to its label. */
-                  className="-mx-2 grid w-[calc(100%+1rem)] grid-cols-[minmax(0,10rem)_3.5rem_6.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
-                >
-                  <span className="min-w-0 truncate text-foreground">
-                    {item.label}
-                  </span>
-                  {/* Digits right, unit left: the numbers line up on their
-                      last figure AND the units start together, so neither
-                      column is ragged. One cell of "143 lines" could only give
-                      one of the two. */}
-                  <span
-                    className={cn(
-                      "justify-self-end text-right tabular-nums",
-                      PEER_TEXT[badStatus]
-                    )}
+                <MetricHelpTooltip help={item.help}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenGroup(item.group)}
+                    /* A grid, not a sentence: the values used to start wherever
+                       each label happened to end, so four rows put four numbers
+                       at four different x-positions. Numbers line up in their own
+                       right-aligned column now, and the comparison in the next
+                       one, so the eye reads down instead of hunting across.
+                       The label column is FIXED rather than stretching: a 1fr
+                       label pushed its own value to the far edge of the row, and
+                       alignment bought at the cost of putting a number a hand's
+                       width from the thing it measures is a bad trade. Fixed
+                       columns give both — every value under the last, and each
+                       next to its label. */
+                    className="-mx-2 grid w-[calc(100%+1rem)] grid-cols-[minmax(0,10rem)_3.5rem_6.5rem_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded px-2 py-1 text-left text-sm transition-colors hover:bg-accent"
                   >
-                    {item.valueNumber}
-                  </span>
-                  <span
-                    className={cn(
-                      "truncate text-left whitespace-nowrap",
-                      PEER_TEXT[badStatus]
-                    )}
-                  >
-                    {item.valueUnit}
-                  </span>
-                  <span className="truncate text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-                    {item.medianText ? (
-                      <>
-                        {item.gapText ? <>{item.gapText} vs </> : null}
-                        median {item.medianText}
-                      </>
-                    ) : null}
-                  </span>
-                  {/* Same standing affordance as every other openable surface:
-                      a row that only reacts to hover is indistinguishable from
-                      a line of text until the mouse happens to cross it. */}
-                  <ChevronRight
-                    className="size-3.5 shrink-0 self-center text-muted-foreground/50"
-                    aria-hidden
-                  />
-                </button>
+                    <span className="min-w-0 truncate text-foreground">
+                      {item.label}
+                    </span>
+                    {/* Digits right, unit left: the numbers line up on their
+                        last figure AND the units start together, so neither
+                        column is ragged. One cell of "143 lines" could only give
+                        one of the two. */}
+                    <span
+                      className={cn(
+                        "justify-self-end text-right tabular-nums",
+                        PEER_TEXT[badStatus]
+                      )}
+                    >
+                      {item.valueNumber}
+                    </span>
+                    <span
+                      className={cn(
+                        "truncate text-left whitespace-nowrap",
+                        PEER_TEXT[badStatus]
+                      )}
+                    >
+                      {item.valueUnit}
+                    </span>
+                    <span className="truncate text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                      {item.medianText ? (
+                        <>
+                          {item.gapText ? <>{item.gapText} vs </> : null}
+                          median {item.medianText}
+                        </>
+                      ) : null}
+                    </span>
+                    {/* Same standing affordance as every other openable surface:
+                        a row that only reacts to hover is indistinguishable from
+                        a line of text until the mouse happens to cross it. */}
+                    <ChevronRight
+                      className="size-3.5 shrink-0 self-center text-muted-foreground/50"
+                      aria-hidden
+                    />
+                  </button>
+                </MetricHelpTooltip>
               </li>
             ))}
             {shouldCollapse ? (

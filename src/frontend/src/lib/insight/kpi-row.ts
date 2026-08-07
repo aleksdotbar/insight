@@ -10,6 +10,7 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
+import { metricHelp, type MetricHelpText } from "@/lib/insight/metric-help";
 import { peerStatusToStatus } from "@/lib/insight/peer-status";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
 import { derivePeerStanding } from "@/lib/metrics/peer-standing";
@@ -43,8 +44,11 @@ export interface KpiTileData {
    * a future rule (a real threshold on the gap itself) has somewhere to land.
    */
   gapStatus: Status;
-  /** Secondary context line, shown when explanations are enabled. */
-  context: string | null;
+  /**
+   * The catalog's own words for the metric — shown on hover or focus, and
+   * inline when explanations are enabled. Null when the catalog has none.
+   */
+  help: MetricHelpText | null;
   groupId: GroupId | null;
 }
 
@@ -143,7 +147,7 @@ export function metricKpiTiles(
         // and a reader counts marks — a person page with six findings read as
         // twice as many problems.
         gapStatus: "neutral" as Status,
-        context: metric.description ?? null,
+        help: metricHelp(metric),
         groupId: groupIdForMetricKey(metric.metric_key),
       },
     ];
