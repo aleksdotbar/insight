@@ -237,11 +237,41 @@ reconcile_classify_change() {
 }
 
 # ---------------------------------------------------------------------------
-# _RECONCILE_MIGRATED_STATE[<connector>] — path to the state backup taken when
-# reconcile_migrate_definition_kind tore down a connector's old connection, so
-# reconcile_connections can restore it onto the replacement it creates later in
-# the same pass.
-declare -gA _RECONCILE_MIGRATED_STATE=()
+# ---------------------------------------------------------------------------
+# reconcile_migrated_state_file <source_name>
+#
+# Path of the state backup taken when reconcile_migrate_definition_kind tore a
+# source down, read back by reconcile_connections when it creates the
+# replacement. The handoff goes through the filesystem rather than a shell
+# variable because both stages are invoked as `$(...)` by _reconcile_one_connector
+# — anything they assign dies with the subshell.
+#
+# Keyed by source name: the name is what survives a recreate, and a definition
+# may have several sources bound to it, whose states must not overwrite each
+# other. Scoped to the run so a backup abandoned by an earlier crash is never
+# mistaken for this run's.
+# ---------------------------------------------------------------------------
+reconcile_migrated_state_file() {
+  local source_name="$1" safe_name
+  safe_name="$(printf '%s' "${source_name}" | tr -c '[:alnum:]._-' '_')"
+  printf '%s/%s.json' "$(reconcile_migrated_state_dir)" "${safe_name}"
+}
+
+# Directory holding this run's state backups. The file paths are predictable —
+# both stages have to derive the same one — so the directory carries the
+# protection: created 0700, and refused if it is not a directory we own, which
+# is what stops a pre-created path or symlink in a shared TMPDIR from
+# redirecting the write or exposing the contents.
+reconcile_migrated_state_dir() {
+  printf '%s/insight-migrated-state.%s' "${TMPDIR:-/tmp}" "${RECONCILE_RUN_ID:-$$}"
+}
+
+reconcile_migrated_state_dir_ready() {
+  local dir
+  dir="$(reconcile_migrated_state_dir)"
+  [[ -d "${dir}" ]] || mkdir -m 700 "${dir}" 2>/dev/null || return 1
+  [[ -d "${dir}" && ! -L "${dir}" && -O "${dir}" ]] || return 1
+}
 
 # ---------------------------------------------------------------------------
 # reconcile_migrate_definition_kind <connector_name> <old_definition_id> <cdk_image>
@@ -266,7 +296,7 @@ declare -gA _RECONCILE_MIGRATED_STATE=()
 # ---------------------------------------------------------------------------
 reconcile_migrate_definition_kind() {
   local connector_name="$1" old_definition_id="$2" cdk_image="$3"
-  local workspace_id sources_json source_ids
+  local workspace_id sources_json bound_sources
 
   # Defensive dry-run guard: reconcile_definitions already short-circuits before
   # calling us, but enforce here too per dod-reconcile-dry-run-non-destructive.
@@ -278,16 +308,18 @@ reconcile_migrate_definition_kind() {
 
   workspace_id="$(ab_workspace_id)"
   sources_json="$(ab_list_sources "${workspace_id}")"
-  source_ids="$(printf '%s' "${sources_json}" | python3 -c '
+  # `<sourceId>\t<name>` per bound source — the name is the key the replacement
+  # is created under, so it is what the state backup has to be filed against.
+  bound_sources="$(printf '%s' "${sources_json}" | python3 -c '
 import sys, json
 target = sys.argv[1]
 for s in json.load(sys.stdin):
     if s.get("sourceDefinitionId") == target:
-        print(s.get("sourceId", ""))
+        print("%s\t%s" % (s.get("sourceId", ""), s.get("name", "")))
 ' "${old_definition_id}")"
 
-  local source_id connection_id state_json state_backup
-  while IFS= read -r source_id; do
+  local source_id source_name connection_id state_json state_backup
+  while IFS=$'\t' read -r source_id source_name; do
     [[ -n "${source_id}" ]] || continue
 
     connection_id="$(ab_list_connections "${workspace_id}" \
@@ -298,19 +330,23 @@ for s in json.load(sys.stdin):
           "state export failed for connection ${connection_id} — aborting definition migration"
         return 1
       fi
-      state_backup="$(mktemp -t insight-state.XXXXXX)" \
-        && chmod 600 "${state_backup}" \
-        && printf '%s' "${state_json}" > "${state_backup}" \
-        || { reconcile__log ERROR "${connector_name}" "state backup tempfile failed — aborting"; return 1; }
-      _RECONCILE_MIGRATED_STATE["${connector_name}"]="${state_backup}"
-      reconcile__log INFO "${connector_name}" "state backup: ${state_backup}"
+      if ! reconcile_migrated_state_dir_ready; then
+        reconcile__log ERROR "${connector_name}" \
+          "state backup directory $(reconcile_migrated_state_dir) is unusable — aborting before anything is deleted"
+        return 1
+      fi
+      state_backup="$(reconcile_migrated_state_file "${source_name}")"
+      rm -f "${state_backup}"
+      ( umask 077 && printf '%s' "${state_json}" > "${state_backup}" ) \
+        || { reconcile__log ERROR "${connector_name}" "state backup write failed — aborting"; return 1; }
+      reconcile__log INFO "${connector_name}" "state backup for ${source_name}: ${state_backup}"
     fi
 
     # RECONCILE_DRY_RUN guarded at top of reconcile_migrate_definition_kind.
     ab_delete_source "${source_id}" >/dev/null
     reconcile__log CHANGE "${connector_name}" \
       "deleted source ${source_id} bound to the manifest-backed definition"
-  done <<<"${source_ids}"
+  done <<<"${bound_sources}"
 
   # RECONCILE_DRY_RUN guarded at top of reconcile_migrate_definition_kind.
   if ! ab_delete_source_definition "${old_definition_id}" >/dev/null; then
@@ -710,6 +746,7 @@ for s in json.load(sys.stdin):
 reconcile_connections() {
   local connector_name="$1" source_id="$2" secret_cfg_hash="$3"
   local namespace_format="${4:?reconcile_connections: namespace_format (arg 4) required — from descriptor.connection.namespace, no fallback}"
+  local source_name="${5:-}"
   local workspace_id connections_json filtered
 
   # @cpt-begin:cpt-insightspec-algo-reconcile-diff-connection-tags:p2:inst-dct-find-tag
@@ -826,15 +863,17 @@ print("\n".join(sorted(i for i in ids if i)))')"
     # A connection created in the same pass that migrated the definition is the
     # replacement for the one that was torn down, so the state exported there
     # belongs to it. Without this the streams would resync from cursor zero.
-    local migrated_state="${_RECONCILE_MIGRATED_STATE[${connector_name}]:-}"
+    local migrated_state=""
+    [[ -n "${source_name}" ]] && migrated_state="$(reconcile_migrated_state_file "${source_name}")"
     if [[ -n "${migrated_state}" && -n "${new_conn_id}" && -s "${migrated_state}" ]]; then
       # RECONCILE_DRY_RUN guarded by the early return in this branch above.
       if ab_create_or_update_state "${new_conn_id}" "$(cat "${migrated_state}")" >/dev/null; then
         reconcile__log CHANGE "${connector_name}" \
           "restored state onto migrated connection ${new_conn_id}"
         rm -f "${migrated_state}"
-        unset "_RECONCILE_MIGRATED_STATE[${connector_name}]"
       else
+        # Keep the backup: it is the only copy, and the restore is retried on
+        # the next pass or recovered by hand from this path.
         reconcile__log ERROR "${connector_name}" \
           "state restore failed for migrated connection ${new_conn_id} — recover from ${migrated_state}"
       fi
@@ -1280,7 +1319,7 @@ print(json.dumps(d))
   #      genuine reason to re-sync (the new credentials may scope to a
   #      different account / dataset).
   local conn_result conn_action conn_id
-  if ! conn_result="$(reconcile_connections "${name}" "${src_id}" "${cfg_hash}" "${ns_format}")"; then
+  if ! conn_result="$(reconcile_connections "${name}" "${src_id}" "${cfg_hash}" "${ns_format}" "${expected_source_name}")"; then
     log_line ERROR "${name}: failed to reconcile connection"
     _RECONCILE_FAILED=$((_RECONCILE_FAILED + 1))
     return 1
