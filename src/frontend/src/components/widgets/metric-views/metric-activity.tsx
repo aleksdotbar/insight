@@ -1,10 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { evidenceSelection } from "@/api/metric-drilldown-client";
 import { useMetricEvidenceOptional } from "@/components/metric-evidence-context";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { MetricName } from "@/components/widgets/metric-help-tooltip";
+import { PeerMark } from "@/components/widgets/metric-views/peer-mark";
 import { silentDays, stripDays, type StripDay } from "@/lib/insight/day-strip";
 import { metricComparisons } from "@/lib/insight/metric-comparison";
 import { metricHelp } from "@/lib/insight/metric-help";
@@ -18,6 +19,7 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
+import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import { useMetricDetail } from "@/queries/metric-detail";
 import { cn } from "@/lib/utils";
 
@@ -72,16 +74,26 @@ export function MetricActivity({
           {/* Both readings, stated and neither judged. The reader's own last
               period comes first because it is the one they can act on; the
               cohort follows, because they did not choose it and cannot see
-              who is in it. No colour either way — this is their own page. */}
-          <div className="text-xs text-muted-foreground">
-            {[
-              against.change
-                ? `${against.change} since last ${periodNoun}`
-                : null,
-              against.median ? `team ${against.median}` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+              who is in it. */}
+          <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+            <span>
+              {[
+                against.change
+                  ? `${against.change} since last ${periodNoun}`
+                  : null,
+                against.median ? `team ${against.median}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+            {/* The same mark the list further down carries, so "how unlike
+                the group am I" is read one way wherever it appears. */}
+            <PeerMark
+              standing={derivePeerStanding(metric.direction, data)}
+              metricLabel={metric.label}
+              format={metric.format}
+              unit={metric.unit}
+            />
           </div>
         </div>
       </header>
@@ -204,8 +216,15 @@ function scaled(metric: NormalizedMetricResult, value: number): number {
   return metric.computation === "ratio" ? value * (metric.scale ?? 1) : value;
 }
 
+/**
+ * One day, in words.
+ *
+ * "No reading" is spelled out rather than shown as a zero, because the whole
+ * point of the gap in the drawing is that those are different — and a reader
+ * checking a suspicious blank is exactly who reaches for this.
+ */
 function dayTitle(metric: NormalizedMetricResult, day: StripDay): string {
-  const when = formatDate(day.date, "d MMM yyyy");
+  const when = formatDate(day.date, "d MMM");
   if (day.value == null) return `${when} — no reading`;
   const value = formatMetricValue(
     scaled(metric, day.value),
@@ -227,6 +246,7 @@ function DayStrip({
   rows: NonNullable<ReturnType<typeof useMetricDetail>["data"]>["rows"];
   columns: NonNullable<ReturnType<typeof useMetricDetail>["data"]>["columns"];
 }) {
+  const [hovered, setHovered] = useState<number | null>(null);
   const period = metric.selection?.period;
   const days = useMemo(
     () =>
@@ -237,6 +257,7 @@ function DayStrip({
   );
   if (days.length === 0) return null;
 
+  const hoveredDay = hovered != null ? (days[hovered] ?? null) : null;
   const silent = silentDays(days);
   // One denominator for the whole period is worth naming: it is the thing a
   // reader argues with when a share looks wrong, and it is invisible in the
@@ -249,11 +270,17 @@ function DayStrip({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex h-10 items-end gap-px border-b">
-        {days.map((day) => (
+      {/* Hover reads out in the caption below rather than in a tooltip per
+          day: a month is thirty-one triggers, and a floating card that covers
+          its neighbours is the wrong shape for asking "what was that bar". */}
+      <div
+        className="flex h-10 items-end gap-px border-b"
+        onPointerLeave={() => setHovered(null)}
+      >
+        {days.map((day, index) => (
           <div
             key={day.date}
-            title={dayTitle(metric, day)}
+            onPointerEnter={() => setHovered(index)}
             className="relative flex h-full flex-1 items-end"
           >
             {day.height == null ? null : (
@@ -273,12 +300,19 @@ function DayStrip({
       </div>
       <div className="flex justify-between text-[0.6875rem] text-muted-foreground">
         <span>{period ? formatDate(period.from) : null}</span>
-        <span className="text-center">
-          {constantDenominator != null
-            ? `measured against ${constantDenominator} per day`
-            : silent > 0
-              ? `${silent} ${silent === 1 ? "day" : "days"} with no reading`
-              : null}
+        <span
+          className={cn(
+            "text-center",
+            hoveredDay ? "text-foreground tabular-nums" : null
+          )}
+        >
+          {hoveredDay
+            ? dayTitle(metric, hoveredDay)
+            : constantDenominator != null
+              ? `measured against ${constantDenominator} per day`
+              : silent > 0
+                ? `${silent} ${silent === 1 ? "day" : "days"} with no reading`
+                : null}
         </span>
         <span>{period ? formatDate(period.to) : null}</span>
       </div>
