@@ -49,7 +49,15 @@ const FOLD_SQL: &str = r"
     FROM identity.identity_inputs
     WHERE source_account_id IS NOT NULL AND source_account_id != ''
     GROUP BY source_type, source_id, account_id
+    ORDER BY source_type, source_id, account_id
 ";
+
+/// Ceiling on the fold, which is read whole into memory. The queue's rates are
+/// meant to cover every observed account, so this is a safety valve against an
+/// unbounded read rather than a pagination knob: reaching it truncates what the
+/// operator sees, and is reported rather than passed off as a complete answer.
+/// The fold is ordered so a truncated read is at least the same prefix twice.
+const MAX_EVIDENCE_ACCOUNTS: usize = 200_000;
 
 #[derive(Debug, Row, Deserialize)]
 struct FoldedRow {
@@ -94,11 +102,20 @@ impl ClickHouseEvidenceReader {
     ///
     /// Returns an error if the query fails or a stored source id is not a UUID.
     pub async fn accounts(&self) -> anyhow::Result<Vec<AccountEvidence>> {
-        let rows: Vec<FoldedRow> = match self.client.query(FOLD_SQL).fetch_all().await {
+        let sql = format!("{FOLD_SQL} LIMIT {MAX_EVIDENCE_ACCOUNTS}");
+        let rows: Vec<FoldedRow> = match self.client.query(&sql).fetch_all().await {
             Ok(rows) => rows,
             Err(e) if is_missing_relation(&e) => return Ok(Vec::new()),
             Err(e) => return Err(e.into()),
         };
+
+        if rows.len() == MAX_EVIDENCE_ACCOUNTS {
+            tracing::warn!(
+                cap = MAX_EVIDENCE_ACCOUNTS,
+                "review evidence: read cap reached; the queue and its rates \
+                 describe only this many accounts, not the whole tenant"
+            );
+        }
 
         // A row whose source id is not a UUID is one unusable account, not a
         // reason to blind the whole review surface: skip it and say so.
