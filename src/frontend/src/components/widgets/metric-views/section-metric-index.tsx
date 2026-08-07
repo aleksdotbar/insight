@@ -1,6 +1,11 @@
 import { MetricName } from "@/components/widgets/metric-help-tooltip";
+import {
+  PEER_MARK_CENTRE,
+  PeerMark,
+} from "@/components/widgets/metric-views/peer-mark";
 import { formatMetricValue } from "@/lib/format";
 import { metricComparisons } from "@/lib/insight/metric-comparison";
+import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import {
   forEntity,
   type MetricCollectionConfig,
@@ -54,20 +59,31 @@ export function SectionMetricIndex({
       <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
         Also measured here
       </h2>
-      {/* Multi-column flow rather than a grid: columns fill top to bottom, so
-          the alphabet reads down one column and on to the next like an index.
-          A grid fills across the row and scatters the same list. */}
-      <dl className="gap-x-8 pt-3 sm:columns-2 xl:columns-3">
+      {/* One column, whatever the width. Side-by-side columns of aligned
+          names and numbers read as a table — the eye takes the row first — so
+          an alphabet running down each column is invisible, and the list
+          looks like a heap however carefully it was sorted. Vertical space at
+          the very bottom of a page is the cheapest thing here. */}
+      {/* The axis middle, drawn once behind every mark. Per-row ticks would
+          break at each row's padding and read as a dotted column; the whole
+          point is an unbroken line for the ordinary readings to disappear
+          into. */}
+      <dl className="relative pt-2">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-2 w-px bg-foreground/20"
+          style={{ right: PEER_MARK_CENTRE }}
+        />
         {rest.map((metric) => (
           <div
             key={metric.metric_key}
-            className="flex break-inside-avoid items-baseline justify-between gap-3 border-b border-dashed py-1.5"
+            className="flex items-center justify-between gap-4 border-b border-dashed py-1 last:border-b-0"
           >
-            <dt className="min-w-0 truncate text-xs">
+            <dt className="min-w-0 flex-1 truncate text-xs">
               <MetricName metric={metric} />
             </dt>
             <dd className="flex shrink-0 items-baseline gap-2 text-xs tabular-nums">
-              <span>
+              <span className="w-32 text-right">
                 {formatMetricValue(
                   forEntity(metric, entityId).value,
                   metric.format,
@@ -78,9 +94,22 @@ export function SectionMetricIndex({
                   anything. Uncoloured: a list of thirty numbers lit up by
                   quartile is a scoreboard, and the reader did not ask to be
                   scored on every one of them. */}
-              <span className="w-24 text-right text-muted-foreground">
+              <span className="w-28 text-right text-muted-foreground">
                 {metricComparisons(metric, null, entityId).median ?? ""}
               </span>
+              {/* And how far off that middle, on the axis every row shares.
+                  The number answers "what do the others have"; the mark
+                  answers "how unlike them am I", which is the question a
+                  reader cannot do in their head nineteen times. */}
+              <PeerMark
+                standing={derivePeerStanding(
+                  metric.direction,
+                  forEntity(metric, entityId)
+                )}
+                metricLabel={metric.label}
+                format={metric.format}
+                unit={metric.unit}
+              />
             </dd>
           </div>
         ))}
