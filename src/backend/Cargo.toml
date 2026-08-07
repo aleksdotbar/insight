@@ -69,7 +69,7 @@ base64 = "0.23"
 sha2 = "0.11"
 hex = "0.4"
 csv = "1.3"
-rust_xlsxwriter = "0.96"
+rust_xlsxwriter = "0.97"
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # Logging
