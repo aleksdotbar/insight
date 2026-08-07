@@ -12,7 +12,7 @@ import uuid
 import httpx
 import pymysql
 import pytest
-from lib import identity_seed
+from lib import clickhouse, identity_seed
 from lib.config import SessionConfig
 from lib.identity import IDENTITY_DATABASE
 
@@ -25,7 +25,13 @@ def _account(account_id: str) -> dict[str, object]:
     return {"source": identity_seed.SOURCE_TYPE, "source_id": str(identity_seed.SOURCE_ID), "id": account_id}
 
 
-def _binding_rows(cfg: SessionConfig, account_id: str) -> list[tuple[str, str]]:
+def _binding_rows(
+    cfg: SessionConfig,
+    account_id: str,
+    *,
+    tenant: uuid.UUID = identity_seed.TEST_TENANT_ID,
+    source_type: str = identity_seed.SOURCE_TYPE,
+) -> list[tuple[str, str]]:
     """(person_id, author_person_id) of every binding observation for one
     account, newest first — read straight from the journal, not the API."""
     with (
@@ -48,7 +54,7 @@ def _binding_rows(cfg: SessionConfig, account_id: str) -> list[tuple[str, str]]:
               AND value_id = %s
             ORDER BY created_at DESC, id DESC
             """,
-            (str(identity_seed.TEST_TENANT_ID), identity_seed.SOURCE_TYPE, account_id),
+            (str(tenant), source_type, account_id),
         )
         return [(row[0], row[1]) for row in cur.fetchall()]
 
@@ -420,3 +426,100 @@ def test_every_route_refuses_an_unauthenticated_caller(
     response = anon_api.request(method, path, json=body)
 
     assert response.status_code == 401, response.text
+
+
+_SEED_SOURCE_ID = "77777777-7777-7777-7777-777777777777"
+
+
+def _ensure_identity_inputs_table(cfg: SessionConfig) -> None:
+    """The evidence relation is dbt's to own, so on a fresh stack it does not
+    exist yet. Declared here (IF NOT EXISTS) rather than imported, so this
+    module never depends on another test file having run first."""
+    clickhouse.ensure_database(cfg, "identity")
+    clickhouse.execute(
+        cfg,
+        """
+        CREATE TABLE IF NOT EXISTS identity.identity_inputs (
+            unique_key          String,
+            insight_tenant_id   Nullable(String),
+            insight_source_type String,
+            insight_source_id   Nullable(String),
+            source_account_id   Nullable(String),
+            value_type          Nullable(String),
+            value               Nullable(String),
+            operation_type      String,
+            _synced_at          DateTime64(3, 'UTC'),
+            _version            UInt64
+        ) ENGINE = ReplacingMergeTree(_version) ORDER BY unique_key
+        """,
+    )
+
+
+def _observe_account(cfg: SessionConfig, run_tag: str, account_id: str, email: str, source_type: str) -> None:
+    """Put one account into the connector evidence the seed reads, with an
+    e-mail so the seed has something to resolve it by."""
+    rows = [(account_id, "id", account_id), (account_id, "email", email)]
+    values = ", ".join(
+        f"('{run_tag}:{account}:{value_type}', '{identity_seed.SEED_TENANT}', '{source_type}', "
+        f"'{_SEED_SOURCE_ID}', '{account}', '{value_type}', '{value}', 'UPSERT', now64(3), {index + 1})"
+        for index, (account, value_type, value) in enumerate(rows)
+    )
+    clickhouse.execute(
+        cfg,
+        "INSERT INTO identity.identity_inputs "  # noqa: S608 — every value is a run-tagged test literal
+        "(unique_key, insight_tenant_id, insight_source_type, insight_source_id,"
+        " source_account_id, value_type, value, operation_type, _synced_at, _version) VALUES " + values,
+    )
+
+
+def test_an_operator_decision_survives_the_next_seed_run(identity_svc, compose_stack: SessionConfig) -> None:
+    """The durability requirement, end to end: automation binds an account,
+    an operator moves it elsewhere, automation runs again — and finds the
+    operator's decision already there and reuses it. Everything else in this
+    feature is inert if a re-run can quietly undo a human's answer.
+    """
+    if not identity_svc.supports_seed_cli:
+        pytest.skip("the seed CLI exists only on the Rust implementation (#1690)")
+
+    run_tag = uuid.uuid4().hex[:10]
+    source_type = f"e2e-durability-{run_tag}"
+    corrected = f"acc-corrected-{run_tag}"
+    other = f"acc-other-{run_tag}"
+
+    _ensure_identity_inputs_table(compose_stack)
+    # Two accounts with unrelated e-mails: automation gives each its own
+    # person, which is what makes moving one of them a real correction.
+    _observe_account(compose_stack, run_tag, corrected, f"corrected.{run_tag}@e2e.test", source_type)
+    _observe_account(compose_stack, run_tag, other, f"other.{run_tag}@e2e.test", source_type)
+
+    first = identity_svc.run_seed_cli(tenant=str(identity_seed.SEED_TENANT), force=True)
+    assert first.returncode == 0, f"rc={first.returncode}\n{first.stdout}\n{first.stderr}"
+
+    automatic = _binding_rows(compose_stack, corrected, tenant=identity_seed.SEED_TENANT, source_type=source_type)
+    destination = _binding_rows(compose_stack, other, tenant=identity_seed.SEED_TENANT, source_type=source_type)
+    assert automatic and destination, "the seed did not bind the observed accounts"
+    assert automatic[0][1] == uuid.UUID(int=0).hex, "automation authors with the nil sentinel"
+
+    survivor = str(uuid.UUID(destination[0][0]))
+    with identity_svc.client(sub=str(identity_seed.SEED_ADMIN), tenant=str(identity_seed.SEED_TENANT)) as operator:
+        moved = operator.post(
+            "/v1/resolution/bind",
+            json={
+                "bindings": [
+                    {
+                        "account": {"source": source_type, "source_id": _SEED_SOURCE_ID, "id": corrected},
+                        "person_id": survivor,
+                    }
+                ],
+                "comment": "e2e: these two accounts are one human",
+            },
+        )
+        assert moved.status_code == 200, moved.text
+        assert moved.json()["applied"] == 1, moved.json()
+
+    second = identity_svc.run_seed_cli(tenant=str(identity_seed.SEED_TENANT), force=True)
+    assert second.returncode == 0, f"rc={second.returncode}\n{second.stdout}\n{second.stderr}"
+
+    after = _binding_rows(compose_stack, corrected, tenant=identity_seed.SEED_TENANT, source_type=source_type)
+    assert after[0][0] == uuid.UUID(survivor).hex, "the seed re-derived the binding the operator overruled"
+    assert after[0][1] == identity_seed.SEED_ADMIN.hex, "the surviving decision is still the operator's"

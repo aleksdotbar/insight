@@ -261,6 +261,15 @@ pub(crate) async fn rebuild_derived_caches(
     author_person_id: Uuid,
 ) -> anyhow::Result<u64> {
     const DELETE_APM: &str = "DELETE FROM account_person_map WHERE insight_tenant_id = ?";
+    // The journal may hold TWO bindings for one account at the same instant:
+    // its unique key ends in `person_id`, so a re-run that resolves an account
+    // to a different person re-emits the account's `id` row under the source's
+    // own timestamp — which is exactly what an operator correction causes on
+    // the next seed. This cache is keyed by (account, valid_from) with no
+    // person, so those two rows are one row here, and the later decision (the
+    // higher `id`) is the one that stands — the same latest-wins rule the
+    // binding readers use. Without the rank the insert dies on a duplicate key
+    // and takes the whole seed run with it.
     const INSERT_APM: &str = r"
         INSERT INTO account_person_map
             (insight_tenant_id, insight_source_type, insight_source_id, source_account_id,
@@ -269,20 +278,37 @@ pub(crate) async fn rebuild_derived_caches(
             insight_tenant_id,
             insight_source_type,
             insight_source_id,
-            value_id AS source_account_id,
+            source_account_id,
             person_id,
             author_person_id,
             reason,
-            created_at AS valid_from,
-            LEAD(created_at) OVER (
+            valid_from,
+            LEAD(valid_from) OVER (
                 PARTITION BY insight_tenant_id, insight_source_type,
-                             insight_source_id, value_id
-                ORDER BY created_at
+                             insight_source_id, source_account_id
+                ORDER BY valid_from
             ) AS valid_to
-        FROM persons
-        WHERE value_type = 'id'
-          AND value_id IS NOT NULL
-          AND insight_tenant_id = ?
+        FROM (
+            SELECT
+                insight_tenant_id,
+                insight_source_type,
+                insight_source_id,
+                value_id     AS source_account_id,
+                person_id,
+                author_person_id,
+                reason,
+                created_at   AS valid_from,
+                ROW_NUMBER() OVER (
+                    PARTITION BY insight_tenant_id, insight_source_type,
+                                 insight_source_id, value_id, created_at
+                    ORDER BY id DESC
+                ) AS rn
+            FROM persons
+            WHERE value_type = 'id'
+              AND value_id IS NOT NULL
+              AND insight_tenant_id = ?
+        ) ranked
+        WHERE rn = 1
     ";
     const DELETE_ORG_CHART: &str = "DELETE FROM org_chart WHERE insight_tenant_id = ?";
     // Ported verbatim from Sql.PersonsSeed.cs::InsertOrgChartForTenant. The `?`
