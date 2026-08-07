@@ -1168,6 +1168,7 @@ The main pass removes:
   • all stack containers (insight-*)
   • named volumes: mariadb-data, clickhouse-data, clickhouse-logs,
     redis-data, redpanda-data, rust-target, frontend-node-modules
+  • locally-built images (seed-sample, build containers, ...)
   • host-side build artefacts under deploy/compose/build/
   • the generated authenticator dev signing key
     (deploy/compose/authenticator-dev-keys/)
@@ -1197,6 +1198,7 @@ This will permanently remove Docker state for Compose instance
 $COMPOSE_PROJECT_NAME:
   • containers
   • named volumes
+  • the instance's locally-built images
   • the instance network
 
 Worktree-level build artefacts, generated config, keys, and .env.compose
@@ -1209,6 +1211,7 @@ This will permanently remove the local Insight stack state:
   • containers (insight-*)
   • named volumes (mariadb-data, clickhouse-data, redis-data,
     redpanda-data, rust-target, frontend-node-modules, ...)
+  • locally-built images (seed-sample, build containers, ...)
   • deploy/compose/build/ artefacts
   • deploy/compose/authenticator-dev-keys/ (dev signing key)
   • deploy/compose/override.generated.yml
@@ -1237,13 +1240,19 @@ EOF
   local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml)
   [[ -f "$override" ]] && compose_cmd+=(-f "$override")
 
-  echo "=== docker compose down --volumes --remove-orphans ==="
+  # --rmi local: also drop the images compose built for this project (they
+  # carry no custom `image:` tag, which is what "local" matches — the pulled
+  # ghcr images keep their separate question below). A locally-built image
+  # that outlives a prune is worse than a stale volume: the next `run`
+  # silently reuses it even after the source tree it was built from has
+  # moved, and the layer cache makes the rebuild cheap anyway.
+  echo "=== docker compose down --volumes --rmi local --remove-orphans ==="
   "${compose_cmd[@]}" \
     --profile front-dev --profile front-built --profile front-ghcr \
     --profile auth-keycloak \
     --profile build --profile seed \
     --profile local-mariadb --profile local-clickhouse \
-    down --volumes --remove-orphans || true
+    down --volumes --rmi local --remove-orphans || true
 
   if [[ -z "$instance" && -d deploy/compose/build ]]; then
     echo "Removing deploy/compose/build/..."
