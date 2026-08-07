@@ -379,7 +379,7 @@ cmd_up() {
   local build_only_csv=""
   local frontend_mode_override=""
   local instance="$COMPOSE_INSTANCE"
-  # Repeatable. Empty => gen-realm.py keeps its own defaults untouched.
+  # Repeatable. Empty => the realm generator keeps its own defaults untouched.
   local authenticator_redirects=""
   local skip_build=false
   local no_frontend=false
@@ -464,7 +464,7 @@ cmd_up() {
     echo "      Remove AUTH_MODE from $env_file to silence this." >&2
   fi
   AUTH_MODE="keycloak"
-  # The seed-sample container reads AUTH_MODE too (deploy/seed/profiles.py's
+  # The seed-sample container reads AUTH_MODE too (src/ingestion/tools/seed/profiles.py's
   # get_login_id_pairs) to pick which roster personas get a login-id fixture —
   # export so the child `docker compose` process's env-var interpolation sees it.
   export AUTH_MODE
@@ -618,7 +618,7 @@ YML
   local kc_base="http://${kc_ip:-localhost}:8085/kc"
 
   echo "=== Generating Keycloak realm import (deploy/compose/keycloak/realm-insight.generated.json) ==="
-  # gen-realm.py's own --authenticator-redirect REPLACES its defaults rather
+  # The generator's own --authenticator-redirect REPLACES its defaults rather
   # than appending, so whenever we pass any URI we must re-state the two
   # defaults too — dropping them would deregister the human login origins
   # and break `./dev-compose.sh up`.
@@ -632,11 +632,19 @@ YML
     done
     echo "    registering redirect URIs:$redirect_args"
   fi
+  # The realm is built from the seeder's roster, so the generator ships in
+  # that package and runs as an installed program. uv provisions the package
+  # into its own .venv on first use — the same tool the stand suite already
+  # requires — instead of this script reaching into the source tree.
+  command -v uv >/dev/null 2>&1 || {
+    echo "ERROR: uv is required to generate the Keycloak realm." >&2
+    echo "       Install it (brew install uv) and re-run; see CONTRIBUTING.md." >&2
+    return 1; }
   # shellcheck disable=SC2086  # redirect_args is a deliberately word-split flag list
-  python3 deploy/compose/keycloak/gen-realm.py \
+  uv run --project "$ROOT_DIR/src/ingestion/tools/seed" insight-seed-realm \
     --dev-email "$dev_lead_email" \
     $redirect_args \
-    --out deploy/compose/keycloak/realm-insight.generated.json
+    --out "$ROOT_DIR/deploy/compose/keycloak/realm-insight.generated.json"
 
   # NGINX_BFF: the AUTHENTICATOR (not the frontend) logs in against Keycloak,
   # server-side, as the pre-seeded `insight-authenticator` confidential client.
@@ -651,11 +659,11 @@ YML
   export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-insight-authenticator}"
   export OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:-insight-authenticator-dev-secret}"
   # The login-bootstrap resolve is scoped to idp.source_type; keycloak's
-  # sub differs in KIND from fakeidp's (gen-realm.py sets each realm user's
+  # sub differs in KIND from fakeidp's (keycloak_realm sets each realm user's
   # id to their OWN roster uuid, so sub IS that uuid — not the fixed
   # "fakeidp|dev" string fakeidp issues), so it must be seeded/looked-up
   # under its own source_type, not the fakeidp default (see
-  # deploy/seed/profiles.py::get_login_id_pairs).
+  # src/ingestion/tools/seed/profiles.py::get_login_id_pairs).
   export AUTHENTICATOR_IDP_SOURCE_TYPE="keycloak"
   echo "authenticator issuer → ${AUTHENTICATOR_OIDC_ISSUER}"
 
@@ -1097,7 +1105,7 @@ Without that bounce, every metric stays cached at the boot-time
 and section badges read "no peer data" everywhere.
 Tracking upstream as constructorfabric/insight#1307.
 
-See deploy/seed/README.md for the ruff/mypy/venv setup.
+See src/ingestion/tools/seed/README.md for the ruff/mypy/venv setup.
 EOF
 }
 
@@ -1475,7 +1483,7 @@ test_stand_write_env() {
 #
 # The list is committed rather than derived. It was read off the evidence
 # models' own sources (src/ingestion/gold/<family>_metric_evidence.sql) against
-# what deploy/seed/generators/ writes:
+# what src/ingestion/tools/seed/generators/ writes:
 #
 #   task    <- task_issue_state / task_status_spans / task_worklog_flow  (task.py)
 #   git     <- class_git_{commits,file_changes,pull_requests,…}          (git.py)
@@ -1623,7 +1631,7 @@ test_stand_test_in_image() {
     return 1
   fi
 
-  local manifest="deploy/seed/manifest.json"
+  local manifest="src/ingestion/tools/seed/manifest.json"
   [[ -f "$manifest" ]] || {
     echo "ERROR: $manifest not found — seed the stand first: ./dev-compose.sh test-stand seed" >&2
     return 1; }
@@ -1648,7 +1656,11 @@ test_stand_test_in_image() {
     --user "$(id -u):$(id -g)"
     --network "container:${TEST_STAND_GATEWAY_CONTAINER}"
     -e "INSIGHT_STAND_BASE_URL=http://localhost:${TEST_STAND_GATEWAY_CONTAINER_PORT}"
-    -v "$PWD/${manifest}:/deploy/seed/manifest.json:ro"
+    # Mounted at a stable path and NAMED, rather than reproducing the suite's
+    # own repo-relative arithmetic inside an image where the tree lives at
+    # /tests and there is nothing above it.
+    -v "$PWD/${manifest}:/stand/manifest.json:ro"
+    -e "INSIGHT_STAND_MANIFEST=/stand/manifest.json"
     -v "$PWD/${TEST_STAND_ARTIFACT_DIR}:/tests/${TEST_STAND_ARTIFACT_DIR}"
     # Named, not inferred. The suite otherwise resolves this by walking up from
     # its own file to the directory holding `tests/` — which is the repo root in

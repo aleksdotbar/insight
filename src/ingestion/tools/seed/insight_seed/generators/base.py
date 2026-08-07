@@ -17,6 +17,8 @@ import random
 import re
 from typing import TYPE_CHECKING
 
+from .. import config
+
 LOG = logging.getLogger("seed.generators")
 
 if TYPE_CHECKING:
@@ -26,12 +28,12 @@ if TYPE_CHECKING:
 
 UTC = _dt.UTC
 
-DEFAULT_SEED_DAYS = 60
-
-# Env knobs. Both are resolved ONCE per process by the helpers below and are
-# recorded in the manifest, so a run is reproducible from what it reports.
-_ANCHOR_ENV = "SEED_ANCHOR_DATE"
-_DAYS_ENV = "SEED_DAYS"
+# Env knobs are parsed by `config`, the one reader the manifest builder uses too
+# — two copies computing `now()` independently disagree across UTC midnight, and
+# the manifest would then report a window the rows do not sit in. Resolved ONCE
+# per process by the helpers below, and recorded in the manifest, so a run is
+# reproducible from what it reports.
+DEFAULT_SEED_DAYS = config.DEFAULT_SEED_DAYS
 
 _anchor_cache: _dt.date | None = None
 
@@ -61,11 +63,7 @@ def anchor_date() -> _dt.date:
     """
     global _anchor_cache
     if _anchor_cache is None:
-        raw = os.environ.get(_ANCHOR_ENV, "").strip()
-        if raw and raw.lower() != "today":
-            _anchor_cache = _dt.date.fromisoformat(raw)
-        else:
-            _anchor_cache = _dt.datetime.now(UTC).date() - _dt.timedelta(days=1)
+        _anchor_cache = config.parse_anchor_date(os.environ)
     return _anchor_cache
 
 
@@ -82,8 +80,7 @@ def anchor_datetime() -> _dt.datetime:
 
 def seed_days(default: int = DEFAULT_SEED_DAYS) -> int:
     """Length of the seeded activity window, in days."""
-    raw = os.environ.get(_DAYS_ENV, "").strip()
-    return int(raw) if raw else default
+    return config.parse_seed_days(os.environ, default)
 
 
 def days_window(days: int, end: _dt.date | None = None) -> list[_dt.date]:
@@ -162,12 +159,50 @@ def deterministic_int(*parts: str) -> int:
 # ─── Insert helpers ──────────────────────────────────────────────────────
 
 
+#: Every relation the generators clear before writing — the seed's destructive
+#: surface, in one place because `preflight` has to refuse a stand whose data
+#: sits in exactly these and nowhere else. `truncate` rejects an unregistered
+#: target, and `test_preflight.py` scans the call sites to keep the two in step:
+#: a new generator that clears a table nobody registered fails the test rather
+#: than quietly widening what a seed run destroys.
+RESET_TARGETS: tuple[tuple[str, str], ...] = (
+    ("bronze_bamboohr", "employees"),
+    ("identity", "identity_persons"),
+    ("silver", "class_ai_assistant_usage"),
+    ("silver", "class_ai_dev_usage"),
+    ("silver", "class_collab_chat_activity"),
+    ("silver", "class_collab_email_activity"),
+    ("silver", "class_collab_meeting_activity"),
+    ("silver", "class_crm_activities"),
+    ("silver", "class_crm_deals"),
+    ("silver", "class_crm_users"),
+    ("silver", "class_focus_metrics"),
+    ("silver", "class_git_commits"),
+    ("silver", "class_git_file_changes"),
+    ("silver", "class_git_pull_requests"),
+    ("silver", "class_git_pull_requests_commits"),
+    ("silver", "class_people"),
+    ("silver", "class_support_activity"),
+    ("silver", "class_task_field_history"),
+    ("silver", "class_task_issuetypes"),
+    ("silver", "class_task_statuses"),
+    ("silver", "class_task_users"),
+    ("silver", "class_task_worklogs"),
+)
+
+
 def truncate(
     client: clickhouse_connect.driver.client.Client,
     schema: str,
     table: str,
 ) -> None:
     """Idempotent reset: TRUNCATE before INSERT."""
+    if (schema, table) not in RESET_TARGETS:
+        raise ValueError(
+            f"{schema}.{table} is not in RESET_TARGETS. Clearing a relation preflight "
+            "does not know about would let a seed run destroy data it never warned about "
+            "— register it there (and in the same commit) instead."
+        )
     client.command(f"TRUNCATE TABLE IF EXISTS `{schema}`.`{table}`")
 
 

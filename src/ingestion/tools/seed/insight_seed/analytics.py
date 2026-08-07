@@ -29,6 +29,8 @@ from typing import Any
 
 import pymysql
 
+from . import config
+
 LOG = logging.getLogger("seed.analytics")
 
 #: Deterministic id, so re-seeding an un-torn-down stand replaces its own row
@@ -38,7 +40,7 @@ DEFINITION_ROW_ID = "e1e1e1e1-0000-4000-8000-000000000010"
 #: The label constant lives in `manifest` rather than here: `PROFILE.md` is
 #: rendered by a tool that must import no third-party package, and this module
 #: needs pymysql. The manifest owns the NAMES; this module owns writing the rows.
-from manifest import OVERRIDE_LABEL  # noqa: E402
+from .manifest import OVERRIDE_LABEL  # noqa: E402
 
 
 def _bin(u: str) -> bytes:
@@ -48,14 +50,16 @@ def _bin(u: str) -> bytes:
 
 @contextmanager
 def _connect() -> Iterator[pymysql.connections.Connection]:
+    # Not MARIADB_DB: that one names the IDENTITY database. Which database holds
+    # the catalogue tables is a per-stand fact, so `MARIADB_ANALYTICS_DB` is
+    # required rather than defaulted (see config.parse_analytics_database).
+    target = config.parse_mariadb(os.environ, database=config.parse_analytics_database(os.environ))
     conn = pymysql.connect(
-        host=os.environ.get("MARIADB_HOST", "mariadb"),
-        port=int(os.environ.get("MARIADB_PORT", "3306")),
-        user=os.environ.get("MARIADB_USER", "insight"),
-        password=os.environ.get("MARIADB_PASSWORD", "insight-local"),
-        # Not MARIADB_DB: that one names the IDENTITY database. These tables
-        # belong to analytics, which owns a database of its own.
-        database=os.environ.get("MARIADB_ANALYTICS_DB", "analytics"),
+        host=target.host,
+        port=target.port,
+        user=target.user,
+        password=target.password,
+        database=target.database,
         autocommit=False,
         cursorclass=pymysql.cursors.Cursor,
     )
@@ -278,7 +282,7 @@ def run() -> dict[str, Any]:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    tenant = os.environ.get("TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953")
+    tenant = config.parse_tenant_id(os.environ)
 
     LOG.info("analytics catalogue seed (tenant %s)", tenant)
     with _connect() as conn:

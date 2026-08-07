@@ -33,8 +33,8 @@ import datetime as _dt
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from generators.base import bulk_insert, deterministic_uuid, truncate
-from profiles import Person
+from ..profiles import Person
+from .base import bulk_insert, deterministic_uuid, truncate
 
 if TYPE_CHECKING:
     import clickhouse_connect.driver.client

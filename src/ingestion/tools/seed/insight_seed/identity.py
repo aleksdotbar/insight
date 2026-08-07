@@ -16,7 +16,8 @@ from contextlib import contextmanager
 
 import pymysql
 
-from profiles import (
+from . import config
+from .profiles import (
     ADMIN_ROLE_NAME,
     AUTHOR_PERSON_UUID,
     DEV_SEED_SOURCE_ID,
@@ -34,6 +35,17 @@ from profiles import (
 
 LOG = logging.getLogger("seed.identity")
 
+# Every row this module writes is marked as this seeder's own. Composed from the
+# shared prefix rather than spelled out, because `preflight` matches on that
+# prefix to tell demo rows from rows another writer owns — a reason that drifted
+# out of the namespace would make the whole stand look foreign.
+_REASON_ROSTER = f"{config.SEED_REASON_PREFIX}demo roster"
+_REASON_LOGIN_ID = f"{config.SEED_REASON_PREFIX}login id"
+_REASON_NAMES = f"{config.SEED_REASON_PREFIX}demo names"
+_REASON_ORG_CHART = f"{config.SEED_REASON_PREFIX}demo org-chart"
+_REASON_ADMIN = f"{config.SEED_REASON_PREFIX}admin operator"
+_REASON_ACCOUNT_MAP = f"{config.SEED_REASON_PREFIX}account-person map"
+
 
 def _bin(u: str) -> bytes:
     """UUID string → 16 raw bytes, RFC 4122 big-endian."""
@@ -42,17 +54,13 @@ def _bin(u: str) -> bytes:
 
 @contextmanager
 def _connect() -> Iterator[pymysql.connections.Connection]:
-    host = os.environ.get("MARIADB_HOST", "mariadb")
-    port = int(os.environ.get("MARIADB_PORT", "3306"))
-    user = os.environ.get("MARIADB_USER", "insight")
-    pwd = os.environ.get("MARIADB_PASSWORD", "insight-local")
-    db = os.environ.get("MARIADB_DB", "identity")
+    target = config.parse_mariadb(os.environ, database=config.parse_identity_database(os.environ))
     conn = pymysql.connect(
-        host=host,
-        port=port,
-        user=user,
-        password=pwd,
-        database=db,
+        host=target.host,
+        port=target.port,
+        user=target.user,
+        password=target.password,
+        database=target.database,
         autocommit=False,
         cursorclass=pymysql.cursors.Cursor,
     )
@@ -66,19 +74,80 @@ def _connect() -> Iterator[pymysql.connections.Connection]:
         conn.close()
 
 
+#: One complete statement per value column, spelled out rather than composed.
+#: `persons` is an EAV log — identifier-shaped values land in `value_id`, free
+#: text in `value_full_text` — and a column name cannot be a bound parameter, so
+#: the alternative is formatting one into the SQL. Two literals keep every
+#: statement this module executes a constant, which is the only version a reader
+#: (or a scanner) can confirm at a glance.
+_EXISTS_BY_VALUE_ID = """
+    SELECT 1 FROM persons
+    WHERE insight_tenant_id = %s
+      AND person_id = %s
+      AND insight_source_type = %s
+      AND insight_source_id = %s
+      AND value_type = %s
+      AND value_id = %s
+    LIMIT 1
+"""
+_EXISTS_BY_VALUE_FULL_TEXT = """
+    SELECT 1 FROM persons
+    WHERE insight_tenant_id = %s
+      AND person_id = %s
+      AND insight_source_type = %s
+      AND insight_source_id = %s
+      AND value_type = %s
+      AND value_full_text = %s
+    LIMIT 1
+"""
+_EXISTS_SQL: dict[str, str] = {
+    "value_id": _EXISTS_BY_VALUE_ID,
+    "value_full_text": _EXISTS_BY_VALUE_FULL_TEXT,
+}
+
+
+def _observation_exists(
+    cur: pymysql.cursors.Cursor,
+    tenant_uuid: str,
+    person_uuid: str,
+    value_type: str,
+    value_column: str,
+    value: str,
+) -> bool:
+    """Whether this exact observation is already recorded.
+
+    Checked explicitly rather than left to `INSERT IGNORE`, for the reason
+    `seed_login_ids` documents at length: since migration 004 the unique key
+    carries `created_at`, so a re-run's insert never collides and IGNORE stopped
+    deduplicating anything. The logical key — ignoring `created_at` — is what
+    makes a re-run a no-op.
+
+    Indexing `_EXISTS_SQL` rather than validating a name: an unknown column is a
+    `KeyError` before any statement exists, and the statement that does run was
+    written out in full above.
+    """
+    cur.execute(
+        _EXISTS_SQL[value_column],
+        (
+            _bin(tenant_uuid),
+            _bin(person_uuid),
+            DEV_SEED_SOURCE_TYPE,
+            _bin(DEV_SEED_SOURCE_ID),
+            value_type,
+            value,
+        ),
+    )
+    return cur.fetchone() is not None
+
+
 def seed_persons(
     cur: pymysql.cursors.Cursor,
     tenant_uuid: str,
     roster: Iterable[Person],
 ) -> int:
-    """Insert one observation row per person (value_type='email').
-
-    The unique key on `persons` is
-    (tenant, person, source_type, source_id, value_type, value_hash).
-    INSERT IGNORE absorbs re-runs cleanly.
-    """
+    """Insert one observation row per person (value_type='email')."""
     sql = """
-        INSERT IGNORE INTO persons (
+        INSERT INTO persons (
             value_type, insight_source_type, insight_source_id,
             insight_tenant_id, value_id,
             person_id, author_person_id, reason
@@ -86,20 +155,24 @@ def seed_persons(
             'email', %s, %s, %s, %s, %s, %s, %s
         )
     """
-    rows = [
-        (
-            DEV_SEED_SOURCE_TYPE,
-            _bin(DEV_SEED_SOURCE_ID),
-            _bin(tenant_uuid),
-            p.email,
-            _bin(p.uuid),
-            _bin(AUTHOR_PERSON_UUID),
-            "seed.py demo roster",
+    inserted = 0
+    for p in roster:
+        if _observation_exists(cur, tenant_uuid, p.uuid, "email", "value_id", p.email):
+            continue
+        cur.execute(
+            sql,
+            (
+                DEV_SEED_SOURCE_TYPE,
+                _bin(DEV_SEED_SOURCE_ID),
+                _bin(tenant_uuid),
+                p.email,
+                _bin(p.uuid),
+                _bin(AUTHOR_PERSON_UUID),
+                _REASON_ROSTER,
+            ),
         )
-        for p in roster
-    ]
-    cur.executemany(sql, rows)
-    return cur.rowcount
+        inserted += cur.rowcount
+    return inserted
 
 
 def seed_login_ids(
@@ -151,24 +224,30 @@ def seed_login_ids(
     """
     inserted = 0
     for person_uuid, external_id in get_login_id_pairs(list(roster)):
-        cur.execute(exists_sql, (
-            _bin(tenant_uuid),
-            _bin(person_uuid),
-            source_type,
-            _bin(DEV_SEED_SOURCE_ID),
-            external_id,
-        ))
+        cur.execute(
+            exists_sql,
+            (
+                _bin(tenant_uuid),
+                _bin(person_uuid),
+                source_type,
+                _bin(DEV_SEED_SOURCE_ID),
+                external_id,
+            ),
+        )
         if cur.fetchone() is not None:
             continue
-        cur.execute(insert_sql, (
-            source_type,
-            _bin(DEV_SEED_SOURCE_ID),
-            _bin(tenant_uuid),
-            external_id,
-            _bin(person_uuid),
-            _bin(AUTHOR_PERSON_UUID),
-            "seed.py login id",
-        ))
+        cur.execute(
+            insert_sql,
+            (
+                source_type,
+                _bin(DEV_SEED_SOURCE_ID),
+                _bin(tenant_uuid),
+                external_id,
+                _bin(person_uuid),
+                _bin(AUTHOR_PERSON_UUID),
+                _REASON_LOGIN_ID,
+            ),
+        )
         inserted += cur.rowcount
     return inserted
 
@@ -183,11 +262,10 @@ def seed_person_names(
     The identity service routes these value_types into `value_full_text`
     (not `value_id`); see seed-persons-from-identity-input.py's
     VALUE_TYPES_FOR_VALUE_FULL_TEXT. Without them the persons API returns
-    empty names and the UI falls back to email. INSERT IGNORE absorbs
-    re-runs (unique key includes value_type).
+    empty names and the UI falls back to email.
     """
     sql = """
-        INSERT IGNORE INTO persons (
+        INSERT INTO persons (
             value_type, insight_source_type, insight_source_id,
             insight_tenant_id, value_full_text,
             person_id, author_person_id, reason
@@ -195,7 +273,7 @@ def seed_person_names(
             %s, %s, %s, %s, %s, %s, %s, %s
         )
     """
-    rows: list[tuple[object, ...]] = []
+    inserted = 0
     for p in roster:
         for value_type, value in (
             ("display_name", p.display_name),
@@ -204,7 +282,10 @@ def seed_person_names(
         ):
             if not value:
                 continue
-            rows.append(
+            if _observation_exists(cur, tenant_uuid, p.uuid, value_type, "value_full_text", value):
+                continue
+            cur.execute(
+                sql,
                 (
                     value_type,
                     DEV_SEED_SOURCE_TYPE,
@@ -213,11 +294,11 @@ def seed_person_names(
                     value,
                     _bin(p.uuid),
                     _bin(AUTHOR_PERSON_UUID),
-                    "seed.py demo names",
-                )
+                    _REASON_NAMES,
+                ),
             )
-    cur.executemany(sql, rows)
-    return cur.rowcount
+            inserted += cur.rowcount
+    return inserted
 
 
 def seed_org_chart(
@@ -243,7 +324,7 @@ def seed_org_chart(
             _bin(p.uuid),
             _bin(p.parent_uuid),
             _bin(AUTHOR_PERSON_UUID),
-            "seed.py demo org-chart",
+            _REASON_ORG_CHART,
         )
         for p in roster
         if p.parent_uuid
@@ -296,7 +377,7 @@ def seed_person_roles(
             _bin(p.uuid),
             role_id,
             _bin(AUTHOR_PERSON_UUID),
-            "seed.py admin operator",
+            _REASON_ADMIN,
         )
         for p in roster
         if p.role == "admin"
@@ -341,7 +422,7 @@ def seed_account_person_map(
                     p.email,
                     _bin(p.uuid),
                     _bin(AUTHOR_PERSON_UUID),
-                    "seed.py account-person map",
+                    _REASON_ACCOUNT_MAP,
                 )
             )
     cur.executemany(sql, rows)
@@ -354,7 +435,7 @@ def run() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    tenant = os.environ.get("TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953")
+    tenant = config.parse_tenant_id(os.environ)
     dev_email = get_dev_user_email()
     roster = build_roster(dev_email)
     LOG.info(
@@ -369,12 +450,23 @@ def run() -> None:
     # running them again under a different tenant is the whole difference. A
     # per-person tenant field would have had to thread through five writers and
     # every generator, to express one row.
-    other_roster = build_other_tenant_roster()
-    LOG.info(
-        "seeding %d person(s) under tenant %s (cross-tenant refusal fixture)",
-        len(other_roster),
-        TENANT_OTHER,
+    #
+    # Off on a cluster stand: a second tenant makes identity-resolution's
+    # scheduled projection abort on its tenant-mismatch guard, and the suite
+    # that reads this fixture only ever runs against compose. `manifest.py`
+    # reads the same switch, so a stand seeded without it advertises no
+    # `other_tenant_lead` fixture and the tests that need one skip.
+    other_roster = (
+        build_other_tenant_roster() if config.cross_tenant_fixture_enabled(os.environ) else []
     )
+    if other_roster:
+        LOG.info(
+            "seeding %d person(s) under tenant %s (cross-tenant refusal fixture)",
+            len(other_roster),
+            TENANT_OTHER,
+        )
+    else:
+        LOG.info("cross-tenant refusal fixture disabled (%s)", config.CROSS_TENANT_FIXTURE_ENV)
 
     with _connect() as conn:
         cur = conn.cursor()
@@ -388,10 +480,11 @@ def run() -> None:
         # No org_chart and no person_roles for them: they are a caller, not a
         # subject. An edge would put them in somebody's subtree, and a role
         # would make the refusal ambiguous — is it the tenant or the grant?
-        n_persons += seed_persons(cur, TENANT_OTHER, other_roster)
-        n_login_id += seed_login_ids(cur, TENANT_OTHER, other_roster)
-        n_names += seed_person_names(cur, TENANT_OTHER, other_roster)
-        n_acct += seed_account_person_map(cur, TENANT_OTHER, other_roster)
+        if other_roster:
+            n_persons += seed_persons(cur, TENANT_OTHER, other_roster)
+            n_login_id += seed_login_ids(cur, TENANT_OTHER, other_roster)
+            n_names += seed_person_names(cur, TENANT_OTHER, other_roster)
+            n_acct += seed_account_person_map(cur, TENANT_OTHER, other_roster)
 
     LOG.info(
         "DONE: persons=%d (new), login_id=%d (new), names=%d (new), "

@@ -41,12 +41,12 @@ from pathlib import Path
 
 import clickhouse_connect
 
-from generators import ai, collab, crm, git, hr, people, support, task
-from profiles import build_roster, get_dev_user_email
+from . import config
+from .generators import ai, collab, crm, git, hr, people, support, task
+from .generators.base import seed_days
+from .profiles import build_roster, get_dev_user_email
 
 LOG = logging.getLogger("seed.silver")
-
-DEFAULT_DAYS = 60
 
 
 def _ingestion_scripts_dir() -> Path:
@@ -56,45 +56,40 @@ def _ingestion_scripts_dir() -> Path:
     at /ingestion (docker-compose.yml `seed-sample.volumes`), mirroring the
     toolbox image layout the scripts resolve their relative paths against
     (apply-ch-migrations.sh cd's into ../dbt). Host runs resolve it relative
-    to this file: deploy/seed lives in the same repo as src/ingestion, two
-    levels below the root.
+    to this file: this package lives inside the ingestion tree it seeds.
     """
     mounted = Path("/ingestion/scripts")
     if mounted.is_dir():
         return mounted
-    # parents[2] = repo root (silver.py -> seed -> deploy -> root).
-    return Path(__file__).resolve().parents[2] / "src/ingestion/scripts"
+    # parents[3] = src/ingestion (silver -> insight_seed -> seed -> tools).
+    return Path(__file__).resolve().parents[3] / "scripts"
 
 
 def _script_env() -> dict[str, str]:
     """Env for the ingestion shell scripts (create-bronze-placeholders.sh,
     apply-ch-migrations.sh) — CLICKHOUSE_URL/USER/PASSWORD/DATABASE per
     lib/ch-exec.sh + apply-ch-migrations.sh's own asserts."""
-    host = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
-    port = os.environ.get("CLICKHOUSE_HTTP_PORT", "8123")
+    target = config.parse_clickhouse(os.environ)
     return {
         **os.environ,
-        "CLICKHOUSE_URL": f"http://{host}:{port}",
-        "CLICKHOUSE_USER": os.environ.get("CLICKHOUSE_USER", "insight"),
-        "CLICKHOUSE_PASSWORD": os.environ.get("CLICKHOUSE_PASSWORD", "insight-local"),
-        "CLICKHOUSE_DATABASE": os.environ.get("CLICKHOUSE_DATABASE", "insight"),
+        "CLICKHOUSE_URL": target.url,
+        "CLICKHOUSE_USER": target.user,
+        "CLICKHOUSE_PASSWORD": target.password,
+        "CLICKHOUSE_DATABASE": target.database,
     }
 
 
 def _ch_client() -> clickhouse_connect.driver.client.Client:
-    host = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
-    port = int(os.environ.get("CLICKHOUSE_HTTP_PORT", "8123"))
-    user = os.environ.get("CLICKHOUSE_USER", "insight")
-    pwd = os.environ.get("CLICKHOUSE_PASSWORD", "insight-local")
+    target = config.parse_clickhouse(os.environ)
     # Views (gold) are created by apply-ch-migrations.sh, not this client;
     # the compose CH ships join_use_nulls=1 as a profile default
     # (deploy/compose/clickhouse-user-defaults.xml) so those CREATE VIEWs
     # type-check server-side. This client only INSERTs silver rows.
     return clickhouse_connect.get_client(
-        host=host,
-        port=port,
-        username=user,
-        password=pwd,
+        host=target.host,
+        port=target.http_port,
+        username=target.user,
+        password=target.password,
     )
 
 
@@ -110,7 +105,7 @@ def apply_create_bronze_placeholders() -> None:
         raise FileNotFoundError(
             f"placeholders script not found at {script}. In compose, the "
             "seed-sample container must mount /ingestion; on a host run, "
-            "deploy/seed must sit inside the insight repo next to src/ingestion."
+            "this package must sit inside the ingestion tree (src/ingestion/tools/seed)."
         )
     subprocess.run(["bash", str(script)], env=_script_env(), check=True)
     LOG.info("placeholders: %s applied", script.name)
@@ -130,7 +125,7 @@ def apply_ch_migrations() -> None:
         raise FileNotFoundError(
             f"migrations script not found at {script}. In compose, the "
             "seed-sample container must mount /ingestion; on a host run, "
-            "deploy/seed must sit inside the insight repo next to src/ingestion."
+            "this package must sit inside the ingestion tree (src/ingestion/tools/seed)."
         )
     subprocess.run(["bash", str(script)], env=_script_env(), check=True)
     LOG.info("migrations + gold: %s applied", script.name)
@@ -140,10 +135,14 @@ def generate_rows(
     client: clickhouse_connect.driver.client.Client,
 ) -> None:
     """Populate silver tables with per-team activity for the demo roster."""
-    tenant_uuid = os.environ.get("TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953")
+    tenant_uuid = config.parse_tenant_id(os.environ)
     dev_email = get_dev_user_email()
     roster = build_roster(dev_email)
-    days = int(os.environ.get("SEED_DAYS", DEFAULT_DAYS))
+    # The generators' own reader, not a second copy of it: they date every row
+    # from this window, and a `SEED_DAYS` the two disagreed on would put rows
+    # outside the range this function logs. It also treats an empty value as
+    # "unset", which a rendered Job manifest passes for a window nobody pinned.
+    days = seed_days()
     LOG.info(
         "generating silver rows: tenant=%s days=%d persons=%d",
         tenant_uuid,

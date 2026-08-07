@@ -1,8 +1,9 @@
 """Seed manifest — the machine-readable description of a seeded stand.
 
-Written to the fixed path `deploy/seed/manifest.json` (`/app/manifest.json`
-in the seed container, the same file through the bind mount). Downstream test
-phases read that path; it is frozen and has no env knob.
+Written to `manifest.json` in the working directory, which for the compose
+seed container is the bind-mounted seeder directory the stand suite reads
+(`/app/manifest.json`). `SEED_MANIFEST_PATH` names it explicitly — a cluster
+Job does, because its filesystem is discarded and the log is the record.
 
 The builder is a PURE FUNCTION of (roster, supplied env, committed
 constants). It queries neither MariaDB nor ClickHouse. That is what lets the
@@ -25,17 +26,17 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import profiles
-from golden_metrics import GOLDEN_METRICS, GOLDEN_METRICS_NOTE
+from . import config, profiles
+from .golden_metrics import GOLDEN_METRICS, GOLDEN_METRICS_NOTE
 
 MANIFEST_VERSION = 1
 
-# Values copied verbatim from deploy/compose/keycloak/gen-realm.py, which
-# builds the Keycloak realm from this same roster. The two must agree exactly
-# or a persona will authenticate as someone the API does not recognise.
-REALM_NAME = "insight"  # gen-realm.py REALM_NAME
-EXECUTIVE_ORG_UNIT = "executive"  # gen-realm.py _org_unit, teamless
-OPERATOR_ORG_UNIT = "operations"  # gen-realm.py OPERATOR_ORG_UNIT
+# Values shared with `keycloak_realm`, which builds the Keycloak realm from
+# this same roster. The two must agree exactly or a persona will authenticate
+# as someone the API does not recognise.
+REALM_NAME = "insight"  # keycloak_realm.REALM_NAME
+EXECUTIVE_ORG_UNIT = "executive"  # keycloak_realm._org_unit, teamless
+OPERATOR_ORG_UNIT = "operations"  # keycloak_realm.OPERATOR_ORG_UNIT
 ROLE_TO_REALM_ROLES: dict[str, list[str]] = {
     "ceo": ["insight-admin", "insight-lead"],
     "lead": ["insight-lead"],
@@ -79,6 +80,9 @@ CANONICAL_ENV: dict[str, str] = {
     "SEED_DAYS": "60",
     "AUTH_MODE": "",
     "AUTHENTICATOR_OIDC_ISSUER": "",
+    # The canonical stand carries the cross-tenant refusal fixture, so the
+    # committed PROFILE.md describes a compose stand — the one the suite reads.
+    config.CROSS_TENANT_FIXTURE_ENV: "1",
 }
 
 # Literals that must never reach the manifest. Checked before the file is
@@ -86,8 +90,8 @@ CANONICAL_ENV: dict[str, str] = {
 # instead of shipping.
 _FORBIDDEN_LITERALS = frozenset(
     {
-        "insight-dev",  # gen-realm.py dev password
-        "insight-authenticator-dev-secret",  # gen-realm.py client secret
+        "insight-dev",  # keycloak_realm dev password
+        "insight-authenticator-dev-secret",  # keycloak_realm client secret
         "insight-local",  # MariaDB / ClickHouse dev password
         "root-local",  # MariaDB root password
     }
@@ -96,28 +100,27 @@ _FORBIDDEN_KEY_SUBSTRINGS = ("password", "secret", "token", "credential", "passw
 
 
 def manifest_path() -> Path:
-    """The frozen manifest location. No env knob by design."""
-    return Path(__file__).resolve().parent / "manifest.json"
+    """Where this run writes its manifest — see `config.parse_manifest_path`."""
+    import os
+
+    return config.parse_manifest_path(os.environ)
 
 
-def _anchor(env: Mapping[str, str]) -> _dt.date:
-    raw = (env.get("SEED_ANCHOR_DATE") or "").strip()
-    if raw and raw.lower() != "today":
-        return _dt.date.fromisoformat(raw)
-    return _dt.datetime.now(_dt.UTC).date() - _dt.timedelta(days=1)
-
-
-def _days(env: Mapping[str, str]) -> int:
-    raw = (env.get("SEED_DAYS") or "").strip()
-    return int(raw) if raw else 60
+# The window comes from `config`, the same reader the generators use, so the
+# window this document reports and the dates the rows carry cannot disagree —
+# two independent `now()` calls straddling UTC midnight is exactly how they
+# would.
+_anchor = config.parse_anchor_date
+_days = config.parse_seed_days
 
 
 def seed_revision() -> str:
     """Content hash over the seed package's Python sources.
 
-    Identifies the generator code that produced a stand, with no git
-    dependency and no clock. Any edit under deploy/seed changes it, which is
-    the point: it is what makes a committed PROFILE.md detectably stale.
+    Identifies the generator code that produced a stand, with no git dependency
+    and no clock. Any edit to the package changes it, which is the point: it is
+    what makes a committed PROFILE.md detectably stale. Tests are deliberately
+    outside the hash — they cannot change what a run writes.
     """
     root = Path(__file__).resolve().parent
     digest = hashlib.sha256()
@@ -135,7 +138,7 @@ def seed_revision() -> str:
 def _persona(person: profiles.Person) -> dict[str, Any]:
     """One roster entry. Fields are named explicitly, never spread from the
     Person object, so a future attribute cannot leak into the document."""
-    # Mirrors gen-realm.py's `_org_unit`: teamless people are the CEO
+    # Mirrors `keycloak_realm._org_unit`: teamless people are the CEO
     # (executive) and the admin operator (operations, its own unit because it
     # administers the product rather than belonging to the org).
     if person.team is not None:
@@ -256,10 +259,15 @@ def build_manifest(
     days = _days(env)
     window_start = anchor - _dt.timedelta(days=days - 1)
 
-    personas = [
-        _persona(p)
-        for p in (*profiles.build_roster(dev_email), *profiles.build_other_tenant_roster())
-    ]
+    # The second tenant's person appears here only when the seed run actually
+    # wrote them (`identity.py` reads the same switch). Advertising a fixture
+    # whose row does not exist would turn every test that declares
+    # `requires_seed("other_tenant_lead")` from a skip into a failure.
+    roster = list(profiles.build_roster(dev_email))
+    if config.cross_tenant_fixture_enabled(env):
+        roster += profiles.build_other_tenant_roster()
+
+    personas = [_persona(p) for p in roster]
 
     auth_mode = (env.get("AUTH_MODE") or "").strip().lower()
     issuer = (env.get("AUTHENTICATOR_OIDC_ISSUER") or "").strip()

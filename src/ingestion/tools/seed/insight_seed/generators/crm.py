@@ -11,7 +11,8 @@ import datetime as _dt
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from generators.base import (
+from ..profiles import TEAM_PROFILES, Person
+from .base import (
     anchor_date,
     bulk_insert,
     days_window,
@@ -22,7 +23,6 @@ from generators.base import (
     truncate,
     weekday_multiplier,
 )
-from profiles import TEAM_PROFILES, Person
 
 if TYPE_CHECKING:
     import clickhouse_connect.driver.client

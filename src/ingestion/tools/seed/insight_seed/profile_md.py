@@ -1,4 +1,4 @@
-"""Render `deploy/seed/PROFILE.md` from a manifest document.
+"""Render the seeder's committed `PROFILE.md` from a manifest document.
 
 PROFILE.md is the human-readable companion to `manifest.json`: it tells a
 person (or an agent planning a test) what a seeded stand actually contains —
@@ -19,12 +19,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-REGEN_COMMAND = "python3 deploy/seed/render_profile.py"
-CHECK_COMMAND = "python3 deploy/seed/render_profile.py --check"
+REGEN_COMMAND = "python3 -m insight_seed.render_profile"
+CHECK_COMMAND = "python3 -m insight_seed.render_profile --check"
 
 
 def profile_path() -> Path:
-    return Path(__file__).resolve().parent / "PROFILE.md"
+    """The committed profile page, in the working directory.
+
+    Not derived from this module's location: an installed package lives wherever
+    pip put it, and this page belongs to the checkout. `render_profile` is a
+    developer tool run from the seeder's directory (see the README).
+    """
+    return Path.cwd() / "PROFILE.md"
 
 
 def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
@@ -49,11 +55,11 @@ def render_profile(doc: dict[str, Any]) -> str:
         "<!-- GENERATED FILE — do not hand-edit.",
         f"     Regenerate: {REGEN_COMMAND}",
         f"     Verify:     {CHECK_COMMAND}",
-        "     Content is derived from deploy/seed/manifest.py + profiles.py. -->",
+        "     Content is derived from insight_seed/manifest.py + profiles.py. -->",
         "",
         "# Seed Profile",
         "",
-        "What a stand seeded by `deploy/seed` contains. Generated from the same",
+        "What a stand seeded by the seeder contains. Generated from the same",
         "builder that writes `manifest.json`, so the two cannot disagree.",
         "",
         "## Stand summary",
@@ -144,7 +150,7 @@ def render_profile(doc: dict[str, Any]) -> str:
         "",
         "Rows the product provisions by operator or migration, so no endpoint",
         "creates them and no test fixture can either — the suite holds no",
-        "database connection. Seeded by `deploy/seed/analytics.py` and named",
+        "database connection. Seeded by `insight_seed/analytics.py` and named",
         "here so a test reads the name rather than hardcoding one.",
         "",
     ]
@@ -185,7 +191,7 @@ def render_profile(doc: dict[str, Any]) -> str:
             "",
             "A test suite consuming this manifest therefore asserts no metric",
             "values. That is a visible gap; a populated-but-guessed set would be a",
-            "silent wrong answer. See `deploy/seed/golden_metrics.py` for the",
+            "silent wrong answer. See `insight_seed/golden_metrics.py` for the",
             "criteria an entry must meet before it is added.",
         ]
 

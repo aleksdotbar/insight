@@ -1,16 +1,20 @@
-#!/usr/bin/env python3
 """Generate the `insight` Keycloak realm from the seeded 25-person org.
 
-Reads the same roster builder the DB seeder uses
-(`deploy/seed/profiles.py::build_roster`) so every user in the realm
-matches a row in `identity.persons`, then emits an importable Keycloak
-realm JSON: 26 users (the 25-person org plus the admin operator), the
-`insight` + `insight-authenticator` clients, their 5 shared protocol
-mappers, the 4 team groups + `executive` + `operations`, and the 3
+Built from the SAME roster the database seed writes (`profiles.build_roster`),
+so every user in the realm matches a row in `identity.persons`, and emits an
+importable Keycloak realm JSON: 26 users (the 25-person org plus the admin
+operator), the `insight` + `insight-authenticator` clients, their 5 shared
+protocol mappers, the 4 team groups + `executive` + `operations`, and the 3
 realm roles.
 
-Usage:
-    python3 gen-realm.py --out deploy/compose/keycloak/realm-insight.generated.json
+It lives in this package rather than beside the compose Keycloak assets it
+feeds precisely because of that shared roster: a realm and a person table that
+disagree produce a login that authenticates and then resolves to nobody. One
+module owns the roster; everything derived from it imports it normally.
+
+Usage, from the tool directory (`src/ingestion/tools/seed`):
+
+    python3 -m insight_seed.keycloak_realm --out <path>/realm-insight.generated.json
 """
 
 from __future__ import annotations
@@ -18,15 +22,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
+from typing import Any
 
-# `deploy/seed` is a sibling package (not installed), so it has to be put on
-# sys.path explicitly to import `profiles` from this script's location.
-_SEED_DIR = Path(__file__).resolve().parents[2] / "seed"
-sys.path.insert(0, str(_SEED_DIR))
-
-from profiles import TENANT_OTHER, Person, build_other_tenant_roster, build_roster, get_dev_user_email  # noqa: E402
+from . import config
+from .profiles import (
+    TENANT_OTHER,
+    Person,
+    build_other_tenant_roster,
+    build_roster,
+    get_dev_user_email,
+)
 
 REALM_NAME = "insight"
 DEV_PASSWORD = "insight-dev"
@@ -65,9 +71,13 @@ def _org_unit(person: Person) -> str:
     return OPERATOR_ORG_UNIT if person.role == "admin" else "executive"
 
 
-def _protocol_mappers(tenant_id: str) -> list[dict]:
+def _protocol_mappers(tenant_id: str) -> list[dict[str, Any]]:
     """The 5 shared mappers, identical on both clients (Input table)."""
-    common = {"id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true"}
+    common = {
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true",
+    }
     return [
         {
             # The authenticator reads this single-string claim (idp.tenant_claim,
@@ -88,14 +98,24 @@ def _protocol_mappers(tenant_id: str) -> list[dict]:
             "protocol": "openid-connect",
             "protocolMapper": "oidc-usermodel-attribute-mapper",
             "consentRequired": False,
-            "config": {**common, "user.attribute": "tenant_id", "claim.name": "tenant_id", "jsonType.label": "String"},
+            "config": {
+                **common,
+                "user.attribute": "tenant_id",
+                "claim.name": "tenant_id",
+                "jsonType.label": "String",
+            },
         },
         {
             "name": "org_unit",
             "protocol": "openid-connect",
             "protocolMapper": "oidc-usermodel-attribute-mapper",
             "consentRequired": False,
-            "config": {**common, "user.attribute": "org_unit", "claim.name": "org_unit", "jsonType.label": "String"},
+            "config": {
+                **common,
+                "user.attribute": "org_unit",
+                "claim.name": "org_unit",
+                "jsonType.label": "String",
+            },
         },
         {
             "name": "groups",
@@ -109,19 +129,28 @@ def _protocol_mappers(tenant_id: str) -> list[dict]:
             "protocol": "openid-connect",
             "protocolMapper": "oidc-usermodel-realm-role-mapper",
             "consentRequired": False,
-            "config": {**common, "claim.name": "roles", "jsonType.label": "String", "multivalued": "true"},
+            "config": {
+                **common,
+                "claim.name": "roles",
+                "jsonType.label": "String",
+                "multivalued": "true",
+            },
         },
         {
             "name": "aud-insight",
             "protocol": "openid-connect",
             "protocolMapper": "oidc-audience-mapper",
             "consentRequired": False,
-            "config": {"id.token.claim": "false", "access.token.claim": "true", "included.client.audience": "insight"},
+            "config": {
+                "id.token.claim": "false",
+                "access.token.claim": "true",
+                "included.client.audience": "insight",
+            },
         },
     ]
 
 
-def _client_insight(tenant_id: str) -> dict:
+def _client_insight(tenant_id: str) -> dict[str, Any]:
     return {
         "clientId": "insight",
         "publicClient": True,
@@ -139,7 +168,9 @@ def _client_insight(tenant_id: str) -> dict:
     }
 
 
-def _client_insight_authenticator(tenant_id: str, redirect_uris: list[str], secret: str) -> dict:
+def _client_insight_authenticator(
+    tenant_id: str, redirect_uris: list[str], secret: str
+) -> dict[str, Any]:
     return {
         "clientId": "insight-authenticator",
         "publicClient": False,
@@ -159,7 +190,7 @@ def _client_insight_authenticator(tenant_id: str, redirect_uris: list[str], secr
     }
 
 
-def _user(person: Person, tenant_id: str) -> dict:
+def _user(person: Person, tenant_id: str) -> dict[str, Any]:
     org_unit = _org_unit(person)
     # Refused rather than defaulted: a user whose `tenant_id` attribute is
     # missing logs in and gets a token with no tenant claim, which fails deep
@@ -190,8 +221,11 @@ DEFAULT_AUTHENTICATOR_SECRET = "insight-authenticator-dev-secret"
 
 
 def build_realm(
-    dev_user_email: str, tenant_id: str, authenticator_redirects: list[str], authenticator_secret: str
-) -> dict:
+    dev_user_email: str,
+    tenant_id: str,
+    authenticator_redirects: list[str],
+    authenticator_secret: str,
+) -> dict[str, Any]:
     roster = build_roster(dev_user_email)
     # The second tenant's single person, in the SAME realm. One realm because
     # the authenticator is configured with one issuer and one client — a second
@@ -222,7 +256,9 @@ def main() -> None:
     parser.add_argument(
         "--dev-email",
         default=None,
-        help=("Roster-anchor email for the dev-lead persona. Falls back to DEV_USER_EMAIL when omitted."),
+        help=(
+            "Roster-anchor email for the dev-lead persona. Falls back to DEV_USER_EMAIL when omitted."
+        ),
     )
     parser.add_argument(
         "--authenticator-redirect",
@@ -247,12 +283,14 @@ def main() -> None:
     # Explicit --dev-email wins; otherwise fall back to DEV_USER_EMAIL via
     # get_dev_user_email() (which fail-fasts if that is also unset).
     dev_user_email = args.dev_email if args.dev_email else get_dev_user_email()
-    # Same fallback value as deploy/seed/identity.py's run() — that script's
-    # own TENANT_DEFAULT_ID lookup carries the identical default, so this
-    # mirrors (rather than introduces) that convention.
-    tenant_id = os.environ.get(  # RULE-DEFAULTS-OK: mirrors deploy/seed/identity.py's TENANT_DEFAULT_ID default, so the realm's tenant_id claim converges with an un-configured seed run
-        "TENANT_DEFAULT_ID", "00000000-df51-5b42-9538-d2b56b7ee953"
-    )
+    # Required, exactly as the seeder requires it — and read through the same
+    # parser. A default here could mint realm users whose tenant claim matches
+    # nothing the seed then writes: they would authenticate and resolve to
+    # nobody, which is the failure this whole roster-sharing exists to avoid.
+    try:
+        tenant_id = config.parse_tenant_id(os.environ)
+    except config.EnvContractError as exc:
+        raise SystemExit(f"ERROR: cannot generate the realm.\n{exc}") from exc
 
     redirects = args.authenticator_redirects or DEFAULT_AUTHENTICATOR_REDIRECTS
     realm = build_realm(dev_user_email, tenant_id, redirects, args.authenticator_secret)

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field, replace
 # The dev lead's UUID matches the value the original dev-compose.sh seed
 # inserts, so re-runs across both scripts converge on the same row.
 # Default tenant for the demo organisation. Mirrors TENANT_DEFAULT_ID in
-# docker-compose.yml and deploy/compose/keycloak/gen-realm.py.
+# docker-compose.yml and `keycloak_realm`.
 TENANT_DEFAULT = "00000000-df51-5b42-9538-d2b56b7ee953"
 
 # A SECOND tenant, holding exactly one person and nothing else.
@@ -397,7 +397,7 @@ def get_login_id_pairs(roster: list[Person]) -> list[tuple[str, str]]:
     dev-compose.sh's `--auth` flag (`AUTH_MODE`, forwarded into this
     container's environment) selects which IdP fixture applies, and the two
     are NOT symmetric in how many personas can actually log in:
-    - keycloak: gen-realm.py sets EVERY realm user's Keycloak `id` to that
+    - keycloak: `keycloak_realm` sets EVERY realm user's Keycloak `id` to that
       person's OWN roster UUID (`"id": person.uuid`), and Keycloak issues
       `sub` equal to the user's internal id verbatim — so every seeded
       persona's external id IS their own roster uuid, and the whole roster

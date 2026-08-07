@@ -113,7 +113,7 @@ cd src/ingestion/tests/e2e
 - Every user-facing surface **should** have at least one smoke assertion.
 - A separate **compose-stand suite** (`tests/stand`, documented in `tests/stand/README.md`) drives a real Keycloak
   login and a set of browser journeys against the SPA, plus an API-contract suite — all against a local
-  `docker-compose` stand seeded deterministically for tests (`deploy/seed`). Run it with
+  `docker-compose` stand seeded deterministically for tests (`src/ingestion/tools/seed`). Run it with
   `./dev-compose.sh test-stand up|test|down`. It asserts no metric VALUE against a declared expectation: the seed's
   `golden_metrics` is empty by design, and a harness for it is being migrated separately. It does reconcile every
   metric's drilldown evidence against that metric's own served value, which needs no declared expectation.

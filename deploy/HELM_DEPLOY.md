@@ -27,6 +27,7 @@ This runbook shows a platform or DevOps engineer how to install the Insight busi
 - [Step 4 — Install with Helm](#step-4--install-with-helm)
 - [Step 5 — Verify the install](#step-5--verify-the-install)
 - [Step 6 — Configure connectors (optional)](#step-6--configure-connectors-optional)
+- [Step 7 — Seed demo data (test stands only)](#step-7--seed-demo-data-test-stands-only)
 - [Appendix — Reference](#appendix--reference)
   - [values/umbrella.yaml placeholders](#valuesumbrellayaml-placeholders)
   - [secrets/insight-db-creds.yaml keys](#secretsinsight-db-credsyaml-keys)
@@ -399,6 +400,20 @@ Then open `https://<HOST>` — the host from Step 1 — and confirm the login re
 Configure connectors after the app is up. Each of the 25 connectors is a single Kubernetes Secret; the `insight-reconcile-loop` CronWorkflow discovers it and provisions the Airbyte source automatically, so there is nothing else to run.
 
 See [deploy/CONNECTORS.md](./CONNECTORS.md) for the connector list and a copy-paste Secret for each.
+
+## Step 7 — Seed demo data (test stands only)
+
+A freshly installed stand holds no people, so every login is refused and every dashboard reads "No data". On a **test** stand you can populate it with a 25-person demo organisation and per-team activity:
+
+```sh
+./src/ingestion/tools/seed/seed-stand.sh -n insight --email you@example.com
+```
+
+The script reads this stand's own coordinates — infrastructure hosts from the `<release>-platform` ConfigMap, the tenant and identity database from `insight-identity-resolution-config`, the image from `ingestion.seedImage` — and runs the seeder as a one-shot Job on that image. Nothing is hand-edited, no credential passes through the shell, and it runs as the application MariaDB user rather than root. `--dry-run` prints the Job it would apply; `--step identity` seeds only the roster.
+
+Two things it cannot do for you: a user with the `--email` address must already exist in your IdP (the authenticator resolves people by the email claim), and the ClickHouse schema must exist already — that is Step 4's migration hook.
+
+This is demo data. The seeder refuses a tenant that already holds `persons` rows it did not write, so pointing it at a stand carrying real identity data fails instead of mixing the two. See [the seeder's README](../src/ingestion/tools/seed/README.md) for the full flag list.
 
 ## Appendix — Reference
 
