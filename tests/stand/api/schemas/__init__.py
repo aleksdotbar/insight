@@ -42,6 +42,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .analytics import (
+    CustomMetric,
+    CustomMetricInput,
+    CustomMetricListResponse,
+    CustomMetricSummary,
+    ExportCustomMetricsResponse,
+    ImportCustomMetricsRequest,
+    ImportCustomMetricsResponse,
     MetricDefinitionListResponse,
     MetricResultsResponse,
     RunResponse,
@@ -77,7 +84,14 @@ from .identity import (
 __all__: Sequence[str] = (
     "EXTRACTOR_REJECTION_CONTENT_TYPE",
     "PROBLEM_CONTENT_TYPE",
+    "CustomMetric",
+    "CustomMetricInput",
+    "CustomMetricListResponse",
+    "CustomMetricSummary",
+    "ExportCustomMetricsResponse",
     "IdentityValue",
+    "ImportCustomMetricsRequest",
+    "ImportCustomMetricsResponse",
     "ListResponse",
     "MetricDefinitionListResponse",
     "MetricResultsResponse",

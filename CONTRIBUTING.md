@@ -157,8 +157,8 @@ Then the chain runs: `bootstrap → fetch-cert → seal → system →
 deploy-app`. Subsequent runs skip the wizard and reconcile the stack.
 
 K8s and compose can coexist — disjoint host ports by default. Demo-data
-seeding on k8s is manual (wizard output prints the port-forward +
-`deploy/seed/` recipe).
+seeding on k8s is one command
+(`src/ingestion/tools/seed/seed-stand.sh`, printed by the wizard).
 
 ### Kubernetes — non-interactive (CI)
 
@@ -282,27 +282,13 @@ wizard. To use it, hand-edit `FRONTEND_MODE=built` in `.env.compose`,
 ./dev-compose.sh up --no-frontend                  # backend-only
 ```
 
-### Local dev auth backend (fakeidp / Keycloak)
+### Local dev auth (Keycloak)
 
-The `authenticator` service's login always runs the same BFF code path — only
-the IdP behind it changes. Select it with **`AUTH_MODE` in `.env.compose`**
-(a persisted setting like `FRONTEND_MODE`):
+Auth always runs via Keycloak: a real Keycloak container with an actual login
+form, exercising the genuine OIDC code path. (The old `fakeidp` mode and the
+`AUTH_MODE` / `--auth` switches are retired.)
 
-- `fakeidp` (default) — a tiny in-repo test double, no login screen, no setup.
-- `keycloak` — a real Keycloak container with an actual login form, for
-  exercising the genuine OIDC code path.
-
-```dotenv
-# .env.compose
-AUTH_MODE=keycloak
-```
-
-```bash
-./dev-compose.sh up            # reads AUTH_MODE from .env.compose
-./dev-compose.sh up --auth=keycloak   # optional per-run override
-```
-
-In keycloak mode the authenticator logs in server-side against the pre-seeded
+The authenticator logs in server-side against the generated
 realm's `insight-authenticator` confidential client; the SPA stays cookie/BFF (no
 special frontend build), and dev-compose points both the browser and the
 authenticator at a host-IP Keycloak issuer so the id_token `iss` validates. See
@@ -470,9 +456,13 @@ for the per-environment IdP selection rationale.
 
 ## Seeding
 
-The seed package lives in [`deploy/seed/`](deploy/seed/) — its
-README documents the ruff / mypy / venv setup. Both deploy paths use
-the same package; only how it's invoked differs.
+The seeder lives in [`src/ingestion/tools/seed/`](src/ingestion/tools/seed/):
+the `insight_seed` package, its `tests/`, and the artifacts it writes. Its
+README documents the layout and the uv / ruff / mypy setup. Both deploy paths
+install the package and run the same program (`insight-seed <step>`); only how
+it is invoked differs. Generating the compose Keycloak realm also runs from that
+package (`insight-seed-realm`, via `uv run`), so `uv` is a prerequisite for
+`./dev-compose.sh up --auth=keycloak`.
 
 **Identity content (after `seed identity`):** CEO, your
 `DEV_USER_EMAIL` person (leads the dev team), 4 team leads (dev /
@@ -483,10 +473,10 @@ the whole tree.
 
 **Silver content (after `seed silver`):** bronze + silver placeholder
 tables, every `src/ingestion/scripts/migrations/*.sql` applied
-(produces the `insight.*` gold views), ~24k rows across 16 silver
+(produces the `insight.*` gold views), ~29k rows across 19 silver
 tables profile-typed per team (`class_git_*` for devs, `class_crm_*`
 for sales, …). The full per-team activity table is in
-[`deploy/seed/profiles.py`](deploy/seed/profiles.py). analytics's
+[`insight_seed/profiles.py`](src/ingestion/tools/seed/insight_seed/profiles.py). analytics's
 schema validator flips from "80 metrics error" to "80 ok".
 
 ### Compose
@@ -506,50 +496,36 @@ To force auto-seed on next `up`, clear the `SEEDED_LOCAL_*` markers in
 
 ### Kubernetes
 
-No auto-seed. The chart doesn't ship a `seed` Job, so you point the
-same Python package at port-forwarded L2 services from the host. One
-recipe per re-seed:
+No auto-seed, but one command. The seeder runs from the `insight-seed`
+image the release already pins, so nothing is built or port-forwarded:
 
 ```bash
-# 1. Port-forward MariaDB + ClickHouse in the background.
-KUBECONFIG=/path/to/config.yaml kubectl -n insight-infra \
-  port-forward svc/mariadb 3306:3306 &
-KUBECONFIG=/path/to/config.yaml kubectl -n insight-infra \
-  port-forward svc/clickhouse 8123:8123 &
+export KUBECONFIG=/path/to/config.yaml
+./src/ingestion/tools/seed/seed-stand.sh -n insight --email you@example.com
 
-# 2. Run the seed package against them. First time only: bootstrap a venv.
-cd deploy/seed
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-
-# Identity + silver. Drop `all` and pass `identity` / `silver` for partial.
-# Schema inputs (placeholders script + gold-view migrations) are
-# auto-located: the container bind-mount when present, otherwise
-# repo-relative to deploy/seed. No path env vars needed.
-MARIADB_HOST=127.0.0.1     MARIADB_PORT=3306 \
-MARIADB_USER=insight       MARIADB_PASSWORD=insight-local \
-CLICKHOUSE_HOST=127.0.0.1  CLICKHOUSE_HTTP_PORT=8123 \
-CLICKHOUSE_USER=insight    CLICKHOUSE_PASSWORD=insight-local \
-DEV_USER_EMAIL=dev@company.nonpresent \
-  .venv/bin/python seed.py all
-
-# 3. Kick analytics so its schema validator re-runs against the
-#    now-populated silver tables. Without this, schema_status stays
-#    cached at boot-time 'table_not_found' and the FE shows "no peer
-#    data" everywhere (cf/insight#1307).
-KUBECONFIG=/path/to/config.yaml kubectl -n insight \
-  rollout restart deploy/insight-analytics
-
-# 4. Stop the port-forwards.
-kill %1 %2
+# Kick analytics so its schema validator re-runs against the
+# now-populated silver tables. Without this, schema_status stays
+# cached at boot-time 'table_not_found' and the FE shows "no peer
+# data" everywhere (cf/insight#1307).
+kubectl -n insight rollout restart deploy/insight-analytics
 ```
 
-Use the real cluster credentials in place of `insight-local` if you
-switched to external DBs at wizard time — the values are whatever the
-operator stored in `secrets-store.yaml` and `make seal` baked into the
-cluster's `mariadb-creds` / `clickhouse-creds` Secrets.
+The script reads the stand's coordinates from its own ConfigMap and
+Secrets — hosts, databases, tenant, image — renders
+[`seed-job.yaml.tpl`](src/ingestion/tools/seed/seed-job.yaml.tpl) into a
+one-shot Job and follows it. `--dry-run` prints that Job instead of
+applying it; `--step identity|silver|analytics` runs one step. No
+credential passes through the shell: the Job reads the release's own
+`insight-db-creds` by key, as the application MariaDB user.
 
-The seeded `DEV_USER_EMAIL` must match FakeIdP's login identity so the
-authenticator can resolve it to a person row.
+`--email` must name a user that already exists in the stand's IdP — the
+authenticator resolves people by the email claim, so a seeded persona
+nobody can authenticate as is not reachable.
+
+Seeding refuses rather than mixing: a tenant already holding `persons`
+rows the seeder did not write, or silver tables holding another tenant's
+rows (the silver step TRUNCATEs before writing), both stop the run.
+`--force` overrides, deliberately.
 
 ---
 

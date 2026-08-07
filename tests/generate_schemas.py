@@ -24,7 +24,7 @@ CI by `.github/workflows/openapi-specs.yml`. There is no second source of truth
 
 The output is COMMITTED. A test run must never need the generator, which is a
 dev-only dependency and absent from the ui-tests image; `--check` is what keeps
-the committed copy honest, the same arrangement `deploy/seed/render_profile.py`
+the committed copy honest, the same arrangement `src/ingestion/tools/seed/render_profile.py`
 uses for PROFILE.md.
 
 Deliberately NOT a pytest case. `tests/stand/` exists to assert things about a
