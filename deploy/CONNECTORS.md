@@ -56,7 +56,7 @@ stringData:
 
 Replace `CHANGE_ME` (and any other placeholder) values in whichever connector files you need, under `connectors/`:
 
-`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `salesforce`, `zoom`, `confluence`, `youtrack`, `zendesk`, `workday`, `bamboohr`, `ms-entra`, `figma`, `outline`, `hubspot`, `cursor`, `openai`, `chatgpt-team`, `claude-team`, `claude-admin`, `claude-enterprise`, `github-copilot`, `bitbucket-cloud`, `zulip-proxy`.
+`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `salesforce`, `zoom`, `confluence`, `youtrack`, `zendesk`, `workday`, `bamboohr`, `ms-entra`, `figma`, `outline`, `hubspot`, `cursor`, `openai`, `chatgpt-team`, `claude-team`, `claude-admin`, `claude-enterprise`, `github-copilot`, `bitbucket-cloud`, `zulip-proxy`, `github-directory`.
 
 Apply all of them at once, or one at a time:
 
@@ -228,6 +228,22 @@ type: Opaque
 stringData:
   bitbucket_token:      "CHANGE_ME"    # Atlassian ATCTT access token (NOT an ATATT API token)
   bitbucket_workspaces: "workspace-a,workspace-b"
+```
+
+```yaml
+# GitHub org roster -> identity_inputs. Required for GitHub-brokered SSO:
+# without it a GitHub login resolves to no person and the callback returns 403.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insight-github-directory-main
+  namespace: insight
+  labels: { app.kubernetes.io/part-of: insight }
+  annotations: { insight.cyberfabric.com/connector: github-directory, insight.cyberfabric.com/source-id: github-directory-main }
+type: Opaque
+stringData:
+  github_token:         "ghp_CHANGE_ME"   # read:org (+ user:email for member emails)
+  github_organizations: '["myorg"]'       # JSON array
 ```
 
 ### Issue tracking & docs
