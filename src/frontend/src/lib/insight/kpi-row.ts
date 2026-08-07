@@ -10,6 +10,7 @@ import {
   forEntity,
   type NormalizedMetricResult,
 } from "@/lib/metrics/collection";
+import { dropRedundantMetrics } from "@/lib/insight/metric-containment";
 import { metricHelp, type MetricHelpText } from "@/lib/insight/metric-help";
 import { peerStatusToStatus } from "@/lib/insight/peer-status";
 import { formatGapMagnitude } from "@/lib/metrics/gap";
@@ -30,7 +31,6 @@ export interface KpiTileData {
   key: string;
   label: string;
   value: string;
-  valueStatus: Status;
   delta: { text: string; status: Status; down: boolean } | null;
   medianLabel: string | null;
   /**
@@ -39,9 +39,13 @@ export interface KpiTileData {
    */
   gapText: string | null;
   /**
-   * Always neutral today: the value carries the peer verdict, and repeating it
-   * under the number doubles the red without adding a fact. Kept as a field so
-   * a future rule (a real threshold on the gap itself) has somewhere to land.
+   * The peer verdict, carried by the line that actually states the comparison.
+   *
+   * It used to colour the VALUE, which put two different questions in one
+   * red/green channel: a tile could show a red number (bottom of the cohort)
+   * beside a green badge (up on its own past) and read as a contradiction
+   * rather than as two facts. The value is now plain ink; standing is stated
+   * where it is explained, and the badge keeps the trend to itself.
    */
   gapStatus: Status;
   /**
@@ -76,7 +80,7 @@ export function metricKpiTiles(
     // color follows the same rank mapping as every card and the peer story
     // — red means bottom quartile, in-pack is normal and stays uncolored.
     const standing = derivePeerStanding(metric.direction, data);
-    const valueStatus = applyFocusStatus(
+    const gapStatus = applyFocusStatus(
       peerStatusToStatus(standing.rank),
       focusMode
     );
@@ -131,7 +135,6 @@ export function metricKpiTiles(
             : metric.format === "percent"
               ? formatMetricValue(value, metric.format, metric.unit)
               : formatMetricNumber(value, metric.format),
-        valueStatus,
         delta,
         medianLabel:
           median != null
@@ -142,15 +145,15 @@ export function metricKpiTiles(
               }`
             : null,
         gapText,
-        // Neutral on purpose: the gap EXPLAINS the value, it does not judge it
-        // a second time. Painting both left one finding wearing two red marks,
-        // and a reader counts marks — a person page with six findings read as
-        // twice as many problems.
-        gapStatus: "neutral" as Status,
+        gapStatus,
         help: metricHelp(metric),
         groupId: groupIdForMetricKey(metric.metric_key),
       },
     ];
   });
-  return tiles.slice(0, KPI_ROW_MAX);
+  // Two tiles saying one thing cost a slot the row does not have — with four
+  // of them, "Focus Time" and "Meeting Hours" would spend half the row on the
+  // same measurement, read from opposite ends. Candidate order decides which
+  // survives, so the row keeps the one it prefers.
+  return dropRedundantMetrics(tiles).slice(0, KPI_ROW_MAX);
 }

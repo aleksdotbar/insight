@@ -57,13 +57,13 @@ describe("metricKpiTiles", () => {
     expect(active.value).toBe("14");
     // 14 sits inside the IQR (5..15) — with the pack, so no color even
     // though it's above the median.
-    expect(active.valueStatus).toBe("neutral");
+    expect(active.gapStatus).toBe("neutral");
     expect(active.delta?.text).toBe("+17%");
     expect(active.medianLabel).toBe("median 10");
     expect(active.groupId).toBe("ai_adoption");
     const lines = tiles[1]!;
     // 900 ≥ p75 15 — top quartile earns the color.
-    expect(lines.valueStatus).toBe("good");
+    expect(lines.gapStatus).toBe("good");
     expect(lines.delta).toEqual({ text: "-10%", status: "bad", down: true });
   });
 
@@ -88,7 +88,7 @@ describe("metricKpiTiles", () => {
       "me@x.com",
       "all"
     );
-    expect(tiles[0]?.valueStatus).toBe("neutral");
+    expect(tiles[0]?.gapStatus).toBe("neutral");
     expect(tiles[0]?.medianLabel).toBeNull();
   });
 
@@ -148,10 +148,11 @@ describe("metricKpiTiles", () => {
 });
 
 describe("one finding, one mark", () => {
-  it("leaves the gap line neutral while the value carries the verdict", () => {
-    // The value and the "−98% vs median" under it used to share a colour, so a
-    // single peer standing painted two red marks. A reader counts marks: six
-    // findings read as twice as many problems.
+  it("puts the peer verdict on the line that states the comparison", () => {
+    // One standing, one mark — and on the sentence that explains it. Colouring
+    // the value put a cohort verdict and a period trend in one red/green
+    // channel, so a red number beside a green badge read as a contradiction
+    // rather than as two different facts.
     const result = metricResult("ai.active_days", 2);
     const tiles = metricKpiTiles(
       normalizeMetricResults([result]),
@@ -159,8 +160,7 @@ describe("one finding, one mark", () => {
       "me@x.com",
       "all"
     );
-    expect(tiles[0]?.valueStatus).toBe("bad");
+    expect(tiles[0]?.gapStatus).toBe("bad");
     expect(tiles[0]?.gapText).not.toBeNull();
-    expect(tiles[0]?.gapStatus).toBe("neutral");
   });
 });

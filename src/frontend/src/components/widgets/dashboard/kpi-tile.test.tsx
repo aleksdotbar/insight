@@ -17,7 +17,6 @@ function tile(overrides: Partial<KpiTileData> = {}): KpiTileData {
     key: "ai.active_days",
     label: "Active AI days",
     value: "14",
-    valueStatus: "good",
     delta: { text: "+17%", status: "good", down: false },
     medianLabel: "median 11",
     gapText: null,
@@ -36,7 +35,7 @@ describe("KpiTile", () => {
     render(<KpiTile tile={tile()} />);
     expect(screen.getByText("14")).toBeInTheDocument();
     expect(screen.getByText("+17%")).toBeInTheDocument();
-    expect(screen.getByText("median 11")).toBeInTheDocument();
+    expect(screen.getByText(/median 11/)).toBeInTheDocument();
     expect(
       screen.getByText("Days with any AI tool activity"),
     ).toBeInTheDocument();
@@ -52,8 +51,7 @@ describe("KpiTile", () => {
         })}
       />,
     );
-    expect(screen.getByText("3.5×")).toBeInTheDocument();
-    expect(screen.getByText(/vs median 3,563/)).toBeInTheDocument();
+    expect(screen.getByText(/3\.5× vs median 3,563/)).toBeInTheDocument();
   });
 
   it("falls back to 'No peer data' without a median label", () => {
@@ -102,5 +100,24 @@ describe("KpiTilePlaceholder", () => {
     render(<KpiTile tile={tile({ help: null })} onOpenGroup={vi.fn()} />);
     await userEvent.hover(screen.getByRole("button"));
     expect(screen.queryByTestId("metric-help")).not.toBeInTheDocument();
+  });
+
+  it("says where the value sits when it is exactly at the median", () => {
+    // "median 22,774" alone breaks the pattern every other tile follows and
+    // reads as a stray label rather than a comparison.
+    render(<KpiTile tile={tile({ gapText: null, medianLabel: "median 11" })} />);
+    expect(screen.getByText(/at median 11/)).toBeInTheDocument();
+  });
+
+  it("does not raise an alarm over a change of one percent", () => {
+    // Four coloured badges per row, one of them for a rounding-sized move,
+    // teach the reader that the colour means nothing.
+    render(
+      <KpiTile
+        tile={tile({ delta: { text: "-1%", status: "neutral", down: true } })}
+      />,
+    );
+    const badge = screen.getByText("-1%").closest("span")!;
+    expect(badge.className).not.toMatch(/text-destructive|text-success/);
   });
 });

@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  Minus,
   Sparkles,
   TrendingDownIcon,
   TrendingUpIcon,
@@ -17,7 +18,7 @@ import {
 import { useSettings } from "@/hooks/use-settings";
 import type { KpiTileData } from "@/lib/insight/kpi-row";
 import type { GroupId } from "@/lib/insight/groups";
-import { STATUS_TEXT_CLASS } from "@/lib/status";
+import { STATUS_BG_CLASS, STATUS_TEXT_CLASS } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
 export interface KpiTileProps {
@@ -82,13 +83,13 @@ export function KpiTile({ tile, onOpenGroup }: KpiTileProps) {
               statement about this number ("−1 pp since last period"), and read
               from the label row it looked like a second, unrelated figure.
               Pinned to the right edge so the badges line up down a row of tiles
-              — a column the eye can scan instead of chasing each value's end. */}
+              — a column the eye can scan instead of chasing each value's end.
+              Plain ink, always: the number states a quantity, and the verdict
+              on it belongs to the line that explains the comparison. */}
           <CardTitle
             className={cn(
               "col-span-full flex w-full flex-wrap items-baseline justify-between gap-x-2 gap-y-1",
-              "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl",
-              tile.valueStatus !== "neutral" &&
-                STATUS_TEXT_CLASS[tile.valueStatus]
+              "text-2xl font-semibold tabular-nums @[250px]/card:text-3xl"
             )}
           >
             <span>{tile.value}</span>
@@ -100,25 +101,44 @@ export function KpiTile({ tile, onOpenGroup }: KpiTileProps) {
                   STATUS_TEXT_CLASS[tile.delta.status]
                 )}
               >
-                {tile.delta.down ? <TrendingDownIcon /> : <TrendingUpIcon />}
+                {tile.delta.status === "neutral" ? (
+                  <Minus />
+                ) : tile.delta.down ? (
+                  <TrendingDownIcon />
+                ) : (
+                  <TrendingUpIcon />
+                )}
                 {tile.delta.text}
               </Badge>
             ) : null}
           </CardTitle>
         </CardHeader>
-        <CardFooter className="text-sm text-muted-foreground">
-          {tile.gapText && tile.medianLabel ? (
+        {/* Pushed to the bottom edge so a row of tiles lines its footers up
+            even when one of them wraps its badge onto a second line; the
+            two-line reserve keeps a wrapped comparison from changing the
+            card's height. */}
+        <CardFooter className="mt-auto min-h-[2lh] items-start text-sm text-muted-foreground">
+          {tile.medianLabel ? (
             <span>
-              {/* One weight for the whole line: the gap explains the value, and
-                  a bolder fragment inside a grey sentence is a fourth treatment
-                  earning nothing. */}
+              {/* The standing, on the sentence that states it — and marked by
+                  a dot as well as a colour, so it survives being read by
+                  someone who cannot tell the two colours apart. */}
+              {tile.gapStatus !== "neutral" ? (
+                <span
+                  className={cn(
+                    "mr-1.5 inline-block size-1.5 rounded-full align-middle",
+                    STATUS_BG_CLASS[tile.gapStatus]
+                  )}
+                  aria-hidden
+                />
+              ) : null}
               <span className={STATUS_TEXT_CLASS[tile.gapStatus]}>
-                {tile.gapText}
-              </span>{" "}
-              vs {tile.medianLabel}
+                {tile.gapText ? `${tile.gapText} vs ` : "at "}
+                {tile.medianLabel}
+              </span>
             </span>
           ) : (
-            (tile.medianLabel ?? "No peer data")
+            "No peer data"
           )}
         </CardFooter>
       </Card>
