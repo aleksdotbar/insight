@@ -457,17 +457,11 @@ cmd_up() {
   [[ -n "$frontend_mode_override" ]] && FRONTEND_MODE="$frontend_mode_override"
   FRONTEND_MODE="${FRONTEND_MODE:-dev}"
 
-  # Auth always runs via Keycloak. A lingering non-keycloak AUTH_MODE in an
-  # old .env.compose is overridden, loudly.
+  # A lingering AUTH_MODE in an old .env.compose is dead config; warn, loudly.
   if [[ "${AUTH_MODE:-keycloak}" != "keycloak" ]]; then
     echo "WARN: AUTH_MODE=${AUTH_MODE} is retired — auth always runs via Keycloak." >&2
     echo "      Remove AUTH_MODE from $env_file to silence this." >&2
   fi
-  AUTH_MODE="keycloak"
-  # The seed-sample container reads AUTH_MODE too (src/ingestion/tools/seed/profiles.py's
-  # get_login_id_pairs) to pick which roster personas get a login-id fixture —
-  # export so the child `docker compose` process's env-var interpolation sees it.
-  export AUTH_MODE
 
   # NGINX_BFF: Keycloak needs NO special frontend. The SPA is cookie/BFF
   # (same-origin): it calls /auth/login + /api through the gateway and never

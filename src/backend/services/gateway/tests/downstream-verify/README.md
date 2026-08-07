@@ -42,7 +42,7 @@ keycloak ─▶ authenticator ─▶ gateway ─▶ {analytics, identity-resolut
 Requires `docker`, `openssl`, `pytest`, `uv` (realm generation), and — for
 scenario 4 — `PyJWT` + `cryptography`:
 
-```
+```bash
 pip install pytest pyjwt cryptography
 src/backend/services/gateway/tests/downstream-verify/run-e2e.sh
 ```

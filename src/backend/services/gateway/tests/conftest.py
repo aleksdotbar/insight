@@ -43,17 +43,14 @@ REWRITES = {"http://gateway:8080": GW, "http://keycloak:8085": KEYCLOAK}
 
 KC_REALM = "insight"
 KC_DISCOVERY = f"{KEYCLOAK}/realms/{KC_REALM}/.well-known/openid-configuration"
-# The realm generator's dev-lead persona; every realm user's password is the
-# generator's baked dev password.
+# The realm's dev-lead persona; the generator bakes one dev password for all users.
 E2E_USER = "dev@company.nonpresent"
 E2E_PASSWORD = "insight-dev"
-# Every realm user carries a tenant claim and the generator requires one. This
-# rig resolves people through the identity-stub (any external id resolves), so
-# the value only has to be named; it is the one the compose stack uses.
+# The generator requires a tenant; the identity-stub resolves any external id,
+# so the value only has to be named.
 TENANT_ID = "00000000-df51-5b42-9538-d2b56b7ee953"
 
-# Keycloak's login form posts to .../login-actions/authenticate. Matching on
-# that rather than "the first <form>" survives extra forms on the page.
+# Anchored on login-actions/authenticate, not "the first <form>".
 _LOGIN_FORM = re.compile(r'<form[^>]+action="([^"]*login-actions/authenticate[^"]*)"', re.IGNORECASE)
 
 
@@ -168,10 +165,10 @@ def _wait_http(url, want, timeout_s=90):
 
 
 def _generate_realm(import_dir: Path) -> None:
-    """Generate the Keycloak import realm with `insight-seed-realm` (uv resolves
-    and installs the seed package on first use). The compose default redirect
-    URIs would deregister the gateway callback (--authenticator-redirect
-    REPLACES, not appends), so it is passed explicitly."""
+    """Generate the Keycloak import realm with `insight-seed-realm`.
+
+    The redirect is passed explicitly: --authenticator-redirect REPLACES the
+    defaults, which would deregister the gateway callback."""
     seed = REPO_ROOT / "src" / "ingestion" / "tools" / "seed"
     import_dir.mkdir(exist_ok=True)
     subprocess.run(

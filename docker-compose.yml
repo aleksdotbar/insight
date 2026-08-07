@@ -683,10 +683,6 @@ services:
       # above) — the dev-lead's login-bootstrap value_type='id' row is seeded
       # under this source_type.
       IDP_SOURCE_TYPE: "${AUTHENTICATOR_IDP_SOURCE_TYPE:-keycloak}"
-      # Keycloak mode seeds a login-id fixture for the whole roster, each
-      # persona on their own uuid — see src/ingestion/tools/seed/profiles.py's
-      # get_login_id_pairs. dev-compose.sh exports this.
-      AUTH_MODE: "${AUTH_MODE:-keycloak}"
       # MariaDB — falls back to the local docker service name/port; the
       # wizard rewrites these when external MariaDB is selected.
       MARIADB_HOST: "${MARIADB_HOST:-mariadb}"

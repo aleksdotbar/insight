@@ -187,13 +187,14 @@ jobs:
           make -C deploy/gitops system ENV="${GITOPS_ENV}" KUBE_CTX="${KUBE_CONTEXT}"
           make -C deploy/gitops system-status ENV="${GITOPS_ENV}" KUBE_CTX="${KUBE_CONTEXT}"
 
-      # Generates the Keycloak roster realm JSON into the env realms dir and
-      # applies the insight-keycloak-config admin Secret; deploy-app's chained
-      # keycloak-broker-realms target packs the realm into the ConfigMap the
-      # keycloak-config-cli hook Job applies.
+      # deploy-app's chained keycloak-broker-realms target packs the generated
+      # realm into the ConfigMap the keycloak-config-cli hook Job applies.
       - name: Generate Keycloak realm
         run: |
           set -euo pipefail
+          # keycloak-realm no-ops (exit 0) when keycloak.deploy != true; this
+          # smoke requires the realm, so fail closed on a misconfigured env.
+          test "$(yq -r '.keycloak.deploy // false' "deploy/gitops/environments/${GITOPS_ENV}/values.yaml")" = "true"
           make -C deploy/gitops keycloak-realm ENV="${GITOPS_ENV}" KUBE_CTX="${KUBE_CONTEXT}"
 
       - name: Deploy Insight via gitops Makefile

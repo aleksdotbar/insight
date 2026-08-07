@@ -47,10 +47,8 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      # The advertised issuer is the in-network origin, so the authenticator's
-      # discovery, token exchange, and the id_token `iss` all agree. The
-      # host-side pytest rewrites keycloak:8085 to the published port when it
-      # follows the browser-facing redirects and the login-form action.
+      # In-network origin, so discovery, token exchange, and the id_token `iss`
+      # agree; the host-side pytest rewrites it to the published port.
       KC_HOSTNAME: "http://keycloak:8085"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: "8085"
