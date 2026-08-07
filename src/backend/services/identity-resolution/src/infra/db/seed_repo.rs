@@ -255,7 +255,7 @@ pub async fn latest_email_to_person(
 /// Returns an error if any statement fails; the transaction is the caller's to
 /// roll back.
 #[allow(clippy::too_many_lines)] // dominated by the verbatim org_chart CTE
-pub(crate) async fn rebuild_derived_caches(
+async fn rebuild_derived_caches(
     txn: &DatabaseTransaction,
     tenant_id: Uuid,
     author_person_id: Uuid,

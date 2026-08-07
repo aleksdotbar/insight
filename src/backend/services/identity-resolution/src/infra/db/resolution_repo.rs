@@ -1,16 +1,17 @@
 //! Operator-correction write store (MariaDB).
 //!
-//! Corrections append binding observations to `persons` and rebuild the derived
-//! caches in the same transaction (shared with the seed — see
-//! [`super::seed_repo::rebuild_derived_caches`]). Nothing here updates or
-//! deletes a journal row.
+//! Corrections append binding observations to `persons`. Nothing here updates
+//! or deletes a journal row, and nothing here rebuilds the derived caches:
+//! those stay the persons-seed's to own, on its own schedule, the way the
+//! ClickHouse mirror already works. The journal is the source of truth and
+//! every read path — the correction verbs, the review queue, the history —
+//! reads it directly, so a correction is visible the moment it commits.
 
 use std::collections::{HashMap, HashSet};
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait, Value};
 use uuid::Uuid;
 
-use super::seed_repo::rebuild_derived_caches;
 use crate::domain::resolution::{BINDING_VALUE_TYPE, BindingRow};
 use crate::domain::seed::{KnownBinding, SourceAccountKey};
 
@@ -190,9 +191,18 @@ pub async fn person_exists(
     Ok(row.is_some())
 }
 
-/// Append binding observations and rebuild the tenant's derived caches in one
-/// transaction. Returns the number of rows actually appended (a re-emitted
-/// identical observation is ignored by the natural key).
+/// Append binding observations in one transaction. Returns the number of rows
+/// actually appended (a re-emitted identical observation is ignored by the
+/// natural key).
+///
+/// The tenant's derived caches are deliberately NOT rebuilt here. The rebuild
+/// is whole-tenant — it deletes and re-derives `account_person_map` and
+/// `org_chart` from the entire journal — and it grows far worse than linearly,
+/// so putting it in a request path makes one operator decision cost minutes on
+/// a large tenant. It also buys nothing: a correction appends only
+/// `value_type='id'` rows, while `org_chart` is derived from the parent, status
+/// and e-mail observations a correction never touches. The caches stay the
+/// seed's to refresh on its own schedule, like the ClickHouse mirror.
 ///
 /// # Errors
 ///
@@ -200,7 +210,6 @@ pub async fn person_exists(
 pub async fn append_bindings(
     db: &DatabaseConnection,
     tenant_id: Uuid,
-    operator_person_id: Uuid,
     rows: &[BindingRow],
 ) -> anyhow::Result<u64> {
     const INSERT_PREFIX: &str = "INSERT IGNORE INTO persons \
@@ -240,7 +249,6 @@ pub async fn append_bindings(
         appended += res.rows_affected();
     }
 
-    rebuild_derived_caches(&txn, tenant_id, operator_person_id).await?;
     txn.commit().await?;
 
     tracing::info!(appended, "identity correction: bindings appended");

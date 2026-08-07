@@ -329,7 +329,7 @@ async fn apply_correction(
         })
         .map(|(index, _)| index)
         .collect();
-    let landed = write_rows(state, tenant, operator, rows).await?;
+    let landed = write_rows(state, tenant, rows).await?;
 
     let mut outcomes = vec![OUTCOME_ALREADY_DECIDED; targets.len()];
     for (slot, index) in written.iter().enumerate() {
@@ -393,14 +393,13 @@ fn count_items(items: &[ItemResult], wanted: &str) -> usize {
 async fn write_rows(
     state: &AppState,
     tenant: Uuid,
-    operator: Uuid,
     rows: Vec<resolution::BindingRow>,
 ) -> Result<Vec<bool>, CanonicalError> {
     if rows.is_empty() {
         return Ok(Vec::new());
     }
 
-    let appended = append(state, tenant, operator, &rows).await?;
+    let appended = append(state, tenant, &rows).await?;
     if appended == rows.len() as u64 {
         return Ok(vec![true; rows.len()]);
     }
@@ -413,7 +412,7 @@ async fn write_rows(
     }
 
     let retry = resolution::restamp(&missing, chrono::Utc::now().naive_utc());
-    append(state, tenant, operator, &retry).await?;
+    append(state, tenant, &retry).await?;
 
     let recovered = present_rows(state, tenant, &retry).await?;
     resolution::apply_recovery(&mut present, &recovered);
@@ -431,10 +430,9 @@ async fn write_rows(
 async fn append(
     state: &AppState,
     tenant: Uuid,
-    operator: Uuid,
     rows: &[resolution::BindingRow],
 ) -> Result<u64, CanonicalError> {
-    resolution_repo::append_bindings(&state.db, tenant, operator, rows)
+    resolution_repo::append_bindings(&state.db, tenant, rows)
         .await
         .map_err(|e| internal(&e, "failed to append the correction"))
 }

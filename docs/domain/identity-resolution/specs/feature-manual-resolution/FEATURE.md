@@ -203,7 +203,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
    1. [ ] - `p1` - **RETURN** no-op (the identical decision is already recorded) - `inst-mr-apply-noop`
 3. [ ] - `p1` - Claim a free observation timestamp for the row per `cpt-ir-algo-manual-resolution-timestamp-slot` - `inst-mr-apply-timestamp`
 4. [ ] - `p1` - DB: INSERT persons (binding observation: account, target person, operator as author, reason code) - `inst-mr-apply-append`
-5. [ ] - `p1` - DB: DELETE + INSERT account_person_map for the tenant (derived cache rebuild, same transaction) - `inst-mr-apply-cache`
+5. [ ] - `p1` - Leave the derived caches to the persons-seed: a correction appends to the journal only, and every read path reads the journal - `inst-mr-apply-cache`
 6. [ ] - `p1` - DB: INSERT operations (actor, request, comment, outcome) - `inst-mr-apply-journal`
 7. [ ] - `p1` - **RETURN** applied - `inst-mr-apply-return`
 
@@ -305,7 +305,7 @@ Automatic resolution errs in both directions — under-merge (one human as two p
 
 - [ ] `p1` - **ID**: `cpt-ir-dod-manual-resolution-verbs`
 
-The system **MUST** expose bind (single and bulk), merge, detach and exclude; each appends binding observations authored by the operator with a machine-readable reason and **MUST NOT** update or delete any existing row.
+The system **MUST** expose bind (single and bulk), merge, detach and exclude; each appends binding observations authored by the operator with a machine-readable reason and **MUST NOT** update or delete any existing row. A correction **MUST NOT** rebuild the tenant's derived caches: that work is whole-tenant and superlinear in the tenant's size, so it belongs to the persons-seed's own schedule, not to a request. The journal is what every read path reads, so a correction takes effect the moment it commits.
 
 **Implements**:
 - `cpt-ir-flow-manual-resolution-review-and-bind`
@@ -315,7 +315,7 @@ The system **MUST** expose bind (single and bulk), merge, detach and exclude; ea
 
 **Touches**:
 - API: `POST /v1/resolution/bind`, `POST /v1/resolution/merge`, `POST /v1/resolution/detach`, `POST /v1/resolution/exclude`
-- DB: `persons`, `account_person_map`, `operations`
+- DB: `persons`, `operations`
 
 ### Decision-Aware Idempotency
 
