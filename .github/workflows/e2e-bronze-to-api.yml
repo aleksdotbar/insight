@@ -277,8 +277,9 @@ jobs:
           # The PR path stays on the classic builder: bake is not needed there
           # (no Rust compiles at all) and the docker-image:// prebuilt contexts
           # are only guaranteed to resolve from the daemon store with the
-          # default driver/builder.
-          COMPOSE_BAKE: ${{ github.event_name != 'pull_request' && 'true' || '' }}
+          # default driver/builder. Explicit 'false', not '' — compose parses
+          # the variable with strict ParseBool and dies on an empty string.
+          COMPOSE_BAKE: ${{ github.event_name != 'pull_request' && 'true' || 'false' }}
 
       # ─── Hand the built image to both lanes ─────────────────────────────
       # Only insight-e2e-runner:latest travels: analytics and jira-enrich
