@@ -611,10 +611,14 @@ for d in json.load(sys.stdin):
       # ours. Migrating is the only way forward; leaving it in place would keep
       # the old connection syncing the superseded extraction while the repo
       # claims otherwise.
+      # bump_kind=patch, same as the cdk first-publish this effectively is: a
+      # one-shot sync still fires (data changed), but never `dbt --full-refresh`
+      # — that would drop and rebuild the connector's incremental SCD2 models
+      # and erase the very history the state backup exists to protect.
       if [[ "${RECONCILE_DRY_RUN:-0}" -eq 1 ]]; then  # RULE-DEFAULTS-OK: feature flag — OFF when caller doesn't opt in
         reconcile__log CHANGE "${connector_name}" \
           "would migrate definition from ${current_repo} to ${desc_repo} (old source, connection and definition replaced; state preserved)"
-        printf 'republish\tmajor\t%s\n' "${definition_id}"
+        printf 'republish\tpatch\t%s\n' "${definition_id}"
         return 0
       fi
       local migrated_def_id
@@ -624,7 +628,7 @@ for d in json.load(sys.stdin):
         return 1
       fi
       _RECONCILE_CHANGED=$((_RECONCILE_CHANGED + 1))
-      printf 'republish\tmajor\t%s\n' "${migrated_def_id}"
+      printf 'republish\tpatch\t%s\n' "${migrated_def_id}"
       return 0
     fi
     current_value="${current_tag}"
