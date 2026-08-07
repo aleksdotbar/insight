@@ -111,7 +111,9 @@ The authenticator is a plain HTTP service: no proxying, no K8s API access, no st
   -- Keycloak adopted as the identity broker for customer IdPs and social logins (GitHub #2163),
   presenting one uniform OIDC issuer to the authenticator; realm content managed as code
   (keycloak-config-cli from gitops, secrets via sealed secrets); per-provider mappers inject the
-  single `tenant_id` claim (DD-AUTH-04); amends ADR-0002 by retiring fakeidp everywhere.
+  single `tenant_id` claim (DD-AUTH-04); amends ADR-0002 by retiring fakeidp everywhere
+  (retirement completed 2026-08-07, #2198 -- Keycloak is the issuer in every dev/CI/e2e
+  environment; deployed environments use the broker).
 
 All three realise `cpt-insightspec-fr-auth-oidc-login` wiring without a code change -- the IdP
 stays a config value. Remaining decisions are captured inline in

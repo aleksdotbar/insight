@@ -54,8 +54,8 @@ pub struct IdpConfig {
     /// Confidential-client secret (injected per-deployment; never committed).
     pub client_secret: String,
     /// id_token claim naming the user's single tenant. A plain string (an
-    /// array is tolerated: first entry wins). fakeidp/Keycloak emit
-    /// `tenant_id`; Entra emits `tid`.
+    /// array is tolerated: first entry wins). Keycloak emits `tenant_id`;
+    /// Entra emits `tid`.
     pub tenant_claim: String,
     /// The `insight_source_type` this IdP is known to identity-resolution as
     /// (e.g. `ms-entra`) — the connector whose `identity_inputs` seed the
@@ -68,8 +68,8 @@ pub struct IdpConfig {
     /// `source_type` — the join key `identity_inputs` seeded it under (e.g.
     /// Entra's `oid`; the generic OIDC `sub` is NOT the same thing for
     /// directory-backed IdPs, see the `ms-entra` connector schema). Defaults
-    /// to `sub` (fine for IdPs, like fakeidp, where `sub` IS the stable
-    /// directory id).
+    /// to `sub` (fine for IdPs where `sub` IS the stable directory id, e.g.
+    /// Keycloak).
     pub external_id_claim: String,
     /// Fallback tenant when the id_token carries no tenant claim at all (e.g.
     /// Okta). Empty = no fallback: the gateway JWT gets an empty `tenant_id`
@@ -470,9 +470,8 @@ impl AuthenticatorConfig {
         );
 
         // Required fields (all injected per-deployment). `idp.client_secret` is
-        // intentionally optional — public OIDC clients (e.g. the dev fakeidp)
-        // authenticate with PKCE and no secret. `redis_url` is checked in
-        // SessionManager::connect.
+        // intentionally optional — public OIDC clients authenticate with PKCE
+        // and no secret. `redis_url` is checked in SessionManager::connect.
         for (name, value) in [
             ("gateway_issuer", &self.gateway_issuer),
             ("redirect_uri", &self.redirect_uri),

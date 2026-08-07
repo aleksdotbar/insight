@@ -7,10 +7,9 @@ regressions:
    `created_at` in `persons`' unique key, so `INSERT IGNORE` alone no longer
    dedupes a re-run (each insert gets a fresh `created_at`, so the unique key
    never collides). Every writer must check for an existing row explicitly.
-2. Roster scope: fakeidp only defines a fixed dev-lead identity, but a
-   Keycloak realm seeds the WHOLE roster (`keycloak_realm` pins every realm
-   user's id to their own roster uuid) — `seed_login_ids` must seed a row per
-   roster member under `AUTH_MODE=keycloak`, not just the dev lead.
+2. Roster scope: the Keycloak realm seeds the WHOLE roster (`keycloak_realm`
+   pins every realm user's id to their own roster uuid) — `seed_login_ids`
+   must seed a row per roster member, not just the dev lead.
 
 Run against the installed package (see the README's develop section):
 
@@ -87,38 +86,21 @@ class _FakeCursor:
 
 
 class SeedLoginIdsTests(unittest.TestCase):
-    """Both variables are SET, not defaulted: `profiles` reads them at call time,
+    """IDP_SOURCE_TYPE is SET, not defaulted: `profiles` reads it at call time,
     so a value left over from the developer's shell would otherwise decide which
-    personas these tests expect."""
-
-    _ENV = ("AUTH_MODE", "IDP_SOURCE_TYPE")
+    source_type these tests expect."""
 
     def setUp(self) -> None:
-        self._previous = {name: os.environ.get(name) for name in self._ENV}
-        os.environ["IDP_SOURCE_TYPE"] = "fakeidp"
+        self._previous = os.environ.get("IDP_SOURCE_TYPE")
+        os.environ["IDP_SOURCE_TYPE"] = "keycloak"
 
     def tearDown(self) -> None:
-        for name, value in self._previous.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
+        if self._previous is None:
+            os.environ.pop("IDP_SOURCE_TYPE", None)
+        else:
+            os.environ["IDP_SOURCE_TYPE"] = self._previous
 
-    def test_second_run_does_not_insert_a_duplicate(self) -> None:
-        os.environ["AUTH_MODE"] = "fakeidp"
-        cur = _FakeCursor()
-        roster = _roster()
-
-        # The fake cursor implements only what these writers call.
-        first_run_count = identity.seed_login_ids(cur, _TENANT, roster)  # type: ignore[arg-type]
-        second_run_count = identity.seed_login_ids(cur, _TENANT, roster)  # type: ignore[arg-type]
-
-        self.assertEqual(first_run_count, 1, "fakeidp seeds only the dev lead")
-        self.assertEqual(second_run_count, 0, "re-run must be a no-op, not a duplicate insert")
-        self.assertEqual(cur.insert_count, 1, "only one INSERT should ever have executed")
-
-    def test_keycloak_seeds_the_whole_roster(self) -> None:
-        os.environ["AUTH_MODE"] = "keycloak"
+    def test_whole_roster_is_seeded_once_across_two_runs(self) -> None:
         cur = _FakeCursor()
         roster = _roster()
 
@@ -129,7 +111,7 @@ class SeedLoginIdsTests(unittest.TestCase):
         self.assertEqual(
             first_run_count,
             len(roster),
-            "keycloak seeds every roster persona (keycloak_realm registers all of them)",
+            "every roster persona gets a login row (keycloak_realm registers all of them)",
         )
         self.assertEqual(second_run_count, 0, "re-run must be a no-op for every pair")
         self.assertEqual(cur.insert_count, len(roster))
@@ -184,7 +166,7 @@ class SeedPersonsIdempotencyTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self._previous = os.environ.get("IDP_SOURCE_TYPE")
-        os.environ["IDP_SOURCE_TYPE"] = "fakeidp"
+        os.environ["IDP_SOURCE_TYPE"] = "keycloak"
 
     def tearDown(self) -> None:
         if self._previous is None:

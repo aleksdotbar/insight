@@ -370,9 +370,9 @@ authenticator:
       name: local-ca
       kind: ClusterIssuer
   # OIDC upstream + browser callback, folded into insight-authenticator-config.
-  # Values may be Helm templates (rendered with `tpl`); local points at fakeidp.
+  # Values may be Helm templates (rendered with `tpl`); local points at Keycloak.
   oidc:
-    issuerUrl: "" # the IdP issuer (local: the in-cluster fakeidp FQDN)
+    issuerUrl: "" # the IdP issuer (local: the in-stack Keycloak realm URL)
     clientId: "insight-authenticator"
     clientSecret: ""
     redirectUri: "" # browser-facing callback, through the gateway edge
@@ -387,19 +387,6 @@ authenticator:
   # minted for that person instead of the authenticated one. Dev/demo
   # environments ONLY — MUST stay false anywhere real users log in.
   overrideEnabled: false
-# ─── fakeidp (dev/e2e OIDC provider — NEVER a real environment) ─────────────
-fakeidp:
-  deploy: false
-  image:
-    repository: ghcr.io/constructorfabric/insight-fakeidp
-    tag: "" # MUST be set (e.g. "0.1.0")
-    pullPolicy: IfNotPresent
-  # In-cluster URL the authenticator validates the id_token `iss` against. Set
-  # to the fakeidp Service FQDN (a Helm template, rendered with `tpl`). MUST
-  # equal `authenticator.oidc.issuerUrl`.
-  issuer: ""
-  defaultAudience: "insight-authenticator"
-  devUserEmail: "dev@company.nonpresent"
 # ─── keycloak ────────────────────────────────────────────────────────────────
 # The stack's Keycloak (identity broker, ADR-0003): start, MariaDB-backed,
 # admin from a Secret; realm content via keycloakConfig only.

@@ -354,7 +354,7 @@ keycloak-realm: kube-ctx values-present
 	command -v uv >/dev/null 2>&1 || { echo "$(C_RED)uv is required to generate the Keycloak realm$(C_RST)"; exit 1; }; \
 	DIR=environments/$(ENV)/keycloak/realms; mkdir -p "$$DIR"; \
 	OUT="$$DIR/realm-insight.generated.json"; \
-	DEV_EMAIL="$$(yq -r '.fakeidp.devUserEmail // "dev@company.nonpresent"' $(VALUES))"; \
+	DEV_EMAIL="$$(yq -r '.keycloak.devUserEmail // "dev@company.nonpresent"' $(VALUES))"; \
 	REDIRECT="$$(yq -r '.authenticator.oidc.redirectUri // "http://localhost/auth/callback"' $(VALUES))"; \
 	AUTH_SECRET="$$(yq -r '.authenticator.oidc.clientSecret // "insight-authenticator-dev-secret"' $(VALUES))"; \
 	KC_BASE="$$(yq -r '.keycloak.hostname // ""' $(VALUES))"; \

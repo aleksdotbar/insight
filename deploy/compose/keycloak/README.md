@@ -5,7 +5,6 @@ The compose stack always authenticates against a real
 (NGINX_BFF #1583) — the nginx `gateway` `auth_request`s the `authenticator`,
 which does the OIDC login server-side against Keycloak (real login form,
 **confidential** client, real token claims) and mints the ES256 gateway JWT.
-(The old `fakeidp` mode and the `AUTH_MODE` / `--auth` switches are retired.)
 
 ## Auth flow
 

@@ -11,9 +11,9 @@
 # (`insight-seed-realm`, from src/ingestion/tools/seed) with the rig's overlay
 # on top
 # (tests/kc-realm-overlay.py: test users, fast token lifespan, back-channel
-# registration, and a second realm for the host-keyed issuer map). What the
-# retired fakeidp offered as `/_control/*` hooks the suites now drive through
-# the Keycloak admin API and `docker pause` (tests/common/kc.rs).
+# registration, and a second realm for the host-keyed issuer map). IdP-side
+# events the suites need to provoke (logout, revocation, outage) are driven
+# through the Keycloak admin API and `docker pause` (tests/common/kc.rs).
 #
 # Everything runs on localhost, so no IdP-URL rewriting is needed. Usage:
 #   src/backend/services/authenticator/tests/run-e2e.sh
@@ -266,7 +266,7 @@ if ! wait_ready authenticator3 "http://localhost:$AUTH3_PORT/.well-known/jwks.js
 fi
 
 # Keycloak coordinates for the suites (tests/common/kc.rs): the login form
-# password and the admin-API/docker seams that replaced fakeidp's hooks.
+# password and the admin-API/docker seams for IdP-side events.
 export E2E_KC_BASE="$KC_BASE"
 export E2E_KC_REALM="$KC_REALM"
 export E2E_KC_CONTAINER="$KC_CT"

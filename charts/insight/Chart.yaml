@@ -5,7 +5,7 @@
 ## Emits almost nothing on its own — it orchestrates subcharts.
 ##
 ## What is INCLUDED here:
-##   - Edge / auth: gateway (nginx+auth), authenticator, fakeidp (dev only)
+##   - Edge / auth: gateway (nginx+auth), authenticator, keycloak
 ##   - Application: analytics, identity-resolution, frontend
 ##
 ## What is NOT included (deployed separately):
@@ -65,8 +65,7 @@ dependencies:
   # single entrance: auth_request -> authenticator, gateway-JWT injection, and
   # fan-out to the app services + SPA. The `authenticator` runs OIDC login +
   # Redis sessions + the cookie->ES256 gateway-JWT exchange (with an authn-tls
-  # sidecar so downstream verifiers resolve the JWKS over https). `fakeidp` is
-  # the dev/e2e OIDC provider (local only; never a real environment).
+  # sidecar so downstream verifiers resolve the JWKS over https).
   - name: insight-gateway
     alias: gateway
     version: "0.1.0"
@@ -75,11 +74,6 @@ dependencies:
     alias: authenticator
     version: "0.1.0"
     repository: "file://../../src/backend/services/authenticator/helm"
-  - name: insight-fakeidp
-    alias: fakeidp
-    version: "0.1.0"
-    repository: "file://../../src/backend/services/fakeidp/helm"
-    condition: fakeidp.deploy
   # keycloak — the stack's identity broker (ADR-0003), MariaDB-backed.
   - name: insight-keycloak
     alias: keycloak

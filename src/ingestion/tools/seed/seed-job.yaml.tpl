@@ -18,8 +18,7 @@
 #   SEED_CLICKHOUSE_HOST/_HTTP_PORT/_USER/_DATABASE
 #   SEED_TENANT_ID            tenant every seeded row is scoped to
 #   SEED_DEV_USER_EMAIL       persona the dev-lead login resolves to
-#   SEED_AUTH_MODE            keycloak | fakeidp — which personas get login rows
-#   SEED_IDP_SOURCE_TYPE      identity source_type those rows are written under
+#   SEED_IDP_SOURCE_TYPE      identity source_type the login rows are written under
 #   SEED_CROSS_TENANT         0 | 1 — write the second-tenant refusal fixture
 #   SEED_FORCE                0 | 1 — seed a tenant holding foreign person rows
 #   SEED_WINDOW_DAYS          activity-window length, empty for the seeder's own
@@ -109,8 +108,6 @@ spec:
               value: "${SEED_TENANT_ID}"
             - name: DEV_USER_EMAIL
               value: "${SEED_DEV_USER_EMAIL}"
-            - name: AUTH_MODE
-              value: "${SEED_AUTH_MODE}"
             - name: IDP_SOURCE_TYPE
               value: "${SEED_IDP_SOURCE_TYPE}"
             # Off on a cluster stand: a second tenant makes

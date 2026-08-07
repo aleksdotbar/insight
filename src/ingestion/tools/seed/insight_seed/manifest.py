@@ -78,7 +78,6 @@ CANONICAL_ENV: dict[str, str] = {
     else "00000000-df51-5b42-9538-d2b56b7ee953",
     "SEED_ANCHOR_DATE": "2026-06-30",
     "SEED_DAYS": "60",
-    "AUTH_MODE": "",
     "AUTHENTICATOR_OIDC_ISSUER": "",
     # The canonical stand carries the cross-tenant refusal fixture, so the
     # committed PROFILE.md describes a compose stand — the one the suite reads.
@@ -269,11 +268,11 @@ def build_manifest(
 
     personas = [_persona(p) for p in roster]
 
-    auth_mode = (env.get("AUTH_MODE") or "").strip().lower()
     issuer = (env.get("AUTHENTICATOR_OIDC_ISSUER") or "").strip()
-    # Sourced, never guessed: when the stand did not tell us, say fakeidp and
-    # leave the issuer empty rather than inventing a Keycloak URL.
-    idp = auth_mode if auth_mode in {"keycloak", "fakeidp"} else "fakeidp"
+    # Mirrors `profiles.get_idp_source_type`: consumers use this value as the
+    # identity source_type of the seeded login rows, so it must be the one
+    # they were actually written under.
+    idp = (env.get("IDP_SOURCE_TYPE") or "").strip() or "keycloak"
 
     return {
         "manifest_version": MANIFEST_VERSION,
