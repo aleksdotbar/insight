@@ -153,27 +153,22 @@ def _report_omissions(requested: Sequence[str], answered: set[str]) -> None:
     """BambooHR silently drops requested fields the credential cannot read and
     still answers 200, so a shrinking payload is indistinguishable from cleared
     values downstream: the snapshot versions on the change and the field history
-    dates it as a clear. A bronze column going missing would do that to identity
-    resolution, so it stops the sync; a discovered field going missing costs one
-    attribute's history and is only worth an operator's attention."""
-    missing = [name for name in requested if name not in answered]
-    if not missing:
-        return
+    dates it as a clear.
 
-    missing_columns = [name for name in missing if name in BUSINESS_FIELDS]
-    if missing_columns:
+    Only the declared bronze columns are held to that standard. They are named by
+    alias and come back under it, so their absence is real and identity resolution
+    would carry the damage. The rest cannot be checked this way — field metadata
+    lists entries a custom report will not return, and a field asked for by
+    numeric id comes back under an indexed key — so an apparent gap there is far
+    more likely to be BambooHR's own naming than lost access.
+    """
+    missing = [name for name in requested if name in BUSINESS_FIELDS and name not in answered]
+    if missing:
         raise RuntimeError(
-            f"BambooHR omitted {len(missing_columns)} declared employee column(s) from the report: "
-            f"{', '.join(missing_columns)}. The API key likely lost access to them; publishing them "
+            f"BambooHR omitted {len(missing)} declared employee column(s) from the report: "
+            f"{', '.join(missing)}. The API key likely lost access to them; publishing them "
             "as empty would clear the values downstream."
         )
-
-    logger.warning(
-        "BambooHR omitted %d requested field(s) from the report; their recorded values will be "
-        "cleared until access is restored: %s",
-        len(missing),
-        ", ".join(missing[:10]),
-    )
 
 
 def _request_key(field: Mapping[str, Any]) -> str | None:

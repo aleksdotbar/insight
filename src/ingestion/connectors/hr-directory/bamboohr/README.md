@@ -84,10 +84,13 @@ rows merged on employee id.
 
 Requested fields the API key cannot read are dropped from the report silently, with
 the call still succeeding. The connector compares the report's declared columns
-against what it asked for: a missing bronze column stops the sync, because
-publishing it empty would clear identity values downstream, while a missing
-discovered field is logged and the sync continues. A report that declares no
-columns at all is not treated as either.
+against what it asked for, but only holds the bronze columns to it: those are named
+by alias and come back under it, and publishing one empty would clear identity
+values downstream, so a missing one stops the sync. The rest cannot be checked that
+way — field metadata lists entries a custom report will not return, and a field
+asked for by numeric id comes back under an indexed `<id>.N` key — so an apparent
+gap there says more about BambooHR's naming than about access. A report that
+declares no columns at all is treated as unverifiable rather than as loss.
 
 `SENSITIVE_FIELDS` in `source_bamboohr/streams/employees.py` is the exception:
 government identifiers, protected demographics, personal contact details, street

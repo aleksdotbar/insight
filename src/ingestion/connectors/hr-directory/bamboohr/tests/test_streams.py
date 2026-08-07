@@ -128,15 +128,33 @@ class TestEmployeeReportRequest:
 
 
 class TestSilentlyOmittedFields:
-    def test_a_withheld_custom_field_warns_and_the_sync_continues(self, caplog):
+    def test_a_withheld_custom_field_does_not_stop_the_sync(self):
         meta = [meta_field(4001, alias="customTeam")]
         stream, _ = employees_stream([EMPLOYEE], meta=meta, omit={"customTeam"})
 
-        with caplog.at_level("WARNING"):
-            (record,) = read(stream)
-
+        (record,) = read(stream)
         assert record["unique_key"] == f"{TENANT}-{SOURCE}-42"
-        assert "customTeam" in caplog.text
+
+    def test_a_field_answered_under_an_indexed_key_is_not_an_omission(self):
+        # A field asked for by numeric id comes back as "<id>.0".
+        meta = [meta_field(4463)]
+        client = FakeClient(
+            {
+                "meta/fields": meta,
+                "reports/custom": lambda body: {
+                    "title": body["title"],
+                    "fields": [
+                        {"id": f"{name}.0" if name.isdigit() else name, "type": "text", "name": name}
+                        for name in body["fields"]
+                    ],
+                    "employees": [{"id": "42", "4463.0": "checked"}],
+                },
+            }
+        )
+        stream = EmployeesStream(client=client, tenant_id=TENANT, source_id=SOURCE)
+
+        (record,) = read(stream)
+        assert record["raw_data"]["4463.0"] == "checked"
 
     def test_a_withheld_bronze_column_stops_the_sync(self):
         stream, _ = employees_stream([EMPLOYEE], omit={"workEmail"})
