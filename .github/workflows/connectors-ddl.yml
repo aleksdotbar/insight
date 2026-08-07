@@ -71,11 +71,11 @@ jobs:
       CLICKHOUSE_PASSWORD: insight
       CLICKHOUSE_DATABASE: insight
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false # don't leave the token in .git/config
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           # run-dbt.sh builds its venv from python3.12/3.11 — same major as the
           # toolbox image.
