@@ -237,6 +237,12 @@ reconcile_classify_change() {
 }
 
 # ---------------------------------------------------------------------------
+# Docker repository Airbyte runs every builder-published (nocode) definition
+# from. A live definition on this repository is what tells reconcile the
+# connector is still manifest-backed, and it is the only starting point from
+# which a definition is migrated rather than left alone.
+_RECONCILE_MANIFEST_REPO="airbyte/source-declarative-manifest"
+
 # ---------------------------------------------------------------------------
 # reconcile_migrated_state_file <source_name>
 #
@@ -587,12 +593,24 @@ for d in json.load(sys.stdin):
     IFS=$'\t' read -r desc_repo desc_tag \
       < <(python3 "${_RECONCILE_PY_DIR}/split_docker_image_ref.py" "${cdk_image}")
 
+    if [[ "${current_repo}" != "${desc_repo}" && "${current_repo}" != "${_RECONCILE_MANIFEST_REPO}" ]]; then
+      # Two CDK image repositories differing is a registry move or a descriptor
+      # typo, not a change of connector kind, and tearing a live source down for
+      # either would be out of all proportion. Unchanged from before: WARN and
+      # leave it to an operator.
+      reconcile__log WARN "${connector_name}" \
+        "cdk image repository changed (${current_repo} → ${desc_repo}); manual recreate-with-state needed — skipping for now"
+      printf 'noop\tnone\t%s\n' "${definition_id}"
+      return 0
+    fi
+
     if [[ "${current_repo}" != "${desc_repo}" ]]; then
-      # A connector rewritten from a declarative manifest to a CDK source keeps
-      # its name, so the definition found above is the manifest-backed one and
-      # its repository can never be updated into ours. Migrating is the only way
-      # forward; leaving it in place would keep the old connection syncing the
-      # superseded extraction while the repo claims otherwise.
+      # Only the manifest-backed → CDK case reaches here. A connector rewritten
+      # from a declarative manifest keeps its name, so the definition found above
+      # is the manifest runner's and its repository can never be updated into
+      # ours. Migrating is the only way forward; leaving it in place would keep
+      # the old connection syncing the superseded extraction while the repo
+      # claims otherwise.
       if [[ "${RECONCILE_DRY_RUN:-0}" -eq 1 ]]; then  # RULE-DEFAULTS-OK: feature flag — OFF when caller doesn't opt in
         reconcile__log CHANGE "${connector_name}" \
           "would migrate definition from ${current_repo} to ${desc_repo} (old source, connection and definition replaced; state preserved)"
