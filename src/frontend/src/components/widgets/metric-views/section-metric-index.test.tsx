@@ -58,28 +58,25 @@ describe("SectionMetricIndex", () => {
     // declaration order is invisible to a reader.
     renderIndex();
     const names = screen.getAllByRole("term").map((n) => n.textContent);
-    expect(names).toEqual(["Alpha", "Mid", "Zeta"]);
+    expect(names).toEqual(["Alpha", "Zeta"]);
   });
 
-  it("keeps a metric that holds nothing, as a dash", () => {
-    // Dropping it would answer "is this measured at all?" with silence, which
-    // reads as "no such metric" rather than "nothing for you this period".
+  it("leaves out a metric that holds nothing", () => {
+    // A row reading "—" against "median —" costs a line to say nothing. Why
+    // the metric is silent is a fact about the section, stated once at its
+    // top, not repeated down every row that happens to be empty.
     renderIndex();
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("—")).toBeNull();
   });
 
   it("leaves out what the section already drew", () => {
     renderIndex(["collab.alpha"]);
     const names = screen.getAllByRole("term").map((n) => n.textContent);
-    expect(names).toEqual(["Mid", "Zeta"]);
+    expect(names).toEqual(["Zeta"]);
   });
 
-  it("renders nothing when the section drew everything", () => {
-    const { container } = renderIndex([
-      "collab.alpha",
-      "collab.mid",
-      "collab.zeta",
-    ]);
+  it("renders nothing when the section drew everything that reads", () => {
+    const { container } = renderIndex(["collab.alpha", "collab.zeta"]);
     expect(container).toBeEmptyDOMElement();
   });
 });

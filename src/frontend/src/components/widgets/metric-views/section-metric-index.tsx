@@ -22,10 +22,15 @@ import {
  * their standing against a cohort: a reader looking for emails sent had to
  * know it was unremarkable this period in order to guess where it went.
  *
- * So: no ranking, no colour, no fold. Collection order, the value or an
- * honest dash, and the catalog's own words on hover. A dash here means the
- * metric exists and holds nothing for this person — which is itself the
- * answer to "is this being measured?".
+ * So: no ranking, no fold, alphabetical order, the value, the pool's middle,
+ * and the catalog's own words on hover.
+ *
+ * Only rows that read. A metric holding nothing for this person in this
+ * period gives the reader nothing to act on and costs them a line to discover
+ * that; a column of dashes is the fastest way to teach someone to stop
+ * reading a list. Why a metric is silent — a source nobody wired, or a period
+ * this person did none of it — is a question about the section, and belongs
+ * once at the top rather than nineteen times down its body.
  */
 export function SectionMetricIndex({
   collection,
@@ -49,7 +54,13 @@ export function SectionMetricIndex({
     .flatMap((m) => {
       if (shown.has(m.key)) return [];
       const metric = byKey.get(m.key);
-      return metric ? [metric] : [];
+      if (!metric) return [];
+      // A row that reads "—" against "median —" tells the reader nothing they
+      // can use and costs them a line to find that out. Whether the silence
+      // is a missing connector or a period this person did none of it is a
+      // question about the section, answered once at the top, not nineteen
+      // times down a list.
+      return forEntity(metric, entityId).value == null ? [] : [metric];
     })
     .sort((a, b) => a.label.localeCompare(b.label));
   if (rest.length === 0) return null;
