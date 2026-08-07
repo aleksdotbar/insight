@@ -291,7 +291,7 @@ impl OidcClient {
 
         // Non-standard claims read from the already-validated payload. One and
         // only one tenant per token (EPIC #1583): the claim name is per-IdP
-        // (`tenant_id` on fakeidp/Keycloak, `tid` on Entra); claim-less IdPs
+        // (`tenant_id` on Keycloak, `tid` on Entra); claim-less IdPs
         // (Okta) fall back to the configured default tenant; empty = downstream
         // fails closed.
         let raw = id_token.to_string();
@@ -460,7 +460,7 @@ impl OidcClient {
 }
 
 /// Read the single tenant from an (already-validated) compact JWT payload.
-/// Accepts a plain string (`tenant_id` on fakeidp/Keycloak, `tid` on Entra); a
+/// Accepts a plain string (`tenant_id` on Keycloak, `tid` on Entra); a
 /// string array is tolerated by taking its first entry (a Keycloak multivalued
 /// mapper). Anything else yields empty (→ fail closed downstream).
 fn payload_tenant(jwt: &str, field: &str) -> String {
@@ -569,11 +569,11 @@ mod tests {
     #[test]
     fn external_id_defaults_to_sub() {
         // idp.external_id_claim defaults to "sub" — no extra claim needed
-        // (fakeidp, and any IdP where `sub` IS the stable directory id).
-        let jwt = jwt_with(&serde_json::json!({"sub": "fakeidp|dev"}));
+        // for IdPs where `sub` IS the stable directory id.
+        let jwt = jwt_with(&serde_json::json!({"sub": "idp|dev-lead"}));
         assert_eq!(
-            extract_external_id(&jwt, "sub", "fakeidp|dev").as_deref(),
-            Some("fakeidp|dev")
+            extract_external_id(&jwt, "sub", "idp|dev-lead").as_deref(),
+            Some("idp|dev-lead")
         );
     }
 
@@ -587,10 +587,10 @@ mod tests {
         // and that matching on `ResolveTarget` (not string emptiness) is what
         // selects the lookup mode.
         let login = crate::identity::IdpIdentity {
-            sub: "fakeidp|dev".to_owned(),
+            sub: "idp|dev-lead".to_owned(),
             email: "dev@company.nonpresent".to_owned(),
             tenant_id: "t1".to_owned(),
-            resolve_by: crate::identity::ResolveTarget::ExternalId("fakeidp|dev".to_owned()),
+            resolve_by: crate::identity::ResolveTarget::ExternalId("idp|dev-lead".to_owned()),
         };
         let override_target = crate::identity::IdpIdentity {
             sub: String::new(),
@@ -600,7 +600,7 @@ mod tests {
         };
         assert!(matches!(
             login.resolve_by,
-            crate::identity::ResolveTarget::ExternalId(ref v) if v == "fakeidp|dev"
+            crate::identity::ResolveTarget::ExternalId(ref v) if v == "idp|dev-lead"
         ));
         assert!(matches!(
             override_target.resolve_by,

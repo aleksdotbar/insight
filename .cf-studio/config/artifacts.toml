@@ -603,6 +603,11 @@ path = "docs/components/backend/authenticator/specs/ADR/0002-real-idp-on-deploye
 name = "ADR-0002: Real IdP on Deployed Stands (Pre-Provisioned Keycloak)"
 
 [[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/authenticator/specs/ADR/0003-keycloak-identity-broker.md"
+name = "ADR-0003: Keycloak as the Identity Broker (Configured as Code)"
+
+[[systems.artifacts]]
 kind = "DESIGN"
 path = "docs/components/backend/gateway/DESIGN.md"
 name = "Gateway (nginx edge) Design"
