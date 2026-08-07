@@ -47,6 +47,7 @@ export function Sparkline({ points, className }: SparklineProps) {
 
   return (
     <svg
+      data-slot="sparkline"
       viewBox={`0 0 ${W} ${H + 3}`}
       width={W}
       height={H + 3}

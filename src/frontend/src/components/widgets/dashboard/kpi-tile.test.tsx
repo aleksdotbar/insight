@@ -78,6 +78,30 @@ describe("KpiTile", () => {
     expect(onOpenGroup).toHaveBeenCalledWith("ai_adoption");
   });
 
+  it("shows the line only once the readings arrive, never waiting on them", () => {
+    // The request for readings sits outside every loading gate: the numbers
+    // are the page, and a tile that held them back until a second request
+    // landed would trade the first screen for a decoration.
+    const { container, rerender } = render(
+      <KpiTile periodNoun="month" tile={tile()} />
+    );
+    expect(screen.getByText("14")).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="sparkline"]')).toBeNull();
+
+    rerender(<KpiTile periodNoun="month" tile={tile()} trend={[9, 11, 14]} />);
+    expect(screen.getByText("14")).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="sparkline"]')).not.toBeNull();
+  });
+
+  it("draws no line when there is nothing worth drawing", () => {
+    // `personTrendPoints` returns null below its minimum; the tile must take
+    // that as "no line", not fall back to something of its own.
+    const { container } = render(
+      <KpiTile periodNoun="month" tile={tile()} trend={null} />
+    );
+    expect(container.querySelector('[data-slot="sparkline"]')).toBeNull();
+  });
+
   it("is not interactive without a group id", () => {
     render(
       <KpiTile
