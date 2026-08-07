@@ -752,9 +752,9 @@ EOF
   # holds the committed sandbox config.
   cp "$values_tmpl" "$values_out"
   yq -i ".global.tenantDefaultId = \"$TENANT_DEFAULT_ID\"" "$values_out"
-  # Full auth: the dev login identity is the fakeidp default user (must exist in
+  # Full auth: the dev login identity is a realm user (must exist in
   # identity's `persons`), not a frontend impersonation escape hatch.
-  yq -i ".fakeidp.devUserEmail   = \"$DEV_USER_EMAIL\""    "$values_out"
+  yq -i ".keycloak.devUserEmail  = \"$DEV_USER_EMAIL\""    "$values_out"
   echo "Wrote $values_out." >&2
 
   cat >&2 <<EOF

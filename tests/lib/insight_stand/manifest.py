@@ -173,9 +173,9 @@ class Capabilities:
         capability marker's table would otherwise skip every test carrying it,
         with a reason that reads perfectly plausibly.
 
-        `idp` is deliberately not answerable here — it is a VALUE
-        (`keycloak` | `fakeidp`), not a yes/no, so comparing it is the caller's
-        job.
+        `idp` is deliberately not answerable here — it is a VALUE (the
+        identity source_type the login rows were seeded under, e.g.
+        `keycloak`), not a yes/no, so comparing it is the caller's job.
         """
         if name not in BOOLEAN_CAPABILITIES:
             known = ", ".join(sorted(BOOLEAN_CAPABILITIES))

@@ -39,7 +39,6 @@ ANALYTICS_DB=""
 IDENTITY_DB=""
 DB_SECRET=""
 PULL_SECRETS=""
-AUTH_MODE=""
 IDP_SOURCE_TYPE=""
 WINDOW_DAYS=""
 ANCHOR_DATE=""
@@ -70,8 +69,7 @@ Discovered from the stand (pass a flag only to override):
       --identity-db <db>   database holding persons
       --db-secret <name>   Secret holding mariadb-password + clickhouse-password
       --pull-secret <name> image-pull Secret (default: the release's own)
-      --auth-mode <mode>   keycloak | fakeidp — which personas get login rows
-      --idp-source-type <t> identity source_type those rows are written under
+      --idp-source-type <t> identity source_type the login rows are written under
 
 Seed options:
       --step <step>        identity | silver | analytics | all       [default: all]
@@ -131,7 +129,6 @@ while [[ $# -gt 0 ]]; do
     --identity-db)       IDENTITY_DB="${2:?--identity-db needs a value}"; shift 2 ;;
     --db-secret)         DB_SECRET="${2:?--db-secret needs a value}"; shift 2 ;;
     --pull-secret)       PULL_SECRETS="[{\"name\":\"${2:?--pull-secret needs a value}\"}]"; shift 2 ;;
-    --auth-mode)         AUTH_MODE="${2:?--auth-mode needs a value}"; shift 2 ;;
     --idp-source-type)   IDP_SOURCE_TYPE="${2:?--idp-source-type needs a value}"; shift 2 ;;
     --step)              STEP="${2:?--step needs a value}"; shift 2 ;;
     --days)              WINDOW_DAYS="${2:?--days needs a value}"; shift 2 ;;
@@ -275,17 +272,6 @@ if [[ -z "$IDP_SOURCE_TYPE" ]]; then
     'APP__gears__authenticator__config__idp__source_type')"
 fi
 
-# Which personas get a login-bootstrap row follows from the IdP: a Keycloak
-# realm can authenticate the whole roster, the fakeidp fixture only the dev
-# lead. Rows for people a realm does not hold are inert observations.
-if [[ -z "$AUTH_MODE" ]]; then
-  if [[ "$IDP_SOURCE_TYPE" == "fakeidp" ]]; then
-    AUTH_MODE="fakeidp"
-  elif [[ -n "$IDP_SOURCE_TYPE" ]]; then
-    AUTH_MODE="keycloak"
-  fi
-fi
-
 if [[ -z "$IMAGE" || -z "$PULL_SECRETS" ]]; then
   need helm
   need jq
@@ -361,10 +347,6 @@ check "$IDP_SOURCE_TYPE" \
     resolves logins by email instead, and any stable label (e.g. 'keycloak') is
     then correct as long as it matches what the authenticator will use later" \
   "--idp-source-type"
-check "$AUTH_MODE" \
-  "which personas get a login-bootstrap row ('keycloak' = the whole roster,
-    'fakeidp' = the dev lead only). Derived from the source_type above" \
-  "--auth-mode"
 
 if [[ "$missing_count" -gt 0 ]]; then
   echo "ERROR: could not resolve $missing_count value(s) from namespace $NAMESPACE:" >&2
@@ -375,7 +357,7 @@ fi
 echo "==> tenant:    $TENANT"
 echo "==> databases: identity=$IDENTITY_DB analytics=$ANALYTICS_DB clickhouse=$CLICKHOUSE_DATABASE"
 echo "==> image:     $IMAGE"
-echo "==> idp:       auth_mode=$AUTH_MODE source_type=$IDP_SOURCE_TYPE dev_user=$DEV_EMAIL"
+echo "==> idp:       source_type=$IDP_SOURCE_TYPE dev_user=$DEV_EMAIL"
 
 # ── Render ──────────────────────────────────────────────────────────────────
 # A name per run: a Job's pod spec is immutable, so reusing one name would make
@@ -399,7 +381,6 @@ export SEED_CLICKHOUSE_USER="$CLICKHOUSE_USER"
 export SEED_CLICKHOUSE_DATABASE="$CLICKHOUSE_DATABASE"
 export SEED_TENANT_ID="$TENANT"
 export SEED_DEV_USER_EMAIL="$DEV_EMAIL"
-export SEED_AUTH_MODE="$AUTH_MODE"
 export SEED_IDP_SOURCE_TYPE="$IDP_SOURCE_TYPE"
 export SEED_CROSS_TENANT="$CROSS_TENANT"
 export SEED_FORCE="$FORCE"
@@ -418,7 +399,7 @@ manifest="$(envsubst '
   ${SEED_IDENTITY_DB} ${SEED_ANALYTICS_DB}
   ${SEED_CLICKHOUSE_HOST} ${SEED_CLICKHOUSE_HTTP_PORT} ${SEED_CLICKHOUSE_USER}
   ${SEED_CLICKHOUSE_DATABASE}
-  ${SEED_TENANT_ID} ${SEED_DEV_USER_EMAIL} ${SEED_AUTH_MODE} ${SEED_IDP_SOURCE_TYPE}
+  ${SEED_TENANT_ID} ${SEED_DEV_USER_EMAIL} ${SEED_IDP_SOURCE_TYPE}
   ${SEED_CROSS_TENANT} ${SEED_FORCE} ${SEED_WINDOW_DAYS} ${SEED_ANCHOR_DATE}
   ${SEED_PULL_SECRETS}
 ' < "$JOB_TEMPLATE")"

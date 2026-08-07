@@ -85,8 +85,9 @@ ingestion:
 
 # Full auth (NGINX_BFF EPIC #1583) — no auth_disabled anywhere. The nginx
 # `gateway` is the single edge: auth_request -> authenticator, ES256 gateway-JWT
-# injection, fan-out to the app services + SPA. `fakeidp` is the local OIDC
-# provider the authenticator logs in against; every downstream verifies the JWT.
+# injection, fan-out to the app services + SPA. The in-stack Keycloak is the
+# local OIDC provider the authenticator logs in against; every downstream
+# verifies the JWT.
 gateway:
   image: { repository: insight-gateway, tag: dev, pullPolicy: IfNotPresent }
   replicaCount: 1
@@ -133,7 +134,7 @@ authenticator:
     # already IS that stable id — no Entra-style non-default claim needed here.
     externalIdClaim: "sub"
     # Optional tenant sourcing: `tenantClaim` names the id_token claim carrying
-    # the single tenant (default `tenant_id` — fakeidp/Keycloak; Entra: `tid`);
+    # the single tenant (default `tenant_id` — Keycloak; Entra: `tid`);
     # `defaultTenantId` is the fallback for a claim-less IdP (e.g. Okta),
     # empty = fail closed.
 
@@ -153,6 +154,8 @@ authenticator:
 keycloak:
   deploy: true
   hostname: 'http://__INGRESS_LB_IP__/kc'
+  # Dev-lead login for the generated roster realm (keycloak-realm target).
+  devUserEmail: "dev@company.nonpresent"
   admin:
     existingSecret: insight-keycloak-config # sandbox admin/admin (keycloak-realm target)
   database:
@@ -177,17 +180,6 @@ keycloakConfig:
     - name: KEYCLOAK_PASSWORD
       valueFrom:
         secretKeyRef: {name: insight-keycloak-config, key: password}
-
-# fakeidp — the lighter alt IdP; off for local (keycloak is the local IdP). Flip
-# fakeidp.deploy=true + keycloak.deploy=false (and point authenticator.oidc.issuerUrl
-# back at http://__INGRESS_LB_IP__/idp) to use it instead.
-fakeidp:
-  image: { repository: insight-fakeidp, tag: dev, pullPolicy: IfNotPresent }
-  deploy: false
-  ingress:
-    enabled: false
-  issuer: 'http://__INGRESS_LB_IP__/idp'
-  devUserEmail: "dev@company.nonpresent"
 
 analytics:
   image: { repository: insight-analytics, tag: dev, pullPolicy: IfNotPresent }

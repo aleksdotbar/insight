@@ -152,9 +152,8 @@ AUTHENTICATOR_SKIP_LIST: list[tuple[str, str]] = [
 # stamping), so there is no universal boilerplate to subtract. Its rate
 # limiter's 429s are real but undeclared — extra observed codes are ignored.
 AUTHENTICATOR_UNIVERSAL_BOILERPLATE = frozenset()
-# back-channel-logout's 200 is answered to the IdP's server-side POST (proven
-# via fakeidp's rp_status assertion in e2e_backchannel), never to the test
-# client — the client can only observe the 400 rejection.
+# back-channel-logout's 200 is answered to the IdP's server-side POST
+# (covered in e2e_backchannel), never to the test client.
 AUTHENTICATOR_BLOCKED: dict[str, frozenset[int]] = {"POST /auth/oidc/back-channel-logout": frozenset({200})}
 AUTHENTICATOR_REQUIRED_EXTRA: dict[str, frozenset[int]] = {}
 

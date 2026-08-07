@@ -313,7 +313,7 @@ ghcr_volumes_block() {
 # binary, as `source:target[:mode]` relative to the repo root.
 ghcr_kept_mounts() {
   local svc="$1" out
-  out="$(docker compose -f docker-compose.yml --profile auth-keycloak --profile auth-fakeidp \
+  out="$(docker compose -f docker-compose.yml --profile auth-keycloak \
            config --format json 2>/dev/null |
     SERVICE="$svc" python3 -c '
 import json, os, sys
@@ -399,7 +399,7 @@ cmd_up() {
       --frontend-mode=*) frontend_mode_override="${1#*=}"; shift ;;
       --frontend-mode)   frontend_mode_override="$2"; shift 2 ;;
       --auth=*|--auth)
-        echo "ERROR: --auth was removed — auth always runs via Keycloak (fakeidp is retired)." >&2
+        echo "ERROR: --auth was removed — auth always runs via Keycloak." >&2
         return 2 ;;
       --authenticator-redirect=*)
         authenticator_redirects="$(add "$authenticator_redirects" "${1#*=}")"; shift ;;
@@ -457,17 +457,11 @@ cmd_up() {
   [[ -n "$frontend_mode_override" ]] && FRONTEND_MODE="$frontend_mode_override"
   FRONTEND_MODE="${FRONTEND_MODE:-dev}"
 
-  # Auth always runs via Keycloak; fakeidp is retired. A lingering
-  # AUTH_MODE=fakeidp in an old .env.compose is overridden, loudly.
+  # A lingering AUTH_MODE in an old .env.compose is dead config; warn, loudly.
   if [[ "${AUTH_MODE:-keycloak}" != "keycloak" ]]; then
     echo "WARN: AUTH_MODE=${AUTH_MODE} is retired — auth always runs via Keycloak." >&2
     echo "      Remove AUTH_MODE from $env_file to silence this." >&2
   fi
-  AUTH_MODE="keycloak"
-  # The seed-sample container reads AUTH_MODE too (src/ingestion/tools/seed/profiles.py's
-  # get_login_id_pairs) to pick which roster personas get a login-id fixture —
-  # export so the child `docker compose` process's env-var interpolation sees it.
-  export AUTH_MODE
 
   # NGINX_BFF: Keycloak needs NO special frontend. The SPA is cookie/BFF
   # (same-origin): it calls /auth/login + /api through the gateway and never
@@ -658,11 +652,9 @@ YML
   export AUTHENTICATOR_OIDC_ISSUER="${AUTHENTICATOR_OIDC_ISSUER:-${kc_base}/realms/insight}"
   export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-insight-authenticator}"
   export OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:-insight-authenticator-dev-secret}"
-  # The login-bootstrap resolve is scoped to idp.source_type; keycloak's
-  # sub differs in KIND from fakeidp's (keycloak_realm sets each realm user's
-  # id to their OWN roster uuid, so sub IS that uuid — not the fixed
-  # "fakeidp|dev" string fakeidp issues), so it must be seeded/looked-up
-  # under its own source_type, not the fakeidp default (see
+  # The login-bootstrap resolve is scoped to idp.source_type: keycloak_realm
+  # sets each realm user's id to their OWN roster uuid, so sub IS that uuid and
+  # must be seeded/looked-up under the `keycloak` source_type (see
   # src/ingestion/tools/seed/profiles.py::get_login_id_pairs).
   export AUTHENTICATOR_IDP_SOURCE_TYPE="keycloak"
   echo "authenticator issuer → ${AUTHENTICATOR_OIDC_ISSUER}"
@@ -764,11 +756,10 @@ YML
     contains "$ghcr_list" "$svc" && mkdir -p "deploy/compose/build/$svc"
   done
 
-  # Stop a fakeidp lingering from a stack started before its retirement.
-  # Compose profiles decide what to START, not what to stop, so without this
-  # an in-place `up` would leave both IdPs running. The auth-fakeidp profile
-  # puts the target service in scope for `stop`.
-  "${compose_cmd[@]}" --profile auth-fakeidp --profile auth-keycloak stop fakeidp >/dev/null 2>&1 || true
+  # Remove a fakeidp container lingering from a stack started before its
+  # retirement: the service no longer exists in docker-compose.yml, so an
+  # in-place `up` would otherwise leave both IdPs running.
+  docker rm -f "${COMPOSE_PROJECT_NAME:-insight}-fakeidp" >/dev/null 2>&1 || true
 
   echo "=== docker compose up ==="
   if ! "${compose_cmd[@]}" ${profiles[@]+"${profiles[@]}"} up -d --remove-orphans; then
@@ -961,7 +952,7 @@ cmd_down() {
   "${compose_cmd[@]}" \
     --profile local-mariadb --profile local-clickhouse \
     --profile front-dev --profile front-built --profile front-ghcr \
-    --profile auth-fakeidp --profile auth-keycloak \
+    --profile auth-keycloak \
     --profile build --profile seed \
     --profile local-mariadb --profile local-clickhouse \
     down $([[ "$wipe" == "true" ]] && echo "--volumes --remove-orphans")
@@ -1243,7 +1234,7 @@ EOF
   echo "=== docker compose down --volumes --remove-orphans ==="
   "${compose_cmd[@]}" \
     --profile front-dev --profile front-built --profile front-ghcr \
-    --profile auth-fakeidp --profile auth-keycloak \
+    --profile auth-keycloak \
     --profile build --profile seed \
     --profile local-mariadb --profile local-clickhouse \
     down --volumes --remove-orphans || true

@@ -186,11 +186,10 @@ def seed_login_ids(
     looks up. Without them a fresh dev/demo/CI stack can authenticate against
     the IdP but never resolves to a person (403 at callback).
 
-    WHICH persona(s) get a row depends on the active IdP fixture (see
-    `profiles.get_login_id_pairs`): fakeidp only defines the dev lead; a
-    Keycloak realm seeds the WHOLE roster, so every one of those 25 personas
-    must get their own row here too, or logging in as anyone but the dev lead
-    403s despite Keycloak having authenticated them correctly.
+    Every roster persona gets a row (see `profiles.get_login_id_pairs`): the
+    Keycloak realm seeds the WHOLE roster, so every persona must get their
+    own row here too, or logging in as anyone but the dev lead 403s despite
+    Keycloak having authenticated them correctly.
 
     Idempotent via an explicit existence check per pair, NOT `INSERT IGNORE`:
     since migration 004 (`004_persons_relax_constraints.sql`), `persons`'
