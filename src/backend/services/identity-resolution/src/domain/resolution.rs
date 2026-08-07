@@ -153,6 +153,29 @@ pub fn restamp(rows: &[BindingRow], after: DateTime) -> Vec<BindingRow> {
         .collect()
 }
 
+/// The rows the journal does not hold, in input order — what a short write has
+/// to retry. `present` is the answer to "which of these exact observations
+/// landed", one flag per row.
+#[must_use]
+pub fn missing(rows: &[BindingRow], present: &[bool]) -> Vec<BindingRow> {
+    rows.iter()
+        .zip(present)
+        .filter(|(_, landed)| !**landed)
+        .map(|(row, _)| row.clone())
+        .collect()
+}
+
+/// Fold a retry's outcome back into the first attempt's: the n-th row that was
+/// missing is answered by the n-th flag of `recovered`, and rows that already
+/// landed are never revisited. A gap with no answer stays refused — a row the
+/// database would not take twice is reported, not counted as applied.
+pub fn apply_recovery(present: &mut [bool], recovered: &[bool]) {
+    let mut answers = recovered.iter();
+    for landed in present.iter_mut().filter(|landed| !**landed) {
+        *landed = answers.next().copied().unwrap_or(false);
+    }
+}
+
 /// Binding observations are `value_type='id'` rows whose value is the account id
 /// (ADR-0002).
 pub const BINDING_VALUE_TYPE: &str = "id";
@@ -343,6 +366,64 @@ mod tests {
         let retry = resolution_restamp(&rows, ts() + TimeDelta::seconds(1));
 
         assert_ne!(retry[0].created_at, retry[1].created_at);
+    }
+
+    fn row(account_id: &str) -> BindingRow {
+        BindingRow {
+            account: account("slack", account_id),
+            person_id: Uuid::from_u128(5),
+            author_person_id: Uuid::from_u128(42),
+            reason: Verb::Bind.reason_code().to_owned(),
+            created_at: ts(),
+        }
+    }
+
+    #[test]
+    fn only_the_rows_the_journal_lacks_are_retried() {
+        // Re-sending a row that landed would duplicate history, so the retry
+        // set is exactly the gaps — in input order, since the caller answers
+        // its items by position.
+        let rows = [row("U1"), row("U2"), row("U3")];
+
+        let retry = missing(&rows, &[true, false, false]);
+
+        let retried: Vec<&str> = retry
+            .iter()
+            .map(|r| r.account.account_id.as_str())
+            .collect();
+        assert_eq!(retried, vec!["U2", "U3"]);
+    }
+
+    #[test]
+    fn recovery_answers_the_gaps_in_order_and_leaves_landed_rows_alone() {
+        // The n-th retried row answers the n-th gap: an off-by-one here would
+        // credit one account's write to another.
+        let mut present = vec![true, false, true, false];
+
+        apply_recovery(&mut present, &[false, true]);
+
+        assert_eq!(present, vec![true, false, true, true]);
+    }
+
+    #[test]
+    fn a_row_the_database_refuses_twice_stays_refused() {
+        // Fewer answers than gaps: the unanswered row is reported as refused
+        // rather than optimistically counted as applied.
+        let mut present = vec![false, false];
+
+        apply_recovery(&mut present, &[true]);
+
+        assert_eq!(present, vec![true, false]);
+    }
+
+    #[test]
+    fn a_write_with_nothing_missing_is_left_untouched() {
+        let mut present = vec![true, true];
+
+        apply_recovery(&mut present, &[]);
+
+        assert_eq!(present, vec![true, true]);
+        assert!(missing(&[row("U1"), row("U2")], &present).is_empty());
     }
 
     #[test]

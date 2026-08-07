@@ -407,12 +407,7 @@ async fn write_rows(
 
     let mut present = present_rows(state, tenant, &rows).await?;
 
-    let missing: Vec<resolution::BindingRow> = rows
-        .iter()
-        .zip(&present)
-        .filter(|(_, landed)| !**landed)
-        .map(|(row, _)| row.clone())
-        .collect();
+    let missing = resolution::missing(&rows, &present);
     if missing.is_empty() {
         return Ok(present);
     }
@@ -421,12 +416,7 @@ async fn write_rows(
     append(state, tenant, operator, &retry).await?;
 
     let recovered = present_rows(state, tenant, &retry).await?;
-    let mut recovered = recovered.into_iter();
-    for landed in &mut present {
-        if !*landed {
-            *landed = recovered.next().unwrap_or(false);
-        }
-    }
+    resolution::apply_recovery(&mut present, &recovered);
 
     let refused = present.iter().filter(|landed| !**landed).count();
     if refused > 0 {
