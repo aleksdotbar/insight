@@ -65,7 +65,14 @@ class GroupDialog:
         return self.dialog.get_by_role("button", name="Close")
 
     def card_actions(self, label: str) -> Locator:
-        return self.dialog.get_by_role("button", name=f"More actions for {label}")
+        """The overflow menu of the first widget about this metric.
+
+        A metric can carry more than one such menu in a group dialog — its
+        summary card and its peer-story row each own one — so this resolves to
+        the first in DOM order, which is the summary card's: the drilldown body
+        renders the card grid above the peer story.
+        """
+        return self.dialog.get_by_role("button", name=f"More actions for {label}").first
 
     def any_card_actions(self) -> Locator:
         return self.dialog.get_by_role("button", name=re.compile(r"^More actions for ")).first
