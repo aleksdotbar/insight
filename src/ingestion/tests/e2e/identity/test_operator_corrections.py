@@ -523,3 +523,23 @@ def test_an_operator_decision_survives_the_next_seed_run(identity_svc, compose_s
     after = _binding_rows(compose_stack, corrected, tenant=identity_seed.SEED_TENANT, source_type=source_type)
     assert after[0][0] == uuid.UUID(survivor).hex, "the seed re-derived the binding the operator overruled"
     assert after[0][1] == identity_seed.SEED_ADMIN.hex, "the surviving decision is still the operator's"
+
+    # The correction is only worth anything if it reaches the analytics side.
+    # The resolver reads the ClickHouse mirror of this journal, so the mirror
+    # is where the two halves of that claim meet: the metrics suite proves the
+    # mirror decides gold's person_id, and this proves a correction decides the
+    # mirror.
+    synced = identity_svc.run_sync_cli(tenant=str(identity_seed.SEED_TENANT), force=True)
+    assert synced.returncode == 0, f"rc={synced.returncode}\n{synced.stdout}\n{synced.stderr}"
+
+    mirrored = clickhouse.query(
+        compose_stack,
+        "SELECT toString(person_id), toString(author_person_id)"
+        " FROM identity.identity_persons"
+        f" WHERE value_type = 'id' AND insight_source_type = '{source_type}'"
+        f"   AND value_effective = '{corrected}'"
+        " ORDER BY created_at DESC, id DESC LIMIT 1",
+    )
+    assert mirrored, "the correction never reached the mirror the analytics resolver reads"
+    assert mirrored[0][0] == survivor, "the mirror still names the person the operator overruled"
+    assert mirrored[0][1] == str(identity_seed.SEED_ADMIN), "the mirrored decision lost its author"
