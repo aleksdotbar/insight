@@ -116,10 +116,11 @@ appearing in the roster — and the identity macro's deactivation branch fires o
 field *changes*, so an absence produces nothing to match on. Detecting it needs
 a roster diff across syncs, which is a separate model.
 
-Until that exists, treat this connector as an account *directory*, not an
-authorization source: revocation must come from the IdP or from the HR source
-that owns person status. Do not let a GitHub binding be the only thing standing
-between a former member and a session.
+Treat this connector as an account *directory*, not an authorization source.
+Revocation belongs at the IdP: a directory synced on a schedule cannot be an
+access-revocation mechanism at any fidelity, because even a perfect roster diff
+would leave access standing until the next sync. Restrict membership at the
+broker rather than relying on this pipeline to withdraw it.
 
 ## Development
 

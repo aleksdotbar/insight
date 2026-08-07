@@ -29,9 +29,10 @@
 -- so the branch stays wired for whatever supplies that signal.
 --
 -- Consequence until then: a departed member keeps an active GitHub binding.
--- Revocation has to come from the IdP or from the HR source that owns person
--- status — this connector must not be the only thing standing between a
--- former member and a session.
+-- Revocation belongs at the IdP, which is the only control that takes effect
+-- when it happens rather than at the next sync — a daily batch cannot be an
+-- access-revocation mechanism at any fidelity. Do not treat this connector as
+-- one.
 
 {{ identity_inputs_from_history(
     fields_history_ref=ref('github_directory__org_members_fields_history'),
