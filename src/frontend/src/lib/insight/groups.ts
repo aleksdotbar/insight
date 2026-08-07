@@ -543,7 +543,14 @@ export const KPI_ROW: readonly string[] = [
 ];
 
 /** How many tiles the row shows; the rest of the candidates are fallbacks. */
-export const KPI_ROW_MAX = 5;
+/**
+ * Four, not five, because the row is laid out in a column count that divides
+ * it. Five tiles in a four-column row leave the fifth alone on a line of its
+ * own beside a hole the width of three tiles, and the hole reads as something
+ * failing to load. The candidate list is longer than the row either way, so
+ * the row already adapts to the person; it now also fills.
+ */
+export const KPI_ROW_MAX = 4;
 
 export const KPI_ROW_COLLECTION: MetricCollectionConfig = {
   metrics: KPI_ROW.map((key) => ({

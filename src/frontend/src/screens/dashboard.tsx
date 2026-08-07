@@ -13,7 +13,10 @@ import { GroupDrilldownSheet } from "@/components/widgets/dashboard/group-drilld
 import { previousPeriodRange } from "@/api/period-to-date-range";
 import { usePeriod } from "@/hooks/use-period";
 import { useSettings } from "@/hooks/use-settings";
-import { metricAttentionItems } from "@/lib/insight/attention";
+import {
+  metricAttentionItems,
+  orderAttentionItems,
+} from "@/lib/insight/attention";
 import { metricKpiTiles } from "@/lib/insight/kpi-row";
 import {
   GROUPS,
@@ -133,14 +136,17 @@ export function DashboardScreen({ personId }: DashboardScreenProps) {
   // What the row actually rendered — the block skips exactly those, no more.
   const headlineKeys = new Set(tiles.map((t) => t.key));
 
-  const attentionItems = GROUPS.flatMap((def) =>
-    metricAttentionItems(
-      def,
-      groupData.get(def.id)?.byKey ?? new Map(),
-      previousGroupData.get(def.id)?.byKey ?? null,
-      entityId,
-      headlineKeys
-    )
+  const attentionItems = orderAttentionItems(
+    GROUPS.flatMap((def) =>
+      metricAttentionItems(
+        def,
+        groupData.get(def.id)?.byKey ?? new Map(),
+        previousGroupData.get(def.id)?.byKey ?? null,
+        entityId,
+        headlineKeys
+      )
+    ),
+    headlineKeys
   );
 
   // Close any open drilldown when the viewed person changes. Render-phase
@@ -180,7 +186,9 @@ export function DashboardScreen({ personId }: DashboardScreenProps) {
               <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 At a glance
               </p>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
+              {/* Counted columns, so the last row of tiles is never a single
+                  one beside a hole — see KPI_ROW_MAX. */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {/* The tiles ARE the row — see the note in
                     `metric-groups-view`. One error card for the row, not one
                     per key: the request fails as a whole. */}

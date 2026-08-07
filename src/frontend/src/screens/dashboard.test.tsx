@@ -46,7 +46,10 @@ vi.mock("@/lib/insight/kpi-row", () => ({
   metricKpiTiles: () => tilesReturn,
 }));
 
-vi.mock("@/lib/insight/attention", () => ({
+vi.mock("@/lib/insight/attention", async (importOriginal) => ({
+  // Only the selection is faked; the ordering and thinning the screen applies
+  // on top of it is real, so this test keeps exercising it.
+  ...(await importOriginal<typeof import("@/lib/insight/attention")>()),
   metricAttentionItems: () => attentionPerGroup,
 }));
 
@@ -95,7 +98,13 @@ vi.mock("@/components/widgets/dashboard/kpi-tile", () => ({
 }));
 
 vi.mock("@/components/widgets/coming-soon", () => ({
-  ComingSoon: ({ onRetry, label }: { onRetry?: () => void; label?: string }) => (
+  ComingSoon: ({
+    onRetry,
+    label,
+  }: {
+    onRetry?: () => void;
+    label?: string;
+  }) => (
     <button data-testid="kpi-error" onClick={onRetry} disabled={!onRetry}>
       {label ?? "retry"}
     </button>
