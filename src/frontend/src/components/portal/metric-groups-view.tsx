@@ -289,13 +289,15 @@ export function MetricGroupsView({
   // What the row actually rendered — the block skips exactly those, no more.
   const headlineKeys = new Set(tiles.map((t) => t.key));
 
-  // Sections with no reading at all. Named plainly: a page that shows only
-  // what it can see otherwise reads as a whole picture of a person.
-  const uncovered = showKpis
-    ? sectionStandings
-        .filter((st) => !st.isPending && !st.hasData)
-        .map((st) => st.title)
+  // Sections with no reading at all, split by whose fault the blank is: a
+  // pool that reads means the measurement works and this person is absent
+  // from it, an empty pool means nobody here is measured. A page that shows
+  // only what it can see otherwise reads as a whole picture of a person.
+  const blank = showKpis
+    ? sectionStandings.filter((st) => !st.isPending && !st.hasData)
     : [];
+  const unmeasured = blank.filter((st) => !st.peersHaveData).map((st) => st.title);
+  const inactive = blank.filter((st) => st.peersHaveData).map((st) => st.title);
 
   // Deduped across groups, not within one: a metric and the wider metric that
   // contains it need not live in the same section.
@@ -327,7 +329,7 @@ export function MetricGroupsView({
                 first question is what this thing knows about them, and a page
                 that answers it only at the bottom has already been read as a
                 complete picture by then. */}
-            <PersonCoverage uncovered={uncovered} />
+            <PersonCoverage unmeasured={unmeasured} inactive={inactive} />
             <section className="flex flex-col gap-3">
               <p className="flex flex-wrap items-baseline gap-x-2 text-xs font-medium tracking-wider text-muted-foreground uppercase">
                 At a glance
