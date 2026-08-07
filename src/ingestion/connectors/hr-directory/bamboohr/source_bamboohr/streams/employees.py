@@ -171,6 +171,29 @@ def _report_omissions(requested: Sequence[str], answered: set[str]) -> None:
         )
 
 
+def sensitive_keys(meta_fields: Sequence[Any]) -> frozenset[str]:
+    """Every key a sensitive field could arrive under: its alias, its numeric id,
+    and the indexed `<id>.N` form the report answers with. The report volunteers
+    columns that were never requested, so excluding these from the request is not
+    on its own enough to keep them out of the payload."""
+    keys = set(SENSITIVE_FIELDS)
+
+    for field in meta_fields:
+        if not isinstance(field, Mapping):
+            continue
+
+        alias = str(field.get("alias") or "").strip()
+        field_id = field.get("id")
+        if alias in SENSITIVE_FIELDS and field_id is not None:
+            keys.add(str(field_id))
+
+    return frozenset(keys)
+
+
+def _is_sensitive(key: str, sensitive: frozenset[str]) -> bool:
+    return key in sensitive or key.split(".", 1)[0] in sensitive
+
+
 def _request_key(field: Mapping[str, Any]) -> str | None:
     alias = str(field.get("alias") or "").strip()
     if alias:
@@ -199,7 +222,9 @@ class EmployeesStream(Stream):
         stream_slice: Mapping[str, Any] | None = None,
         stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
-        fields = report_fields(self._client.get("meta/fields"))
+        meta = self._client.get("meta/fields")
+        fields = report_fields(meta)
+        sensitive = sensitive_keys(meta)
         batches = field_batches(fields)
         logger.info(
             "BambooHR employee report requests %d fields in %d request(s)", len(fields), len(batches)
@@ -225,7 +250,7 @@ class EmployeesStream(Stream):
         _report_omissions([name for name in fields if name in verifiable], answered)
 
         for row in merged.values():
-            yield self._to_record(row)
+            yield self._to_record(row, sensitive)
 
         logger.info("BambooHR employees stream emitted %d records", len(merged))
 
@@ -243,9 +268,11 @@ class EmployeesStream(Stream):
 
             merged.setdefault(str(employee_id), {}).update(row)
 
-    def _to_record(self, row: Mapping[str, Any]) -> Mapping[str, Any]:
+    def _to_record(self, row: Mapping[str, Any], sensitive: frozenset[str]) -> Mapping[str, Any]:
         employee_id = row["id"]
-        payload = {key: value for key, value in sorted(row.items()) if key not in SENSITIVE_FIELDS}
+        payload = {
+            key: value for key, value in sorted(row.items()) if not _is_sensitive(key, sensitive)
+        }
 
         record: dict[str, Any] = {name: row.get(name) for name in BUSINESS_FIELDS}
         record["raw_data"] = payload

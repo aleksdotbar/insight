@@ -15,7 +15,7 @@ feed the Identity Manager". Read DESIGN.md first; this narrows it.
 
 | Connector | Transport | Type | Use as template when… |
 |-----------|-----------|------|------------------------|
-| [`hr-directory/bamboohr`](../../../src/ingestion/connectors/hr-directory/bamboohr/) | REST + API key | **cdk** | Source is a REST/HTTP HR system whose field set is discovered per sync. Adds `leave_requests`/`working_hours`/`hr_events`. |
+| [`hr-directory/bamboohr`](../../../src/ingestion/connectors/hr-directory/bamboohr/) | REST + API key | **cdk** | Source is a REST/HTTP HR system whose field set is discovered per sync. Streams `employees`, `leave_requests`, `meta_fields`; adds the `working_hours` and `hr_events` dbt models. |
 | [`hr-directory/ms-entra`](../../../src/ingestion/connectors/hr-directory/ms-entra/) | MS Graph REST + OAuth2 | **nocode** | Source is a cloud directory over HTTP. Minimal users-only identity connector. |
 | [`hr-directory/active-directory`](../../../src/ingestion/connectors/hr-directory/active-directory/) | LDAP/LDAPS | **cdk** | Source is **not HTTP** (LDAP, SOAP, file, DB). Plain `Stream` + custom transport. |
 

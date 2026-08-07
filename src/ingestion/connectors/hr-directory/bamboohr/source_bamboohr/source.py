@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from airbyte_cdk.models import ConnectorSpecification
 from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.streams import Stream
 
@@ -34,13 +35,14 @@ REQUIRED_CONFIG_FIELDS = {
 
 
 class SourceBamboohr(AbstractSource):
-    def spec(self, logger: Any) -> Mapping[str, Any]:
-        from airbyte_cdk.models import ConnectorSpecification
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
 
         spec_path = Path(__file__).parent / "spec.json"
         return ConnectorSpecification(**json.loads(spec_path.read_text()))
 
-    def check_connection(self, logger: Any, config: Mapping[str, Any]) -> tuple[bool, Any | None]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> tuple[bool, str | None]:
         for field, message in REQUIRED_CONFIG_FIELDS.items():
             if not str(config.get(field) or "").strip():
                 return False, message

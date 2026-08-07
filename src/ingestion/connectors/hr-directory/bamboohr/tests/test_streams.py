@@ -60,6 +60,17 @@ class TestEmployeeRecords:
         assert "homePhone" not in record["raw_data"]
         assert record["raw_data"]["customTeam"] == "Platform"
 
+    def test_a_sensitive_field_volunteered_under_its_id_is_not_stored(self):
+        # The report returns columns that were never requested, and answers a
+        # field asked for by numeric id under an indexed key.
+        meta = [meta_field(17, alias="ssn"), meta_field(4001, alias="customTeam")]
+        stream, _ = employees_stream([{**EMPLOYEE, "17.0": "000-00-0000", "17": "000-00-0000"}], meta=meta)
+        (record,) = read(stream)
+
+        assert "17.0" not in record["raw_data"]
+        assert "17" not in record["raw_data"]
+        assert record["raw_data"]["customTeam"] == "Platform"
+
     def test_a_declared_column_the_report_omitted_reads_as_null(self):
         stream, _ = employees_stream([{"id": "42"}])
         (record,) = read(stream)

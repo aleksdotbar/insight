@@ -68,9 +68,8 @@ def api_base_url(domain: str) -> str:
 
 
 class BambooClient:
-    def __init__(self, domain: str, api_key: str, base_url: str | None = None) -> None:
-        configured = base_url or api_base_url(domain)
-        self._base_url = configured.rstrip("/") + "/"
+    def __init__(self, domain: str, api_key: str) -> None:
+        self._base_url = api_base_url(domain).rstrip("/") + "/"
         self._session = requests.Session()
         self._session.auth = HTTPBasicAuth(api_key, "x")
         self._session.headers.update({"Accept": "application/json"})

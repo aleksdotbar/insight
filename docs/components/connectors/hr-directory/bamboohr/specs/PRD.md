@@ -128,7 +128,7 @@ Receives extracted records and writes them to Bronze tables.
 
 ### 4.1 In Scope
 
-- Extraction of employee directory data via custom reports (insights-relevant fields only — identity, org hierarchy, job, location, dates, employment type).
+- Extraction of employee directory data via custom reports (every standard and customer-defined field, without per-field configuration, less the §4.2 exclusions; identity, org hierarchy, job, location, dates and employment type are promoted to Bronze columns, the rest retained in the raw payload).
 - Extraction of time-off (leave) requests with date-range filtering.
 - Extraction of field metadata (standard + custom field definitions) for schema discovery.
 - Full refresh sync on all streams (no incremental — BambooHR is current-state only).

@@ -142,7 +142,7 @@ All streams use full refresh sync. The custom report endpoint does not support s
 
 | Entity | API Source | Bronze Stream | Description |
 |--------|-----------|--------------|-------------|
-| Employee | `POST /reports/custom` | `employees` | Current-state employee record with insights-relevant HR attributes |
+| Employee | `POST /reports/custom` | `employees` | Current-state employee record carrying every field the account defines, less the §4.2 exclusions |
 | Leave Request | `GET /time_off/requests` | `leave_requests` | Time-off request with dates, type, status, and amount |
 | Field Metadata | `GET /meta/fields` | `meta_fields` | Field definitions (standard + custom) for schema discovery |
 
@@ -440,7 +440,7 @@ Connection: bamboohr-{domain}
 ├── Source image: ghcr.io/constructorfabric/source-bamboohr-insight
 ├── Source: src/ingestion/connectors/hr-directory/bamboohr/source_bamboohr/
 ├── Descriptor: src/ingestion/connectors/hr-directory/bamboohr/descriptor.yaml
-├── Source config: tenant_id, api_key, domain
+├── Source config: insight_tenant_id, insight_source_id, bamboohr_api_key, bamboohr_domain
 ├── Configured catalog: 3 streams (all full refresh)
 │   ├── employees
 │   ├── leave_requests
