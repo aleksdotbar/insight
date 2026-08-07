@@ -268,6 +268,14 @@ reconcile_migrate_definition_kind() {
   local connector_name="$1" old_definition_id="$2" cdk_image="$3"
   local workspace_id sources_json source_ids
 
+  # Defensive dry-run guard: reconcile_definitions already short-circuits before
+  # calling us, but enforce here too per dod-reconcile-dry-run-non-destructive.
+  if [[ "${RECONCILE_DRY_RUN:-0}" -eq 1 ]]; then  # RULE-DEFAULTS-OK: feature flag — OFF when caller doesn't opt in
+    reconcile__log CHANGE "${connector_name}" \
+      "would migrate definition ${old_definition_id} to ${cdk_image}"
+    return 0
+  fi
+
   workspace_id="$(ab_workspace_id)"
   sources_json="$(ab_list_sources "${workspace_id}")"
   source_ids="$(printf '%s' "${sources_json}" | python3 -c '
@@ -298,11 +306,13 @@ for s in json.load(sys.stdin):
       reconcile__log INFO "${connector_name}" "state backup: ${state_backup}"
     fi
 
+    # RECONCILE_DRY_RUN guarded at top of reconcile_migrate_definition_kind.
     ab_delete_source "${source_id}" >/dev/null
     reconcile__log CHANGE "${connector_name}" \
       "deleted source ${source_id} bound to the manifest-backed definition"
   done <<<"${source_ids}"
 
+  # RECONCILE_DRY_RUN guarded at top of reconcile_migrate_definition_kind.
   if ! ab_delete_source_definition "${old_definition_id}" >/dev/null; then
     reconcile__log ERROR "${connector_name}" \
       "failed to delete manifest-backed definition ${old_definition_id}"
@@ -312,6 +322,7 @@ for s in json.load(sys.stdin):
   local docker_repo docker_tag new_def_id
   IFS=$'\t' read -r docker_repo docker_tag \
     < <(python3 "${_RECONCILE_PY_DIR}/split_docker_image_ref.py" "${cdk_image}")
+  # RECONCILE_DRY_RUN guarded at top of reconcile_migrate_definition_kind.
   if ! new_def_id="$(ab_create_custom_cdk_definition \
                      "${workspace_id}" "${connector_name}" \
                      "${docker_repo}" "${docker_tag}")"; then
@@ -817,6 +828,7 @@ print("\n".join(sorted(i for i in ids if i)))')"
     # belongs to it. Without this the streams would resync from cursor zero.
     local migrated_state="${_RECONCILE_MIGRATED_STATE[${connector_name}]:-}"
     if [[ -n "${migrated_state}" && -n "${new_conn_id}" && -s "${migrated_state}" ]]; then
+      # RECONCILE_DRY_RUN guarded by the early return in this branch above.
       if ab_create_or_update_state "${new_conn_id}" "$(cat "${migrated_state}")" >/dev/null; then
         reconcile__log CHANGE "${connector_name}" \
           "restored state onto migrated connection ${new_conn_id}"
