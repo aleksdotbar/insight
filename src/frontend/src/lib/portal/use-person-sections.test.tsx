@@ -10,6 +10,7 @@ import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MetricResult } from "@/api/metric-results-client";
+import { GROUPS } from "@/lib/insight/groups";
 import { normalizeMetricResults } from "@/lib/metrics/collection";
 
 const mocks = vi.hoisted(() => ({
@@ -21,19 +22,23 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/queries/metric-results", () => ({
   useMetricCollectionSet: () =>
     new Map(
-      ["task_delivery", "git_output", "collaboration", "ai_adoption", "wiki"].map(
-        (id) => [
-          id,
-          {
-            byKey: mocks.byKey,
-            previousByKey: null,
-            isPending: mocks.isPending,
-            isFetching: false,
-            isError: false,
-            refetch: vi.fn(),
-          },
-        ],
-      ),
+      [
+        "task_delivery",
+        "git_output",
+        "collaboration",
+        "ai_adoption",
+        "wiki",
+      ].map((id) => [
+        id,
+        {
+          byKey: mocks.byKey,
+          previousByKey: null,
+          isPending: mocks.isPending,
+          isFetching: false,
+          isError: false,
+          refetch: vi.fn(),
+        },
+      ])
     ),
 }));
 vi.mock("@/lib/portal/use-person-cohort", () => ({
@@ -51,7 +56,11 @@ import { usePersonSectionStandings } from "./use-person-sections";
 const ME = "019e27bc-dec0-7626-81a9-c5524662a6a9";
 
 /** One metric with a peer row, so it has a standing to aggregate. */
-function metric(key: string, value: number | null, median: number): MetricResult {
+function metric(
+  key: string,
+  value: number | null,
+  median: number
+): MetricResult {
   return {
     metric_key: key,
     label: key,
@@ -119,8 +128,9 @@ describe("usePersonSectionStandings", () => {
   });
 
   it("covers every section, including ones the response never mentions", () => {
-    const ids = standings().map((s) => s.id);
-    expect(ids).toContain("task_delivery");
-    expect(ids).toContain("wiki");
+    // The nav draws one mark per section, so a section missing from this list
+    // would silently lose its mark — asserting the whole set, in order, is
+    // what catches that.
+    expect(standings().map((s) => s.id)).toEqual(GROUPS.map((g) => g.id));
   });
 });

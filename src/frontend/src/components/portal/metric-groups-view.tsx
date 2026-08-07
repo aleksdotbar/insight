@@ -193,10 +193,20 @@ export function MetricGroupsView({
   // tell a change from a standing, so a pending one is still loading and a
   // failed one is an error. Left out, a failed comparison would render as
   // "nothing needs attention" — the most misleading empty state on the page.
+  //
+  // The cohort's own results count too. Every comparison on the page is drawn
+  // against them — `injectCohortPeer` only copies peer values that have
+  // arrived — so rendering before they do shows the person measured against a
+  // cohort that is not yet there, under a heading naming how many people are
+  // in it.
+  const cohortPending =
+    cohortIds.length > 0 &&
+    ((showKpis && cohortKpi.isPending) || collectionSetPending(cohortGroup));
   const isLoading =
     (showKpis &&
       (kpiData.isPending || collectionSetPending(previousGroupData))) ||
-    collectionSetPending(groupData);
+    collectionSetPending(groupData) ||
+    cohortPending;
   if (isLoading) return <CenteredSpinner className="min-h-[60vh]" />;
 
   // Surface a backend failure as a retryable error, not empty section cards.
@@ -204,7 +214,10 @@ export function MetricGroupsView({
     (showKpis &&
       (kpiData.isError ||
         [...previousGroupData.values()].some((r) => r.isError))) ||
-    [...groupData.values()].some((r) => r.isError);
+    [...groupData.values()].some((r) => r.isError) ||
+    (cohortIds.length > 0 &&
+      ((showKpis && cohortKpi.isError) ||
+        [...cohortGroup.values()].some((r) => r.isError)));
   if (isError)
     return (
       <div className="mx-auto w-full max-w-md p-8">
@@ -215,6 +228,8 @@ export function MetricGroupsView({
             kpiData.refetch();
             groupData.forEach((r) => r.refetch());
             previousGroupData.forEach((r) => r.refetch());
+            cohortKpi.refetch();
+            cohortGroup.forEach((r) => r.refetch());
           }}
         />
       </div>

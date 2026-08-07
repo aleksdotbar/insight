@@ -738,6 +738,11 @@ function ColumnHeader({
               "AI LINES +" is otherwise a guess, and the grid is where a
               reader compares people on it. */}
           {help?.description ? <span>{help.description}</span> : null}
+          {/* The catalog sometimes supplies only the longer explanation, and a
+              header showing neither leaves the column a guess. */}
+          {help?.explanation ? (
+            <span className="text-background/70">{help.explanation}</span>
+          ) : null}
           <span className="text-background/70">
             {col.unit ? `${col.unit} · ` : ""}
             {betterWhenHigher(col.direction) === true

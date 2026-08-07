@@ -80,8 +80,18 @@ export function MetricName({ metric, text, className }: MetricNameProps) {
   const help = metricHelp(metric);
   if (!help) return <span className={className}>{label}</span>;
   return (
-    <MetricHelpTooltip help={help}>
-      <span className={cn("cursor-help", className)}>{label}</span>
-    </MetricHelpTooltip>
+    <>
+      <MetricHelpTooltip help={help}>
+        <span className={cn("cursor-help", className)}>{label}</span>
+      </MetricHelpTooltip>
+      {/* The tooltip answers a pointer and nothing else, because its trigger
+          cannot be made focusable here: these names sit inside cards that are
+          themselves buttons, and a control nested in a control is invalid
+          markup with broken semantics. So the words are given to assistive
+          technology directly, in the reading order they belong to. */}
+      <span className="sr-only">
+        {[help.description, help.explanation].filter(Boolean).join(". ")}
+      </span>
+    </>
   );
 }
