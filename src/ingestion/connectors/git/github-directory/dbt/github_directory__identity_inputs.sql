@@ -15,8 +15,9 @@
 --
 -- The canonical `value_type='id'` binding row is emitted by the macro from
 -- entity_id (= lowercased login, ADR-0002) — that is the row the login
--- lookup matches. `email` is null for most members unless the token carries
--- `user:email`, so resolution leans on the id binding and display_name.
+-- lookup matches. `email` carries a member's org email where one is verified
+-- and visible to the token's scopes; where it is absent, resolution leans on
+-- the id binding and display_name.
 --
 -- No deactivation condition applies, and none can be expressed here: the
 -- macro's DELETE branch selects `FROM history WHERE <condition>`, so it fires

@@ -98,9 +98,11 @@ before executing it and rejects it outright when the token cannot read the
 returning members with null emails. The connector fails the check with GitHub's
 own message in that case.
 
-Even with the scope, `email` is only populated where the member's org email is
-verified and visible, so it is frequently null. Identity resolution therefore
-leans on the id binding and display name.
+With the scope granted, `email` carries a member's org email wherever one is
+verified and visible to the token. Where it is absent, identity resolution
+leans on the id binding and display name instead — the login is the join key
+either way, so a missing email degrades merging with other sources rather than
+breaking login.
 
 A member of two configured orgs produces one bronze row per org and a single
 identity entity — both rows carry the same normalized login. The duplicate
