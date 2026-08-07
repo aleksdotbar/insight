@@ -1124,7 +1124,13 @@ cmd_seed() {
 
   # Run the seed step itself. NOT `exec` — we still want to bounce
   # analytics after silver/all completes (see cf/insight#1307).
-  "${compose_cmd[@]}" --profile seed run --rm seed-sample "${args[@]}"
+  #
+  # --build: `compose run` reuses whatever image the tag currently holds, and a
+  # seed image left over from an older checkout runs the wrong entrypoint from
+  # the wrong directory — it surfaces as an EACCES on /app/manifest.json after
+  # the whole seed has run. The source is bind-mounted anyway, so the rebuild
+  # is layer-cached and only refreshes entrypoint/WORKDIR/deps.
+  "${compose_cmd[@]}" --profile seed run --build --rm seed-sample "${args[@]}"
   local seed_status=$?
   if [[ $seed_status -ne 0 ]]; then
     return $seed_status
