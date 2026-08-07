@@ -32,49 +32,60 @@ function tile(overrides: Partial<KpiTileData> = {}): KpiTileData {
 
 describe("KpiTile", () => {
   it("renders the display-ready value, delta, median, and context", () => {
-    render(<KpiTile tile={tile()} />);
+    render(<KpiTile periodNoun="month" tile={tile()} />);
     expect(screen.getByText("14")).toBeInTheDocument();
-    expect(screen.getByText("+17%")).toBeInTheDocument();
-    expect(screen.getByText(/median 11/)).toBeInTheDocument();
+    // The change now says what it is measured against, in the line under the
+    // value — a bare "+17%" was readable as either comparison.
+    expect(screen.getByText(/\+17% since last month/)).toBeInTheDocument();
+    expect(screen.getByText(/Team median 11/)).toBeInTheDocument();
     expect(
-      screen.getByText("Days with any AI tool activity"),
+      screen.getByText("Days with any AI tool activity")
     ).toBeInTheDocument();
   });
 
   it("shows the divergence gap next to the median", () => {
     render(
       <KpiTile
+        periodNoun="month"
         tile={tile({
           gapText: "3.5×",
           gapStatus: "good",
           medianLabel: "median 3,563",
         })}
-      />,
+      />
     );
-    expect(screen.getByText(/3\.5× vs median 3,563/)).toBeInTheDocument();
+    expect(screen.getByText(/Team median 3,563 · 3\.5×/)).toBeInTheDocument();
   });
 
   it("falls back to 'No peer data' without a median label", () => {
-    render(<KpiTile tile={tile({ medianLabel: null })} />);
+    render(<KpiTile periodNoun="month" tile={tile({ medianLabel: null })} />);
     expect(screen.getByText("No peer data")).toBeInTheDocument();
   });
 
   it("omits the delta badge when delta is null", () => {
-    render(<KpiTile tile={tile({ delta: null })} />);
+    render(<KpiTile periodNoun="month" tile={tile({ delta: null })} />);
     expect(screen.queryByText("+17%")).not.toBeInTheDocument();
   });
 
   it("navigates to its group on click", async () => {
     const onOpenGroup = vi.fn();
-    render(<KpiTile tile={tile()} onOpenGroup={onOpenGroup} />);
+    render(
+      <KpiTile periodNoun="month" tile={tile()} onOpenGroup={onOpenGroup} />
+    );
     await userEvent.click(
-      screen.getByRole("button", { name: "Open Active AI days details" }),
+      screen.getByRole("button", { name: "Open Active AI days details" })
     );
     expect(onOpenGroup).toHaveBeenCalledWith("ai_adoption");
   });
 
   it("is not interactive without a group id", () => {
-    render(<KpiTile tile={tile({ groupId: null })} onOpenGroup={vi.fn()} />);
+    render(
+      <KpiTile
+        periodNoun="month"
+        tile={tile({ groupId: null })}
+        onOpenGroup={vi.fn()}
+      />
+    );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
@@ -89,7 +100,7 @@ describe("KpiTilePlaceholder", () => {
     // The number alone is not readable: a viewer meeting "14" has no way to
     // learn what it counts. The tile itself is the trigger, so the answer is
     // one pointer-rest away instead of one more icon per tile.
-    render(<KpiTile tile={tile()} onOpenGroup={vi.fn()} />);
+    render(<KpiTile periodNoun="month" tile={tile()} onOpenGroup={vi.fn()} />);
     await userEvent.hover(screen.getByRole("button"));
     const tip = await screen.findByTestId("metric-help");
     expect(tip).toHaveTextContent("Days with any AI tool activity");
@@ -97,7 +108,13 @@ describe("KpiTilePlaceholder", () => {
   });
 
   it("opens nothing for a metric the catalog says nothing about", async () => {
-    render(<KpiTile tile={tile({ help: null })} onOpenGroup={vi.fn()} />);
+    render(
+      <KpiTile
+        periodNoun="month"
+        tile={tile({ help: null })}
+        onOpenGroup={vi.fn()}
+      />
+    );
     await userEvent.hover(screen.getByRole("button"));
     expect(screen.queryByTestId("metric-help")).not.toBeInTheDocument();
   });
@@ -105,8 +122,13 @@ describe("KpiTilePlaceholder", () => {
   it("says where the value sits when it is exactly at the median", () => {
     // "median 22,774" alone breaks the pattern every other tile follows and
     // reads as a stray label rather than a comparison.
-    render(<KpiTile tile={tile({ gapText: null, medianLabel: "median 11" })} />);
-    expect(screen.getByText(/at median 11/)).toBeInTheDocument();
+    render(
+      <KpiTile
+        periodNoun="month"
+        tile={tile({ gapText: null, medianLabel: "median 11" })}
+      />
+    );
+    expect(screen.getByText("Team median 11")).toBeInTheDocument();
   });
 
   it("does not raise an alarm over a change of one percent", () => {
@@ -114,10 +136,11 @@ describe("KpiTilePlaceholder", () => {
     // teach the reader that the colour means nothing.
     render(
       <KpiTile
+        periodNoun="month"
         tile={tile({ delta: { text: "-1%", status: "neutral", down: true } })}
-      />,
+      />
     );
-    const badge = screen.getByText("-1%").closest("span")!;
-    expect(badge.className).not.toMatch(/text-destructive|text-success/);
+    const line = screen.getByText(/-1% since last month/);
+    expect(line.className).not.toMatch(/text-destructive|text-success/);
   });
 });
