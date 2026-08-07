@@ -176,24 +176,38 @@ def _emailless_observation_rows(tenant: uuid.UUID, person: uuid.UUID) -> list[Ob
     ]
 
 
+# Spelled out per table instead of interpolating a name into the statement:
+# the set is fixed, and a literal query needs no reader — human or scanner —
+# to establish that the name is trusted.
+WIPE_SEEDED_SQL = (
+    "DELETE FROM visibility WHERE reason = 'e2e-seed'",
+    "DELETE FROM person_roles WHERE reason = 'e2e-seed'",
+    "DELETE FROM org_chart WHERE reason = 'e2e-seed'",
+    "DELETE FROM account_person_map WHERE reason = 'e2e-seed'",
+    "DELETE FROM persons WHERE reason = 'e2e-seed'",
+)
+
+# Correction tests append journal rows under 'operator-%' reasons and rebuild
+# the derived caches, whose rows carry copied or empty reasons; on a kept stack
+# all of it is fixture residue. The caches are derived per tenant, so wiping the
+# tenant is exact.
+WIPE_CORRECTIONS_SQL = (
+    "DELETE FROM persons WHERE reason LIKE 'operator-%%' AND insight_tenant_id = %s",
+    "DELETE FROM org_chart WHERE insight_tenant_id = %s",
+    "DELETE FROM account_person_map WHERE insight_tenant_id = %s",
+)
+
+
 def seed(cfg: SessionConfig) -> None:
     """Insert the fixture dataset (idempotent: wipes e2e-seed rows first)."""
     conn = _connection(cfg)
     try:
         with conn.cursor() as cur:
             # Idempotent re-seed for local re-runs against a kept stack.
-            for table in ("visibility", "person_roles", "org_chart", "account_person_map", "persons"):
-                cur.execute(f"DELETE FROM {table} WHERE reason = 'e2e-seed'")
-            # Correction tests append journal rows under 'operator-%' reasons
-            # and rebuild the derived caches (whose rows carry copied or empty
-            # reasons); on a kept stack all of it is fixture residue. The
-            # caches are derived per tenant, so wiping the tenant is exact.
-            cur.execute(
-                "DELETE FROM persons WHERE reason LIKE 'operator-%%' AND insight_tenant_id = %s",
-                (TEST_TENANT_ID.bytes,),
-            )
-            for table in ("org_chart", "account_person_map"):
-                cur.execute(f"DELETE FROM {table} WHERE insight_tenant_id = %s", (TEST_TENANT_ID.bytes,))
+            for statement in WIPE_SEEDED_SQL:
+                cur.execute(statement)
+            for statement in WIPE_CORRECTIONS_SQL:
+                cur.execute(statement, (TEST_TENANT_ID.bytes,))
 
             observation_sql = (
                 "INSERT INTO persons (value_type, insight_source_type, insight_source_id,"
