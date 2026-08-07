@@ -1283,8 +1283,16 @@ EOF
   # Image removal is a separate question — re-pulling is slow.
   if ask_yes_no "Also remove pulled ghcr.io/constructorfabric/insight-* images?" "n"; then
     local imgs
-    imgs=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
-           | grep -E '^ghcr\.io/constructorfabric/insight-' || true)
+    # A pull whose tag was since taken over by a newer image is listed as
+    # `repo:<none>` — not a valid reference for `docker rmi`. Address those as
+    # `repo@digest`, which removes only the ghcr association: unlike the image
+    # ID, it leaves any other tag on the same image (the e2e rig's
+    # `*:e2e-prebuilt` retags) in place. Tagged pulls keep the repo:tag form.
+    imgs=$(docker images --digests --format '{{.Repository}}:{{.Tag}} {{.Repository}}@{{.Digest}}' 2>/dev/null \
+           | awk '$1 ~ /^ghcr\.io\/constructorfabric\/insight-/ {
+               if ($1 !~ /:<none>$/)      print $1
+               else if ($2 !~ /@<none>$/) print $2
+             }' || true)
     if [[ -z "$imgs" ]]; then
       echo "  No matching images present."
     else
