@@ -127,6 +127,17 @@ BLOCKED: dict[str, frozenset[int]] = {
     "POST /v1/metric-drilldown/export": _NO_AUTHZ_OR_CONFLICT,
     # `POST /v1/metric-results` needs no entry at all: #2134 already removed
     # 409 from its declaration, and this gate said so when it was added here.
+    # Custom metrics — tenant-scoped, no owner check and no role gate, so no 403
+    # path on any of them. Most have no conflict path either; `POST /v1/metrics`
+    # is the exception — a duplicate `metric_key` is a real 409, covered by a
+    # test rather than blocked, so it subtracts only 403.
+    "GET /v1/metrics": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/metrics": _NO_AUTHORIZATION_PATH,
+    "GET /v1/metrics/export": _NO_AUTHZ_OR_CONFLICT,
+    "POST /v1/metrics/import": _NO_AUTHZ_OR_CONFLICT,
+    "GET /v1/metrics/{metric_key}": _NO_AUTHZ_OR_CONFLICT,
+    "PUT /v1/metrics/{metric_key}": _NO_AUTHZ_OR_CONFLICT,
+    "DELETE /v1/metrics/{metric_key}": _NO_AUTHZ_OR_CONFLICT,
 }
 
 
