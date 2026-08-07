@@ -384,7 +384,7 @@ The system **MUST** return, for an account, its current binding and full decisio
 
 - [ ] `p1` - **ID**: `cpt-ir-dod-manual-resolution-authz`
 
-The system **MUST** require an operator grant for every write verb, enforced through the service's existing role grants, and **MUST** record the acting person on every appended row and journal entry. Every read and write — queue, account history, person accounts, binding lookups, appended rows and cache rebuilds — **MUST** be scoped to the tenant of the verified caller, taken from the request context and never from caller-supplied input.
+The system **MUST** require an operator grant for every write verb, enforced through the service's existing role grants, and **MUST** record the acting person on every appended row and journal entry. Every read and write — queue, account history, person accounts, binding lookups and appended rows — **MUST** be scoped to the tenant of the verified caller, taken from the request context and never from caller-supplied input.
 
 **Implements**:
 - `cpt-ir-flow-manual-resolution-review-and-bind`

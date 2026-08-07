@@ -51,5 +51,4 @@
         ENGINE = MergeTree
         ORDER BY id
     ") %}
-
 {% endmacro %}

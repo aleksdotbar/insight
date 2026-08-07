@@ -157,17 +157,17 @@ pub async fn bind(
         });
     }
 
-    // The journal's verb-level target; heterogeneous bulk detail is in the
-    // per-account list either way.
-    let journal_target = req.bindings[0].person_id;
     let response = apply_correction(
         &state,
         tenant,
         operator,
         targets,
-        Verb::Bind,
-        journal_target,
-        &req.comment,
+        Decision {
+            verb: Verb::Bind,
+            // Heterogeneous bulk detail is in the per-account list either way.
+            target_person_id: req.bindings[0].person_id,
+            comment: &req.comment,
+        },
     )
     .await?;
 
@@ -209,9 +209,11 @@ pub async fn merge(
         tenant,
         operator,
         targets,
-        Verb::Merge,
-        req.target_person_id,
-        &req.comment,
+        Decision {
+            verb: Verb::Merge,
+            target_person_id: req.target_person_id,
+            comment: &req.comment,
+        },
     )
     .await?;
 
@@ -242,9 +244,11 @@ pub async fn detach(
         tenant,
         operator,
         targets,
-        Verb::Detach,
-        new_person_id,
-        &req.comment,
+        Decision {
+            verb: Verb::Detach,
+            target_person_id: new_person_id,
+            comment: &req.comment,
+        },
     )
     .await?;
 
@@ -281,31 +285,46 @@ pub async fn exclude(
         tenant,
         operator,
         targets,
-        Verb::Exclude,
-        EXCLUDED_PERSON,
-        &req.comment,
+        Decision {
+            verb: Verb::Exclude,
+            target_person_id: EXCLUDED_PERSON,
+            comment: &req.comment,
+        },
     )
     .await?;
 
     Ok(Json(outcome))
 }
 
+/// What the operator asked for, as the operations journal will record it.
+/// Grouped so the two person ids in play — the author and the verb's target —
+/// cannot be swapped at a call site without the compiler noticing.
+struct Decision<'a> {
+    verb: Verb,
+    /// The verb-level person the journal names: the survivor for a merge, the
+    /// minted person for a detach, the sentinel for an exclude. Named by the
+    /// caller, never derived from the targets — a merge of a person with no
+    /// accounts has an empty target list but still a real survivor.
+    target_person_id: Uuid,
+    comment: &'a str,
+}
+
 /// Read the targets' current bindings, build the rows the correction appends,
-/// write them once, and journal the call. One write and one cache rebuild per
-/// operation, however many accounts it names.
-///
-/// `journal_target` is the verb-level person the operation journal records —
-/// named by the caller, never derived from the targets: a merge of a person
-/// with no accounts has an empty target list but still a real survivor.
+/// write them once, and journal the call — one write per operation, however
+/// many accounts it names.
 async fn apply_correction(
     state: &AppState,
     tenant: Uuid,
     operator: Uuid,
     targets: Vec<Target>,
-    verb: Verb,
-    journal_target: Uuid,
-    comment: &str,
+    decision: Decision<'_>,
 ) -> Result<CorrectionResponse, CanonicalError> {
+    let Decision {
+        verb,
+        target_person_id,
+        comment,
+    } = decision;
+
     let accounts: Vec<SourceAccountKey> = targets.iter().map(|t| t.account.clone()).collect();
     let current = resolution_repo::current_bindings(&state.db, tenant, &accounts)
         .await
@@ -356,22 +375,18 @@ async fn apply_correction(
         tenant,
         operator,
         verb,
-        journal_target,
+        target_person_id,
         comment,
         &items,
     )
     .await;
 
     Ok(CorrectionResponse {
-        applied: count_outcome(&outcomes, OUTCOME_APPLIED),
-        already_decided: count_outcome(&outcomes, OUTCOME_ALREADY_DECIDED),
+        applied: count_items(&items, OUTCOME_APPLIED),
+        already_decided: count_items(&items, OUTCOME_ALREADY_DECIDED),
         items,
         new_person_id: None,
     })
-}
-
-fn count_outcome(outcomes: &[&str], wanted: &str) -> usize {
-    outcomes.iter().filter(|o| **o == wanted).count()
 }
 
 fn count_items(items: &[ItemResult], wanted: &str) -> usize {
