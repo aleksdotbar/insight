@@ -14,7 +14,7 @@ class TestRequestKeys:
         fields = report_fields([meta_field(4001, alias=alias)])
         assert "4001" in fields, f"should fall back to the id for alias {alias!r}"
 
-    def test_a_deprecated_field_is_not_requested(self):
+    def test_a_deprecated_field_is_skipped(self):
         assert "oldTeam" not in report_fields([meta_field(4001, alias="oldTeam", deprecated=True)])
 
     def test_a_field_with_neither_alias_nor_id_is_skipped(self):

@@ -134,7 +134,7 @@ class TestRetryAfter:
         client.get("meta/fields")
         assert slept == [17.0]
 
-    def test_a_delay_given_as_a_date_is_honoured(self, slept):
+    def test_an_http_date_delay_is_honoured(self, slept):
         retry_at = formatdate(time.time() + 30, usegmt=True)
         client = make_client([Response(503, headers={"Retry-After": retry_at}), Response(200, body=[])])
         client.get("meta/fields")
