@@ -10,7 +10,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill
 
 Two things about the Insight UI go wrong expensively, and neither is about clicking: **getting a browser that is already authenticated**, and **capturing evidence a reader can act on**. This skill covers both, for local and remote stands alike. The `playwright-cli` skill owns the command surface — snapshots, refs, clicks, screenshots, tracing — so read it for *how* to drive.
 
-The SPA itself is not in this repo (`src/frontend/` holds only the Helm chart); it lives in `insight-front`. So when you need to read the UI's code rather than run it, look there.
+The SPA lives in this repo at `src/frontend/` — source, Dockerfile and Helm chart together. So when you need to read the UI's code rather than run it, look there.
 
 ## Pick the stand, then get a browser
 

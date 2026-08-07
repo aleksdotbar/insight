@@ -9,6 +9,10 @@ date: 2026-08-04
 
 **Status history**:
 
+- 2026-08-07: NOTE -- fakeidp retirement COMPLETED (issue #2198): the fakeidp crate, subchart
+  and compose service are deleted; the functional-CI environment and the gateway e2e rigs run
+  the in-stack Keycloak with the seed-generated roster realm (imported via keycloak-config-cli /
+  `--import-realm`). Compose and the authenticator e2e were already Keycloak-only.
 - 2026-08-06: AMENDED -- claim-value-to-tenant translation (the advanced claim-to-group mapper
   sketched in the Decision Outcome) is REJECTED: the tenant is always the fixed per-registration
   pin from environment values, an IdP's own tenancy assertions are never consulted, and a
@@ -283,7 +287,8 @@ findings notes and the reproducible realm YAML live on the Phase 0 issue, #2194)
 - Migration order: provision broker realms as code first; move social providers and new customer
   IdPs behind the broker immediately; re-point each environment's `issuerUrl` from its directly
   wired IdP to the broker realm as it is onboarded -- per environment, no flag day; retire
-  fakeidp last, once compose and CI default to the Keycloak realm.
+  fakeidp last, once compose and CI default to the Keycloak realm. **Done 2026-08-07 (#2198)**:
+  fakeidp is deleted; compose, CI and the e2e rigs all run the Keycloak roster realm.
 
 ## Traceability
 

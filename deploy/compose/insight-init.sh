@@ -752,9 +752,9 @@ EOF
   # holds the committed sandbox config.
   cp "$values_tmpl" "$values_out"
   yq -i ".global.tenantDefaultId = \"$TENANT_DEFAULT_ID\"" "$values_out"
-  # Full auth: the dev login identity is the fakeidp default user (must exist in
+  # Full auth: the dev login identity is a realm user (must exist in
   # identity's `persons`), not a frontend impersonation escape hatch.
-  yq -i ".fakeidp.devUserEmail   = \"$DEV_USER_EMAIL\""    "$values_out"
+  yq -i ".keycloak.devUserEmail  = \"$DEV_USER_EMAIL\""    "$values_out"
   echo "Wrote $values_out." >&2
 
   cat >&2 <<EOF
@@ -762,19 +762,18 @@ EOF
 Next: \`make deploy ENV=local\` (already running, if invoked from there)
 will continue with: bootstrap → fetch-cert → seal → system → deploy-app.
 
-Manual demo-data seeding (the compose stack auto-seeds; the k8s stack
-doesn't ship a seed image yet — port-forward and run from the host):
+Demo-data seeding (the compose stack auto-seeds; a k8s stand is seeded by
+one command, which reads the stand's own coordinates and runs the seeder as
+a Job on the toolbox image the release already pins):
 
-  kubectl -n insight-infra port-forward svc/mariadb    3306:3306 &
-  kubectl -n insight-infra port-forward svc/clickhouse 8123:8123 &
-  cd $ROOT_DIR/deploy/seed
-  python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-  MARIADB_HOST=127.0.0.1 CLICKHOUSE_HOST=127.0.0.1 \\
-    MARIADB_USER=$MARIADB_USER MARIADB_PASSWORD=$MARIADB_PASSWORD \\
-    CLICKHOUSE_USER=$CLICKHOUSE_USER CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD \\
-    .venv/bin/python seed.py all
+  $ROOT_DIR/src/ingestion/tools/seed/seed-stand.sh -n insight --email you@example.com
 
-See deploy/seed/README.md for the package layout.
+Add --dry-run to read the Job it would apply, or --step identity to seed only
+the roster (no ClickHouse, finishes in seconds). A user with the --email
+address must exist in the realm first: the authenticator resolves people by
+the email claim.
+
+See src/ingestion/tools/seed/README.md for the flags and the package layout.
 
 EOF
 }
