@@ -1262,7 +1262,7 @@
             }
           },
           {
-            "description": "Cap on returned assignments; a value below 1 clamps to 1",
+            "description": "Cap on returned assignments (1..=500, default 50)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -1584,7 +1584,7 @@
             }
           },
           {
-            "description": "Cap on returned operations; a value below 1 clamps to 1",
+            "description": "Cap on returned operations (1..=500, default 50)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -1801,7 +1801,7 @@
             }
           },
           {
-            "description": "Cap on returned operations; a value below 1 clamps to 1",
+            "description": "Cap on returned operations (1..=500, default 50)",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -3413,7 +3413,7 @@
             }
           },
           {
-            "description": "Cap on returned grants; a value below 1 clamps to 1",
+            "description": "Cap on returned grants (1..=500, default 50)",
             "in": "query",
             "name": "limit",
             "required": false,

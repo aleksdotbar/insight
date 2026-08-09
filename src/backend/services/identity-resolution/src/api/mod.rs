@@ -268,7 +268,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .query_param_typed(
             "limit",
             false,
-            "Cap on returned operations; a value below 1 clamps to 1",
+            "Cap on returned operations (1..=500, default 50)",
             "integer",
         )
         .no_license_required()
@@ -307,7 +307,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .query_param_typed(
             "limit",
             false,
-            "Cap on returned operations; a value below 1 clamps to 1",
+            "Cap on returned operations (1..=500, default 50)",
             "integer",
         )
         .no_license_required()
@@ -388,7 +388,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .query_param_typed(
             "limit",
             false,
-            "Cap on returned assignments; a value below 1 clamps to 1",
+            "Cap on returned assignments (1..=500, default 50)",
             "integer",
         )
         .no_license_required()
@@ -440,7 +440,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .query_param_typed(
             "limit",
             false,
-            "Cap on returned grants; a value below 1 clamps to 1",
+            "Cap on returned grants (1..=500, default 50)",
             "integer",
         )
         .no_license_required()
