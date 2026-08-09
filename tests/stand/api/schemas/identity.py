@@ -359,6 +359,16 @@ class ResolveProfileRequest(BaseModel):
     value_type: str
 
 
+class RevokeReasonRequest(BaseModel):
+    """
+    Optional `DELETE` body carrying a revoke reason.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    reason: str | None = None
+
+
 class RoleResponse(BaseModel):
     """
     One role in the catalogue.

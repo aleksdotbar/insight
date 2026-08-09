@@ -264,6 +264,13 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.persons_seed.list")
         .summary("List persons-seed operations")
         .authenticated()
+        .query_param("status", false, "Filter by operation status")
+        .query_param_typed(
+            "limit",
+            false,
+            "Cap on returned operations; a value below 1 clamps to 1",
+            "integer",
+        )
         .no_license_required()
         .json_response_with_schema::<seed::PersonsSeedListResponse>(
             openapi,
@@ -296,6 +303,13 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.persons_sync.list")
         .summary("List persons-sync operations")
         .authenticated()
+        .query_param("status", false, "Filter by operation status")
+        .query_param_typed(
+            "limit",
+            false,
+            "Cap on returned operations; a value below 1 clamps to 1",
+            "integer",
+        )
         .no_license_required()
         .json_response_with_schema::<sync::PersonsSyncListResponse>(
             openapi,
@@ -363,6 +377,20 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.person_roles.list")
         .summary("List role assignments (admin)")
         .authenticated()
+        .query_param("person", false, "Only assignments of this person")
+        .query_param("role", false, "Only assignments of this role")
+        .query_param_typed(
+            "active",
+            false,
+            "Only assignments still in force",
+            "boolean",
+        )
+        .query_param_typed(
+            "limit",
+            false,
+            "Cap on returned assignments; a value below 1 clamps to 1",
+            "integer",
+        )
         .no_license_required()
         .json_response_with_schema::<person_roles::PersonRoleListResponse>(
             openapi,
@@ -378,6 +406,8 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Revoke a role assignment (admin)")
         .authenticated()
         .path_param("id", "Role assignment id")
+        .json_request::<person_roles::RevokeReasonRequest>(openapi, "Why the assignment is revoked")
+        .request_optional()
         .no_license_required()
         .no_content_response(StatusCode::NO_CONTENT, "Assignment revoked")
         .standard_errors(openapi)
@@ -404,6 +434,15 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.visibility.list")
         .summary("List visibility grants (admin)")
         .authenticated()
+        .query_param("viewer", false, "Only grants held by this viewer")
+        .query_param("viewed", false, "Only grants over this person")
+        .query_param_typed("active", false, "Only grants still in force", "boolean")
+        .query_param_typed(
+            "limit",
+            false,
+            "Cap on returned grants; a value below 1 clamps to 1",
+            "integer",
+        )
         .no_license_required()
         .json_response_with_schema::<visibility::VisibilityListResponse>(
             openapi,
@@ -419,6 +458,8 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Revoke a visibility grant (admin)")
         .authenticated()
         .path_param("id", "Visibility grant id")
+        .json_request::<visibility::RevokeReasonRequest>(openapi, "Why the grant is revoked")
+        .request_optional()
         .no_license_required()
         .no_content_response(StatusCode::NO_CONTENT, "Grant revoked")
         .standard_errors(openapi)
@@ -430,6 +471,17 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.subchart.forest")
         .summary("Org forest the caller can see")
         .authenticated()
+        .query_param_typed(
+            "depth",
+            false,
+            "Max descent depth (>= 0); capped at the server's maximum, which is also the default",
+            "integer",
+        )
+        .query_param(
+            "valid_at",
+            false,
+            "Point-in-time lens (ISO-8601 / RFC-3339); absent reads the current state",
+        )
         .no_license_required()
         .json_response_with_schema::<subchart::SubchartForestResponse>(
             openapi,
@@ -445,6 +497,17 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Depth-bounded org subtree rooted at a person")
         .authenticated()
         .path_param("person_id", "Person the subtree is rooted at")
+        .query_param_typed(
+            "depth",
+            false,
+            "Max descent depth (>= 0); capped at the server's maximum, which is also the default",
+            "integer",
+        )
+        .query_param(
+            "valid_at",
+            false,
+            "Point-in-time lens (ISO-8601 / RFC-3339); absent reads the current state",
+        )
         .no_license_required()
         .json_response_with_schema::<subchart::SubchartResponse>(
             openapi,

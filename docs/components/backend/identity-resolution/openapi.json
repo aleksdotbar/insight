@@ -984,6 +984,18 @@
         ],
         "type": "object"
       },
+      "RevokeReasonRequest": {
+        "description": "Optional `DELETE` body carrying a revoke reason.",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "RoleListResponse": {
         "description": "List wrapper.",
         "properties": {
@@ -1221,6 +1233,44 @@
     "/v1/person-roles": {
       "get": {
         "operationId": "identity_resolution.person_roles.list",
+        "parameters": [
+          {
+            "description": "Only assignments of this person",
+            "in": "query",
+            "name": "person",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only assignments of this role",
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only assignments still in force",
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Cap on returned assignments; a value below 1 clamps to 1",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1427,6 +1477,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeReasonRequest"
+              }
+            }
+          },
+          "description": "Why the assignment is revoked"
+        },
         "responses": {
           "204": {
             "description": "Assignment revoked"
@@ -1513,6 +1573,26 @@
     "/v1/persons-seed": {
       "get": {
         "operationId": "identity_resolution.persons_seed.list",
+        "parameters": [
+          {
+            "description": "Filter by operation status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cap on returned operations; a value below 1 clamps to 1",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1710,6 +1790,26 @@
     "/v1/persons-sync": {
       "get": {
         "operationId": "identity_resolution.persons_sync.list",
+        "parameters": [
+          {
+            "description": "Filter by operation status",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cap on returned operations; a value below 1 clamps to 1",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3049,6 +3149,26 @@
     "/v1/subchart": {
       "get": {
         "operationId": "identity_resolution.subchart.forest",
+        "parameters": [
+          {
+            "description": "Max descent depth (>= 0); capped at the server's maximum, which is also the default",
+            "in": "query",
+            "name": "depth",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Point-in-time lens (ISO-8601 / RFC-3339); absent reads the current state",
+            "in": "query",
+            "name": "valid_at",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3151,6 +3271,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Max descent depth (>= 0); capped at the server's maximum, which is also the default",
+            "in": "query",
+            "name": "depth",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Point-in-time lens (ISO-8601 / RFC-3339); absent reads the current state",
+            "in": "query",
+            "name": "valid_at",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3246,6 +3384,44 @@
     "/v1/visibility": {
       "get": {
         "operationId": "identity_resolution.visibility.list",
+        "parameters": [
+          {
+            "description": "Only grants held by this viewer",
+            "in": "query",
+            "name": "viewer",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only grants over this person",
+            "in": "query",
+            "name": "viewed",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only grants still in force",
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Cap on returned grants; a value below 1 clamps to 1",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3452,6 +3628,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeReasonRequest"
+              }
+            }
+          },
+          "description": "Why the grant is revoked"
+        },
         "responses": {
           "204": {
             "description": "Grant revoked"
