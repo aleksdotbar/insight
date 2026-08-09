@@ -1,11 +1,11 @@
-FROM node:25-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-# Not corepack: node:25 dropped it, and its package collides with the yarn bins
-# this image already holds.
+# Not corepack: node images past 24 no longer ship it, and its package collides
+# with the yarn bins this image already holds.
 RUN npm install -g "pnpm@$(node -p 'require("/app/package.json").packageManager.split("@")[1]')"
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
