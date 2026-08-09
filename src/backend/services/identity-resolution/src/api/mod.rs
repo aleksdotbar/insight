@@ -20,7 +20,7 @@ use axum::Extension;
 use axum::Router;
 use axum::http::StatusCode;
 use sea_orm::DatabaseConnection;
-use toolkit::api::{OpenApiRegistry, OperationBuilder};
+use toolkit::api::{OpenApiInfo, OpenApiRegistry, OpenApiRegistryImpl, OperationBuilder};
 
 use crate::config::GearConfig;
 use crate::domain::profile;
@@ -50,6 +50,43 @@ pub fn register_routes(
     let api = build_operations(Router::new(), openapi).layer(Extension(state));
 
     host_router.merge(api)
+}
+
+/// Title/version/description of the emitted document. Kept in step with the
+/// `openapi` block of `config/insight.yaml`, which the live gear reads: the two
+/// describe the same surface and should not disagree.
+fn openapi_info() -> OpenApiInfo {
+    OpenApiInfo {
+        title: "Insight Identity Resolution API".to_owned(),
+        version: "1.0.0".to_owned(),
+        description: Some(
+            "Person identity for the product: profile resolution, the operator \
+             correction surface over account-to-person bindings, org-chart reads, \
+             roles and visibility, plus the persons-seed and persons-sync \
+             operation journals. The API Gateway mounts this service at \
+             /api/identity."
+                .to_owned(),
+        ),
+        servers: Vec::new(),
+    }
+}
+
+/// Build the identity-resolution `OpenAPI` document **offline** — no
+/// `AppState`, DB or HTTP listener. Backs the `identity-resolution openapi`
+/// subcommand (committed-doc regeneration + drift gate), reusing the exact
+/// `build_operations` route table the live gear serves, so the two cannot
+/// diverge.
+///
+/// # Errors
+///
+/// Returns an error if the registry cannot assemble the document.
+pub fn openapi_document() -> anyhow::Result<utoipa::openapi::OpenApi> {
+    let openapi = OpenApiRegistryImpl::new();
+    let _ = build_operations(Router::new(), &openapi);
+
+    openapi
+        .build_openapi(&openapi_info())
+        .map_err(|e| anyhow::anyhow!("failed to build identity-resolution OpenAPI document: {e}"))
 }
 
 /// Declare each operation via the toolkit `OperationBuilder` (records the route
@@ -156,6 +193,13 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Accounts awaiting an operator decision, with the resolution rates")
         .authenticated()
         .no_license_required()
+        .query_param_typed(
+            "limit",
+            false,
+            "Cap on returned items (1..=1000, default 100). The rates always \
+             cover every observed account, whatever the cap.",
+            "integer",
+        )
         .json_response_with_schema::<resolution::AttentionResponse>(
             openapi,
             StatusCode::OK,
@@ -170,6 +214,9 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Current binding of an account and every decision behind it")
         .authenticated()
         .no_license_required()
+        .path_param("source", "Connector type, e.g. `github`")
+        .path_param("source_id", "Connector instance id")
+        .path_param("account_id", "Account id within that connector instance")
         .json_response_with_schema::<resolution::AccountBindingResponse>(
             openapi,
             StatusCode::OK,
@@ -184,6 +231,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .summary("Every account bound to a person, with the values behind each link")
         .authenticated()
         .no_license_required()
+        .path_param("person_id", "Person whose accounts to list")
         .json_response_with_schema::<resolution::PersonAccountsResponse>(
             openapi,
             StatusCode::OK,
@@ -201,6 +249,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.persons_seed.get")
         .summary("Get a persons-seed operation")
         .authenticated()
+        .path_param("id", "Operation id")
         .no_license_required()
         .json_response_with_schema::<seed::PersonsSeedOperationResponse>(
             openapi,
@@ -232,6 +281,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.persons_sync.get")
         .summary("Get a persons-sync operation")
         .authenticated()
+        .path_param("id", "Operation id")
         .no_license_required()
         .json_response_with_schema::<sync::PersonsSyncOperationResponse>(
             openapi,
@@ -286,6 +336,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.roles.delete")
         .summary("Delete a role (admin)")
         .authenticated()
+        .path_param("id", "Role id")
         .no_license_required()
         .no_content_response(StatusCode::NO_CONTENT, "Role deleted")
         .standard_errors(openapi)
@@ -326,6 +377,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.person_roles.delete")
         .summary("Revoke a role assignment (admin)")
         .authenticated()
+        .path_param("id", "Role assignment id")
         .no_license_required()
         .no_content_response(StatusCode::NO_CONTENT, "Assignment revoked")
         .standard_errors(openapi)
@@ -366,6 +418,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.visibility.delete")
         .summary("Revoke a visibility grant (admin)")
         .authenticated()
+        .path_param("id", "Visibility grant id")
         .no_license_required()
         .no_content_response(StatusCode::NO_CONTENT, "Grant revoked")
         .standard_errors(openapi)
@@ -391,6 +444,7 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .operation_id("identity_resolution.subchart.get")
         .summary("Depth-bounded org subtree rooted at a person")
         .authenticated()
+        .path_param("person_id", "Person the subtree is rooted at")
         .no_license_required()
         .json_response_with_schema::<subchart::SubchartResponse>(
             openapi,
@@ -415,4 +469,78 @@ fn build_operations(router: Router, openapi: &dyn OpenApiRegistry) -> Router {
         .standard_errors(openapi)
         .handler(visible_persons::filter_visible_persons)
         .register(router, openapi)
+}
+
+#[cfg(test)]
+mod openapi_tests {
+    use utoipa::openapi::path::ParameterIn;
+
+    use super::*;
+
+    #[test]
+    fn the_document_builds_without_state_or_backends() -> anyhow::Result<()> {
+        let document = openapi_document()?;
+
+        assert!(
+            document.paths.paths.contains_key("/v1/resolution/bind"),
+            "the correction surface must be described: {:?}",
+            document.paths.paths.keys().collect::<Vec<_>>()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn the_internal_s2s_routes_stay_out_of_the_document() -> anyhow::Result<()> {
+        let document = openapi_document()?;
+
+        for path in document.paths.paths.keys() {
+            assert!(
+                !path.starts_with("/internal/"),
+                "internal S2S route leaked into the published contract: {path}"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// A templated path whose parameters are undeclared is not a valid OpenAPI
+    /// document: a generated client has nothing to fill `{source_id}` from.
+    #[test]
+    fn every_templated_path_declares_its_parameters() -> anyhow::Result<()> {
+        let document = openapi_document()?;
+
+        for (path, item) in &document.paths.paths {
+            let templated = path.matches('{').count();
+            if templated == 0 {
+                continue;
+            }
+
+            let methods = [
+                ("get", &item.get),
+                ("post", &item.post),
+                ("put", &item.put),
+                ("patch", &item.patch),
+                ("delete", &item.delete),
+            ];
+
+            for (method, operation) in methods {
+                let Some(operation) = operation else { continue };
+
+                let declared = operation.parameters.as_ref().map_or(0, |params| {
+                    params
+                        .iter()
+                        .filter(|p| p.parameter_in == ParameterIn::Path)
+                        .count()
+                });
+
+                assert_eq!(
+                    declared, templated,
+                    "{method} {path} templates {templated} parameter(s), declares {declared}"
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
