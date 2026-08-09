@@ -97,20 +97,26 @@ const EXIT_SEED_GUARD: i32 = 3;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
-    // Layered config: defaults -> YAML -> env (APP__*). Logging/OTel are
-    // initialized by the bootstrap runtime for the server path; subcommands
-    // run outside it and install their own plain subscriber.
-    let config = AppConfig::load_or_default(cli.config.as_ref())?;
-    match cli.command.unwrap_or(Commands::Run) {
-        Commands::Run => run_server(config).await,
+    let mut cli = Cli::parse();
+    let command = cli.command.take().unwrap_or(Commands::Run);
+
+    // Layered config: defaults -> YAML -> env (APP__*). Loaded per command
+    // rather than up front, so the offline `openapi` emit cannot fail on a
+    // config file it never reads. Logging/OTel are initialized by the bootstrap
+    // runtime for the server path; subcommands run outside it and install their
+    // own plain subscriber.
+    let load_config = || AppConfig::load_or_default(cli.config.as_ref());
+
+    match command {
         Commands::Openapi => print_openapi(),
+        Commands::Run => run_server(load_config()?).await,
         Commands::Migrate => {
             init_subcommand_logging();
-            gear::run_migrate(&config).await
+            gear::run_migrate(&load_config()?).await
         }
         Commands::Seed { mode, force } => {
             init_subcommand_logging();
+            let config = load_config()?;
             match gear::run_seed(&config, &mode, force).await {
                 Ok(()) => Ok(()),
                 Err(seed_runner::SeedRunError::LockBusy) => {
@@ -129,6 +135,7 @@ async fn main() -> Result<()> {
         }
         Commands::Sync { force } => {
             init_subcommand_logging();
+            let config = load_config()?;
             match gear::run_sync(&config, force).await {
                 Ok(()) => Ok(()),
                 Err(sync_runner::SyncRunError::LockBusy) => {
