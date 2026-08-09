@@ -102,6 +102,7 @@ export default defineConfig({
             "@base-ui/react/separator",
             "@base-ui/react/switch",
             "@base-ui/react/tooltip",
+            "@sentry/react",
             "@tanstack/react-virtual",
             "react-day-picker",
             "react-error-boundary",

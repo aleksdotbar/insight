@@ -17,6 +17,11 @@ ingress:
   annotations: {}
   host: ""
 
+sentry:
+  # Sentry origin the SPA posts to, e.g. "https://sentry.example.com".
+  # Empty leaves it out of the CSP, which blocks every event.
+  connectSrc: ""
+
 resources:
   requests:
     cpu: 50m
