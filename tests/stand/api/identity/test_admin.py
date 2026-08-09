@@ -26,13 +26,14 @@ from pydantic import BaseModel
 
 from .. import scratch
 from ..schemas import (
-    OperationList,
     PersonRole,
     PersonRoleList,
     ProblemDocument,
     Role,
     RoleList,
+    SeedOperationList,
     SubchartForest,
+    SyncOperationList,
     Visibility,
     VisibilityList,
 )
@@ -45,8 +46,8 @@ ADMIN_LISTINGS_WITH_MODELS = (
     ("/v1/roles", RoleList),
     ("/v1/person-roles", PersonRoleList),
     ("/v1/visibility", VisibilityList),
-    ("/v1/persons-seed", OperationList),
-    ("/v1/persons-sync", OperationList),
+    ("/v1/persons-seed", SeedOperationList),
+    ("/v1/persons-sync", SyncOperationList),
 )
 
 
