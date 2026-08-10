@@ -203,6 +203,20 @@
           "source_key": {
             "type": "string"
           },
+          "subject": {
+            "description": "The single topic this metric groups under within its family; a\nlowercase snake-case slug. Optional for custom metrics.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "description": "Cross-cutting filter labels; lowercase snake-case slugs, unique per\nmetric. Optional — defaults to empty.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "transform": {
             "oneOf": [
               {
@@ -280,6 +294,13 @@
           },
           "metric_key": {
             "type": "string"
+          },
+          "subject": {
+            "description": "Grouping subject, so the management list can partition custom metrics\nby topic like the definitions listing; absent when none is declared.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [

@@ -617,6 +617,7 @@ class CustomMetricSummary(BaseModel):
     entity_type: str
     label: str
     metric_key: str
+    subject: str | None = Field(None, description='Grouping subject, so the management list can partition custom metrics\nby topic like the definitions listing; absent when none is declared.')
 
 
 class MetricDefinitionView(BaseModel):
@@ -779,6 +780,8 @@ class CustomMetric(BaseModel):
     scale: float | None = None
     short_label: str | None = None
     source_key: str
+    subject: str | None = Field(None, description='The single topic this metric groups under within its family; a\nlowercase snake-case slug. Optional for custom metrics.')
+    tags: list[str] | None = Field(None, description='Cross-cutting filter labels; lowercase snake-case slugs, unique per\nmetric. Optional — defaults to empty.')
     transform: ValueTransform | None = None
     unit: str | None = None
 
