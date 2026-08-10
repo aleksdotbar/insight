@@ -322,12 +322,23 @@ mod tests {
         }
     }
 
+    // Width of metric_definitions.subject and metric_definition_tags.tag. A
+    // longer authored value would pass shape checks but fail or truncate at
+    // reconcile time, so the bound is enforced here at build time.
+    const METADATA_MAX_LEN: usize = 64;
+
     #[test]
     fn every_metric_declares_a_shaped_subject() {
         for metric in builtin_metrics() {
             assert!(
                 is_snake_case(&metric.subject),
                 "{} declares an unshaped subject {:?}",
+                metric.metric_key,
+                metric.subject
+            );
+            assert!(
+                metric.subject.len() <= METADATA_MAX_LEN,
+                "{} subject {:?} exceeds {METADATA_MAX_LEN} chars",
                 metric.metric_key,
                 metric.subject
             );
@@ -342,6 +353,11 @@ mod tests {
                 assert!(
                     is_snake_case(tag),
                     "{} declares an unshaped tag {tag:?}",
+                    metric.metric_key
+                );
+                assert!(
+                    tag.len() <= METADATA_MAX_LEN,
+                    "{} tag {tag:?} exceeds {METADATA_MAX_LEN} chars",
                     metric.metric_key
                 );
                 assert!(

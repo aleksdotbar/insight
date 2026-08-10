@@ -1,4 +1,4 @@
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement, Value};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement, TransactionTrait, Value};
 use uuid::Uuid;
 
 use crate::domain::metric_definitions::builtin::{
@@ -10,13 +10,20 @@ pub async fn reconcile_builtin_definitions(db: &DatabaseConnection) -> Result<()
         reconcile_source(db, builtin_source).await?;
     }
 
+    // One metric's definition and all its child rows (inputs, dimensions, tags)
+    // converge in a single transaction: a mid-way failure never leaves a metric
+    // with a partial child set, and a concurrent reconciler on another replica
+    // sees the whole prior set or the whole new one, never a delete-in-progress.
+    // DESIGN requires builtin upserts to be idempotent and race-safe.
     for metric in builtin_metrics() {
-        let source_id = fetch_source_id(db, &metric.source_key).await?;
-        upsert_metric(db, metric).await?;
-        let metric_id = fetch_metric_id(db, &metric.metric_key).await?;
-        replace_inputs(db, source_id, metric_id, &metric.inputs).await?;
-        replace_dimensions(db, source_id, metric_id, &metric.dimensions).await?;
-        replace_tags(db, metric_id, &metric.tags).await?;
+        let txn = db.begin().await?;
+        let source_id = fetch_source_id(&txn, &metric.source_key).await?;
+        upsert_metric(&txn, metric).await?;
+        let metric_id = fetch_metric_id(&txn, &metric.metric_key).await?;
+        replace_inputs(&txn, source_id, metric_id, &metric.inputs).await?;
+        replace_dimensions(&txn, source_id, metric_id, &metric.dimensions).await?;
+        replace_tags(&txn, metric_id, &metric.tags).await?;
+        txn.commit().await?;
     }
 
     disable_missing_builtin_rows(db).await?;
@@ -97,7 +104,7 @@ async fn upsert_source(
     Ok(())
 }
 
-async fn upsert_metric(db: &DatabaseConnection, metric: &MetricSeed) -> Result<(), DbErr> {
+async fn upsert_metric(db: &impl ConnectionTrait, metric: &MetricSeed) -> Result<(), DbErr> {
     db.execute(Statement::from_sql_and_values(
         db.get_database_backend(),
         "INSERT INTO metric_definitions \
@@ -153,7 +160,7 @@ async fn upsert_metric(db: &DatabaseConnection, metric: &MetricSeed) -> Result<(
 }
 
 async fn replace_inputs(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     source_id: Uuid,
     metric_id: Uuid,
     inputs: &[InputSeed],
@@ -185,7 +192,7 @@ async fn replace_inputs(
 }
 
 async fn replace_dimensions(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     source_id: Uuid,
     metric_id: Uuid,
     dimensions: &[String],
@@ -217,7 +224,7 @@ async fn replace_dimensions(
 }
 
 async fn replace_tags(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     metric_id: Uuid,
     tags: &[String],
 ) -> Result<(), DbErr> {
@@ -325,7 +332,7 @@ async fn disable_missing(
     Ok(())
 }
 
-async fn fetch_source_id(db: &DatabaseConnection, source_key: &str) -> Result<Uuid, DbErr> {
+async fn fetch_source_id(db: &impl ConnectionTrait, source_key: &str) -> Result<Uuid, DbErr> {
     fetch_uuid(
         db,
         "SELECT id FROM metric_sources WHERE tenant_id IS NULL AND source_key = ?",
@@ -336,7 +343,7 @@ async fn fetch_source_id(db: &DatabaseConnection, source_key: &str) -> Result<Uu
 }
 
 async fn fetch_measure_id(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     source_id: Uuid,
     measure_key: &str,
 ) -> Result<Uuid, DbErr> {
@@ -350,7 +357,7 @@ async fn fetch_measure_id(
 }
 
 async fn fetch_source_dimension_id(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     source_id: Uuid,
     dimension_key: &str,
 ) -> Result<Uuid, DbErr> {
@@ -363,7 +370,7 @@ async fn fetch_source_dimension_id(
     .await
 }
 
-async fn fetch_metric_id(db: &DatabaseConnection, metric_key: &str) -> Result<Uuid, DbErr> {
+async fn fetch_metric_id(db: &impl ConnectionTrait, metric_key: &str) -> Result<Uuid, DbErr> {
     fetch_uuid(
         db,
         "SELECT id FROM metric_definitions WHERE tenant_id IS NULL AND metric_key = ?",
@@ -374,7 +381,7 @@ async fn fetch_metric_id(db: &DatabaseConnection, metric_key: &str) -> Result<Uu
 }
 
 async fn fetch_uuid(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     sql: &str,
     values: &[Value],
     key: &str,
