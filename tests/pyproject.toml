@@ -90,7 +90,11 @@ target-version = "py313"
 # from this one because `ruff check --fix` would edit the files and then
 # `generate_schemas.py --check` reports them stale — the two checks would fight
 # every time, and the drift check is the one that matters.
-extend-exclude = ["stand/api/schemas/analytics.py", "stand/api/schemas/authenticator.py"]
+extend-exclude = [
+    "stand/api/schemas/analytics.py",
+    "stand/api/schemas/authenticator.py",
+    "stand/api/schemas/identity.py",
+]
 
 [tool.ruff.lint]
 # Same pragmatic strict set as src/ingestion/tools/seed/pyproject.toml.
