@@ -525,7 +525,10 @@ function CoverageLevelsSection({
           be seen, not parsed. */}
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-4xl font-semibold tabular-nums">
-          {thin}
+          {/* Same amber as the rows it is the sum of. The link between the
+              number and the block of bars is the one thing a reader has to
+              make unaided, and colour makes it without a caption. */}
+          <span className="text-amber-500">{thin}</span>
           <span className="text-muted-foreground">/{counted}</span>
         </span>
         <p className="max-w-md text-sm text-muted-foreground">
@@ -564,19 +567,38 @@ function CoverageLevelsSection({
         <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
           By person · parts we can see
         </p>
-        {levels.map(([level, n]) => (
-          <div key={level} className="flex items-center gap-3 text-sm">
-            <span className="w-36 shrink-0 text-muted-foreground tabular-nums">
-              {level} of {partCount}
-            </span>
-            <CoverageBar
-              filled={n}
-              total={counted}
-              warn={level < partCount / 2}
-            />
-            <span className="w-14 shrink-0 text-right tabular-nums">{n}</span>
-          </div>
-        ))}
+        {levels.map(([level, n], i) => {
+          const thinHere = level < partCount / 2;
+          // The rule sits where it applies. Without it the reader has to work
+          // out which rows the headline counted, and having to work it out is
+          // the same as not knowing it.
+          const boundary =
+            thinHere && !(levels[i - 1] && levels[i - 1]![0] < partCount / 2);
+          return (
+            <div key={level} className="flex flex-col gap-2">
+              {boundary && (
+                <div className="mt-1 flex items-center gap-3">
+                  <span className="w-36 shrink-0 text-xs text-amber-600 dark:text-amber-500">
+                    fewer than half
+                  </span>
+                  <span className="h-px flex-1 bg-amber-500/40" />
+                  <span className="w-14 shrink-0 text-right text-xs font-medium text-amber-600 tabular-nums dark:text-amber-500">
+                    {thin}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-3 text-sm">
+                <span className="w-36 shrink-0 text-muted-foreground tabular-nums">
+                  {level} of {partCount}
+                </span>
+                <CoverageBar filled={n} total={counted} warn={thinHere} />
+                <span className="w-14 shrink-0 text-right tabular-nums">
+                  {n}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <p className="text-xs text-muted-foreground">
