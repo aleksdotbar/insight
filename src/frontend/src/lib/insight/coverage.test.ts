@@ -16,6 +16,7 @@ import {
   partState,
   personCoverage,
   reachableMetricKeys,
+  thinlyCovered,
   unreachableParts,
 } from "@/lib/insight/coverage";
 import { normalizeMetricResults } from "@/lib/metrics/collection";
@@ -262,5 +263,34 @@ describe("unreachableParts", () => {
     // the guarantee: there is nowhere to put one.
     const [only] = unreachableParts(GROUPS, new Set(["git.commits"]));
     expect(Object.keys(only)).toEqual(["id", "title"]);
+  });
+});
+
+describe("thinlyCovered", () => {
+  const at = (level: number): ReturnType<typeof personCoverage> => ({
+    entityId: `p${level}`,
+    states: new Map(),
+    level,
+  });
+
+  it("counts people seen in fewer than half their parts", () => {
+    // With five parts the boundary is unambiguous: two is under half, three is
+    // over, and the midpoint is not a level anyone can be at.
+    expect(thinlyCovered([at(0), at(1), at(2), at(3), at(4), at(5)], 5)).toBe(3);
+  });
+
+  it("puts exactly half on the covered side", () => {
+    // Four parts, two seen: half is not "fewer than half". Stated because the
+    // line this feeds is about whom the product cannot carry, and drawing an
+    // exact half into that group would overstate the problem.
+    expect(thinlyCovered([at(2)], 4)).toBe(0);
+  });
+
+  it("counts nobody when everyone is fully covered", () => {
+    expect(thinlyCovered([at(5), at(5)], 5)).toBe(0);
+  });
+
+  it("counts everybody when nothing reaches us", () => {
+    expect(thinlyCovered([at(0), at(0)], 5)).toBe(2);
   });
 });

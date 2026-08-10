@@ -502,7 +502,8 @@ function CoverageLevelsSection({
 }: {
   memberIds: readonly string[];
 }) {
-  const { distribution, unreachable, isPending } = useScopeCoverage(memberIds);
+  const { distribution, unreachable, thin, isPending } =
+    useScopeCoverage(memberIds);
   if (isPending) return <Pending label="Reading coverage…" />;
   if (distribution.counted === 0) return null;
 
@@ -517,10 +518,34 @@ function CoverageLevelsSection({
       </p>
       <Card>
         <CardContent className="flex flex-col gap-4 p-4">
-          {/* The bars are unreadable without this: "4 of 5" means nothing
-              until the reader knows what the five are and what makes one
-              count. Naming them here rather than in a tooltip because it is
-              the first thing anyone asks and the answer is one sentence. */}
+          {/* The finding leads, not the scale. A distribution describes a
+              shape; what a reader needs first is whether the rest of the
+              product can bear weight and for whom it cannot. Without this line
+              the bars are a chart in search of a reason to be read. */}
+          <p className="text-sm">
+            {thin === 0 ? (
+              <>
+                Everyone here is seen in at least half of their work. Nothing on
+                the other screens rests on a sliver of what somebody does.
+              </>
+            ) : (
+              <>
+                <span className="font-medium">
+                  {thin} of {distribution.counted}{" "}
+                  {thin === 1 ? "person is" : "people are"} seen in fewer than
+                  half of their work.
+                </span>{" "}
+                Every metric, comparison and flag this product shows about{" "}
+                {thin === 1 ? "them" : "those people"} rests on that fraction of
+                what they do — which is worth knowing before believing any of
+                it.
+              </>
+            )}
+          </p>
+
+          {/* Then the scale: "4 of 5" means nothing until the reader knows
+              what the five are and what makes one count. In place rather than
+              in a tooltip because it is the first thing anyone asks. */}
           <p className="text-sm text-muted-foreground">
             Each person is measured in up to {parts} parts of their work —{" "}
             <span className="text-foreground">

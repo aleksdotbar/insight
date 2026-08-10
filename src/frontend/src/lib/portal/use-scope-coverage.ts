@@ -4,6 +4,7 @@ import {
   coverageDistribution,
   personCoverage,
   reachableMetricKeys,
+  thinlyCovered,
   unreachableParts,
   type CoverageDistribution,
   type PersonCoverage,
@@ -21,6 +22,8 @@ export interface ScopeCoverage {
   people: readonly PersonCoverage[];
   /** Parts nothing reaches for this tenant — see `unreachableParts`. */
   unreachable: readonly UnreachablePart[];
+  /** People seen in fewer than half their parts — the screen's finding. */
+  thin: number;
   isPending: boolean;
 }
 
@@ -90,6 +93,7 @@ export function useScopeCoverage(
     return {
       distribution: coverageDistribution(people, GROUPS.length),
       people,
+      thin: thinlyCovered(people, GROUPS.length),
       unreachable: unreachableParts(GROUPS, reachable),
       isPending:
         definitions.isPending ||

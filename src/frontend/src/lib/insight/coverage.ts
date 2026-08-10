@@ -131,6 +131,27 @@ export function coverageDistribution(
   return { counted: people.length, byLevel, unlinked };
 }
 
+/**
+ * How many people are seen in fewer than half the parts of their work.
+ *
+ * The one number on this screen that is a finding rather than a description.
+ * A distribution shows a shape; what a reader needs from it is whether the
+ * rest of the product can bear weight, and for whom it cannot — every metric,
+ * comparison and flag about these people rests on that fraction of what they
+ * do.
+ *
+ * "Fewer than half" rather than a tuned threshold: it needs no defending and
+ * means the same when the number of parts changes, which a fixed count would
+ * not. With an odd number of parts the midpoint is not itself reachable, so
+ * the boundary is unambiguous either way.
+ */
+export function thinlyCovered(
+  people: readonly PersonCoverage[],
+  parts: number,
+): number {
+  return people.filter((p) => p.level < parts / 2).length;
+}
+
 export interface UnreachablePart {
   id: GroupId;
   title: string;
