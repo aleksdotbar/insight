@@ -14,11 +14,18 @@ import { GROUPS } from "@/lib/insight/groups";
 import { normalizeMetricResults } from "@/lib/metrics/collection";
 
 const mocks = vi.hoisted(() => ({
+  definitions: [] as unknown[],
   byKey: new Map<string, unknown>(),
   isPending: false,
   cohort: [] as string[],
 }));
 
+vi.mock("@/queries/metric-definitions", () => ({
+  useMetricDefinitionsResponse: () => ({
+    data: { metrics: mocks.definitions },
+    isPending: false,
+  }),
+}));
 vi.mock("@/queries/metric-results", () => ({
   useMetricCollectionSet: () =>
     new Map(
@@ -123,15 +130,55 @@ describe("usePersonSectionStandings", () => {
 
   it("separates a section this person is absent from one nobody is measured in", () => {
     // Both arrive as a null own value, and the page says different things
-    // about them: a pool that reads means the measurement works.
+    // about them. Which one is true is read from the tenant's definition
+    // listing, never from whether this viewer's comparison pool happens to
+    // hold readings: a viewer who can see few people would otherwise report a
+    // live connector as missing, and the smaller their reach the more often.
     mocks.byKey = normalizeMetricResults([metric("git.commits", null, 20)]);
+
+    mocks.definitions = [
+      {
+        metric_key: "git.commits",
+        is_enabled: true,
+        schema_status: "ok",
+        schema_error_code: null,
+        last_observed_date: "2026-07-26",
+      },
+    ];
     expect(standings().find((s) => s.id === "git_output")!.peersHaveData).toBe(
       true
     );
 
-    mocks.byKey = normalizeMetricResults([metric("git.commits", null, 20, 0)]);
+    // Same person, same empty own value — only the listing changed.
+    mocks.definitions = [
+      {
+        metric_key: "git.commits",
+        is_enabled: true,
+        schema_status: "ok",
+        schema_error_code: null,
+        last_observed_date: null,
+      },
+    ];
     expect(standings().find((s) => s.id === "git_output")!.peersHaveData).toBe(
       false
+    );
+  });
+
+  it("does not call a section unmeasured because this viewer's pool is empty", () => {
+    // The regression this replaced: an empty pool used to mean "no data
+    // reaches us". It now means nothing at all — the listing decides.
+    mocks.byKey = normalizeMetricResults([metric("git.commits", null, 20, 0)]);
+    mocks.definitions = [
+      {
+        metric_key: "git.commits",
+        is_enabled: true,
+        schema_status: "ok",
+        schema_error_code: null,
+        last_observed_date: "2026-07-26",
+      },
+    ];
+    expect(standings().find((s) => s.id === "git_output")!.peersHaveData).toBe(
+      true
     );
   });
 
