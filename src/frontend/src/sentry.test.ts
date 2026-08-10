@@ -65,9 +65,10 @@ describe("initSentry", () => {
     expect(() => initWith()).not.toThrow();
   });
 
-  // What the chart renders when the operator leaves `sentry.dsn` unset.
+  // What the chart renders when the operator leaves `sentry.dsn` unset. The
+  // env var is set here so the case fails if the read ever falls through it.
   it("does nothing when the runtime config carries an empty DSN", () => {
-    vi.stubEnv("VITE_SENTRY_DSN", "");
+    vi.stubEnv("VITE_SENTRY_DSN", DSN);
     vi.stubGlobal("__INSIGHT_CONFIG__", { sentryDsn: "" });
 
     initSentry(ROUTER);

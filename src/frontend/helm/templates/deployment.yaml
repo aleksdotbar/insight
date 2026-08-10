@@ -13,13 +13,12 @@ spec:
     metadata:
       labels:
         {{- include "insight-frontend.selectorLabels" . | nindent 8 }}
+      # `subPath` mounts never refresh in place, so the pod must roll when the
+      # rendered config changes. Merged rather than listed alongside
+      # podAnnotations, which would emit the key twice if an operator set it.
+      {{- $checksum := dict "checksum/runtime-config" (include (print $.Template.BasePath "/configmap.yaml") . | sha256sum) }}
       annotations:
-        # `subPath` mounts never refresh in place, so the pod must roll when
-        # the rendered config changes.
-        checksum/runtime-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- toYaml (merge $checksum (default dict .Values.podAnnotations)) | nindent 8 }}
     spec:
       {{- with .Values.global }}
       {{- with .imagePullSecrets }}
