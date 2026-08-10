@@ -8,9 +8,10 @@ they close independently, and an open one suppresses the next night's duplicate.
 Values are never included — the issue names the detector, the path and the
 commit, which is what the assignee needs to find it.
 
-    trufflehog_notify.py NEW.json REPO [--dry-run]
+    trufflehog_notify.py NEW.json REPO AUTHOR_MAP [--dry-run]
 """
 import json
+import re
 import subprocess
 import sys
 
@@ -20,12 +21,47 @@ def gh(*args: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def author_of(repo: str, sha: str, cache: dict[str, str]) -> str:
-    """GitHub login for a commit, or "" when the address is not linked to one."""
+def read_author_map(path: str) -> dict[str, str]:
+    """{email: login} for addresses GitHub cannot attribute on its own."""
+    entries = {}
+    try:
+        fh = open(path, encoding="utf-8")
+    except FileNotFoundError:
+        return entries
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                entries[parts[0].lower()] = parts[1]
+    return entries
+
+
+def address_of(raw: str) -> str:
+    """The address out of a `Name <addr>` author field."""
+    m = re.search(r"<([^>]+)>", raw or "")
+    return (m.group(1) if m else raw or "").strip().lower()
+
+
+def author_of(repo: str, sha: str, email: str, cache: dict[str, str], amap: dict[str, str]) -> str:
+    """GitHub login for a commit, or "" when neither route resolves it.
+
+    The commit's own author is only known to GitHub when the address in it is
+    attached to an account, which a work address often is not. The pull request
+    the commit arrived with names an account either way, so it is the second
+    route. The author map is the third, for addresses neither can attribute.
+    """
     if not sha:
         return ""
     if sha not in cache:
-        cache[sha] = gh("api", f"repos/{repo}/commits/{sha}", "--jq", ".author.login // empty")
+        login = gh("api", f"repos/{repo}/commits/{sha}", "--jq", ".author.login // empty")
+        if not login:
+            login = gh("api", f"repos/{repo}/commits/{sha}/pulls", "--jq", ".[0].user.login // empty")
+        if not login:
+            login = amap.get(address_of(email))
+        cache[sha] = login or ""
     return cache[sha]
 
 
@@ -38,13 +74,13 @@ def already_open(repo: str, fingerprint: str) -> bool:
 def body_for(f: dict, login: str) -> str:
     who = f"@{login}" if login else (
         f"{f['email']} (no GitHub account linked to that address)" if f.get("email")
-        else f"the author of `{f['commit']}`")
+        else f"the author of `{f['commit'][:8]}`")
     return "\n".join([
         f"The nightly secret scan reports a finding that is not in `.github/trufflehog-allowlist.txt`.",
         "",
         f"| Detector | Verified | Commit | Path | Fingerprint |",
         f"|---|---|---|---|---|",
-        f"| `{f['detector']}` | {'yes' if f['verified'] else 'no'} | `{f['commit']}` |"
+        f"| `{f['detector']}` | {'yes' if f['verified'] else 'no'} | `{f['commit'][:8]}` |"
         f" `{f['file']}`{':' + str(f['line']) if f['line'] else ''} | `{f['fp']}` |",
         "",
         f"It arrived with a commit by {who}. The value is deliberately not repeated here;"
@@ -60,19 +96,20 @@ def body_for(f: dict, login: str) -> str:
 
 
 def main() -> int:
-    new_json, repo = sys.argv[1], sys.argv[2]
-    dry = "--dry-run" in sys.argv[3:]
+    new_json, repo, author_map = sys.argv[1], sys.argv[2], sys.argv[3]
+    dry = "--dry-run" in sys.argv[4:]
 
     with open(new_json, encoding="utf-8") as fh:
         findings = json.load(fh)
 
     cache: dict[str, str] = {}
+    amap = read_author_map(author_map)
     created = skipped = 0
     for f in findings:
         if already_open(repo, f["fp"]):
             skipped += 1
             continue
-        login = author_of(repo, f.get("commit", ""), cache)
+        login = author_of(repo, f.get("commit", ""), f.get("email", ""), cache, amap)
         title = f"Possible secret in {f['file']} ({f['fp']})"
         if dry:
             print(f"would open: {title}  -> assignee: {login or '(none)'}")

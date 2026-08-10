@@ -69,7 +69,7 @@ def read_findings(path: str):
             rows.append({
                 "detector": detector,
                 "verified": bool(d.get("Verified")),
-                "commit": (loc.get("commit") or "")[:8],
+                "commit": loc.get("commit") or "",
                 "file": path_,
                 "line": loc.get("line") or "",
                 "email": loc.get("email") or "",
@@ -112,7 +112,7 @@ def main() -> int:
         w("| Detector | Verified | Commit | Path | Fingerprint |\n|---|---|---|---|---|\n")
         for r in sorted(new, key=lambda r: (not r["verified"], r["detector"])):
             loc = f":{r['line']}" if r["line"] else ""
-            w(f"| `{r['detector']}` | {'yes' if r['verified'] else 'no'} | `{r['commit']}` |"
+            w(f"| `{r['detector']}` | {'yes' if r['verified'] else 'no'} | `{r['commit'][:8]}` |"
               f" `{r['file']}`{loc} | `{r['fp']}` |\n")
         by_det = collections.Counter(r["detector"] for r in new)
         w(f"\nBy detector: {', '.join(f'{k} x{v}' for k, v in by_det.most_common())}\n")
