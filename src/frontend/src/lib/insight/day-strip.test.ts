@@ -52,6 +52,17 @@ describe("stripDays", () => {
     expect(days.every((d) => d.height === 0)).toBe(true);
   });
 
+  it("scales to the tallest day on the strip, not the tallest reading given", () => {
+    // A reading outside the window sets the height of nothing it is drawn
+    // beside; letting it into the scale makes every visible bar read short.
+    const days = stripDays(
+      [reading("2026-02-14", 100), reading("2026-03-01", 5), reading("2026-03-02", 10)],
+      "2026-03-01",
+      "2026-03-02"
+    );
+    expect(days.map((d) => d.height)).toEqual([0.5, 1]);
+  });
+
   it("refuses a range it cannot walk", () => {
     expect(stripDays([], "2026-03-05", "2026-03-01")).toEqual([]);
     expect(stripDays([], "not-a-date", "2026-03-01")).toEqual([]);

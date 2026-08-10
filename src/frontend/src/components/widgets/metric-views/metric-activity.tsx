@@ -231,6 +231,39 @@ function dayTitle(metric: NormalizedMetricResult, day: StripDay): string {
   return `${when} — ${value}`;
 }
 
+/**
+ * The strip in words, for anyone not reading it with their eyes.
+ *
+ * States the span, the busiest day and how many days hold no reading — the
+ * three things the drawing is for. The per-day readout stays a pointer
+ * enhancement over this.
+ */
+function stripSummary(
+  metric: NormalizedMetricResult,
+  days: StripDay[],
+  period: { from: string; to: string } | undefined
+): string {
+  const span = period
+    ? `${formatDate(period.from)} to ${formatDate(period.to)}`
+    : `${days.length} days`;
+  const silent = silentDays(days);
+  const busiest = days.reduce<StripDay | null>(
+    (best, day) =>
+      day.value != null && (best?.value == null || day.value > best.value)
+        ? day
+        : best,
+    null
+  );
+  const parts = [`${metric.label} by day, ${span}`];
+  if (busiest?.value != null) parts.push(`busiest ${dayTitle(metric, busiest)}`);
+  parts.push(
+    silent === 0
+      ? "every day has a reading"
+      : `${silent} ${silent === 1 ? "day has" : "days have"} no reading`
+  );
+  return `${parts.join("; ")}.`;
+}
+
 function DayStrip({
   metric,
   rows,
@@ -266,9 +299,17 @@ function DayStrip({
     <div className="flex flex-col gap-1.5">
       {/* Hover reads out in the caption below rather than in a tooltip per
           day: a month is thirty-one triggers, and a floating card that covers
-          its neighbours is the wrong shape for asking "what was that bar". */}
+          its neighbours is the wrong shape for asking "what was that bar".
+
+          The strip carries its own description rather than making each day
+          focusable. Thirty-one tab stops per strip, three strips to a section,
+          is a worse answer for a keyboard reader than one sentence saying what
+          the shape is — and the per-day figure is an enhancement over content
+          the header and caption already state. */}
       <div
         className="flex h-10 items-end gap-px border-b"
+        role="img"
+        aria-label={stripSummary(metric, days, period)}
         onPointerLeave={() => setHovered(null)}
       >
         {days.map((day, index) => (

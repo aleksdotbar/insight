@@ -44,8 +44,15 @@ export function stripDays(
   to: string
 ): StripDay[] {
   const byDate = new Map(readings.map((r) => [r.date, r]));
-  const peak = readings.reduce((max, r) => Math.max(max, r.value), 0);
-  return calendar(from, to).map((date) => {
+  const days = calendar(from, to);
+  // Scaled to the tallest day ON THE STRIP, not the tallest reading handed in.
+  // A reading outside the window would otherwise set the height of bars it is
+  // not drawn beside, and every one of them would read as smaller than it is.
+  const peak = days.reduce(
+    (max, date) => Math.max(max, byDate.get(date)?.value ?? 0),
+    0
+  );
+  return days.map((date) => {
     const reading = byDate.get(date);
     if (!reading) {
       return {
