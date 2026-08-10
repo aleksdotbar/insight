@@ -291,7 +291,14 @@ export function DomainLensView({
   if (gate) return gate;
 
   // Rule 6: nothing in this family was ever observed → the source isn't wired.
-  if (!familyObserved(grid.byKey, lensKeys, memberIds)) {
+  //
+  // Exempt: a lens that reads no metric of its own cannot be judged by whether
+  // its metrics were observed, and one whose SUBJECT is coverage must survive
+  // exactly the case this gate fires on. Telling a reader "no source is
+  // ingested" on the screen built to tell them which sources are not ingested
+  // would withhold the answer at the moment it is worth most.
+  const readsGrid = config.sections.some((s) => s.kind !== "coverage-levels");
+  if (readsGrid && !familyObserved(grid.byKey, lensKeys, memberIds)) {
     return (
       <Pending
         label={
@@ -506,10 +513,24 @@ function CoverageLevelsSection({
   return (
     <section className="flex flex-col gap-3">
       <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-        What we can see
+        Coverage per person
       </p>
       <Card>
         <CardContent className="flex flex-col gap-4 p-4">
+          {/* The bars are unreadable without this: "4 of 5" means nothing
+              until the reader knows what the five are and what makes one
+              count. Naming them here rather than in a tooltip because it is
+              the first thing anyone asks and the answer is one sentence. */}
+          <p className="text-sm text-muted-foreground">
+            Each person is measured in up to {parts} parts of their work —{" "}
+            <span className="text-foreground">
+              {GROUPS.map((g) => g.title).join(", ")}
+            </span>
+            . A part counts when any of its metrics has a value for that person
+            in this period. So <span className="text-foreground">4 of 5</span>{" "}
+            means we can see four of those five for them, and says nothing about
+            how well they did in any of them.
+          </p>
           <div className="flex flex-col gap-1.5">
             {levels.map(([level, n]) => (
               <div key={level} className="flex items-center gap-3 text-sm">
@@ -544,9 +565,11 @@ function CoverageLevelsSection({
               <span className="text-foreground">
                 {unreachable.map((u) => u.title).join(", ")}
               </span>
-              . Nobody here is measured in{" "}
-              {unreachable.length === 1 ? "it" : "them"}, so nobody can be
-              counted as covered by {unreachable.length === 1 ? "it" : "them"}.
+              , so {parts} of {parts} is out of reach for everyone here — no
+              connector feeds{" "}
+              {unreachable.length === 1 ? "that part" : "those parts"} for this
+              organisation, which is a different thing from nobody doing the
+              work.
             </p>
           )}
         </CardContent>

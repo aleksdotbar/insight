@@ -63,13 +63,14 @@ export const OVERVIEW_ITEMS: Record<string, LensConfig> = {
   },
   health: {
     title: "Overview · Health radar",
-    tagline: "domain coverage",
-    sections: [{ kind: "coverage-radar" }],
-  },
-  coverage: {
-    title: "Overview · What we can see",
-    tagline: "how much of each person's work reaches us",
-    sections: [{ kind: "coverage-levels" }],
+    tagline: "what we can see, by domain and by person",
+    // Two halves of one question, which is why they share a tab. The radar
+    // answers it per domain — what share of people show activity in each. The
+    // levels answer it per person — how many domains we see for each of them.
+    // Neither implies the other: five domains at 60% is one picture if it is
+    // the same people every time and a very different one if it is not, and
+    // only the second chart can tell those apart.
+    sections: [{ kind: "coverage-radar" }, { kind: "coverage-levels" }],
   },
   contribution: {
     title: "Overview · Contribution breakdown",

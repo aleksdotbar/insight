@@ -16,7 +16,6 @@ import {
   MessageSquare,
   Plus,
   Radar,
-  ScanEye,
   Server,
   Settings2,
   ShieldCheck,
@@ -198,9 +197,6 @@ export const ZONE_SECTIONS: Record<string, readonly PaneGroup[]> = {
         { id: "trend", label: "Trend", icon: TrendingUp },
         { id: "attention", label: "Attention needed", icon: AlertTriangle },
         { id: "health", label: "Health radar", icon: Radar },
-        // Placed after the value tabs on purpose: it answers what those tabs
-        // rest on, and a reader reaches for it when a number looks thin.
-        { id: "coverage", label: "What we can see", icon: ScanEye },
         { id: "contribution", label: "Contribution breakdown", icon: Users },
       ],
     },
