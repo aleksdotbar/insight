@@ -88,6 +88,12 @@ def main() -> int:
         if unparsable or skipped:
             w(f"_{unparsable} unparsable line(s), {skipped} non-finding record(s) skipped._\n\n")
         if not new:
+            if mode == "block" and unparsable:
+                # A truncated stream drops every finding after the break, so an empty
+                # result cannot be read as a pass.
+                w(f"Scan output was incomplete: {unparsable} unparsable line(s). Findings"
+                  " after the break are missing, so this is not a pass.\n")
+                return 1
             w(f"No new secrets. {len(known)} known finding(s) matched the allowlist.\n")
             return 0
         ver = sum(1 for r in new if r["verified"])
