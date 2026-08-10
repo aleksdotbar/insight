@@ -27,7 +27,11 @@ export type SectionSpec =
   // Overview-motivated, zone-agnostic sections (design DESIGN-2026-07-27-overview §4).
   | { kind: "attention"; metrics: readonly string[]; max: number }
   | { kind: "direction-cards"; variant: "compact" | "full" }
-  | { kind: "coverage-radar" };
+  | { kind: "coverage-radar" }
+  // How much of each person's work we can see at all, and for how many
+  // people (#2408). Fetches its own period-only collection across every
+  // group, so it contributes no keys to the zone grid.
+  | { kind: "coverage-levels" };
 
 export interface LensConfig {
   title: string;
@@ -87,6 +91,12 @@ export function sectionMetricKeys(config: LensConfig): string[] {
         break;
       case "coverage-radar":
         for (const k of headlineMetricKeys()) keys.add(k);
+        break;
+      case "coverage-levels":
+        // Deliberately none. Coverage asks whether ANY metric of a group
+        // reads, so it needs every group's keys rather than the zone's
+        // chosen few — widening the shared grid to that would make one tab
+        // pay for all of them. It fetches its own period-only collection.
         break;
       default: {
         const _exhaustive: never = s;

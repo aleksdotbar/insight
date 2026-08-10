@@ -66,6 +66,11 @@ export const OVERVIEW_ITEMS: Record<string, LensConfig> = {
     tagline: "domain coverage",
     sections: [{ kind: "coverage-radar" }],
   },
+  coverage: {
+    title: "Overview · What we can see",
+    tagline: "how much of each person's work reaches us",
+    sections: [{ kind: "coverage-levels" }],
+  },
   contribution: {
     title: "Overview · Contribution breakdown",
     tagline: "who carries the output — shape, not leaderboard",

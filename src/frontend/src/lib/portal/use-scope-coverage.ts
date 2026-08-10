@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 
-import { useViewer } from "@/auth";
 import {
   coverageDistribution,
   personCoverage,
@@ -12,9 +11,7 @@ import {
 } from "@/lib/insight/coverage";
 import { GROUPS } from "@/lib/insight/groups";
 import { projectViews } from "@/lib/metrics/collection";
-import { normalizePersonId } from "@/lib/metrics/entity";
 import { usePortalPeriod } from "@/hooks/use-portal-period";
-import { useIcPerson } from "@/queries/ic-dashboard";
 import { useMetricDefinitionsResponse } from "@/queries/metric-definitions";
 import { useMetricCollectionSet } from "@/queries/metric-results";
 
@@ -49,21 +46,15 @@ const CLOSED = { type: "person" as const, ids: [] as string[] };
  * fault. So the list is built from the tree the viewer was served and is never
  * widened or guessed.
  */
-export function useScopeCoverage(): ScopeCoverage {
+export function useScopeCoverage(
+  memberIds: readonly string[],
+): ScopeCoverage {
   const { dateRange } = usePortalPeriod();
-  const { personId } = useViewer();
-  const tree = useIcPerson(personId ?? "").data ?? null;
-
-  const rosterIds = useMemo(() => {
-    const out: string[] = [];
-    const walk = (n: typeof tree): void => {
-      if (!n) return;
-      if (n.person_id) out.push(normalizePersonId(n.person_id));
-      n.subordinates.forEach(walk);
-    };
-    walk(tree);
-    return out;
-  }, [tree]);
+  // The scope selector owns who is in view, so this takes the member list
+  // rather than deriving one. Deriving it would leave the tab answering about
+  // the viewer's whole reach while every other tab answered about the selected
+  // scope, and the two would silently disagree on the same screen.
+  const rosterIds = useMemo(() => [...memberIds], [memberIds]);
 
   // `period` only, deliberately. A collection carrying timeseries, breakdown
   // or histogram views cannot be chunked (`entityChunkSize` returns null for

@@ -32,6 +32,7 @@ import {
   computeAttentionFlags,
 } from "@/lib/insight/attention-flags";
 import { GROUPS } from "@/lib/insight/groups";
+import { useScopeCoverage } from "@/lib/portal/use-scope-coverage";
 import {
   availableSlices,
   cohortKey,
@@ -480,7 +481,78 @@ function Section({
       );
     case "coverage-radar":
       return <CoverageRadarSection grid={grid} memberIds={memberIds} />;
+    case "coverage-levels":
+      return <CoverageLevelsSection memberIds={memberIds} />;
   }
+}
+
+/* ── coverage-levels (#2408): how much of each person's work reads, and for
+      how many people. Answers the question that comes BEFORE every value on
+      every other tab — is there anything here to read? ─────────────────── */
+
+function CoverageLevelsSection({
+  memberIds,
+}: {
+  memberIds: readonly string[];
+}) {
+  const { distribution, unreachable, isPending } = useScopeCoverage(memberIds);
+  if (isPending) return <Pending label="Reading coverage…" />;
+  if (distribution.counted === 0) return null;
+
+  const parts = GROUPS.length;
+  const levels = [...distribution.byLevel.entries()].sort((a, b) => b[0] - a[0]);
+  const widest = Math.max(1, ...levels.map(([, n]) => n));
+
+  return (
+    <section className="flex flex-col gap-3">
+      <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+        What we can see
+      </p>
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-4">
+          <div className="flex flex-col gap-1.5">
+            {levels.map(([level, n]) => (
+              <div key={level} className="flex items-center gap-3 text-sm">
+                <span className="w-28 shrink-0 text-muted-foreground tabular-nums">
+                  {level} of {parts}
+                </span>
+                <div className="h-4 min-w-px flex-1 overflow-hidden rounded-sm bg-muted">
+                  <div
+                    className="h-full rounded-sm bg-primary/70"
+                    style={{ width: `${(n / widest) * 100}%` }}
+                  />
+                </div>
+                <span className="w-12 shrink-0 text-right tabular-nums">
+                  {n}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Not decoration. The same distribution is true about the people
+              counted and false about the organisation, and this line is the
+              whole difference between the two readings. */}
+          <p className="text-xs text-muted-foreground">
+            Counted over {distribution.counted}{" "}
+            {distribution.counted === 1 ? "person" : "people"} in the selected
+            scope — the people you can see, not necessarily everyone.
+          </p>
+
+          {unreachable.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Nothing reaches us for{" "}
+              <span className="text-foreground">
+                {unreachable.map((u) => u.title).join(", ")}
+              </span>
+              . Nobody here is measured in{" "}
+              {unreachable.length === 1 ? "it" : "them"}, so nobody can be
+              counted as covered by {unreachable.length === 1 ? "it" : "them"}.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  );
 }
 
 /* ── participation (rule 8 variant — "N of M are active") ────────────── */
