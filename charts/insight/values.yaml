@@ -388,6 +388,11 @@ authenticator:
   # minted for that person instead of the authenticated one. Dev/demo
   # environments ONLY — MUST stay false anywhere real users log in.
   overrideEnabled: false
+  # Honor a post-login return into the `/exp/<name>` preview subtree (#1973):
+  # only when true is a login return under that prefix accepted. Dev/demo
+  # preview stands ONLY — a production stand leaves this false so it cannot
+  # host experimental frontends against its data.
+  experimentsEnabled: false
 # ─── keycloak ────────────────────────────────────────────────────────────────
 # The stack's Keycloak (identity broker, ADR-0003): start, MariaDB-backed,
 # admin from a Secret; realm content via keycloakConfig only.
