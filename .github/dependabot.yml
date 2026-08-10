@@ -39,6 +39,10 @@ updates:
       # Python 3.14 yet, and the toolbox image the seeder ships in is 3.12.
       - dependency-name: python
         versions: [">=3.14"]
+      # Odd Node majors are never LTS — 25 ended 2026-06-01. Moving to 26 (LTS from
+      # 2026-10-28) also moves package.json engines and .nvmrc, so it is deliberate.
+      - dependency-name: node
+        versions: [">=25"]
 
   - package-ecosystem: cargo
     directory: /src/backend
