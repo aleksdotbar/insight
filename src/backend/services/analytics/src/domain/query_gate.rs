@@ -104,27 +104,48 @@ fn parse_read_statements(sql: &str) -> Result<Vec<Statement>, String> {
     Parser::parse_sql(&ClickHouseDialect {}, &stripped).map_err(|_| rejection)
 }
 
-/// Rewrite `sql` with every unquoted `FINAL` keyword token removed. Returns
-/// `None` when the SQL has no such token (or cannot be tokenized), so the
-/// caller retries the parse only when `FINAL` could have been the reason it
-/// failed.
+/// Rewrite `sql` with `FINAL` tokens in table-modifier position removed.
+/// The tokenizer classifies keywords context-free, so an unquoted column or
+/// alias named `final` also carries `Keyword::FINAL`; a table modifier is told
+/// apart by what precedes it — a table name, alias, or closing paren — while
+/// an identifier follows `SELECT`, a comma, a dot, an operator, or a clause
+/// keyword. Returns `None` when the SQL has no such token (or cannot be
+/// tokenized), so the caller retries the parse only when `FINAL` could have
+/// been the reason it failed.
 fn strip_final_modifiers(sql: &str) -> Option<String> {
     let tokens = Tokenizer::new(&ClickHouseDialect {}, sql).tokenize().ok()?;
 
     let mut stripped = String::with_capacity(sql.len());
     let mut found = false;
+    let mut previous: Option<&Token> = None;
     for token in &tokens {
-        if let Token::Word(word) = token
-            && word.keyword == Keyword::FINAL
-            && word.quote_style.is_none()
-        {
+        if matches!(token, Token::Whitespace(_)) {
+            stripped.push_str(&token.to_string());
+            continue;
+        }
+        if is_final_keyword(token) && previous.is_some_and(ends_table_factor) {
             found = true;
+            previous = Some(token);
             continue;
         }
         stripped.push_str(&token.to_string());
+        previous = Some(token);
     }
 
     found.then_some(stripped)
+}
+
+fn is_final_keyword(token: &Token) -> bool {
+    matches!(token, Token::Word(word)
+        if word.keyword == Keyword::FINAL && word.quote_style.is_none())
+}
+
+fn ends_table_factor(token: &Token) -> bool {
+    match token {
+        Token::Word(word) => word.quote_style.is_some() || word.keyword == Keyword::NoKeyword,
+        Token::RParen => true,
+        _ => false,
+    }
 }
 
 /// Return the first denied table-function name called in `sql`, if any. A call
@@ -208,6 +229,9 @@ mod tests {
             "SELECT a FROM silver.t r FINAL WHERE a > 1",
             "SELECT a FROM silver.a AS x FINAL JOIN gold.b AS y FINAL USING (id)",
             "WITH d AS (SELECT a FROM silver.t AS r FINAL) SELECT * FROM d",
+            "SELECT final FROM silver.t AS r FINAL",
+            "SELECT a, final FROM silver.t AS r FINAL WHERE final > 1",
+            "SELECT r.final FROM silver.t AS r FINAL GROUP BY final",
         ] {
             assert!(check(sql).is_ok(), "should accept FINAL read: {sql:?}");
             assert!(custom(sql).is_ok(), "custom gate should accept: {sql:?}");
