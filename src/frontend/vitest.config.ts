@@ -104,6 +104,10 @@ export default defineConfig({
             "@base-ui/react/tooltip",
             "@sentry/react",
             "@tanstack/react-virtual",
+            // `await import("exceljs")` inside the export path: the scan cannot
+            // see it, so it is discovered while the export story is running and
+            // takes the page down with it as vite reloads.
+            "exceljs",
             "react-day-picker",
             "react-error-boundary",
             "sonner",
