@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { MetricName } from "@/components/widgets/metric-help-tooltip";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
@@ -23,6 +24,7 @@ import {
   computeAttentionFlags,
 } from "@/lib/insight/attention-flags";
 import { GROUPS } from "@/lib/insight/groups";
+import type { PersonCoverage } from "@/lib/insight/coverage";
 import { useScopeCoverage } from "@/lib/portal/use-scope-coverage";
 import {
   availableSlices,
@@ -477,7 +479,13 @@ function Section({
         />
       );
     case "coverage-levels":
-      return <CoverageLevelsSection memberIds={memberIds} />;
+      return (
+        <CoverageLevelsSection
+          memberIds={memberIds}
+          nameByEntity={nameByEntity}
+          personIdByEntity={personIdByEntity}
+        />
+      );
   }
 }
 
@@ -507,10 +515,16 @@ function CoverageBar({
 
 function CoverageLevelsSection({
   memberIds,
+  nameByEntity,
+  personIdByEntity,
 }: {
   memberIds: readonly string[];
+  nameByEntity: Map<string, string>;
+  personIdByEntity: Map<string, string>;
 }) {
-  const { distribution, parts, thin, isPending } = useScopeCoverage(memberIds);
+  const [openLevel, setOpenLevel] = useState<number | null>(null);
+  const { distribution, parts, people, thin, isPending } =
+    useScopeCoverage(memberIds);
   if (isPending) return <Pending label="Reading coverage…" />;
   const counted = distribution.counted;
   if (counted === 0) return null;
@@ -587,7 +601,13 @@ function CoverageLevelsSection({
                   </span>
                 </div>
               )}
-              <div className="flex items-center gap-3 text-sm">
+              <button
+                type="button"
+                disabled={n === 0}
+                onClick={() => setOpenLevel(openLevel === level ? null : level)}
+                aria-expanded={openLevel === level}
+                className="-mx-2 flex items-center gap-3 rounded-sm px-2 py-0.5 text-left text-sm enabled:hover:bg-muted/60 disabled:cursor-default"
+              >
                 <span className="w-36 shrink-0 text-muted-foreground tabular-nums">
                   {level} of {partCount}
                 </span>
@@ -595,7 +615,14 @@ function CoverageLevelsSection({
                 <span className="w-14 shrink-0 text-right tabular-nums">
                   {n}
                 </span>
-              </div>
+              </button>
+              {openLevel === level && (
+                <CoverageLevelPeople
+                  people={people.filter((p) => p.level === level)}
+                  nameByEntity={nameByEntity}
+                  personIdByEntity={personIdByEntity}
+                />
+              )}
             </div>
           );
         })}
@@ -616,6 +643,73 @@ function CoverageLevelsSection({
         see in this scope.
       </p>
     </section>
+  );
+}
+
+/**
+ * The people at one coverage level, and what is missing for each.
+ *
+ * The missing parts are the point, not the names. A level says how much we
+ * cannot see; this says which systems to go and look at — and separates the
+ * two kinds of absence, because they lead different places. "No connector"
+ * is somebody's job to fix. "Nothing recorded" is a person who does that work
+ * elsewhere, or does not do it, and no amount of plumbing changes it.
+ */
+function CoverageLevelPeople({
+  people,
+  nameByEntity,
+  personIdByEntity,
+}: {
+  people: readonly PersonCoverage[];
+  nameByEntity: Map<string, string>;
+  personIdByEntity: Map<string, string>;
+}) {
+  const titleById = new Map(GROUPS.map((g) => [g.id, g.title]));
+  const rows = [...people].sort((a, b) =>
+    (nameByEntity.get(a.entityId) ?? a.entityId).localeCompare(
+      nameByEntity.get(b.entityId) ?? b.entityId,
+    ),
+  );
+
+  return (
+    <ul className="mb-2 ml-36 flex flex-col gap-1 border-s ps-3">
+      {rows.map((p) => {
+        const unconnected: string[] = [];
+        const idle: string[] = [];
+        for (const [id, state] of p.states) {
+          const title = titleById.get(id) ?? id;
+          if (state === "no_data_reaches_us") unconnected.push(title);
+          else if (state === "nothing_recorded") idle.push(title);
+        }
+        const personId = personIdByEntity.get(p.entityId);
+        const name = nameByEntity.get(p.entityId) ?? p.entityId;
+        return (
+          <li key={p.entityId} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+            {personId ? (
+              <Link
+                to="/ic/$person/personal"
+                params={{ person: personId }}
+                className="font-medium hover:underline"
+              >
+                {name}
+              </Link>
+            ) : (
+              <span className="font-medium">{name}</span>
+            )}
+            {unconnected.length > 0 && (
+              <span className="text-amber-600 dark:text-amber-500">
+                no connector: {unconnected.join(", ")}
+              </span>
+            )}
+            {idle.length > 0 && (
+              <span className="text-muted-foreground">
+                nothing recorded: {idle.join(", ")}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
