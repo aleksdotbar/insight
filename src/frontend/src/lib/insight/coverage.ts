@@ -28,6 +28,13 @@ export type PartState = "reads" | "nothing_recorded" | "no_data_reaches_us";
  * that happens — the same shape of error as a statistic drawn from a truncated
  * pool. Reachability is a property of the tenant, so it is read from the one
  * place that holds it for the tenant.
+ *
+ * NOT a duplicate of `useAvailableMetricKeys`, which reads the same listing to
+ * a different question: that one asks which metrics may be REQUESTED and gates
+ * on `is_enabled` alone. This asks which have ever ANSWERED. The gap between
+ * the two is the interesting case — a metric that is enabled and requestable
+ * but has never observed anything comes back as nulls, and those nulls are
+ * what has to be read as "no data reaches us" rather than as an idle person.
  */
 export function reachableMetricKeys(
   definitions: readonly MetricDefinition[],
