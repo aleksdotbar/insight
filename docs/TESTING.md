@@ -55,6 +55,10 @@ A build is **promoted up** (CI → Test → Beta); a proven check is **gated dow
 - Enforced by `scripts/ci/coverage.py` over Cobertura reports: per-language jobs upload reports, the `coverage-gate`
   job judges them and writes a job-summary. `coverage-gate` **must** be the required status check.
 - Only **changed** components are measured on a PR (`scripts/ci/changed.py`).
+- Both gates only see files present in a Cobertura report. A path excluded from a component's own coverage
+  config is invisible to the new-code gate too — it is not scored zero, it is omitted. For the frontend that
+  exemption covers the vendored `src/components/ui/**` primitives, the thin `src/routes/**` wrappers,
+  generated files, and stories (`src/frontend/vitest.config.ts`).
 
 ---
 
@@ -108,18 +112,18 @@ cd src/ingestion/tests/e2e
   **shallow acceptance validation** runs in **Beta**.
 - Every user-facing surface **should** have at least one smoke assertion.
 - A separate **compose-stand suite** (`tests/stand`, documented in `tests/stand/README.md`) drives a real Keycloak
-  login and four browser journeys against the SPA, plus an API-contract suite — all against a local
-  `docker-compose` stand seeded deterministically for tests (`deploy/seed`). Run it with
-  `./dev-compose.sh test-stand up|test|down`. It asserts no metric VALUE: the seed's `golden_metrics` is empty by
-  design, and a harness for it is being migrated separately.
+  login and a set of browser journeys against the SPA, plus an API-contract suite — all against a local
+  `docker-compose` stand seeded deterministically for tests (`src/ingestion/tools/seed`). Run it with
+  `./dev-compose.sh test-stand up|test|down`. It asserts no metric VALUE against a declared expectation: the seed's
+  `golden_metrics` is empty by design, and a harness for it is being migrated separately. It does reconcile every
+  metric's drilldown evidence against that metric's own served value, which needs no declared expectation.
 
 **CI:** `functional-k3s.yml` — ephemeral k3d install. Today it only *installs*; a real smoke must build + import the
 PR's images and assert `/health` + a few golden metrics.
 
-**CI:** `e2e-stand.yml` — two **non-required** checks against the compose-stand suite: `api-smoke` (117 HTTP
-contract tests, no browser) and `ui-journeys` (10 tests: the four browser journeys, run inside the published
-`ui-tests` image). Neither blocks merge — both stand up a full stack against a live IdP and their flake rate is
-still unmeasured.
+**CI:** `e2e-stand.yml` — two **non-required** checks against the compose-stand suite: `api-smoke` (the HTTP
+contract tests, no browser) and `ui-journeys` (the browser journeys, run inside the published `ui-tests` image).
+Neither blocks merge — both stand up a full stack against a live IdP and their flake rate is still unmeasured.
 
 ---
 
@@ -127,12 +131,14 @@ still unmeasured.
 
 - Query latency (p50/p95/p99), load, stress, soak/endurance.
 - **Not** on PR — runs in **Test** (baselines / nightly) and **Beta** (prod-load + soak). Requires the metrics stack.
+- **Fixture sizes** — which organisation sizes these run against, and how much data each holds per
+  metric class: [`REFERENCE-ORGS.md`](REFERENCE-ORGS.md).
 
 ---
 
 ## 8. Before you open a PR
 
-- [ ] `cargo test` / `pytest` green for touched components
+- [ ] `cargo test` / `pytest` green for touched components; `cd src/frontend && pnpm test:coverage:ci` for the frontend
 - [ ] `cargo fmt --check` + `cargo clippy --all-targets` clean
 - [ ] `./e2e.sh test` green if you touched a metric, gold-view, or the API
 - [ ] new / changed code stays **≥ 80 %** covered

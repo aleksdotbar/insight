@@ -191,7 +191,14 @@ ingestion:
   # `serviceaccount "argo-workflow" not found`.
   templates:
     enabled: true
-  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.05.06.56-dad7798" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
+  toolboxImage: "ghcr.io/constructorfabric/insight-toolbox:2026.08.07.10.55-a89a41d" # e.g. "ghcr.io/constructorfabric/insight-toolbox:2026.04.28.10.34-b08b460"
+  # The sample-data seeder's image, for TEST stands only. Nothing in the chart
+  # runs it: `src/ingestion/tools/seed/seed-stand.sh` reads this value to render
+  # a one-shot Job. Its own image rather than the toolbox on purpose — the
+  # toolbox runs migrations on real stands and does not carry demo data. Empty
+  # (the default) means the stand cannot be seeded until an operator names an
+  # image, either here or with the script's `--image` flag.
+  seedImage: "ghcr.io/constructorfabric/insight-seed:2026.08.07.10.55-a89a41d" # e.g. "ghcr.io/constructorfabric/insight-seed:2026.04.28.10.34-b08b460"
   # airbyte-sync poll-job tunables — see templates/ingestion/airbyte-sync.yaml.
   # The poll loop replaces a wall-clock deadline with a progress watchdog:
   # it tracks (status, bytesEmitted, recordsEmitted, stateMessagesEmitted)
@@ -363,9 +370,9 @@ authenticator:
       name: local-ca
       kind: ClusterIssuer
   # OIDC upstream + browser callback, folded into insight-authenticator-config.
-  # Values may be Helm templates (rendered with `tpl`); local points at fakeidp.
+  # Values may be Helm templates (rendered with `tpl`); local points at Keycloak.
   oidc:
-    issuerUrl: "" # the IdP issuer (local: the in-cluster fakeidp FQDN)
+    issuerUrl: "" # the IdP issuer (local: the in-stack Keycloak realm URL)
     clientId: "insight-authenticator"
     clientSecret: ""
     redirectUri: "" # browser-facing callback, through the gateway edge
@@ -380,37 +387,30 @@ authenticator:
   # minted for that person instead of the authenticated one. Dev/demo
   # environments ONLY — MUST stay false anywhere real users log in.
   overrideEnabled: false
-# ─── fakeidp (dev/e2e OIDC provider — NEVER a real environment) ─────────────
-fakeidp:
-  deploy: false
-  image:
-    repository: ghcr.io/constructorfabric/insight-fakeidp
-    tag: "" # MUST be set (e.g. "0.1.0")
-    pullPolicy: IfNotPresent
-  # In-cluster URL the authenticator validates the id_token `iss` against. Set
-  # to the fakeidp Service FQDN (a Helm template, rendered with `tpl`). MUST
-  # equal `authenticator.oidc.issuerUrl`.
-  issuer: ""
-  defaultAudience: "insight-authenticator"
-  devUserEmail: "dev@company.nonpresent"
-# ─── keycloak (real-OIDC dev/e2e IdP — NEVER a real environment) ────────────
-# The heavier, real-login counterpart to fakeidp. Off by default; local k8s
-# flips keycloak.deploy=true + fakeidp.deploy=false and points the authenticator
-# at the pre-seeded `insight-authenticator` confidential client. The realm is
-# generated (deploy/compose/keycloak/gen-realm.py) into a ConfigMap the deploy
-# flow applies as `<release>-keycloak-realm` before this chart.
+# ─── keycloak ────────────────────────────────────────────────────────────────
+# The stack's Keycloak (identity broker, ADR-0003): start, MariaDB-backed,
+# admin from a Secret; realm content via keycloakConfig only.
 keycloak:
   deploy: false
   image:
     repository: quay.io/keycloak/keycloak
     tag: "26.4"
     pullPolicy: IfNotPresent
-  # Advertised issuer BASE (must end in /kc). Both the browser and the in-cluster
-  # authenticator reach it here, so it's the ingress-LB URL (e.g. http://<lb-ip>/kc).
-  # `authenticator.oidc.issuerUrl` MUST equal `${hostname}/realms/insight`.
+  # Advertised issuer BASE (must end in /kc) — the URL browser AND
+  # authenticator reach, e.g. https://<host>/kc.
   hostname: ""
-  # Pre-created realm ConfigMap (empty = <release>-keycloak-realm).
-  realmConfigMap: ""
+  # Admin console base. The ingress exposes only /kc/realms + /kc/resources;
+  # the console rides a port-forward (empty = http://localhost:<port>/kc).
+  adminHostname: ""
+  # Bootstrap-admin Secret (keys username/password) and DB connection.
+  admin:
+    existingSecret: ""
+  database:
+    host: ""
+    port: 3306
+    name: "keycloak"
+    username: ""
+    passwordSecret: {name: "", key: ""}
   ingress:
     enabled: false
 # ─── keycloakConfig (broker realms as code — ADR-0003, EPIC #2193) ──────────
@@ -428,8 +428,10 @@ keycloakConfig:
   # allowInsecureUrl=true (in-cluster dev/CI Keycloak only).
   url: ""
   allowInsecureUrl: false
-  # envFrom Secret: KEYCLOAK_USER/KEYCLOAK_PASSWORD + any $(env:VAR) the realm
-  # YAML references. Sealed in gitops — never a value in realm YAML.
+  # envFrom Secret: any $(env:VAR) the realm YAML references; the config-cli
+  # login (KEYCLOAK_USER/KEYCLOAK_PASSWORD) is mapped from the same Secret's
+  # username/password keys via extraEnv. Sealed in gitops — never a value in
+  # realm YAML.
   existingSecret: "insight-keycloak-config"
   # Extra env entries for placeholders resolving from OTHER Secrets (single
   # sealed source of truth; also the only way to reach non-C-identifier keys,
@@ -440,6 +442,10 @@ keycloakConfig:
   # The Job also injects INSIGHT_TENANT_ID from global.tenantDefaultId (set):
   # realm IdP mappers pin the tenant per environment, never from IdP claims.
   extraEnv: []
+  # Glob(s) config-cli imports, comma-separated. config-cli FAILS on any
+  # glob with zero matches — list only patterns the env's realms dir
+  # always contains. Local adds ',/config/*.json' for the generated realm.
+  filesLocations: "/config/*.yaml"
   # Pre-created realms ConfigMap (empty = <release>-keycloak-config-realms).
   realmsConfigMap: ""
   resources:
@@ -538,7 +544,7 @@ frontend:
   deploy: true
   replicaCount: 1
   image:
-    repository: ghcr.io/constructorfabric/insight-front
+    repository: ghcr.io/constructorfabric/insight-frontend
     tag: "" # MUST be set (e.g. "0.1.0")
     pullPolicy: IfNotPresent
   resources:
@@ -548,3 +554,7 @@ frontend:
     enabled: false
     className: nginx
     host: ""
+  sentry:
+    # Sentry origin the SPA posts to, e.g. "https://sentry.example.com".
+    # Empty leaves it out of the CSP, which blocks every event.
+    connectSrc: ""

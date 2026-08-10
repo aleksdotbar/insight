@@ -18,6 +18,11 @@ clean-targets:
   - dbt_packages
 
 vars:
+  # ClickHouse database gold serving relations materialize into. Single flip
+  # point for the deferred `insight` -> `presentation` relocation (#1979): the
+  # gold macros and per-model configs read this rather than a literal.
+  gold_database: insight
+
   # Path patterns (ClickHouse `match` / RE2 regex fragments, matched
   # case-insensitively) that mark a git file as vendored/generated rather than
   # authored. Files matching any pattern are classified `vendored` by the
@@ -75,6 +80,33 @@ vars:
     - '(^|/)gradle\\.lockfile$'
     - '(^|/)mix\\.lock$'
     - '(^|/)flake\\.lock$'
+
+  # Issue-type names the shared `task_issue_kind` macro maps to bug / other,
+  # compared case-insensitively. Anything else is `unknown`.
+  task_bug_type_names:
+    - bug
+    - defect
+    - regression
+    - exception
+    - cosmetics
+    - usability problem
+    - performance problem
+  # Custom-field names carrying the issue type, for sources that model it as a
+  # field rather than a global type table (YouTrack). Canonical field names,
+  # compared case-insensitively — never a localized name.
+  task_issue_type_field_names:
+    - type
+  task_non_bug_type_names:
+    - task
+    - sub-task
+    - subtask
+    - story
+    - user story
+    - epic
+    - improvement
+    - feature
+    - new feature
+    - meeting
 
 # on-run-start hooks:
 #  - create_task_field_history_staging:

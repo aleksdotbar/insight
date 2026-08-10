@@ -395,78 +395,11 @@ write_compose() {
   ask_shared
 
   # ── Frontend mode (compose-only) ──────────────────────────────────
-  local fe_mode fe_path default_fe_path="../insight-front"
-  if [[ "$NO_FRONTEND" == "true" ]]; then
-    fe_mode="ghcr"
-    fe_path="$default_fe_path"
-  else
-    echo "--- Frontend ---" >&2
-    echo "  How should the frontend run?" >&2
-    echo "    1) ghcr   — pull the pre-built image (no source needed)" >&2
-    echo "    2) local  — Vite + HMR against an existing insight-front checkout" >&2
-    echo "    3) clone  — git clone insight-front, then run Vite + HMR" >&2
-    local fe_choice
-    while true; do
-      fe_choice=$(ask "  Choice" "1")
-      case "$fe_choice" in
-        1|ghcr)
-          fe_mode="ghcr"
-          fe_path="$default_fe_path"
-          break ;;
-        2|local|dev)
-          fe_mode="dev"
-          fe_path=$(ask "  Path to insight-front checkout" "$default_fe_path")
-          if [[ -z "$fe_path" || ! -d "$ROOT_DIR/$fe_path" && ! -d "$fe_path" ]]; then
-            echo "  ERROR: '$fe_path' does not exist. Pick option 3 to clone." >&2
-            exit 1
-          fi
-          break ;;
-        3|clone)
-          if ! command -v git >/dev/null 2>&1; then
-            echo "  ERROR: git is not installed; pick 1 or 2." >&2
-            continue
-          fi
-          fe_path=$(ask "  Clone insight-front into" "$default_fe_path")
-          local clone_target
-          if [[ "$fe_path" = /* ]]; then clone_target="$fe_path"
-          else clone_target="$ROOT_DIR/$fe_path"; fi
-          if [[ -e "$clone_target" ]]; then
-            echo "  ERROR: '$clone_target' already exists; refusing to clone over it." >&2
-            echo "         Remove it first, or pick 2 to reuse the existing checkout." >&2
-            exit 1
-          fi
-          if ! git clone https://github.com/constructorfabric/insight-front.git "$clone_target" >&2; then
-            echo "  ERROR: clone failed." >&2
-            exit 1
-          fi
-          fe_mode="dev"
-          break ;;
-        *) echo "  Please answer 1, 2, or 3." >&2 ;;
-      esac
-    done
-    echo "" >&2
-  fi
-
-  # ── Auth mode (compose-only) ──────────────────────────────────────
-  echo "--- Auth ---" >&2
-  local auth_mode
-  echo "  Which auth backend should the authenticator log in against?" >&2
-  echo "    1) fakeidp   — no login screen, binds to DEV_USER_EMAIL (default)" >&2
-  echo "    2) keycloak  — real Keycloak login form + custom claims (:8085)" >&2
-  local auth_choice
-  while true; do
-    auth_choice=$(ask "  Choice" "1")
-    case "$auth_choice" in
-      1|fakeidp)
-        auth_mode="fakeidp"
-        break ;;
-      2|keycloak)
-        auth_mode="keycloak"
-        break ;;
-      *) echo "  Please answer 1 or 2." >&2 ;;
-    esac
-  done
-  echo "" >&2
+  # The frontend lives in this checkout (src/frontend), so nothing to ask:
+  # it runs from source (Vite + HMR). `up --frontend-mode=built|ghcr`
+  # overrides per run.
+  local fe_mode="dev"
+  [[ "$NO_FRONTEND" == "true" ]] && fe_mode="ghcr"
 
   # ── Seeding decision for external DBs ─────────────────────────────
   local seed_external=false
@@ -497,8 +430,6 @@ write_compose() {
   update_env_var "$env_file" TENANT_DEFAULT_ID             "$TENANT_DEFAULT_ID"
   update_env_var "$env_file" DEV_USER_EMAIL                "$DEV_USER_EMAIL"
   update_env_var "$env_file" FRONTEND_MODE                 "$fe_mode"
-  update_env_var "$env_file" INSIGHT_FRONT_PATH            "$fe_path"
-  update_env_var "$env_file" AUTH_MODE                     "$auth_mode"
 
   # SEEDED_LOCAL_* gates the first-run auto-seed in dev-compose.sh.
   if [[ "$MARIADB_EXTERNAL" == "true" && "$seed_external" != "true" ]]; then
@@ -821,9 +752,9 @@ EOF
   # holds the committed sandbox config.
   cp "$values_tmpl" "$values_out"
   yq -i ".global.tenantDefaultId = \"$TENANT_DEFAULT_ID\"" "$values_out"
-  # Full auth: the dev login identity is the fakeidp default user (must exist in
+  # Full auth: the dev login identity is a realm user (must exist in
   # identity's `persons`), not a frontend impersonation escape hatch.
-  yq -i ".fakeidp.devUserEmail   = \"$DEV_USER_EMAIL\""    "$values_out"
+  yq -i ".keycloak.devUserEmail  = \"$DEV_USER_EMAIL\""    "$values_out"
   echo "Wrote $values_out." >&2
 
   cat >&2 <<EOF
@@ -831,19 +762,18 @@ EOF
 Next: \`make deploy ENV=local\` (already running, if invoked from there)
 will continue with: bootstrap → fetch-cert → seal → system → deploy-app.
 
-Manual demo-data seeding (the compose stack auto-seeds; the k8s stack
-doesn't ship a seed image yet — port-forward and run from the host):
+Demo-data seeding (the compose stack auto-seeds; a k8s stand is seeded by
+one command, which reads the stand's own coordinates and runs the seeder as
+a Job on the toolbox image the release already pins):
 
-  kubectl -n insight-infra port-forward svc/mariadb    3306:3306 &
-  kubectl -n insight-infra port-forward svc/clickhouse 8123:8123 &
-  cd $ROOT_DIR/deploy/seed
-  python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-  MARIADB_HOST=127.0.0.1 CLICKHOUSE_HOST=127.0.0.1 \\
-    MARIADB_USER=$MARIADB_USER MARIADB_PASSWORD=$MARIADB_PASSWORD \\
-    CLICKHOUSE_USER=$CLICKHOUSE_USER CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD \\
-    .venv/bin/python seed.py all
+  $ROOT_DIR/src/ingestion/tools/seed/seed-stand.sh -n insight --email you@example.com
 
-See deploy/seed/README.md for the package layout.
+Add --dry-run to read the Job it would apply, or --step identity to seed only
+the roster (no ClickHouse, finishes in seconds). A user with the --email
+address must exist in the realm first: the authenticator resolves people by
+the email claim.
+
+See src/ingestion/tools/seed/README.md for the flags and the package layout.
 
 EOF
 }

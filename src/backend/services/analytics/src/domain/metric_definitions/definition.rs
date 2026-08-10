@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+/// ClickHouse database holding the legacy gold serving relations (observations,
+/// evidence, entity cohorts). Single source of truth for the read side so the
+/// deferred `insight` -> `presentation` relocation (#1979) is one atomic flip.
+pub(crate) const GOLD_DATABASE: &str = "insight";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricDirection {
@@ -17,7 +22,7 @@ pub enum MetricFormat {
     Percent,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricComputation {
     Sum,
@@ -94,6 +99,24 @@ impl SourceKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObservationRelation(String);
 
+/// Inline observation SQL for a `custom_observation_sql` source. Stored on the
+/// source row (`metric_sources.observation_sql`) and wrapped by the compiler as
+/// `FROM (<sql>)`, so it must emit the observation contract columns
+/// (`tenant_id, source_key, entity_type, entity_id, metric_date, measure_key,
+/// observed_at, value, subject_key, dimensions`). Single-SELECT gated on write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomObservationSql(String);
+
+/// Where a metric input reads observations from: a managed gold relation, or
+/// inline custom SQL that emits the same observation contract. Both resolve to
+/// a `FROM` target the compiler wraps its bucketing / tenant filter /
+/// aggregation around unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObservationSource {
+    Managed(ObservationRelation),
+    Custom(CustomObservationSql),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceRelation(String);
 
@@ -115,7 +138,7 @@ pub struct MetricDefinition {
 /// Affine + clamp shaping for a computed metric value:
 /// `y = clamp(clamp_min, clamp_max, multiplier * x + offset)`.
 /// Absent fields are identity (multiplier 1, offset 0, no bound).
-#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ValueTransform {
     pub multiplier: Option<f64>,
@@ -215,7 +238,7 @@ pub enum ComputationSpec {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricInput {
     pub role: MetricInputRole,
-    pub observation_relation: ObservationRelation,
+    pub observation: ObservationSource,
     pub source_key: String,
     pub measure_key: String,
 }
@@ -233,18 +256,18 @@ impl MetricDefinition {
             .find(|d| *d == dimension)
     }
 
-    pub fn observation_relation(&self) -> &ObservationRelation {
+    pub fn observation_source(&self) -> &ObservationSource {
         match &self.spec {
             ComputationSpec::Sum { value }
             | ComputationSpec::Median { value }
-            | ComputationSpec::DistinctCount { value } => &value.observation_relation,
-            ComputationSpec::Ratio { numerator, .. } => &numerator.observation_relation,
+            | ComputationSpec::DistinctCount { value } => &value.observation,
+            ComputationSpec::Ratio { numerator, .. } => &numerator.observation,
         }
     }
 }
 
 impl ObservationRelation {
-    pub const DATABASE: &'static str = "insight";
+    pub const DATABASE: &'static str = GOLD_DATABASE;
 
     /// Accepts exactly the managed-observation naming shape:
     /// lowercase `snake_case` ending in `_metric_observations`, with a
@@ -264,8 +287,44 @@ impl ObservationRelation {
     }
 }
 
+impl CustomObservationSql {
+    pub fn new(sql: String) -> Self {
+        Self(sql)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl ObservationSource {
+    /// The `FROM` target the compiler reads observations from: the qualified
+    /// managed relation (`insight.<relation>`), or the custom SQL wrapped as a
+    /// parenthesized subquery so every predicate/aggregate is applied outside
+    /// it.
+    pub fn render_from_clause(&self) -> String {
+        match self {
+            Self::Managed(relation) => {
+                let (database, table) = relation.table_ref();
+                format!("{database}.{table}")
+            }
+            Self::Custom(sql) => format!("({})", sql.as_str()),
+        }
+    }
+
+    /// Stable grouping key for batching metrics that read the same source: the
+    /// managed relation name, or the custom SQL text. Identical custom SQL is
+    /// the same `FROM` and batches; different SQL never collides.
+    pub fn source_ref(&self) -> &str {
+        match self {
+            Self::Managed(relation) => relation.source_ref(),
+            Self::Custom(sql) => sql.as_str(),
+        }
+    }
+}
+
 impl EvidenceRelation {
-    pub const DATABASE: &'static str = "insight";
+    pub const DATABASE: &'static str = GOLD_DATABASE;
 
     pub fn parse(value: &str) -> Option<Self> {
         parse_relation(value, "_metric_evidence").map(Self)
@@ -291,7 +350,7 @@ fn parse_relation(value: &str, suffix: &str) -> Option<String> {
 impl CohortSource {
     pub fn table_ref(self) -> (&'static str, &'static str) {
         match self {
-            Self::MetricEntityCohortsCurrent => ("insight", "metric_entity_cohorts_current"),
+            Self::MetricEntityCohortsCurrent => (GOLD_DATABASE, "metric_entity_cohorts_current"),
         }
     }
 }
@@ -473,6 +532,13 @@ mod tests {
             .unwrap_or_else(|| panic!("builtin evidence must parse"));
         assert_eq!(evidence.table_ref(), ("insight", "ai_metric_evidence"));
         assert_eq!(evidence.source_ref(), "ai_metric_evidence");
+
+        // The cohort source resolves to the same gold database as observations
+        // and evidence — the single flip point for the #1979 relocation.
+        assert_eq!(
+            CohortSource::MetricEntityCohortsCurrent.table_ref(),
+            (GOLD_DATABASE, "metric_entity_cohorts_current")
+        );
     }
 
     #[test]

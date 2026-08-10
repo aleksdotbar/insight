@@ -23,6 +23,7 @@
   - [4.2 Promotion Ladder (FE)](#42-promotion-ladder-fe)
   - [4.3 Open Decisions](#43-open-decisions)
   - [4.4 Phase B and Out of Scope](#44-phase-b-and-out-of-scope)
+  - [4.5 Legacy Gold Relocation (#1979-#1981)](#45-legacy-gold-relocation-1979-1981)
 - [5. Traceability](#5-traceability)
 
 <!-- /toc -->
@@ -60,6 +61,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-presentation-fr-preview-auth` | Single fixed callback with a Redis-backed opaque `state` return path (already stashing `state -> { return_to, pkce_verifier, nonce }`, delete-on-read), extended so `return_to` is validated at store time against a configurable `/exp/` prefix. Shipped (#1972) |
 | `cpt-presentation-fr-metric-registry` | Single declarative `registry.yaml` (a `sources` list and a `metrics` list) embedded at build time and reconciled into the service DB at boot; replaces the code-literal seed with no change to reconcile semantics; invariants pinned by tests that parse the same registry. Shipped (#1974) |
 | `cpt-presentation-fr-metric-passports` | `passport.rs` renders a source/formula/notes passport per metric from the embedded registry; the offline `analytics passports` subcommand emits the document, committed as `passports.md` next to `registry.yaml`. A Rust drift test compares the render against the committed file and fails on divergence, so a metric change without a passport regeneration breaks the build. Shipped (#1975) |
+| `cpt-presentation-fr-custom-metrics-api` | `/v1/metrics*` REST surface: CRUD over `origin = 'custom'` metrics plus export/import, tenant-scoped from the session `SecurityContext`; builtins are read-only through it. Custom SQL (`source_kind = 'custom_observation_sql'`) passes the single-SELECT gate and must emit the observation contract; the compiler wraps it as `FROM (<sql>)` and it runs as `presentation_ro`. Export is keyed on `metric_key` with no tenant/timestamps; import re-homes the tenant and idempotently skips an existing `metric_key`. Custom rows survive builtin reconcile (`disable_missing` is scoped to `origin = 'builtin' AND tenant_id IS NULL`) |
 
 #### NFR Allocation
 
@@ -295,6 +297,35 @@ Plain CRUD over stored queries so a new analytics slice needs no engineering cha
 
 ---
 
+#### Custom-Metrics API
+
+- [x] `p2` - **ID**: `cpt-presentation-component-custom-metrics-api`
+
+##### Why this component exists
+
+Lets an analyst author, manage, and share a metric (`origin = 'custom'`) without an engineering change or re-ingest, over the `/v1/metrics*` surface. The detailed metric contract is governed by the metrics DESIGN ([../../metrics/specs/DESIGN.md](../../metrics/specs/DESIGN.md)).
+
+##### Responsibility scope
+
+- CRUD over custom metrics, tenant-scoped from the session `SecurityContext`; handlers mirror the saved-query and metric-definition CRUD in `api::handlers`. Create sets `origin = 'custom'`; delete is a hard delete.
+- Custom SQL source (`source_kind = 'custom_observation_sql'`) is validated by the query gate (`validate_single_select`) on write and before execution, and must emit the observation contract (`tenant_id, source_key, entity_type, entity_id, metric_date, measure_key, observed_at, value, subject_key, dimensions`). The compiler wraps it as the observation `FROM (<sql>)` and executes it as `presentation_ro`, so a custom metric reads the contract but never writes it.
+- Export (`GET /v1/metrics/export`): serialize the tenant's custom metric graphs (definition plus its source/measure/dimension/input rows) into a portable form keyed on `metric_key`, carrying no `tenant_id` or timestamps.
+- Import (`POST /v1/metrics/import`): re-home each graph's tenant to the session, idempotently skipping any `metric_key` that already exists; returns `{ imported, skipped }`.
+
+##### Responsibility boundaries
+
+- Does NOT mutate builtins — `origin = 'builtin'` metrics are read-only through this API; only the registry reconciler writes them.
+- Does NOT bypass the gate, and does NOT string-interpolate the custom SQL.
+- Does NOT change the reconciler: custom rows fall outside its `disable_missing` predicate (`origin = 'builtin' AND tenant_id IS NULL`), so a reconcile pass never disables or deletes them.
+
+##### Related components (by ID)
+
+- `cpt-presentation-component-query-gate` — validates custom SQL on write and run
+- `cpt-presentation-component-metric-compiler` — wraps the custom SQL as the observation relation and injects the tenant filter
+- `cpt-presentation-component-metric-registry` — owns the builtin seed this surface never mutates
+
+---
+
 #### Metric Compiler (Tenant Filter)
 
 - [x] `p2` - **ID**: `cpt-presentation-component-metric-compiler`
@@ -478,6 +509,31 @@ Entity `presentation.queries`: `{ id, insight_tenant_id, name, description, sql,
 
 `run` executes as `presentation_ro` and returns untyped JSON rows, the same shape as the existing metric query path. The request body is optional; named parameters (`tenant`/`period`, #1966) are bound as ClickHouse server-side parameters. No metric metadata, thresholds, or passports in Phase A.
 
+---
+
+- [x] `p2` - **ID**: `cpt-presentation-interface-custom-metrics-endpoints`
+
+- **Implements**: `cpt-presentation-interface-custom-metrics-api` (PRD §7.1 Public API Surface)
+- **Contracts**: `cpt-presentation-contract-read-only-consumption`
+- **Technology**: REST / HTTP JSON
+- **Base path**: `/v1/metrics`
+
+A custom metric is a `metric_definitions` row with `origin = 'custom'`, tenant-scoped, whose observation source is custom SQL (`source_kind = 'custom_observation_sql'`) over the contract. The custom SQL is validated by the single-SELECT gate on write and before execution and must emit the observation contract (`tenant_id, source_key, entity_type, entity_id, metric_date, measure_key, observed_at, value, subject_key, dimensions`). Builtin metrics (`origin = 'builtin'`) are read-only through this surface.
+
+**Endpoints Overview**:
+
+| Method | Path | Description | Stability |
+|--------|------|-------------|-----------|
+| `POST` | `/v1/metrics` | Create a custom metric (`origin = 'custom'`, tenant-scoped); validates custom SQL via the gate | unstable |
+| `GET` | `/v1/metrics` | List the tenant's custom metrics | unstable |
+| `GET` | `/v1/metrics/{metric_key}` | Fetch one custom metric | unstable |
+| `PUT` | `/v1/metrics/{metric_key}` | Update a custom metric (re-validates custom SQL) | unstable |
+| `DELETE` | `/v1/metrics/{metric_key}` | Delete a custom metric (hard delete) | unstable |
+| `GET` | `/v1/metrics/export` | Export the tenant's custom metric graphs — portable, keyed on `metric_key`, no `tenant_id` or timestamps | unstable |
+| `POST` | `/v1/metrics/import` | Import custom metric graphs; re-homes the tenant to the session; idempotently skips an existing `metric_key`; returns `{ imported, skipped }` | unstable |
+
+Invariants: builtins are read-only through this API; custom SQL is single-SELECT gated (which also rejects external/remote table functions), must emit the observation contract, must be tenant-neutral and row-preserving (it exposes each source row's real `tenant_id` and never fabricates or cross-tenant-aggregates it — the outer predicate filters emitted rows, not the tables read, so authorship is trusted the same way the saved-query console is), and executes as `presentation_ro`; export/import identity is `metric_key` (not the tenant-scoped row id), so a graph re-homes cleanly on import. Import is bounded: at most 500 graphs per request; the batch is validated and gated up front and applied in one transaction, so a single invalid graph rejects the whole request with `400` and writes nothing, while a well-formed graph whose `metric_key` already exists for the tenant is skipped — the success body is `{ imported, skipped }`. The saved-query console (`/v1/queries*`) is a separate surface and is unchanged.
+
 ### 3.4 Internal Dependencies
 
 | Dependency Module | Interface Used | Purpose |
@@ -639,6 +695,78 @@ Tiers 1-2 need no deploy — the unit of change is a query row. Tier 3 is the pr
 The declarative metric registry (`cpt-presentation-component-metric-registry`, #1974) lands as the first Phase B step: one YAML is the source of truth for the sanctioned metric-definition seed. The former "FE thresholds" collapse is already done — the FE renders from the `metric_definitions` catalog API and live peer percentiles, holding no per-metric thresholds.
 
 Metric passports plus their drift test (`cpt-presentation-component-metric-passports`, #1975) land as the next Phase B step on top of the registry: a source/formula/notes document rendered from the same YAML and pinned by a drift test. Still out of scope: the semantic raw-to-derived compiler (#1976); FE metric rework (#1977-#1978). Also deferred: retirement of the orphaned, frozen legacy `metric_catalog`/`metric_threshold` subsystem — no live consumer reads it, so it is left untouched and its removal is tracked separately rather than perpetuated in the new registry.
+
+### 4.5 Legacy Gold Relocation (#1979-#1981)
+
+The `relabel, not migrate` principle leaves legacy gold physically in the
+`insight` database, read as contract output through the read-only role. The
+physical move of that gold into the `presentation` namespace is the deferred
+cleanup that completes the split so the contract database holds only the
+engineering contract. It is intentionally staged, not a single big-bang, because
+the coupling is deep and spread across historical artifacts.
+
+**What "legacy gold in `insight`" actually is** — two distinct populations:
+
+1. **dbt serving tables** — `*_metric_observations`, `*_metric_evidence`, the
+   task lifecycle intermediates (`task_issue_state`, `task_status_spans`,
+   `task_worklog_flow`), `metric_entity_cohorts_current`, and
+   `identity_resolution_coverage`. Built by dbt (`src/ingestion/gold/`), all
+   routed to a single database name (the `gold_database` dbt var, read by the
+   `metric_serving_table` macro and the per-model configs). Read by the
+   analytics service through one read-side database constant
+   (`GOLD_DATABASE` in `metric_definitions/definition.rs`).
+2. **Serving views** — the family of derived views (`*_bullet_rows`, `*_kpis`,
+   `ic_*`, `crm_*`, `exec_summary`, `people`, `team_member`, and peers) plus two
+   materialized views, created not by dbt but by the ledgerless ClickHouse
+   migrations (`src/ingestion/scripts/migrations/`) and the analytics service's
+   own ClickHouse migrations. These read the serving tables and silver, and are
+   themselves read by the legacy per-metric `query_ref` path
+   (`execute_metric_query`) that predates the tenant-filter guarantee.
+
+**Why it is staged.** A correct move must repoint every writer, every reader,
+and every dependent object together, across: the dbt gold configs; ~50 views
+spread over historical migrations that must not be rewritten in place (a move
+adds new migrations that recreate the views under `presentation` and drop the
+`insight` copies); the committed DDL snapshot
+(`scripts/connectors-ddl/insight.sql`) plus its regeneration (`dump-ddl.sh`
+database loop) and the drift gate (`.github/workflows/connectors-ddl.yml`); the
+`presentation_ro` grant (gold is already reachable — `presentation` carries
+`SELECT`/`INSERT`/`CREATE` — so no new grant is needed, but the `SELECT ON
+insight.*` line retires once nothing gold remains there); the e2e harness
+(`migration_applier.py`, `conftest.py`, the `people` template, the analytics
+config in `analytics.py`); and this document plus
+[CONTRACT-SURFACE.md](./CONTRACT-SURFACE.md) §2.4, where gold graduates from a
+row in the read-only contract to a presentation-owned namespace. It must not
+disturb the tenant-column posture (the observation/cohort contract exposes
+`tenant_id`; the coordinated retrofit is #1829, #1596/#1550) — the move changes
+only the database qualifier, never a column.
+
+**Staged plan (ordered by safety; each step is independently reviewable):**
+
+1. **Single flip point per layer (this slice, #1979).** Collapse the
+   gold-database name to one lever on each side without moving any data: the
+   `gold_database` dbt var (writer) and the `GOLD_DATABASE` constant (reader),
+   both still resolving to `insight`. This makes the eventual cutover of the
+   serving tables an atomic change of two defaults rather than a scattered edit,
+   and is behavior-preserving (verified by the existing analytics tests and dbt
+   parse). Done.
+2. **Cut over the serving tables.** Flip both defaults to `presentation`, rebuild
+   the dbt gold, regenerate the DDL snapshot (a new `presentation.sql`; the moved
+   tables leave `insight.sql`), and update the e2e applier. The serving tables
+   are full-refresh materializations, so a redeploy rebuilds them in place; no
+   row-level data copy is required on a clean apply.
+3. **Cut over the serving views.** Add migrations that recreate the view family
+   (and the two materialized views) under `presentation`, repoint their `FROM`
+   references and every dependent view, then drop the `insight` copies. Retire
+   the legacy `query_ref` readers of these views as part of, or before, this step
+   (their retirement is already tracked with the frozen catalog subsystem).
+4. **Close the contract.** Once nothing gold remains in `insight`, drop the
+   `SELECT ON insight.*` grant, remove the `insight` row from the contract in
+   CONTRACT-SURFACE.md §2.4, and drop the (now empty) `insight` database from
+   bootstrap. `insight` ceases to be a contract database.
+
+Steps 2-4 are the deferred bulk (#1979 cutover, #1980-#1981 sequencing) and are
+not executed here; step 1 lands as the safe, enabling first slice.
 
 ## 5. Traceability
 

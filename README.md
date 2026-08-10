@@ -127,7 +127,7 @@ Source code for all platform components.
 src/
 ├── ingestion/        ← Data pipeline (Airbyte + Argo + ClickHouse + dbt)
 ├── backend/          ← REST API server (Rust + cyberfabric-core)
-└── frontend/         ← SPA deployment (Dockerfile + Helm; source in separate repo)
+└── frontend/         ← SPA (React + TanStack source, Dockerfile, Helm)
 ```
 
 ### `docs/`
@@ -237,7 +237,7 @@ cd insight
 ./dev-compose.sh up        # first-run wizard, then builds + seeds the stack
 ```
 
-The wizard prompts for local-vs-external MariaDB / ClickHouse, a dev-user email, and the frontend mode (defaults pull the published `insight-front` image). First `up` auto-seeds a demo dataset; open <http://localhost:3000>.
+The wizard prompts for local-vs-external MariaDB / ClickHouse, a dev-user email, and the frontend mode (defaults pull the published `insight-frontend` image). First `up` auto-seeds a demo dataset; open <http://localhost:3000>.
 
 The compose stack does **not** ship Airbyte or Argo Workflows — for ingestion work use the Kubernetes path below. See [CONTRIBUTING.md](CONTRIBUTING.md) for the edit-build loop, frontend modes, seeding, and the `.env.compose` settings reference.
 
@@ -320,10 +320,11 @@ For cluster deployments image tags flow through automatically: the umbrella char
 | `insight-analytics` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-analytics |
 | `insight-identity-resolution` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-identity-resolution |
 | `insight-toolbox` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-toolbox |
-| `insight-front` | **separate** `constructorfabric/insight-front` | https://github.com/constructorfabric/insight/pkgs/container/insight-front |
+| `insight-seed` (test stands only) | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-seed |
+| `insight-frontend` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-frontend |
 | `insight-jira-enrich` | **separate** `constructorfabric/insight-jira-enrich` | https://github.com/constructorfabric/insight/pkgs/container/insight-jira-enrich |
 
-> **Note**: frontend and jira-enrich live in their own repos with independent release cadences — a backend tag (e.g. `2026.04.28.10.34-b08b460`) does **not** exist for `insight-front`. Pick the latest tag in the frontend's repo separately.
+> **Note**: jira-enrich lives in its own repo with an independent release cadence — a tag from this repo (e.g. `2026.04.28.10.34-b08b460`) does **not** exist for `insight-jira-enrich`. Pick the latest tag in that repo separately.
 
 ### CI/CD
 
@@ -342,8 +343,8 @@ cargo run --bin insight-api-gateway -- run -c services/api-gateway/config/no-aut
 # → http://localhost:8080/api/v1
 
 # Frontend
-cd ../insight-front       # or via the insight-front_symlink at repo root
-npm install && npm run dev
+cd src/frontend
+pnpm install && pnpm dev
 # → http://localhost:5173
 ```
 

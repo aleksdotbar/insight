@@ -5,9 +5,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl gettext-base jq gnupg lsb-release && \
     rm -rf /var/lib/apt/lists/*
 
-# Node.js (for JWT token generation)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+# Node.js (for JWT token generation). npm is upgraded in place: the one the
+# distro package carries lags its own release line, and its bundled dependency
+# tree is what the image scan reports.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
+    npm install -g npm@latest && \
+    npm cache clean --force && \
     rm -rf /var/lib/apt/lists/*
 
 # yq (YAML processor)
@@ -21,7 +25,11 @@ RUN curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release
 # dbt-clickhouse
 RUN pip install --no-cache-dir dbt-clickhouse
 
-# Copy entire ingestion project
+# Copy the ingestion project, minus the sample-data seeder: this image runs
+# migrations against real stands, and a demo-data generator does not belong on
+# one. The exclusion lives in Dockerfile.dockerignore beside this file, so it
+# applies to THIS image only — the seeder's own image (tools/seed/Dockerfile)
+# builds from the same context and does carry it.
 COPY . /ingestion
 WORKDIR /ingestion
 
