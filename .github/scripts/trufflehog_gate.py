@@ -72,7 +72,6 @@ def read_findings(path: str):
                 "commit": loc.get("commit") or "",
                 "file": path_,
                 "line": loc.get("line") or "",
-                "email": loc.get("email") or "",
                 "fp": fingerprint(detector, path_, d.get("Raw") or ""),
             })
     return rows, unparsable, skipped

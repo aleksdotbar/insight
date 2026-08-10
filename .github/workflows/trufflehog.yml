@@ -147,8 +147,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -s new-findings.json ] || exit 0
-          python3 .github/scripts/trufflehog_notify.py new-findings.json "${GITHUB_REPOSITORY}" \
-            .github/trufflehog-authors.txt
+          python3 .github/scripts/trufflehog_notify.py new-findings.json "${GITHUB_REPOSITORY}"
 
   # The git scan above only reaches commits that some ref still points at. Two classes of leak
   # sit outside it, and only the GitHub API can see them: objects orphaned by a force push or a
