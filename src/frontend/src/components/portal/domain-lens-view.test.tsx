@@ -411,7 +411,7 @@ describe("by-unit auto-section (rule 7: slice cohorts inside scope)", () => {
   });
 });
 
-describe("direction-cards / coverage-radar / attention sections", () => {
+describe("direction-cards / attention sections", () => {
   it("renders attention rows for cohort outliers, named and linked (O3)", () => {
     // 7 healthy + 1 collapsed member
     const labels = ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "z"];
@@ -434,16 +434,4 @@ describe("direction-cards / coverage-radar / attention sections", () => {
     expect(screen.getByText(/no commits/)).toBeInTheDocument();
   });
 
-  it("suppresses the coverage radar below the minimum cohort", () => {
-    mocks.tree = person("boss", {}, [person("a"), person("b")]);
-    render(
-      <DomainLensView
-        config={{ title: "T", sections: [
-          { kind: "headline", metrics: ["t.commits"] },
-          { kind: "coverage-radar" },
-        ] }}
-      />,
-    );
-    expect(screen.queryByText("Health radar")).not.toBeInTheDocument();
-  });
 });

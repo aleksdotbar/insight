@@ -62,15 +62,14 @@ export const OVERVIEW_ITEMS: Record<string, LensConfig> = {
     sections: [{ kind: "attention", metrics: ATTENTION_KEYS, max: 30 }],
   },
   health: {
-    title: "Overview · Health radar",
-    tagline: "what we can see, by domain and by person",
-    // Two halves of one question, which is why they share a tab. The radar
-    // answers it per domain — what share of people show activity in each. The
-    // levels answer it per person — how many domains we see for each of them.
-    // Neither implies the other: five domains at 60% is one picture if it is
-    // the same people every time and a very different one if it is not, and
-    // only the second chart can tell those apart.
-    sections: [{ kind: "coverage-radar" }, { kind: "coverage-levels" }],
+    title: "Overview · What we can see",
+    tagline: "how much of the work reaches us, by part and by person",
+    // One model, three cuts: the verdict, the parts nothing reaches, and how
+    // thinly people are seen. The radar that used to live here computed
+    // coverage a second way — over the card-preview keys, off the zone grid —
+    // so the same screen carried two counts of one thing. They agree today and
+    // would not have kept agreeing.
+    sections: [{ kind: "coverage-levels" }],
   },
   contribution: {
     title: "Overview · Contribution breakdown",

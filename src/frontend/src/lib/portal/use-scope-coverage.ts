@@ -2,11 +2,13 @@ import { useMemo } from "react";
 
 import {
   coverageDistribution,
+  partCoverage,
   personCoverage,
   reachableMetricKeys,
   thinlyCovered,
   unreachableParts,
   type CoverageDistribution,
+  type PartCoverage,
   type PersonCoverage,
   type UnreachablePart,
 } from "@/lib/insight/coverage";
@@ -24,6 +26,8 @@ export interface ScopeCoverage {
   unreachable: readonly UnreachablePart[];
   /** People seen in fewer than half their parts — the screen's finding. */
   thin: number;
+  /** The same coverage cut by part, from the same states. */
+  parts: readonly PartCoverage[];
   isPending: boolean;
 }
 
@@ -94,6 +98,7 @@ export function useScopeCoverage(
       distribution: coverageDistribution(people, GROUPS.length),
       people,
       thin: thinlyCovered(people, GROUPS.length),
+      parts: partCoverage(GROUPS, people),
       unreachable: unreachableParts(GROUPS, reachable),
       isPending:
         definitions.isPending ||

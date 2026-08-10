@@ -13,6 +13,7 @@ import type { MetricResult } from "@/api/metric-results-client";
 import type { MetricGroup } from "@/lib/insight/groups";
 import {
   coverageDistribution,
+  partCoverage,
   partState,
   personCoverage,
   reachableMetricKeys,
@@ -292,5 +293,60 @@ describe("thinlyCovered", () => {
 
   it("counts everybody when nothing reaches us", () => {
     expect(thinlyCovered([at(0), at(0)], 5)).toBe(2);
+  });
+});
+
+describe("partCoverage", () => {
+  const GROUPS = [
+    group("git_output", ["git.commits"]),
+    group("collaboration", ["collab.messages"]),
+  ];
+  const person = (
+    entityId: string,
+    git: "reads" | "nothing_recorded" | "no_data_reaches_us",
+    collab: "reads" | "nothing_recorded" | "no_data_reaches_us",
+  ): ReturnType<typeof personCoverage> => ({
+    entityId,
+    states: new Map([
+      ["git_output", git],
+      ["collaboration", collab],
+    ] as const),
+    level: [git, collab].filter((s) => s === "reads").length,
+  });
+
+  it("counts, per part, the people it reads for", () => {
+    expect(
+      partCoverage(GROUPS, [
+        person("a", "reads", "reads"),
+        person("b", "nothing_recorded", "reads"),
+      ]),
+    ).toEqual([
+      { id: "git_output", title: "git_output title", seen: 1, unreachable: false },
+      { id: "collaboration", title: "collaboration title", seen: 2, unreachable: false },
+    ]);
+  });
+
+  it("separates a part nobody is measured in from one everybody was idle in", () => {
+    // Both read zero. Only one of them is a missing connector, and drawing
+    // them the same would blame people for a pipe that was never laid.
+    const [git, collab] = partCoverage(GROUPS, [
+      person("a", "no_data_reaches_us", "nothing_recorded"),
+      person("b", "no_data_reaches_us", "nothing_recorded"),
+    ]);
+    expect(git).toMatchObject({ seen: 0, unreachable: true });
+    expect(collab).toMatchObject({ seen: 0, unreachable: false });
+  });
+
+  it("is derived from the same states as the per-person levels", () => {
+    // The guarantee that matters: one computation, two cuts. Summing the
+    // per-part counts must equal summing the per-person levels, always.
+    const people = [
+      person("a", "reads", "reads"),
+      person("b", "reads", "nothing_recorded"),
+      person("c", "no_data_reaches_us", "reads"),
+    ];
+    const byPart = partCoverage(GROUPS, people).reduce((n, p) => n + p.seen, 0);
+    const byPerson = people.reduce((n, p) => n + p.level, 0);
+    expect(byPart).toBe(byPerson);
   });
 });

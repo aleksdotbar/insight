@@ -131,6 +131,49 @@ export function coverageDistribution(
   return { counted: people.length, byLevel, unlinked };
 }
 
+export interface PartCoverage {
+  id: GroupId;
+  title: string;
+  /** People this part reads for. */
+  seen: number;
+  /**
+   * True when nothing feeding this part reaches the tenant. Kept separate from
+   * `seen === 0` on purpose: they render differently because they mean
+   * different things, and a part nobody is measured in must not be drawn as a
+   * part everybody failed at.
+   */
+  unreachable: boolean;
+}
+
+/**
+ * The same coverage, cut by part instead of by person.
+ *
+ * Derived from the SAME per-person states as the distribution rather than
+ * computed its own way. Two counts of one thing on one screen will disagree
+ * eventually — different key sets, different fetches, different rounding — and
+ * a reader who spots the disagreement is right to stop trusting both.
+ */
+export function partCoverage(
+  groups: readonly MetricGroup[],
+  people: readonly PersonCoverage[],
+): PartCoverage[] {
+  return groups.map((def) => {
+    let seen = 0;
+    let anyReachable = false;
+    for (const p of people) {
+      const state = p.states.get(def.id);
+      if (state === "reads") seen += 1;
+      if (state !== "no_data_reaches_us") anyReachable = true;
+    }
+    return {
+      id: def.id,
+      title: def.title,
+      seen,
+      unreachable: !anyReachable,
+    };
+  });
+}
+
 /**
  * How many people are seen in fewer than half the parts of their work.
  *

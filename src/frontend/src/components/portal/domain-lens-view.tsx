@@ -1,15 +1,6 @@
 import { useMemo, useState } from "react";
 import { MetricName } from "@/components/widgets/metric-help-tooltip";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
-import {
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
-  ResponsiveContainer,
-} from "recharts";
-
 import { AttentionList } from "@/components/portal/attention-list";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { orgScopeGate } from "@/components/portal/org-scope-gate";
@@ -56,7 +47,6 @@ import {
   distribution,
   familyObserved,
   fmtCompact,
-  groupCoverage,
   medianAcross,
   perCapita,
   representative,
@@ -486,119 +476,123 @@ function Section({
           memberIds={memberIds}
         />
       );
-    case "coverage-radar":
-      return <CoverageRadarSection grid={grid} memberIds={memberIds} />;
     case "coverage-levels":
       return <CoverageLevelsSection memberIds={memberIds} />;
   }
 }
 
-/* ── coverage-levels (#2408): how much of each person's work reads, and for
-      how many people. Answers the question that comes BEFORE every value on
-      every other tab — is there anything here to read? ─────────────────── */
+/* ── coverage (#2408): three cuts of one model, read top to bottom — the
+      verdict, then which parts are missing, then who is thinly seen. Little
+      prose on purpose: a screen that needs a paragraph to explain itself has
+      already failed the reader who only glanced at it. ──────────────────── */
+
+function CoverageBar({
+  filled,
+  total,
+  warn,
+}: {
+  filled: number;
+  total: number;
+  warn?: boolean;
+}) {
+  return (
+    <div className="h-2.5 min-w-px flex-1 overflow-hidden rounded-full bg-muted">
+      <div
+        className={`h-full rounded-full ${warn ? "bg-amber-500/80" : "bg-primary/60"}`}
+        style={{ width: `${total > 0 ? (filled / total) * 100 : 0}%` }}
+      />
+    </div>
+  );
+}
 
 function CoverageLevelsSection({
   memberIds,
 }: {
   memberIds: readonly string[];
 }) {
-  const { distribution, unreachable, thin, isPending } =
-    useScopeCoverage(memberIds);
+  const { distribution, parts, thin, isPending } = useScopeCoverage(memberIds);
   if (isPending) return <Pending label="Reading coverage…" />;
-  if (distribution.counted === 0) return null;
+  const counted = distribution.counted;
+  if (counted === 0) return null;
 
-  const parts = GROUPS.length;
+  const partCount = GROUPS.length;
   const levels = [...distribution.byLevel.entries()].sort((a, b) => b[0] - a[0]);
-  const widest = Math.max(1, ...levels.map(([, n]) => n));
+  const missing = parts.filter((p) => p.unreachable);
 
   return (
-    <section className="flex flex-col gap-3">
-      <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-        Coverage per person
-      </p>
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-4">
-          {/* The finding leads, not the scale. A distribution describes a
-              shape; what a reader needs first is whether the rest of the
-              product can bear weight and for whom it cannot. Without this line
-              the bars are a chart in search of a reason to be read. */}
-          <p className="text-sm">
-            {thin === 0 ? (
-              <>
-                Everyone here is seen in at least half of their work. Nothing on
-                the other screens rests on a sliver of what somebody does.
-              </>
-            ) : (
-              <>
-                <span className="font-medium">
-                  {thin} of {distribution.counted}{" "}
-                  {thin === 1 ? "person is" : "people are"} seen in fewer than
-                  half of their work.
-                </span>{" "}
-                Every metric, comparison and flag this product shows about{" "}
-                {thin === 1 ? "them" : "those people"} rests on that fraction of
-                what they do — which is worth knowing before believing any of
-                it.
-              </>
-            )}
-          </p>
+    <section className="flex flex-col gap-6">
+      {/* 1 — the verdict, as a number rather than a sentence: it is meant to
+          be seen, not parsed. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-4xl font-semibold tabular-nums">
+          {thin}
+          <span className="text-muted-foreground">/{counted}</span>
+        </span>
+        <p className="max-w-md text-sm text-muted-foreground">
+          people are seen in fewer than half of their work — everything else
+          this product says about them rests on that fraction.
+        </p>
+      </div>
 
-          {/* Then the scale: "4 of 5" means nothing until the reader knows
-              what the five are and what makes one count. In place rather than
-              in a tooltip because it is the first thing anyone asks. */}
-          <p className="text-sm text-muted-foreground">
-            Each person is measured in up to {parts} parts of their work —{" "}
-            <span className="text-foreground">
-              {GROUPS.map((g) => g.title).join(", ")}
-            </span>
-            . A part counts when any of its metrics has a value for that person
-            in this period. So <span className="text-foreground">4 of 5</span>{" "}
-            means we can see four of those five for them, and says nothing about
-            how well they did in any of them.
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {levels.map(([level, n]) => (
-              <div key={level} className="flex items-center gap-3 text-sm">
-                <span className="w-28 shrink-0 text-muted-foreground tabular-nums">
-                  {level} of {parts}
-                </span>
-                <div className="h-4 min-w-px flex-1 overflow-hidden rounded-sm bg-muted">
-                  <div
-                    className="h-full rounded-sm bg-primary/70"
-                    style={{ width: `${(n / widest) * 100}%` }}
-                  />
-                </div>
-                <span className="w-12 shrink-0 text-right tabular-nums">
-                  {n}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Not decoration. The same distribution is true about the people
-              counted and false about the organisation, and this line is the
-              whole difference between the two readings. */}
-          <p className="text-xs text-muted-foreground">
-            Counted over {distribution.counted}{" "}
-            {distribution.counted === 1 ? "person" : "people"} in the selected
-            scope — the people you can see, not necessarily everyone.
-          </p>
-
-          {unreachable.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Nothing reaches us for{" "}
-              <span className="text-foreground">
-                {unreachable.map((u) => u.title).join(", ")}
+      {/* 2 — where it is missing. A part nothing reaches is NOT drawn as a bar
+          at zero, because that reads as people who did nothing, which is the
+          one thing it does not mean. */}
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+          By part of work
+        </p>
+        {parts.map((part) => (
+          <div key={part.id} className="flex items-center gap-3 text-sm">
+            <span className="w-36 shrink-0 truncate">{part.title}</span>
+            {part.unreachable ? (
+              <span className="flex-1 text-xs text-amber-600 dark:text-amber-500">
+                nothing reaches us — no connector feeds this
               </span>
-              , so {parts} of {parts} is out of reach for everyone here — no
-              connector feeds{" "}
-              {unreachable.length === 1 ? "that part" : "those parts"} for this
-              organisation, which is a different thing from nobody doing the
-              work.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              <CoverageBar filled={part.seen} total={counted} />
+            )}
+            <span className="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
+              {part.unreachable ? "—" : part.seen}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* 3 — who. Colour carries the finding, so the shape reads without the
+          labels: the amber block IS the number at the top. */}
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+          By person · parts we can see
+        </p>
+        {levels.map(([level, n]) => (
+          <div key={level} className="flex items-center gap-3 text-sm">
+            <span className="w-36 shrink-0 text-muted-foreground tabular-nums">
+              {level} of {partCount}
+            </span>
+            <CoverageBar
+              filled={n}
+              total={counted}
+              warn={level < partCount / 2}
+            />
+            <span className="w-14 shrink-0 text-right tabular-nums">{n}</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        A part counts when any of its metrics has a value for that person this
+        period — so this says what we can see, never how well anyone did.
+        {missing.length > 0 && (
+          <>
+            {" "}
+            {partCount} of {partCount} is out of reach for everyone here while{" "}
+            {missing.map((m) => m.title).join(", ")}{" "}
+            {missing.length === 1 ? "has" : "have"} no connector.
+          </>
+        )}{" "}
+        Counted over {counted} {counted === 1 ? "person" : "people"} you can
+        see in this scope.
+      </p>
     </section>
   );
 }
@@ -1345,65 +1339,6 @@ function DirectionCardsSection({
           </button>
         ))}
       </div>
-    </section>
-  );
-}
-
-/* ── coverage-radar (Overview design O5: coverage = share of members with ≥1
-      OBSERVED metric per group — entityObserved, never zero-filled sums) ── */
-
-function CoverageRadarSection({
-  grid,
-  memberIds,
-}: {
-  grid: GridData;
-  memberIds: readonly string[];
-}) {
-  if (memberIds.length < MIN_COHORT) return null;
-  const data = GROUPS.map((g) => ({
-    domain: g.title,
-    coverage: Math.round(
-      (groupCoverage(grid.byKey, g.card.preview, memberIds) ?? 0) * 100
-    ),
-  }));
-  if (data.every((d) => d.coverage === 0)) return null;
-
-  return (
-    <section className="flex flex-col gap-3">
-      <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-        Health radar
-      </p>
-      <Card>
-        <CardContent className="p-4">
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={data} outerRadius="70%">
-                <PolarGrid />
-                <PolarAngleAxis dataKey="domain" tick={{ fontSize: 12 }} />
-                {/* Percent scale is absolute: full edge = 100% coverage, not
-                    the period's max — and the explicit axis gives recharts a
-                    radius scale (without one the polygon collapses to center). */}
-                <PolarRadiusAxis
-                  domain={[0, 100]}
-                  tick={false}
-                  axisLine={false}
-                />
-                <Radar
-                  dataKey="coverage"
-                  stroke="var(--primary)"
-                  fill="var(--primary)"
-                  fillOpacity={0.25}
-                  isAnimationActive={false}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Coverage — % of people in scope with any observed activity in each
-            domain this period.
-          </p>
-        </CardContent>
-      </Card>
     </section>
   );
 }
