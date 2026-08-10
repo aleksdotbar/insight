@@ -13,10 +13,13 @@ spec:
     metadata:
       labels:
         {{- include "insight-frontend.selectorLabels" . | nindent 8 }}
-      {{- with .Values.podAnnotations }}
       annotations:
+        # `subPath` mounts never refresh in place, so the pod must roll when
+        # the rendered config changes.
+        checksum/runtime-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       {{- with .Values.global }}
       {{- with .imagePullSecrets }}
@@ -56,6 +59,10 @@ spec:
               mountPath: /tmp
             - name: nginx-conf
               mountPath: /etc/nginx/conf.d
+            - name: runtime-config
+              mountPath: /usr/share/nginx/html/config.js
+              subPath: config.js
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /healthz
@@ -75,3 +82,6 @@ spec:
           emptyDir: {}
         - name: nginx-conf
           emptyDir: {}
+        - name: runtime-config
+          configMap:
+            name: {{ include "insight-frontend.fullname" . }}-runtime

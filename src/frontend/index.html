@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Insight</title>
+    <!-- Deferred, like the module script, so both run in document order: this
+         one defines the config that one reads. -->
+    <script defer src="/config.js"></script>
   </head>
   <body>
     <div id="root"></div>
