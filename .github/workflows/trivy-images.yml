@@ -140,14 +140,9 @@ jobs:
         # can produce these categories — keep them off the Trivy check PRs see (#2266).
         if: ${{ always() && hashFiles('trivy-image.sarif') != '' }}
         run: |
-          python3 - <<'PY'
-          import json
-          p = "trivy-image.sarif"
-          d = json.load(open(p, encoding="utf-8"))
-          for r in d.get("runs", []):
-              r.setdefault("tool", {}).setdefault("driver", {})["name"] = "Trivy Images"
-          json.dump(d, open(p, "w", encoding="utf-8"))
-          PY
+          set -euo pipefail
+          jq '.runs[].tool.driver.name = "Trivy Images"' trivy-image.sarif > renamed.sarif
+          mv renamed.sarif trivy-image.sarif
 
       - name: Upload SARIF to GitHub Code Scanning
         # Guard: a failed pull must not also report a missing SARIF.
