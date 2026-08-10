@@ -224,7 +224,8 @@ Verify those IDs with `gh project field-list 40 --owner constructorfabric` if an
 ```sh
 # Upload one PNG; prints the asset URL to embed. The token rides stdin (-H @-),
 # never curl's argv, so it can't show up in a process listing.
-REPO_ID=$(gh api repos/constructorfabric/insight --jq .id)
+REPO=constructorfabric/insight   # the repo the issue will live in — swap when reusing elsewhere
+REPO_ID=$(gh api "repos/$REPO" --jq .id)
 ASSET=$(gh auth token | sed 's/^/Authorization: Bearer /' \
   | curl -sf --connect-timeout 5 --max-time 120 -X POST -H @- -H "Accept: application/json" \
       --data-binary "@<shot>.png" \
@@ -235,7 +236,7 @@ ASSET=$(gh auth token | sed 's/^/Authorization: Bearer /' \
 #   into $BODY where the evidence belongs — the embed doesn't happen by itself
 ```
 
-Three caveats. The endpoint is **undocumented** — if the POST fails (empty `$ASSET`), fall back to the old flow: create the issue, then tell the user to drag the PNGs into the description box (don't imply they attached automatically). Always pass this repo's `repository_id` — the POST 404s without it, and asset visibility is scoped to it. And the screenshot is public the moment the issue is: scrub it like the body (no internal hostnames in the URL bar, no tokens in a visible console). Unattached uploads 404 anonymously until the issue references them — that's normal, not a failure. For a data or pipeline bug the inline query proof is usually the evidence and no screenshot is needed.
+Three caveats. The endpoint is **undocumented** — if the POST fails (empty `$ASSET`), fall back to the old flow: create the issue, then tell the user to drag the PNGs into the description box (don't imply they attached automatically). Always pass the target repo's `repository_id` — the POST 404s without it, and asset visibility is scoped to that repo. And the screenshot is public the moment the issue is: scrub it like the body (no internal hostnames in the URL bar, no tokens in a visible console). Unattached uploads 404 anonymously until the issue references them — that's normal, not a failure. For a data or pipeline bug the inline query proof is usually the evidence and no screenshot is needed.
 
 ## Verify what landed
 
