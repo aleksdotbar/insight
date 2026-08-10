@@ -133,7 +133,11 @@ def apply_ch_migrations(dbt_select: str | None = None) -> None:
         )
 
     env = _script_env()
-    if dbt_select is not None:
+    # Never inherited: the selector is exactly what the caller passes, or the
+    # script's own tag:gold default.
+    if dbt_select is None:
+        env.pop("DBT_GOLD_SELECT", None)
+    else:
         env["DBT_GOLD_SELECT"] = dbt_select
     subprocess.run(["bash", str(script)], env=env, check=True)
     LOG.info("migrations + gold: %s applied", script.name)

@@ -10,6 +10,12 @@ Subcommands:
     gold       Rebuild the dbt gold models only (after persons-seed + sync).
     all        Run every step (gold is part of silver's build, not repeated).
 
+A bare `silver` / `all` run leaves gold UNRESOLVED and still writes the
+manifest: observations gain rows only once the identity projection is
+refreshed (persons-seed + persons-sync) and gold is rebuilt over it.
+dev-compose.sh's cmd_seed runs all three after the seed; on Kubernetes the
+identity CronJobs and the next gold build do.
+
 Run as a module from the tool directory:
 
     python3 -m insight_seed all

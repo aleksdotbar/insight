@@ -35,8 +35,7 @@ from typing import TYPE_CHECKING
 from ..profiles import Person
 from .base import bulk_insert, deterministic_uuid, truncate
 
-# Identity keys bindings on (source_type, source_id, account_id) — any stable
-# value works, as long as it is one value across claims and bindings.
+# Identity keys bindings on (source_type, source_id, account_id): one stable value must span claims and bindings.
 _BAMBOOHR_SOURCE_ID = "seed-bamboohr"
 
 if TYPE_CHECKING:
@@ -173,8 +172,7 @@ def seed_bamboohr_employees(
             sup = next(q for q in roster if q.email == sup_email)
             sup_name = _display_name(sup)
 
-        # The identity chain versions and diffs raw_data, not the typed
-        # columns: a NULL blob emits no identity observation at all.
+        # The identity chain diffs raw_data, not the typed columns: NULL emits no identity observation.
         record = {
             "id": deterministic_uuid("bamboohr.employee", p.email),
             "status": "Active",

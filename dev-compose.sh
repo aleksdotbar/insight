@@ -1103,12 +1103,17 @@ See src/ingestion/tools/seed/README.md for the ruff/mypy/venv setup.
 EOF
 }
 
-# One value from a compose env file, last assignment wins; empty when the
-# file or the key is absent.
+# One value from a compose env file: last assignment wins, leading whitespace
+# and one pair of surrounding quotes tolerated. `KEY=value` lines only — the
+# subset every writer of these files (the example + update_env_var) emits.
 env_file_value() {
-  local file="$1" key="$2"
+  local file="$1" key="$2" value
   [[ -f "$file" ]] || return 0
-  sed -n "s/^${key}=//p" "$file" | tail -1
+  value="$(sed -nE "s/^[[:space:]]*${key}=//p" "$file" | tail -1)"
+  if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
 }
 
 # The persons-seed/sync pair the k8s CronJobs run: gold resolves identities
