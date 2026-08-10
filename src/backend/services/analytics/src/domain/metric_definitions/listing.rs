@@ -277,7 +277,6 @@ mod tests {
     #[test]
     fn build_views_decodes_columns_and_attaches_dimensions() {
         let mut r = row("git.commits", None, "Commits");
-        r.origin = "custom".to_owned();
         r.schema_status = "error".to_owned();
         r.schema_error_code = Some("table_not_found".to_owned());
         let id = r.definition_id;
@@ -292,13 +291,30 @@ mod tests {
         };
         assert_eq!(view.format, MetricFormat::Integer);
         assert_eq!(view.direction, MetricDirection::HigherIsBetter);
-        assert_eq!(view.origin, MetricOrigin::Custom);
+        assert_eq!(view.origin, MetricOrigin::Builtin);
         assert_eq!(view.schema_status, SchemaStatus::Error);
         assert_eq!(
             view.schema_error_code,
             Some(MetricSchemaErrorCode::TableNotFound)
         );
         assert_eq!(view.dimensions, vec!["repo".to_owned()]);
+    }
+
+    #[test]
+    fn build_views_decodes_custom_origin() {
+        let mut r = row("team.velocity", None, "Velocity");
+        r.origin = "custom".to_owned();
+
+        let Ok(views) = build_views(vec![r], HashMap::new()) else {
+            panic!("canonical rows must map");
+        };
+        let Some(view) = views.first() else {
+            panic!("one view");
+        };
+        assert_eq!(view.origin, MetricOrigin::Custom);
+        assert_eq!(view.schema_status, SchemaStatus::Unchecked);
+        assert_eq!(view.schema_error_code, None);
+        assert_eq!(view.last_observed_date, None);
     }
 
     #[test]
