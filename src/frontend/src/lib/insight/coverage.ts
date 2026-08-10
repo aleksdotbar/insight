@@ -43,7 +43,13 @@ export function reachableMetricKeys(
   for (const d of definitions) {
     if (!d.is_enabled) continue;
     if (d.schema_status === "error") continue;
-    if (d.last_observed_date == null) continue;
+    // A custom metric runs its SQL at query time, and the validator stamps
+    // freshness from materialized relations only — so its `last_observed_date`
+    // is absent however much data it serves. The listing says so in as many
+    // words. Judging it by that field would report a working metric as one
+    // nothing reaches, which is the exact fabrication this function exists to
+    // avoid, so it is taken at its word instead.
+    if (d.origin !== "custom" && d.last_observed_date == null) continue;
     out.add(d.metric_key);
   }
   return out;
@@ -108,18 +114,11 @@ export interface CoverageDistribution {
   counted: number;
   /** Level → how many people sit at it. Every level from 0 to `parts` is present. */
   byLevel: ReadonlyMap<number, number>;
-  /**
-   * People in the roster who resolve to no account at all. Excluded from
-   * `counted` and from `byLevel`: their blindness belongs to identity
-   * resolution, and folding them in as level zero would attribute it here.
-   */
-  unlinked: number;
 }
 
 export function coverageDistribution(
   people: readonly PersonCoverage[],
   parts: number,
-  unlinked = 0,
 ): CoverageDistribution {
   const byLevel = new Map<number, number>();
   // Seeded so an empty level reads as zero people rather than as a gap — the
@@ -128,7 +127,7 @@ export function coverageDistribution(
   for (const p of people) {
     byLevel.set(p.level, (byLevel.get(p.level) ?? 0) + 1);
   }
-  return { counted: people.length, byLevel, unlinked };
+  return { counted: people.length, byLevel };
 }
 
 export interface PartCoverage {

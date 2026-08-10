@@ -15,6 +15,7 @@ import type { MetricCollectionConfig } from "@/lib/metrics/collection";
 const state = vi.hoisted(() => ({
   members: [] as string[],
   definitions: undefined as unknown,
+  definitionsError: false,
   collectionSet: new Map<string, unknown>(),
   lastCall: null as {
     collections: readonly { key: string; collection: MetricCollectionConfig }[];
@@ -31,6 +32,7 @@ vi.mock("@/queries/metric-definitions", () => ({
   useMetricDefinitionsResponse: () => ({
     data: state.definitions,
     isPending: false,
+    isError: state.definitionsError,
   }),
 }));
 vi.mock("@/queries/metric-results", () => ({
@@ -52,6 +54,7 @@ import { useScopeCoverage } from "./use-scope-coverage";
 beforeEach(() => {
   state.members = ["viewer-1", "a-1", "a-2", "a-3"];
   state.definitions = { metrics: [] };
+  state.definitionsError = false;
   state.collectionSet = new Map();
   state.lastCall = null;
 });
@@ -106,7 +109,25 @@ describe("useScopeCoverage", () => {
     // No definition has observed anything, so no part can be claimed to reach
     // us — and this is read from the listing, never from the roster's nulls.
     const { result } = renderHook(() => useScopeCoverage(state.members));
-    expect(result.current.unreachable).toHaveLength(GROUPS.length);
+    expect(result.current.parts.every((p) => p.unreachable)).toBe(true);
+    expect(result.current.parts).toHaveLength(GROUPS.length);
     expect(result.current.distribution.byLevel.get(0)).toBe(4);
+  });
+});
+
+describe("useScopeCoverage failure", () => {
+  it("reports an error rather than letting it read as an absence verdict", () => {
+    // With the listing unavailable nothing is known to reach the tenant, so
+    // every part would come back "no data reaches us" and every person would
+    // sit at zero. That is our fault printed as a verdict about named people,
+    // and the caller has to be able to tell the two apart.
+    state.definitionsError = true;
+    const { result } = renderHook(() => useScopeCoverage(state.members));
+    expect(result.current.isError).toBe(true);
+  });
+
+  it("is not in error when everything answered", () => {
+    const { result } = renderHook(() => useScopeCoverage(state.members));
+    expect(result.current.isError).toBe(false);
   });
 });

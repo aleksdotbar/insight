@@ -119,7 +119,12 @@ export function usePersonSectionStandings(personId: string): SectionStanding[] {
       hasData: groupHasData(def, byKey, entityId),
       peersHaveData:
         partState(def, byKey, entityId, reachable) !== "no_data_reaches_us",
-      isPending: result?.isPending ?? true,
+      // The listing counts too. Without it `reachable` is empty, so every
+      // section reads as one nothing reaches — the page would tell a reader we
+      // see nothing about this person, then flip a moment later. The old pool
+      // inference read the same query whose pending state was already tracked,
+      // so this gap arrived with the new source.
+      isPending: definitions.isPending || (result?.isPending ?? true),
     };
   });
 }

@@ -6,11 +6,9 @@ import {
   personCoverage,
   reachableMetricKeys,
   thinlyCovered,
-  unreachableParts,
   type CoverageDistribution,
   type PartCoverage,
   type PersonCoverage,
-  type UnreachablePart,
 } from "@/lib/insight/coverage";
 import { GROUPS } from "@/lib/insight/groups";
 import { projectViews } from "@/lib/metrics/collection";
@@ -22,10 +20,17 @@ export interface ScopeCoverage {
   distribution: CoverageDistribution;
   /** Per person, so a level can be opened into the people at it. */
   people: readonly PersonCoverage[];
-  /** Parts nothing reaches for this tenant — see `unreachableParts`. */
-  unreachable: readonly UnreachablePart[];
   /** People seen in fewer than half their parts — the screen's finding. */
   thin: number;
+  /**
+   * A request failed, so no claim may be made. Not a detail: with the
+   * definition listing unavailable nothing is known to reach the tenant, and
+   * every part would read "no data reaches us" for every person — an
+   * infrastructure fault rendered as a confident verdict about named people,
+   * which is the failure the three states exist to prevent. The caller must
+   * check this before reading anything else here.
+   */
+  isError: boolean;
   /** The same coverage cut by part, from the same states. */
   parts: readonly PartCoverage[];
   isPending: boolean;
@@ -99,10 +104,12 @@ export function useScopeCoverage(
       people,
       thin: thinlyCovered(people, GROUPS.length),
       parts: partCoverage(GROUPS, people),
-      unreachable: unreachableParts(GROUPS, reachable),
       isPending:
         definitions.isPending ||
         GROUPS.some((def) => data.get(def.id)?.isPending ?? true),
+      isError:
+        definitions.isError ||
+        GROUPS.some((def) => data.get(def.id)?.isError ?? false),
     };
-  }, [data, rosterIds, reachable, definitions.isPending]);
+  }, [data, rosterIds, reachable, definitions.isPending, definitions.isError]);
 }

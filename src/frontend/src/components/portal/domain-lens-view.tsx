@@ -523,9 +523,16 @@ function CoverageLevelsSection({
   personIdByEntity: Map<string, string>;
 }) {
   const [openLevel, setOpenLevel] = useState<number | null>(null);
-  const { distribution, parts, people, thin, isPending } =
+  const { distribution, parts, people, thin, isPending, isError } =
     useScopeCoverage(memberIds);
   if (isPending) return <Pending label="Reading coverage…" />;
+  // Before anything else. With a request failed nothing is known to reach the
+  // tenant, so every part would read "no data reaches us" and every person
+  // would sit at zero — a fault in our infrastructure printed as a verdict
+  // about named people. Saying we could not check is the only honest output.
+  if (isError) {
+    return <Pending label="Could not read coverage — the check did not complete, so nothing is claimed about anyone." />;
+  }
   const counted = distribution.counted;
   if (counted === 0) return null;
 
@@ -542,7 +549,7 @@ function CoverageLevelsSection({
           {/* Same amber as the rows it is the sum of. The link between the
               number and the block of bars is the one thing a reader has to
               make unaided, and colour makes it without a caption. */}
-          <span className="text-amber-500">{thin}</span>
+          <span className="text-amber-600 dark:text-amber-500">{thin}</span>
           <span className="text-muted-foreground">/{counted}</span>
         </span>
         <p className="max-w-md text-sm text-muted-foreground">
@@ -563,7 +570,11 @@ function CoverageLevelsSection({
             <span className="w-36 shrink-0 truncate">{part.title}</span>
             {part.unreachable ? (
               <span className="flex-1 text-xs text-amber-600 dark:text-amber-500">
-                nothing reaches us — no connector feeds this
+                {/* No cause named. Absent observations, a disabled metric and
+                    a broken schema all land here, and only the first is a
+                    missing connector — sending someone to plumb a live one is
+                    the wrong direction to be wrong in. */}
+                nothing reaches us here
               </span>
             ) : (
               <CoverageBar filled={part.seen} total={counted} />
@@ -606,6 +617,7 @@ function CoverageLevelsSection({
                 disabled={n === 0}
                 onClick={() => setOpenLevel(openLevel === level ? null : level)}
                 aria-expanded={openLevel === level}
+                aria-controls={`coverage-level-${level}`}
                 className="-mx-2 flex items-center gap-3 rounded-sm px-2 py-0.5 text-left text-sm enabled:hover:bg-muted/60 disabled:cursor-default"
               >
                 <span className="w-36 shrink-0 text-muted-foreground tabular-nums">
@@ -618,6 +630,7 @@ function CoverageLevelsSection({
               </button>
               {openLevel === level && (
                 <CoverageLevelPeople
+                  id={`coverage-level-${level}`}
                   people={people.filter((p) => p.level === level)}
                   nameByEntity={nameByEntity}
                   personIdByEntity={personIdByEntity}
@@ -634,9 +647,9 @@ function CoverageLevelsSection({
         {missing.length > 0 && (
           <>
             {" "}
-            {partCount} of {partCount} is out of reach for everyone here while{" "}
+            Nobody here can reach the top of that scale, because{" "}
             {missing.map((m) => m.title).join(", ")}{" "}
-            {missing.length === 1 ? "has" : "have"} no connector.
+            {missing.length === 1 ? "reaches" : "reach"} us for no one.
           </>
         )}{" "}
         Counted over {counted} {counted === 1 ? "person" : "people"} you can
@@ -656,10 +669,12 @@ function CoverageLevelsSection({
  * elsewhere, or does not do it, and no amount of plumbing changes it.
  */
 function CoverageLevelPeople({
+  id,
   people,
   nameByEntity,
   personIdByEntity,
 }: {
+  id: string;
   people: readonly PersonCoverage[];
   nameByEntity: Map<string, string>;
   personIdByEntity: Map<string, string>;
@@ -672,7 +687,7 @@ function CoverageLevelPeople({
   );
 
   return (
-    <ul className="mb-2 ml-36 flex flex-col gap-1 border-s ps-3">
+    <ul id={id} className="mb-2 ml-36 flex flex-col gap-1 border-s ps-3">
       {rows.map((p) => {
         const unconnected: string[] = [];
         const idle: string[] = [];

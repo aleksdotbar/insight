@@ -33,6 +33,7 @@ function def(
   return {
     metric_key,
     is_enabled: true,
+    origin: "builtin",
     schema_status: "ok",
     schema_error_code: null,
     last_observed_date: "2026-08-01",
@@ -91,6 +92,32 @@ describe("reachableMetricKeys", () => {
       reachableMetricKeys([
         def("wiki.edits", { is_enabled: false }),
         def("task.closed", {
+          schema_status: "error",
+          schema_error_code: "table_not_found",
+        }),
+      ]),
+    ).toEqual(new Set());
+  });
+
+  it("keeps a custom metric that has never stamped a freshness date", () => {
+    // The validator stamps last_observed_date from materialized relations
+    // only, and a custom metric runs its SQL at query time — so the field
+    // stays absent however much data it serves. Reading that as "never
+    // measured" would report a working metric as one nothing reaches, which is
+    // the one thing this function must never do.
+    expect(
+      reachableMetricKeys([
+        def("custom.thing", { origin: "custom", last_observed_date: null }),
+      ]),
+    ).toEqual(new Set(["custom.thing"]));
+  });
+
+  it("still drops a custom metric that is disabled or schema-broken", () => {
+    expect(
+      reachableMetricKeys([
+        def("custom.off", { origin: "custom", is_enabled: false }),
+        def("custom.broken", {
+          origin: "custom",
           schema_status: "error",
           schema_error_code: "table_not_found",
         }),
@@ -224,13 +251,6 @@ describe("coverageDistribution", () => {
       [2, 0],
       [3, 2],
     ]);
-  });
-
-  it("keeps unlinked people out of the counts and reports them separately", () => {
-    const d = coverageDistribution([at(1)], 2, 7);
-    expect(d.counted).toBe(1);
-    expect(d.unlinked).toBe(7);
-    expect([...d.byLevel.values()].reduce((a, b) => a + b, 0)).toBe(1);
   });
 
   it("counts nobody without claiming a shape", () => {
