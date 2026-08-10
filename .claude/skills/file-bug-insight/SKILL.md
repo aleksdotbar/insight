@@ -219,7 +219,24 @@ gh project item-edit --project-id PVT_kwDOERGOus4Ba9e9 --id "$ITEM" \
 
 Verify those IDs with `gh project field-list 40 --owner constructorfabric` if an edit fails.
 
-**Images — the honest constraint.** GitHub has **no API to upload an image to an issue**, and `gh` cannot do it either; the web UI uploads via drag-drop. Create the issue with the body, then tell the user to drag the PNGs into the description box. Don't imply they will be attached automatically. For a data or pipeline bug the inline query proof is usually the evidence and no screenshot is needed.
+**Images.** There is no *documented* API, but the web UI's upload endpoint accepts a plain `gh auth token` (verified 2026-08). Upload **before** creating the issue and embed the returned URL in the body, so the asset attaches with the initial render:
+
+```sh
+# Upload one PNG; prints the asset URL to embed. The token rides stdin (-H @-),
+# never curl's argv, so it can't show up in a process listing.
+REPO=constructorfabric/insight   # the repo the issue will live in — swap when reusing elsewhere
+REPO_ID=$(gh api "repos/$REPO" --jq .id)
+ASSET=$(gh auth token | sed 's/^/Authorization: Bearer /' \
+  | curl -sf --connect-timeout 5 --max-time 120 -X POST -H @- -H "Accept: application/json" \
+      --data-binary "@<shot>.png" \
+      "https://uploads.github.com/user-attachments/assets?name=<shot>.png&content_type=image/png&repository_id=$REPO_ID" \
+  | jq -er '.url // empty')
+[ -n "$ASSET" ] || echo "upload failed — use the manual fallback" >&2
+# → https://github.com/user-attachments/assets/<uuid>; write ![<what it shows>]($ASSET)
+#   into $BODY where the evidence belongs — the embed doesn't happen by itself
+```
+
+Three caveats. The endpoint is **undocumented** — if the POST fails (empty `$ASSET`), fall back to the old flow: create the issue, then tell the user to drag the PNGs into the description box (don't imply they attached automatically). Always pass the target repo's `repository_id` — the POST 404s without it, and asset visibility is scoped to that repo. And the screenshot is public the moment the issue is: scrub it like the body (no internal hostnames in the URL bar, no tokens in a visible console). Unattached uploads 404 anonymously until the issue references them — that's normal, not a failure. For a data or pipeline bug the inline query proof is usually the evidence and no screenshot is needed.
 
 ## Verify what landed
 
