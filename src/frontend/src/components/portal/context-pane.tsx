@@ -56,7 +56,7 @@ import { cn } from "@/lib/utils";
 const ZONE_SUB: Record<string, string> = {
   overview: "Cross-functional org rollup",
   directions: "Functional domains",
-  person: "Pick a person",
+  person: "Personal metrics",
   people: "Roster & org structure",
   aicost: "Adoption funnel & cost",
   scorecard: "Unit × quarter × QoQ",

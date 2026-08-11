@@ -4,6 +4,8 @@ import {
   PeerMark,
 } from "@/components/widgets/metric-views/peer-mark";
 import { formatMetricValue } from "@/lib/format";
+import { TEXT_EYEBROW, TEXT_LABEL, TEXT_NAME } from "@/lib/type-scale";
+import { cn } from "@/lib/utils";
 import { metricComparisons } from "@/lib/insight/metric-comparison";
 import { derivePeerStanding } from "@/lib/metrics/peer-standing";
 import {
@@ -67,7 +69,7 @@ export function SectionMetricIndex({
 
   return (
     <section className="rounded-xl border p-4 sm:p-5">
-      <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <h2 className={TEXT_EYEBROW}>
         Also measured here
       </h2>
       {/* One column, whatever the width. Side-by-side columns of aligned
@@ -90,10 +92,10 @@ export function SectionMetricIndex({
             key={metric.metric_key}
             className="flex items-center justify-between gap-4 border-b border-dashed py-1 last:border-b-0"
           >
-            <dt className="min-w-0 flex-1 truncate text-xs">
+            <dt className={cn("min-w-0 flex-1 truncate", TEXT_NAME)}>
               <MetricName metric={metric} />
             </dt>
-            <dd className="flex shrink-0 items-baseline gap-2 text-xs tabular-nums">
+            <dd className={cn("flex shrink-0 items-baseline gap-2 tabular-nums", TEXT_LABEL)}>
               <span className="w-32 text-right">
                 {formatMetricValue(
                   forEntity(metric, entityId).value,
