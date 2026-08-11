@@ -96,6 +96,16 @@ describe("useScopeCoverage", () => {
     expect(result.current.people).toHaveLength(4);
   });
 
+  it("settles rather than waiting forever on an empty scope", () => {
+    // No members means no collections are sent, so no group ever reports a
+    // pending state to clear. Reading that as "still loading" leaves the
+    // section on its spinner permanently instead of saying the scope is empty.
+    state.members = [];
+    const { result } = renderHook(() => useScopeCoverage(state.members));
+    expect(result.current.isPending).toBe(false);
+    expect(result.current.distribution.counted).toBe(0);
+  });
+
   it("stays closed while the scope has not resolved", () => {
     // An empty id list is refused by the client rather than sent, so the hook
     // must not reach that path at all before the roster answers.

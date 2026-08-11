@@ -15,6 +15,7 @@ import { normalizeMetricResults } from "@/lib/metrics/collection";
 
 const mocks = vi.hoisted(() => ({
   definitions: [] as unknown[],
+  definitionsPending: false,
   byKey: new Map<string, unknown>(),
   isPending: false,
   cohort: [] as string[],
@@ -23,7 +24,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/queries/metric-definitions", () => ({
   useMetricDefinitionsResponse: () => ({
     data: { metrics: mocks.definitions },
-    isPending: false,
+    isPending: mocks.definitionsPending,
   }),
 }));
 vi.mock("@/queries/metric-results", () => ({
@@ -194,5 +195,18 @@ describe("usePersonSectionStandings", () => {
     // would silently lose its mark — asserting the whole set, in order, is
     // what catches that.
     expect(standings().map((s) => s.id)).toEqual(GROUPS.map((g) => g.id));
+  });
+});
+
+describe("while the definition listing is still loading", () => {
+  it("claims nothing about any section", () => {
+    // Without the listing the reachable set is empty, so every section would
+    // read as one nothing reaches — the page would tell a reader we see
+    // nothing about this person, then flip a moment later. Pending has to
+    // cover the listing too, not just the metric collection.
+    mocks.definitionsPending = true;
+    mocks.byKey = normalizeMetricResults([metric("git.commits", null, 20)]);
+    expect(standings().every((s) => s.isPending)).toBe(true);
+    mocks.definitionsPending = false;
   });
 });

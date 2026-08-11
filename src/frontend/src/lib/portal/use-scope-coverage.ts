@@ -104,9 +104,15 @@ export function useScopeCoverage(
       people,
       thin: thinlyCovered(people, GROUPS.length),
       parts: partCoverage(GROUPS, people),
+      // An empty roster is an answer, not a wait. With no members the hook
+      // sends no collections, so no group has an entry and the `?? true`
+      // below would hold every one of them pending forever — the section
+      // would sit on its loading label for good rather than saying there is
+      // nobody in this scope.
       isPending:
         definitions.isPending ||
-        GROUPS.some((def) => data.get(def.id)?.isPending ?? true),
+        (rosterIds.length > 0 &&
+          GROUPS.some((def) => data.get(def.id)?.isPending ?? true)),
       isError:
         definitions.isError ||
         GROUPS.some((def) => data.get(def.id)?.isError ?? false),
