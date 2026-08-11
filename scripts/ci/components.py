@@ -176,13 +176,6 @@ COMPONENTS = [
         "cov_package": "source_hubspot",
         "paths": ["src/ingestion/connectors/crm/hubspot"],
     },
-    {
-        "name": "salesforce",
-        "lang": "python",
-        "root": "src/ingestion/connectors/crm/salesforce",
-        "cov_package": "source_salesforce",
-        "paths": ["src/ingestion/connectors/crm/salesforce"],
-    },
     # Deploy-time ClickHouse schema tooling (the migration Job's Python half:
     # reconcile_bronze_schema, which heals warm-cluster bronze drift — #1991).
     # Owning the whole scripts/ tree means a connectors-ddl snapshot regen also
@@ -229,7 +222,7 @@ COMPONENTS = [
         "pytest_args": "--suites-only",
         "cover": False,
         "triggered_by": ["connector-tests-harness"],
-        "paths": ["src/ingestion/connectors/task-tracking/jira", "src/ingestion/connectors/ai/claude-admin"],
+        "paths": ["src/ingestion/connectors/task-tracking/jira"],
     },
     # `src/frontend/helm` falls under this path but has no measured lines, so it
     # never moves the number.

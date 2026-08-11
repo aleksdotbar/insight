@@ -15,7 +15,7 @@ Connectors pull data from your tools — Jira issues, Slack messages, GitHub pul
 - [Prerequisites](#prerequisites)
 - [Contents](#contents)
 - [Anatomy of a connector Secret](#anatomy-of-a-connector-secret)
-- [The 25 available connectors](#the-25-available-connectors)
+- [The 18 available connectors](#the-18-available-connectors)
 - [Example Secret for every connector](#example-secret-for-every-connector)
   - [AI & coding assistants](#ai--coding-assistants)
   - [Source control & CI](#source-control--ci)
@@ -52,16 +52,16 @@ stringData:
   jira_api_token:    "ATATT-CHANGE_ME"
 ```
 
-## The 25 available connectors
+## The 18 available connectors
 
 Replace `CHANGE_ME` (and any other placeholder) values in whichever connector files you need, under `connectors/`:
 
-`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `salesforce`, `zoom`, `confluence`, `youtrack`, `zendesk`, `workday`, `bamboohr`, `ms-entra`, `figma`, `outline`, `hubspot`, `cursor`, `openai`, `chatgpt-team`, `claude-team`, `claude-admin`, `claude-enterprise`, `bitbucket-cloud`, `zulip-proxy`.
+`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `zoom`, `confluence`, `zendesk`, `bamboohr`, `ms-entra`, `outline`, `hubspot`, `cursor`, `chatgpt-team`, `claude-team`, `claude-enterprise`, `bitbucket-cloud`, `zulip-proxy`.
 
 Apply all of them at once, or one at a time:
 
 ```sh
-kubectl -n insight apply -f connectors/      # all 25 connectors at once
+kubectl -n insight apply -f connectors/      # all 18 connectors at once
 # or one at a time:
 kubectl -n insight apply -f connectors/jira.yaml
 ```
@@ -116,19 +116,6 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: insight-claude-admin-main
-  namespace: insight
-  labels: { app.kubernetes.io/part-of: insight }
-  annotations: { insight.cyberfabric.com/connector: claude-admin, insight.cyberfabric.com/source-id: claude-admin-main }
-type: Opaque
-stringData:
-  admin_api_key: "CHANGE_ME"
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
   name: insight-claude-enterprise-main
   namespace: insight
   labels: { app.kubernetes.io/part-of: insight }
@@ -149,20 +136,6 @@ metadata:
 type: Opaque
 stringData:
   cursor_api_key: "CHANGE_ME"
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: insight-openai-main
-  namespace: insight
-  labels: { app.kubernetes.io/part-of: insight }
-  annotations: { insight.cyberfabric.com/connector: openai, insight.cyberfabric.com/source-id: openai-main }
-type: Opaque
-stringData:
-  openai_admin_api_key: "CHANGE_ME"
-  openai_start_date:    "2026-01-01"
 ```
 
 ### Source control & CI
@@ -235,21 +208,6 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: insight-youtrack-main
-  namespace: insight
-  labels: { app.kubernetes.io/part-of: insight }
-  annotations: { insight.cyberfabric.com/connector: youtrack, insight.cyberfabric.com/source-id: youtrack-main }
-type: Opaque
-stringData:
-  youtrack_base_url: "https://your-org.youtrack.cloud/api"
-  youtrack_token:    "perm-CHANGE_ME"
-  # youtrack_page_size: "100"                # optional
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
   name: insight-confluence-main
   namespace: insight
   labels: { app.kubernetes.io/part-of: insight }
@@ -275,21 +233,6 @@ stringData:
   outline_instance_url: "https://your-outline-host"
   outline_api_token:    "CHANGE_ME"
   outline_start_date:   "2026-01-01"
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: insight-figma-main
-  namespace: insight
-  labels: { app.kubernetes.io/part-of: insight }
-  annotations: { insight.cyberfabric.com/connector: figma, insight.cyberfabric.com/source-id: figma-main }
-type: Opaque
-stringData:
-  figma_token:      "figd_CHANGE_ME"
-  figma_team_ids:   "1234567890,0987654321"
-  figma_start_date: "2026-01-01"
 ```
 
 ### Communication & meetings
@@ -373,23 +316,6 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: insight-workday-main
-  namespace: insight
-  labels: { app.kubernetes.io/part-of: insight }
-  annotations: { insight.cyberfabric.com/connector: workday, insight.cyberfabric.com/source-id: workday-main }
-type: Opaque
-stringData:
-  workday_base_url:            "https://wd2-impl-services1.workday.com"
-  workday_isu_username:        "CHANGE_ME"
-  workday_isu_password:        "CHANGE_ME"
-  workday_workers_report_path: "/ccx/service/customreport2/.../Workers"
-  workday_leave_report_path:   "/ccx/service/customreport2/.../Leave"
-```
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
   name: insight-ms-entra-main
   namespace: insight
   labels: { app.kubernetes.io/part-of: insight }
@@ -402,22 +328,6 @@ stringData:
 ```
 
 ### CRM & support
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: insight-salesforce-main
-  namespace: insight
-  labels: { app.kubernetes.io/part-of: insight }
-  annotations: { insight.cyberfabric.com/connector: salesforce, insight.cyberfabric.com/source-id: salesforce-main }
-type: Opaque
-stringData:
-  salesforce_instance_url:  "https://your-org.my.salesforce.com"
-  salesforce_client_id:     "CHANGE_ME"
-  salesforce_client_secret: "CHANGE_ME"
-  salesforce_start_date:    "2026-01-01"
-```
 
 ```yaml
 # ⚠ CDK connector; baked url_base (api.hubapi.com)

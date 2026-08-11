@@ -140,14 +140,13 @@ docs/
 │   ├── connectors/               ← per-source connector specs (PRD + DESIGN + ADR)
 │   │   ├── README.md             ← connector index + unified streams table
 │   │   ├── git/                  ← GitHub, Bitbucket Server, GitLab
-│   │   ├── task-tracking/        ← YouTrack, Jira
+│   │   ├── task-tracking/        ← Jira
 │   │   ├── collaboration/        ← Microsoft 365, Slack, Zoom, Zulip
 │   │   ├── wiki/                 ← Confluence, Outline
 │   │   ├── support/              ← Zendesk, Jira Service Management
-│   │   ├── ai/                   ← Claude Admin, Claude Enterprise, Cursor, Windsurf, JetBrains, OpenAI API, ChatGPT Team
-│   │   ├── hr-directory/         ← BambooHR, Workday, LDAP / Active Directory
-│   │   ├── crm/                  ← HubSpot, Salesforce
-│   │   ├── ui-design/            ← Figma
+│   │   ├── ai/                   ← Claude Enterprise, Claude Team, Cursor, ChatGPT Team
+│   │   ├── hr-directory/         ← BambooHR, LDAP / Active Directory
+│   │   ├── crm/                  ← HubSpot
 │   │   └── testing/              ← Allure TestOps
 │   │
 │   ├── orchestrator/             ← connector orchestration layer specs
@@ -195,15 +194,14 @@ Incoming documents pending triage and integration into `docs/`. Not yet canonica
 | Domain | Sources | Silver Stream |
 |--------|---------|---------------|
 | Version Control | GitHub, Bitbucket Server, GitLab | `class_commits`, `class_pr_activity` |
-| Task Tracking | YouTrack, Jira | `class_task_tracker` |
+| Task Tracking | Jira | `class_task_*` |
 | Collaboration | M365, Slack, Zoom, Zulip | `class_communication_metrics`, `class_document_metrics` |
 | Wiki | Confluence, Outline | `class_wiki_pages`, `class_wiki_activity` |
 | Support | Zendesk, JSM | `class_support_activity` |
-| AI Dev Tools | Cursor, Windsurf, Copilot, JetBrains | `class_ai_dev_usage` |
-| AI Tools | Claude Admin, Claude Enterprise, OpenAI API, ChatGPT Team | `class_ai_api_usage`, `class_ai_tool_usage` |
-| HR / Directory | BambooHR, Workday, LDAP | `class_people`, `class_org_units` |
-| CRM | HubSpot, Salesforce | TBD |
-| Design Tools | Figma | `class_design_activity` |
+| AI Dev Tools | Cursor | `class_ai_dev_usage` |
+| AI Tools | Claude Enterprise, Claude Team, ChatGPT Team | `class_ai_assistant_usage`, `class_ai_overage` |
+| HR / Directory | BambooHR, LDAP | `class_people`, `class_hr_events` |
+| CRM | HubSpot | `class_crm_*` |
 | Quality / Testing | Allure TestOps | TBD |
 
 ---

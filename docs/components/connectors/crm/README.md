@@ -238,7 +238,7 @@ Reference data only. Used to group deals and activities by company.
 
 ## Source Mapping
 
-> Per-source Bronze schemas (raw connector output) are defined in [hubspot.md](hubspot.md) and [salesforce.md](salesforce.md). The tables below describe how those Bronze records are normalized into Silver Step 1 unified tables.
+> Per-source Bronze schemas (raw connector output) are defined in [hubspot.md](hubspot.md). The tables below describe how those Bronze records are normalized into Silver Step 1 unified tables.
 
 ### HubSpot
 
@@ -249,16 +249,6 @@ Reference data only. Used to group deals and activities by company.
 | `crm_activities` | `GET /crm/v3/objects/calls` + `/meetings` + `/tasks` + `/emails` + `/notes` | `hs_timestamp` → `timestamp`; `hs_call_duration` (ms) ÷ 1000 → `duration_seconds`; disposition GUID resolved to label → `outcome` |
 | `crm_contacts` | `GET /crm/v3/objects/contacts` | `hubspot_owner_id` → `owner_id`; company association via Associations API |
 | `crm_accounts` | `GET /crm/v3/objects/companies` | `domain` → `domain`; no parent hierarchy in HubSpot |
-
-### Salesforce
-
-| Unified table | Salesforce source | Key mapping notes |
-|---------------|------------------|-------------------|
-| `crm_users` | `SELECT ... FROM User` | `Id` → `user_id`; `Profile.Name` → metadata; `IsActive` → `is_active` |
-| `crm_deals` | `SELECT ... FROM Opportunity` | `OwnerId` → `owner_id`; `StageName` → `stage`; `IsClosed`/`IsWon` native → `is_closed`/`is_won` |
-| `crm_activities` | `SELECT ... FROM Task` + `SELECT ... FROM Event` | Task: `ActivityDate` → `timestamp`; `CallDurationInSeconds` → `duration_seconds`. Event: `StartDateTime` → `timestamp`; `DurationInMinutes` × 60 → `duration_seconds` |
-| `crm_contacts` | `SELECT ... FROM Contact` | `AccountId` → `account_id`; `OwnerId` → `owner_id` |
-| `crm_accounts` | `SELECT ... FROM Account` | `Website` → `domain`; `ParentId` → `parent_account_id` |
 
 ---
 

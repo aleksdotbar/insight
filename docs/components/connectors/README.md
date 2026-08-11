@@ -16,7 +16,6 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
   - [AI Tools](#ai-tools)
   - [HR / Directory](#hr--directory)
   - [CRM](#crm)
-  - [Design Tools](#design-tools)
   - [Quality / Testing](#quality--testing)
 - [Unified Streams](#unified-streams)
 - [How to Use](#how-to-use)
@@ -41,7 +40,6 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 | Source | Spec | Status |
 |--------|------|--------|
 | Task Tracking (unified schema) | [`task-tracking/README.md`](task-tracking/README.md) | Draft |
-| YouTrack | [`task-tracking/youtrack.md`](task-tracking/youtrack.md) | Proposed |
 | Jira | [`task-tracking/jira.md`](task-tracking/jira.md) | Proposed |
 
 ### Collaboration
@@ -75,15 +73,11 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 | Source | Spec | Status |
 |--------|------|--------|
 | Cursor | [`ai/cursor.md`](ai/cursor.md) | Proposed |
-| Windsurf | [`ai/windsurf.md`](ai/windsurf.md) | Proposed |
-| JetBrains | [`ai/jetbrains.md`](ai/jetbrains.md) | Draft |
 
 ### AI Tools
 
 | Source | Spec | Status |
 |--------|------|--------|
-| Claude Admin | [`ai/claude-admin/README.md`](ai/claude-admin/README.md) | Proposed |
-| OpenAI API | [`ai/openai-api.md`](ai/openai-api.md) | Proposed |
 | ChatGPT Team | [`ai/chatgpt-team.md`](ai/chatgpt-team.md) | Proposed |
 
 ### HR / Directory
@@ -92,7 +86,6 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 |--------|------|--------|
 | HR Directory (unified schema) | [`hr-directory/README.md`](hr-directory/README.md) | Draft |
 | BambooHR | [`hr-directory/bamboohr.md`](hr-directory/bamboohr.md) | Proposed |
-| Workday | [`hr-directory/workday.md`](hr-directory/workday.md) | Proposed |
 | LDAP / Active Directory | [`hr-directory/ldap.md`](hr-directory/ldap.md) | Proposed |
 
 ### CRM
@@ -101,14 +94,6 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 |--------|------|--------|
 | CRM (unified schema) | [`crm/README.md`](crm/README.md) | Draft |
 | HubSpot | [`crm/hubspot.md`](crm/hubspot.md) | Proposed |
-| Salesforce | [`crm/salesforce.md`](crm/salesforce.md) | Proposed |
-
-### Design Tools
-
-| Source | Spec | Status |
-|--------|------|--------|
-| Design Tools (unified schema) | [`design/README.md`](design/README.md) | Draft |
-| Figma | [`design/figma.md`](design/figma.md) | Draft |
 
 ### Quality / Testing
 
@@ -127,10 +112,9 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 | `class_wiki_pages` | Confluence + Outline | [`wiki/README.md`](wiki/README.md) |
 | `class_wiki_activity` | Confluence + Outline | [`wiki/README.md`](wiki/README.md) |
 | `class_support_activity` | Zendesk + JSM | [`support/README.md`](support/README.md) |
-| `class_design_activity` | Figma | [`design/README.md`](design/README.md) |
-| Task Tracker unified schema | YouTrack + Jira | [`task-tracking/README.md`](task-tracking/README.md) |
-| `class_people` + `class_org_units` | BambooHR + Workday + LDAP | [`hr-directory/README.md`](hr-directory/README.md) |
-| `class_ai_dev_usage` | Cursor + Windsurf + Copilot + JetBrains + Claude Code | [`ai/`](ai/) |
+| Task Tracker unified schema | Jira | [`task-tracking/README.md`](task-tracking/README.md) |
+| `class_people` | BambooHR + LDAP | [`hr-directory/README.md`](hr-directory/README.md) |
+| `class_ai_dev_usage` | Cursor + Claude Code + ChatGPT Team | [`ai/`](ai/) |
 
 ---
 
