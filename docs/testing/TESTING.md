@@ -150,5 +150,4 @@ Neither blocks merge — both stand up a full stack against a live IdP and their
 ## 9. Related
 
 - `src/ingestion/tests/e2e/README.md` — the API & metric rig
-- `docs/domain/bronze-to-api-e2e/specs/` — PRD / DESIGN for the bronze-to-api rig
 - `tests/stand/README.md` — the compose-stand suite (API contract, UI journeys, metrics)
