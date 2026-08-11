@@ -48,7 +48,7 @@ The DESIGN is decomposed into 10 features. The order is deliberate: a foundation
 
 - [ ] `p1` - **ID**: `cpt-bronze-to-api-e2e-status-overall`
 
-### 2.1 [Test Rig Scaffolding](feature-test-rig-scaffolding/) HIGH
+### 2.1 Test Rig Scaffolding HIGH
 
 - [ ] `p1` - **ID**: `cpt-bronze-to-api-e2e-feature-test-rig-scaffolding`
 
@@ -105,7 +105,7 @@ The DESIGN is decomposed into 10 features. The order is deliberate: a foundation
 
 - **Data**: (consumes existing bronze/silver/gold schemas)
 
-### 2.2 [Fixture Loader](feature-fixture-loader/) HIGH
+### 2.2 Fixture Loader HIGH
 
 - [ ] `p1` - **ID**: `cpt-bronze-to-api-e2e-feature-fixture-loader`
 
@@ -197,7 +197,7 @@ The DESIGN is decomposed into 10 features. The order is deliberate: a foundation
 
   - [ ] `p1` - `cpt-bronze-to-api-e2e-usecase-author-test`
 
-### 2.4 [Dbt Runner](feature-dbt-runner/) HIGH
+### 2.4 Dbt Runner HIGH
 
 - [ ] `p1` - **ID**: `cpt-bronze-to-api-e2e-feature-dbt-runner`
 
@@ -226,7 +226,7 @@ The DESIGN is decomposed into 10 features. The order is deliberate: a foundation
 
   - [ ] `p1` - `cpt-bronze-to-api-e2e-component-dbt-runner`
 
-### 2.5 [API Spawner](feature-api-spawner/) HIGH
+### 2.5 API Spawner HIGH
 
 - [ ] `p1` - **ID**: `cpt-bronze-to-api-e2e-feature-api-spawner`
 
@@ -259,7 +259,7 @@ The DESIGN is decomposed into 10 features. The order is deliberate: a foundation
 
   - [ ] `p1` - `cpt-bronze-to-api-e2e-constraint-loopback-only`
 
-### 2.6 [ClickHouse Seeder & CSV Asserter](feature-csv-asserter/) HIGH
+### 2.6 ClickHouse Seeder & CSV Asserter HIGH
 
 - [ ] `p1` - **ID**: `cpt-bronze-to-api-e2e-feature-csv-asserter`
 
@@ -292,7 +292,7 @@ The DESIGN is decomposed into 10 features. The order is deliberate: a foundation
   - [ ] `p1` - `cpt-bronze-to-api-e2e-component-ch-seeder`
   - [ ] `p1` - `cpt-bronze-to-api-e2e-component-csv-asserter`
 
-### 2.7 [Snapshot Update](feature-snapshot-update/) MEDIUM
+### 2.7 Snapshot Update MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-bronze-to-api-e2e-feature-snapshot-update`
 
@@ -324,7 +324,7 @@ The DESIGN is decomposed into 10 features. The order is deliberate: a foundation
 
   - [ ] `p2` - `cpt-bronze-to-api-e2e-component-csv-asserter`
 
-### 2.8 [CI Integration](feature-ci-integration/) MEDIUM
+### 2.8 CI Integration MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-bronze-to-api-e2e-feature-ci-integration`
 

@@ -46,7 +46,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 
 - [ ] `p1` - **ID**: `cpt-insightspec-status-overall`
 
-### 2.1 [Local Infrastructure Stack](feature-local-infra/) — HIGH
+### 2.1 Local Infrastructure Stack — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-local-infra`
 
@@ -109,7 +109,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
   - [ ] `p1` - `cpt-insightspec-constraint-ing-clickhouse-destination`
 
 
-### 2.2 [Local Manifest Debugging](feature-local-debug/) — HIGH
+### 2.2 Local Manifest Debugging — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-local-debug`
 
@@ -170,7 +170,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
   (none — stdout only)
 
 
-### 2.3 [Manifest Upload Script](feature-manifest-upload/) — HIGH
+### 2.3 Manifest Upload Script — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-manifest-upload`
 
@@ -226,7 +226,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
   (none)
 
 
-### 2.4 [Connection Management via API](feature-connection-management/) — HIGH
+### 2.4 Connection Management via API — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-terraform-connections`
 
@@ -282,7 +282,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
   (none — state in K8s ConfigMaps)
 
 
-### 2.5 [Argo Workflows Orchestration](feature-argo-orchestration/) — HIGH
+### 2.5 Argo Workflows Orchestration — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-argo-orchestration`
 
@@ -339,7 +339,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
   (none)
 
 
-### 2.6 [dbt Project & Silver Union](feature-dbt-silver/) — HIGH
+### 2.6 dbt Project & Silver Union — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-dbt-silver`
 
@@ -414,7 +414,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
   - [ ] `p1` - `cpt-insightspec-constraint-ing-clickhouse-destination`
 
 
-### 2.7 [Reference Connector Package — M365](feature-ref-m365/) — MEDIUM
+### 2.7 Reference Connector Package — M365 — MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-insightspec-feature-ref-m365`
 

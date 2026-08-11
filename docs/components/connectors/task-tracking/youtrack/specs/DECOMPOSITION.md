@@ -69,7 +69,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 - [ ] `p1` - **ID**: `cpt-insightspec-status-youtrack-overall`
 
-### 2.1 [Bronze Airbyte Manifest Skeleton](feature-bronze-manifest/) — HIGH
+### 2.1 Bronze Airbyte Manifest Skeleton — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-bronze-manifest`
 
@@ -126,7 +126,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.2 [Bronze Directory Streams (Full-Refresh)](feature-bronze-directories/) — HIGH
+### 2.2 Bronze Directory Streams (Full-Refresh) — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-bronze-directories`
 
@@ -186,7 +186,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.3 [Bronze Incremental Issues & Substreams](feature-bronze-issues/) — HIGH
+### 2.3 Bronze Incremental Issues & Substreams — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-bronze-issues`
 
@@ -251,7 +251,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.4 [Project-Scoped Custom Field Ingestion](feature-custom-fields/) — HIGH
+### 2.4 Project-Scoped Custom Field Ingestion — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-custom-fields`
 
@@ -296,7 +296,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.5 [dbt Connector-Level Staging](feature-dbt-staging/) — HIGH
+### 2.5 dbt Connector-Level Staging — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-dbt-staging`
 
@@ -358,7 +358,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.6 [Rust `youtrack-enrich` — Core (Replay Engine)](feature-enrich-core/) — HIGH
+### 2.6 Rust `youtrack-enrich` — Core (Replay Engine) — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-enrich-core`
 
@@ -414,7 +414,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.7 [Rust `youtrack-enrich` — IO (ClickHouse)](feature-enrich-io/) — HIGH
+### 2.7 Rust `youtrack-enrich` — IO (ClickHouse) — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-enrich-io`
 
@@ -473,7 +473,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.8 [Argo Workflow & CLI Integration](feature-argo-workflow/) — HIGH
+### 2.8 Argo Workflow & CLI Integration — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-argo-workflow`
 
@@ -523,7 +523,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.9 [Silver Plug-In Verification](feature-silver-plugin/) — MEDIUM
+### 2.9 Silver Plug-In Verification — MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-insightspec-feature-youtrack-silver-plugin`
 
@@ -574,7 +574,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.10 [Test Invariants & E2E Smoke](feature-tests-e2e/) — HIGH
+### 2.10 Test Invariants & E2E Smoke — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-tests-e2e`
 
