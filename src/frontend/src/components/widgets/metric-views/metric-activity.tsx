@@ -333,7 +333,7 @@ function DayStrip({
           </div>
         ))}
       </div>
-      <div className="flex justify-between text-[0.6875rem] text-muted-foreground">
+      <div className="flex justify-between text-xs text-muted-foreground">
         <span>{period ? formatDate(period.from) : null}</span>
         <span
           className={cn(
