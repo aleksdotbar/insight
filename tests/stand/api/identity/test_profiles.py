@@ -20,13 +20,10 @@ from insight_stand import Manifest, PersonaSession, identity_path
 
 from ..schemas import ProblemDocument, Profile
 
-# Quality vector of this module's tests; a test whose vector differs
-# carries its own marker, and the nearest marker wins.
-pytestmark = pytest.mark.reliability
-
 PROFILES = identity_path("/v1/profiles")
 
 
+@pytest.mark.reliability
 def test_resolve_by_email_200(lead_session: PersonaSession, stand_manifest: Manifest) -> None:
     """A seeded address resolves to the person the manifest names, in this tenant."""
     expected = stand_manifest.fixture("dev_lead")
@@ -44,6 +41,7 @@ def test_resolve_by_email_200(lead_session: PersonaSession, stand_manifest: Mani
     )
 
 
+@pytest.mark.reliability
 def test_resolve_by_email_404_unknown(lead_session: PersonaSession) -> None:
     response = lead_session.client.post(
         PROFILES, json_body={"value_type": "email", "value": "nobody@example.com"}
@@ -52,6 +50,7 @@ def test_resolve_by_email_404_unknown(lead_session: PersonaSession) -> None:
     assert response.parse(ProblemDocument).status == 404
 
 
+@pytest.mark.reliability
 def test_resolve_400_unknown_value_type(lead_session: PersonaSession) -> None:
     """`value_type` is a closed set, and an unknown one is rejected as an argument.
 
@@ -66,6 +65,7 @@ def test_resolve_400_unknown_value_type(lead_session: PersonaSession) -> None:
     assert response.parse(ProblemDocument).status == 400
 
 
+@pytest.mark.reliability
 def test_resolve_by_id_400_without_a_source(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:
@@ -144,6 +144,7 @@ def test_an_email_in_another_tenant_is_404(
 
 
 @pytest.mark.requires_seed("dev_lead")
+@pytest.mark.reliability
 def test_person_id_and_email_are_two_spellings_of_one_identity(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:

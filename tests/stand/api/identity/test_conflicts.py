@@ -27,10 +27,6 @@ from insight_stand import ApiClient, Manifest, PersonaSession, identity_path
 from ..schemas import PersonRole, PersonRoleList, ProblemDocument, Role, RoleList
 from .views import in_force
 
-# Quality vector of this module's tests; a test whose vector differs
-# carries its own marker, and the nearest marker wins.
-pytestmark = pytest.mark.reliability
-
 #: identity's own role, in `person_roles` — NOT `insight_stand.ADMIN_ROLE`,
 #: which is the KEYCLOAK REALM role (`insight-admin`). They are different
 #: authorities and only this one admits a caller to the admin API
@@ -74,6 +70,7 @@ def _active_admin_assignments(client: ApiClient) -> list[PersonRole]:
 
 
 @pytest.mark.requires_seed("admin_operator")
+@pytest.mark.reliability
 def test_a_role_name_already_in_the_catalogue_is_409(
     admin_operator_session: PersonaSession,
 ) -> None:
@@ -103,6 +100,7 @@ def test_a_role_name_already_in_the_catalogue_is_409(
 
 
 @pytest.mark.requires_seed("admin_operator")
+@pytest.mark.reliability
 def test_deleting_a_role_somebody_still_holds_is_refused(
     admin_operator_session: PersonaSession,
 ) -> None:

@@ -13,8 +13,8 @@ barely measured the *core* behaviour. For identity, a **wrong merge corrupts eve
 metric**, so the headline must be resolution correctness + the no-false-merge safety + the C#→Rust
 differential. Grounding also confirmed the framing: the person is **email-keyed** by the seed
 sources; every other source maps its own key on, and the reviewer namespace (GitHub login /
-Bitbucket display-name) ≠ author email (git→HR ≈ 68% today), so cross-namespace resolution is a
-deferred, kept-red scenario.
+Bitbucket display-name) ≠ author email, and nothing joins the two namespaces yet — so
+cross-namespace resolution is a deferred, kept-red scenario.
 
 ## After (canonical format — full five-vector spread)
 ```markdown
@@ -37,9 +37,10 @@ defined none for speed, run-cost or scanning).
       BambooHR; Workday / AD as they land) → 2/2 live providers resolve reporting lines: manager
       and team at correct depth, root and cycles handled.
 - [ ] 5. **Cross-namespace resolution** — Versatility · identity-e2e · AC-4 — fixtures across all 26
-      connectors → reviewer-namespace identities (GitHub login / Bitbucket display-name) resolved
-      wherever evidence allows; git→HR ≈ 68% today — kept as a scenario that stays red until
-      cross-namespace resolution lands, rather than a silently deferred gap.
+      connectors → reviewer-namespace identities (GitHub login / Bitbucket display-name)
+      resolved wherever the seeded fixtures carry linking evidence; the unlinkable remainder is
+      the expected gap — kept as a scenario that stays red until cross-namespace resolution
+      lands, rather than a silently deferred one.
 - [ ] 6. **Resolution latency** — Performance · manual — load test with a baseline first, on the
       3,000-person demo org → P95 < 100ms. *Proposed; no existing latency budget in the repo sets
       this bar.*

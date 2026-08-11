@@ -27,10 +27,6 @@ from insight_stand import ApiClient, PersonaSession, identity_path
 
 from .. import scratch
 
-# Quality vector of this module's tests; a test whose vector differs
-# carries its own marker, and the nearest marker wins.
-pytestmark = pytest.mark.reliability
-
 #: `{id}`-taking routes, admin-gated unless noted. `/v1/subchart/{id}` is the
 #: one an ordinary session reaches, so it is asked for by a lead below.
 MALFORMED_ID_ADMIN_ROUTES: tuple[tuple[str, str], ...] = (
@@ -72,6 +68,7 @@ def _id(value: str) -> str:
 
 @pytest.mark.requires_seed("admin_operator")
 @pytest.mark.parametrize(("method", "suffix"), MALFORMED_ID_ADMIN_ROUTES, ids=_id)
+@pytest.mark.reliability
 def test_a_non_uuid_path_segment_is_400(
     admin_operator_session: PersonaSession, method: str, suffix: str
 ) -> None:
@@ -84,6 +81,7 @@ def test_a_non_uuid_path_segment_is_400(
 
 
 @pytest.mark.requires_seed("dev_lead")
+@pytest.mark.reliability
 def test_a_non_uuid_subchart_id_is_400(lead_session: PersonaSession) -> None:
     """`/v1/subchart/{id}` too, and it is worth stating separately.
 
@@ -101,6 +99,7 @@ def test_a_non_uuid_subchart_id_is_400(lead_session: PersonaSession) -> None:
 
 @pytest.mark.requires_seed("admin_operator")
 @pytest.mark.parametrize("suffix", MALFORMED_QUERY_ADMIN_ROUTES, ids=_id)
+@pytest.mark.reliability
 def test_a_query_value_of_the_wrong_type_is_400(
     admin_operator_session: PersonaSession, suffix: str
 ) -> None:
@@ -119,6 +118,7 @@ def test_a_query_value_of_the_wrong_type_is_400(
 
 @pytest.mark.requires_seed("dev_lead")
 @pytest.mark.parametrize("suffix", MALFORMED_SUBCHART_QUERIES, ids=_id)
+@pytest.mark.reliability
 def test_a_subchart_query_value_that_cannot_be_honoured_is_400(
     lead_session: PersonaSession, suffix: str
 ) -> None:
@@ -137,6 +137,7 @@ def test_a_subchart_query_value_that_cannot_be_honoured_is_400(
 
 @pytest.mark.requires_seed("admin_operator")
 @pytest.mark.parametrize("collection", ADMIN_DELETES, ids=_id)
+@pytest.mark.reliability
 def test_deleting_something_nobody_holds_is_404(
     admin_operator_session: PersonaSession, collection: str
 ) -> None:
@@ -224,6 +225,7 @@ def test_creating_without_the_grant_is_403(
 
 
 @pytest.mark.requires_seed("admin_operator")
+@pytest.mark.reliability
 def test_an_unknown_journal_id_is_404_on_both_journals(
     admin_operator_session: PersonaSession,
 ) -> None:

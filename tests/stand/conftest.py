@@ -222,24 +222,30 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
       `src/ingestion/tools/seed/analytics.py` writes. A stand seeded without that step is a
       real state, and a test that needs those rows must say so rather than
       assert against an empty universe and pass for the wrong reason.
-    * quality vectors — every api/ui test must carry a vector marker (module
-      `pytestmark` default, per-test override, nearest wins). The attribution
-      is what makes a feature issue's scenario tags auditable against the
-      suite, so an unmarked test aborts the session like a seeding defect.
+    * quality vectors — every api/ui test must carry EXACTLY ONE vector
+      marker: a module-level `pytestmark` where the whole module shares a
+      vector, per-test markers everywhere in a mixed module. Exactly one, not
+      "nearest wins": pytest markers are additive, so a module default plus a
+      function override would leave BOTH on the item and `-m` selections for
+      two vectors would overlap. The attribution is what makes a feature
+      issue's scenario tags auditable against the suite, so a wrongly-marked
+      test aborts the session like a seeding defect.
     """
     del config
 
-    unvectored = [
-        item.nodeid
+    misvectored = {
+        item.nodeid: sorted(vectors)
         for item in items
         if ("/stand/api/" in str(item.path) or "/stand/ui/" in str(item.path))
-        and next((m for m in item.iter_markers() if m.name in QUALITY_VECTORS), None) is None
-    ]
-    if unvectored:
+        and len(vectors := {m.name for m in item.iter_markers() if m.name in QUALITY_VECTORS}) != 1
+    }
+    if misvectored:
+        lines = [f"  - {nodeid}: {names or ['<none>']}" for nodeid, names in misvectored.items()]
         raise pytest.UsageError(
-            "quality vector missing: every stand api/ui test carries one of "
-            f"({', '.join(sorted(QUALITY_VECTORS))}) — a module-level pytestmark or a "
-            "per-test marker. Unmarked:\n  " + "\n  ".join(unvectored)
+            "quality vector: every stand api/ui test carries exactly one of "
+            f"({', '.join(sorted(QUALITY_VECTORS))}) — module pytestmark for a uniform module, "
+            "per-test markers throughout a mixed one (a module default PLUS a per-test marker "
+            "leaves both on the item and breaks -m selection).\n" + "\n".join(lines)
         )
 
     try:

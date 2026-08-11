@@ -39,10 +39,6 @@ from ..schemas import (
 )
 from .views import forest_emails, in_force
 
-# Quality vector of this module's tests; a test whose vector differs
-# carries its own marker, and the nearest marker wins.
-pytestmark = pytest.mark.reliability
-
 #: Each admin listing with the model that describes it. Parametrising over the
 #: pair rather than over the path alone is what makes the 200 cases assert a
 #: SHAPE and not merely a status — every declared field of every item is checked
@@ -87,6 +83,7 @@ def _forest(session: PersonaSession) -> SubchartForest:
 @pytest.mark.parametrize(
     ("path", "model"), ADMIN_LISTINGS_WITH_MODELS, ids=lambda v: getattr(v, "__name__", v)
 )
+@pytest.mark.reliability
 def test_admin_listing_is_200_for_the_operator(
     admin_operator_session: PersonaSession, path: str, model: type[BaseModel]
 ) -> None:
@@ -136,6 +133,7 @@ JOURNALS_WITH_A_DETAIL_ROUTE = ("/v1/persons-seed", "/v1/persons-sync")
 
 @pytest.mark.requires_seed("admin_operator")
 @pytest.mark.parametrize("journal", JOURNALS_WITH_A_DETAIL_ROUTE)
+@pytest.mark.reliability
 def test_an_unknown_journal_entry_is_404_for_the_operator(
     admin_operator_session: PersonaSession, journal: str
 ) -> None:
@@ -177,6 +175,7 @@ def test_a_journal_entry_is_403_without_the_grant(
 
 
 @pytest.mark.requires_seed("admin_operator")
+@pytest.mark.reliability
 def test_the_roles_catalogue_contains_the_admin_role(
     admin_operator_session: PersonaSession,
 ) -> None:
@@ -224,6 +223,7 @@ def test_operator_sees_nobody_in_the_org_chart(
 
 
 @pytest.mark.requires_seed("admin_operator")
+@pytest.mark.reliability
 def test_role_create_list_delete_round_trip(admin_operator_session: PersonaSession) -> None:
     """`POST` 201 → the catalogue lists it → `DELETE` 204 → it is gone."""
     client = admin_operator_session.client
@@ -253,6 +253,7 @@ def test_role_create_list_delete_round_trip(admin_operator_session: PersonaSessi
 
 
 @pytest.mark.requires_seed("admin_operator", "dev_lead")
+@pytest.mark.reliability
 def test_person_role_grant_and_revoke_round_trip(
     admin_operator_session: PersonaSession, stand_manifest: Manifest
 ) -> None:

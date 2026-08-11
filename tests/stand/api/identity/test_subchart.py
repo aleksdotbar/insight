@@ -42,10 +42,6 @@ from ..schemas import ProblemDocument, Subchart, SubchartForest
 from ..scratch import UNKNOWN_ID
 from .views import forest_emails, walk
 
-# Quality vector of this module's tests; a test whose vector differs
-# carries its own marker, and the nearest marker wins.
-pytestmark = pytest.mark.reliability
-
 #: Caller-derived org subchart — takes no person argument, so what comes back
 #: identifies whoever the session belongs to. 401 anonymous (swept in
 #: `test_gateway.py`), 200 with a session, and populated from the seeded org
@@ -64,6 +60,7 @@ def _forest(session: PersonaSession) -> SubchartForest:
     return response.parse(SubchartForest)
 
 
+@pytest.mark.reliability
 def test_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
     """Same url the gateway sweep refuses anonymously; a session is the only
     difference — and the roots rule out "there was nothing there".
@@ -181,6 +178,7 @@ def _subtree(session: PersonaSession, person_uuid: str) -> Subchart:
     return response.parse(Subchart)
 
 
+@pytest.mark.reliability
 def test_subchart_of_self_is_200(lead_session: PersonaSession) -> None:
     """Distinct from the forest: this route takes an explicit person.
 
@@ -192,6 +190,7 @@ def test_subchart_of_self_is_200(lead_session: PersonaSession) -> None:
     assert subtree.root.email == lead_session.email
 
 
+@pytest.mark.reliability
 def test_subchart_of_a_visible_report_is_200(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:
@@ -230,6 +229,7 @@ def test_subchart_of_someone_out_of_scope_is_404_not_403(
     )
 
 
+@pytest.mark.reliability
 def test_subchart_of_an_unknown_person_is_404(lead_session: PersonaSession) -> None:
     response = lead_session.client.get(f"{SUBCHART_OF}/{UNKNOWN_ID}")
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"

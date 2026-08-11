@@ -157,7 +157,9 @@ hand-written suites is the failure mode.
 Explicitly list what's **out of scope** — not built yet, owned by another layer, or deferred to
 later work — so nobody scores the feature against unbuilt surface. For a **port** — and usually a
 **refactor/consolidation** — add the parity framing: the new behavior must equal what it replaces,
-verified by a **differential** (same input → identical output, zero diff) as the headline gate.
+verified by a **differential** (same input, outputs compared row by row, every expectation
+tagged `exact` / `known-diff(direction)` / `merge` — see the differential-gate axis below; a
+port is simply the case where the whole table is `exact`) as the headline gate.
 For a port, "what it replaces" is the old impl; for a consolidation it's the retired rows / sibling
 keys the new output subsumes. When that differential is the strongest available proof, give it its
 own headline test group rather than burying it inside the correctness group.

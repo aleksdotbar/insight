@@ -252,11 +252,13 @@ the gate's central rule and the reason `template` exists.
    `/internal/*` case, or the test hard-fails on a stand that cannot reach the
    token endpoint instead of skipping with a reason.
 6. Write the tests; extend the module docstring's route table. Every test
-   carries exactly one quality-vector marker — a module-level `pytestmark`
-   default with per-test overrides where a test's vector differs (contract
+   carries exactly one quality-vector marker: a module-level `pytestmark`
+   when the whole module shares a vector, per-test markers throughout a
+   mixed module — never both, markers are additive and a default plus an
+   override leaves two on the test and breaks `-m` selection. Contract
    correctness is `reliability`; access, tenancy and refusal-of-access cases
-   are `security`; catalog-breadth checks are `versatility`) — collection
-   aborts on an unmarked test.
+   are `security`; catalog-breadth checks are `versatility`. Collection
+   aborts on a test with zero or two vectors.
 7. Run and check the ledger:
 
 ```bash

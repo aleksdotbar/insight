@@ -308,11 +308,12 @@ The section stays alive after it's written — that is its point:
   more tests".
 - A scenario that will *stay* unimplemented gets its checkbox replaced by **deferred** with a
   reason and owner, so the tracker never silently under-reports.
-- In the stand suites the vector attribution is machine-enforced: every api/ui test carries a
-  vector marker (module `pytestmark` default, per-test override, nearest wins; declared in
-  `tests/pyproject.toml`, checked at collection), so `-m security` runs one vector and an
-  unmarked test aborts the session. The marker must equal the scenario's vector tag.
-  metric-spec YAML has no marker mechanism — its vector lives issue-side only.
+- In the stand suites the vector attribution is machine-enforced: every api/ui test carries
+  exactly one vector marker (module `pytestmark` for a uniform module, per-test markers in a
+  mixed one; declared in `tests/pyproject.toml`, checked at collection), so `-m security`
+  runs one vector and a test with zero or two vectors aborts the session. The marker must
+  equal the scenario's vector tag. metric-spec YAML has no marker mechanism — its vector
+  lives issue-side only.
 
 ## Turning a vague line into a scenario
 

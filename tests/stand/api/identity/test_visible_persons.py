@@ -33,10 +33,6 @@ from insight_stand import ApiClient, Manifest, PersonaSession, identity_path
 
 from ..schemas import VisiblePersons
 
-# Quality vector of this module's tests; a test whose vector differs
-# carries its own marker, and the nearest marker wins.
-pytestmark = pytest.mark.reliability
-
 #: `visible_persons.rs::MAX_PERSON_IDS` — one bound parameter per id.
 _MAX_PERSON_IDS = 1000
 
@@ -82,6 +78,7 @@ def test_only_the_people_the_caller_may_see_come_back(
     assert UNKNOWN_PERSON_ID not in visible, "an unresolvable id was echoed back"
 
 
+@pytest.mark.reliability
 def test_visible_persons_415_wrong_content_type(api: ApiClient) -> None:
     """A body refused on its media type, not parsed."""
     response = api.post(
@@ -97,6 +94,7 @@ def test_visible_persons_415_wrong_content_type(api: ApiClient) -> None:
         ([str(uuid.UUID(int=0))], "only the nil uuid"),
     ],
 )
+@pytest.mark.reliability
 def test_a_request_naming_nobody_is_a_400(api: ApiClient, person_ids: list[str], case: str) -> None:
     """A request that resolves to no id at all is a client error: answering 200
     with an empty `visible` would read to the caller as `nothing you asked for
@@ -107,6 +105,7 @@ def test_a_request_naming_nobody_is_a_400(api: ApiClient, person_ids: list[str],
     )
 
 
+@pytest.mark.reliability
 def test_more_ids_than_the_cap_is_a_400(api: ApiClient) -> None:
     """The request bounds the query — one bound parameter per id. The cap
     matches the analytics metric-results cap, which forwards a cleared request
