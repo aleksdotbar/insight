@@ -351,3 +351,10 @@ aren't in the snapshot yet:
   ONLY their target `metric_key` (not `size(items)` — see the `cases` guidance
   above), which immunises them from this coupling; only a spec that pins a
   positive `size(items)` needs the lockstep bump.
+
+## Feature-scenario traceability
+
+When a spec implements a scenario tracked in a feature issue's Testing section,
+cite it in the YAML's top-of-file comment (`# #2163 scenario 1`) — the id is
+the link, never copy scenario or AC prose — and after merge check the
+scenario's box in the issue with a link to the spec file.

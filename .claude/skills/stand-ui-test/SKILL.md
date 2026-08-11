@@ -224,3 +224,7 @@ coverage.
 7. Write the `expect` tree in the test.
 8. Audit fidelity, then run headed once to confirm it fails for the right
    reason when you break the expectation deliberately.
+9. When the journey implements a scenario tracked in a feature issue's Testing
+   section, cite it in the test docstring (`#2163 scenario 3`) — the id is the
+   link, never copy scenario or AC prose into the test — and after merge check
+   the scenario's box in the issue with a link to the test.

@@ -277,3 +277,8 @@ python3 tests/lib/insight_stand/coverage.py \
 
 8. Hand a claim marked `EXPECTED TO FAIL` to `file-bug-insight` rather than
    softening the assertion.
+9. When the test implements a scenario tracked in a feature issue's Testing
+   section, cite it in the test docstring (`#2163 scenario 3`) — the id is the
+   link, never copy scenario or AC prose into the test — and after merge check
+   the scenario's box in the issue with a link to the test. Unchecked boxes are
+   how the feature's coverage gaps stay visible.
