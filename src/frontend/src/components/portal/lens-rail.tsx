@@ -153,8 +153,13 @@ export function LensRail() {
         cancel();
         timer.current = setTimeout(() => setOpen(true), OPEN_AFTER_MS);
       }}
-      onPointerLeave={() => {
-        close();
+      // Keeps the labels while the keyboard is still in here. A pointer
+      // crossing the rail on its way elsewhere is not a reason to collapse
+      // under a focused button: the word on it would go to zero opacity and
+      // leave a keyboard user on an unlabelled icon they cannot re-reveal
+      // without a pointer. Blur is what ends a keyboard visit — see below.
+      onPointerLeave={(e) => {
+        if (!e.currentTarget.contains(document.activeElement)) close();
         setDismissed(false);
       }}
       // Keyboard gets the labels too, and immediately: a sighted keyboard user
