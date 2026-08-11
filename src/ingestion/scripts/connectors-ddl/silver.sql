@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS silver.class_crm_activities
     `contact_id` Nullable(String),
     `deal_id` Nullable(String),
     `account_id` Nullable(String),
-    `timestamp` Nullable(DateTime64(3)),
+    `timestamp` DateTime64(3),
     `duration_seconds` Nullable(Int64),
     `outcome` Nullable(String),
     `metadata` String,
@@ -722,14 +722,14 @@ SETTINGS allow_nullable_key = 1, replicated_deduplication_window = '0', index_gr
 CREATE TABLE IF NOT EXISTS silver.class_task_field_metadata
 (
     `unique_key` Nullable(String),
-    `insight_source_id` Nullable(String),
+    `insight_source_id` String,
     `data_source` String,
     `project_key` Nullable(String),
-    `field_id` Nullable(String),
-    `field_name` Nullable(String),
-    `is_multi` Nullable(UInt8),
-    `field_type` Nullable(String),
-    `has_id` Nullable(UInt8),
+    `field_id` String,
+    `field_name` String,
+    `is_multi` UInt8,
+    `field_type` String,
+    `has_id` UInt8,
     `observed_at` DateTime64(3),
     `_version` Int64
 )
