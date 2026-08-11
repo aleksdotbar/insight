@@ -18,8 +18,16 @@
  * used once is the drift starting again.
  */
 
-/** The single large number on a card. Tabular so columns of digits line up. */
-export const TEXT_FIGURE = "text-3xl font-semibold tabular-nums";
+/**
+ * The single large number on a card. Tabular so columns of digits line up.
+ *
+ * 24px rather than 30: at 30 the number was the card, and everything that
+ * makes it mean something — what it counts, what it is compared against, which
+ * way it moved — sat around it as small print. A figure has to be found at a
+ * glance, not shouted; the size only has to beat the label above it, and it
+ * does that comfortably here.
+ */
+export const TEXT_FIGURE = "text-2xl font-semibold tabular-nums";
 
 /** The name of the person or page. One per screen. */
 export const TEXT_TITLE = "text-lg font-semibold tracking-tight";

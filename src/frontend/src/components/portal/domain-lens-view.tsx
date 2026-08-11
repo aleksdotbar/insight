@@ -68,6 +68,8 @@ import type { TeamMember } from "@/types/insight";
 import { useOrgScope } from "@/lib/portal/use-org-scope";
 import { useMetricCollection } from "@/queries/metric-results";
 import { useMemberGridData } from "@/queries/member-grid";
+import { TEXT_FIGURE } from "@/lib/type-scale";
+import { cn } from "@/lib/utils";
 
 const EMPTY_COLLECTION: MetricCollectionConfig = { metrics: [] };
 
@@ -545,7 +547,7 @@ function CoverageLevelsSection({
       {/* 1 — the verdict, as a number rather than a sentence: it is meant to
           be seen, not parsed. */}
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-3xl font-semibold tabular-nums">
+        <span className={TEXT_FIGURE}>
           {/* Same amber as the rows it is the sum of. The link between the
               number and the block of bars is the one thing a reader has to
               make unaided, and colour makes it without a caption. */}
@@ -797,7 +799,7 @@ function ParticipationSection({
                 direction="higher_is_better"
               />
             </div>
-            <div className="mt-1 text-3xl font-semibold tabular-nums">
+            <div className={cn("mt-1", TEXT_FIGURE)}>
               {active} of {memberIds.length}
             </div>
             <div className="text-xs text-muted-foreground">
@@ -860,7 +862,7 @@ function HeadlineSection({
                 />
                 <Delta now={c.now} prev={c.prev} direction={c.r.direction} />
               </div>
-              <div className="mt-1 text-3xl font-semibold tabular-nums">
+              <div className={cn("mt-1", TEXT_FIGURE)}>
                 {formatMetricValue(
                   c.isSum ? perCapita(c.r, memberIds) : c.now,
                   c.r.format,
@@ -922,7 +924,7 @@ function StatTilesSection({
                 />
                 <Delta now={t.median} prev={t.prev} direction={t.r.direction} />
               </div>
-              <div className="mt-1 text-3xl font-semibold tabular-nums">
+              <div className={cn("mt-1", TEXT_FIGURE)}>
                 {formatMetricValue(t.median, t.r.format, t.r.unit)}
               </div>
               <div className="text-xs text-muted-foreground">
@@ -1240,7 +1242,7 @@ function ConcentrationSection({
               <div className="text-xs font-medium text-muted-foreground">
                 {c.label}
               </div>
-              <div className="mt-1 text-3xl font-semibold tabular-nums">
+              <div className={cn("mt-1", TEXT_FIGURE)}>
                 {Math.round(c.share * 100)}%
               </div>
               <div className="text-xs text-muted-foreground">

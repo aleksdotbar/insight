@@ -16,6 +16,7 @@ import type {
   MetricDefinition,
 } from "@/api/metric-definitions-client";
 import { useMetricDefinitions } from "@/queries/metric-definitions";
+import { TEXT_FIGURE } from "@/lib/type-scale";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLE: Record<MetricDefinitionSchemaStatus, string> = {
@@ -166,7 +167,7 @@ function DataHealth() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
         {(["ok", "error", "unchecked"] as const).map((s) => (
           <div key={s} className="rounded-lg border bg-card p-4">
-            <div className="text-3xl font-semibold tabular-nums">{counts[s]}</div>
+            <div className={TEXT_FIGURE}>{counts[s]}</div>
             <div
               className={cn(
                 "mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
@@ -178,7 +179,7 @@ function DataHealth() {
           </div>
         ))}
         <div className="rounded-lg border bg-card p-4">
-          <div className="text-3xl font-semibold tabular-nums">{noData}</div>
+          <div className={TEXT_FIGURE}>{noData}</div>
           <div className="mt-1 inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
             no data yet
           </div>
