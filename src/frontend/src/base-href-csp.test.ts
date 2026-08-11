@@ -8,21 +8,19 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = join(__dirname, "..");
+const html = readFileSync(join(root, "index.html"), "utf8");
+const scriptElement = /<script>([\s\S]*?)<\/script>/.exec(html);
 
 describe("base-href bootstrap script", () => {
-  const html = readFileSync(join(root, "index.html"), "utf8");
-  const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
-
-  it("exists as the first head element", () => {
-    expect(script).toBeTruthy();
-    const head = html.indexOf("<head>");
-    expect(html.indexOf("<script>")).toBeGreaterThan(head);
-    expect(html.indexOf("<script>")).toBeLessThan(html.indexOf("<link"));
+  it("exists as the first resource-affecting head element", () => {
+    expect(scriptElement).toBeTruthy();
+    expect(scriptElement?.index).toBeGreaterThan(html.indexOf("<head>"));
+    expect(scriptElement?.index).toBeLessThan(html.indexOf("<link"));
   });
 
   it("hash matches the nginx CSP allowance", () => {
     const digest = createHash("sha256")
-      .update(script ?? "")
+      .update(scriptElement?.[1] ?? "")
       .digest("base64");
     const nginx = readFileSync(
       join(root, "nginx/default.conf.template"),
@@ -32,7 +30,12 @@ describe("base-href bootstrap script", () => {
   });
 
   it("prefix regex accepts experiment slugs and rejects lookalikes", () => {
-    const re = /^\/exp\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?=\/|$)/;
+    // Test the regex the script actually ships, not a copy of it.
+    const source = /location\.pathname\.match\(\s*\/((?:\\.|[^/])*)\/\s*\)/.exec(
+      scriptElement?.[1] ?? ""
+    )?.[1];
+    expect(source).toBeTruthy();
+    const re = new RegExp(source ?? "(?!)");
     expect("/exp/demo/".match(re)?.[0]).toBe("/exp/demo");
     expect("/exp/widget-alpha/deep/route".match(re)?.[0]).toBe(
       "/exp/widget-alpha"
