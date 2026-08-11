@@ -4,6 +4,9 @@
 
 Per-source deep-dive specifications for Constructor Insight connectors. Each file expands on the corresponding source in [`../CONNECTORS_REFERENCE.md`](../CONNECTORS_REFERENCE.md) with full table schemas, identity mapping, Silver/Gold pipeline notes, and open questions.
 
+For how far each connector has been proven and what it needs next, see
+[`READINESS.md`](READINESS.md).
+
 <!-- toc -->
 
 - [Index](#index)
