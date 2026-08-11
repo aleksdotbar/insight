@@ -1,6 +1,5 @@
 """Mock-server test harness for Insight nocode (declarative-YAML) connectors.
 
-L1 of the connector test ladder — see
 L1 of the connector test ladder.
 
 Public API for per-connector suites:
