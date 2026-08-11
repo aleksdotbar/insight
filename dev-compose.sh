@@ -313,7 +313,7 @@ ghcr_volumes_block() {
 # binary, as `source:target[:mode]` relative to the repo root.
 ghcr_kept_mounts() {
   local svc="$1" out
-  out="$(docker compose -f docker-compose.yml --profile auth-keycloak --profile auth-fakeidp \
+  out="$(docker compose -f docker-compose.yml --profile auth-keycloak \
            config --format json 2>/dev/null |
     SERVICE="$svc" python3 -c '
 import json, os, sys
@@ -379,7 +379,7 @@ cmd_up() {
   local build_only_csv=""
   local frontend_mode_override=""
   local instance="$COMPOSE_INSTANCE"
-  # Repeatable. Empty => gen-realm.py keeps its own defaults untouched.
+  # Repeatable. Empty => the realm generator keeps its own defaults untouched.
   local authenticator_redirects=""
   local skip_build=false
   local no_frontend=false
@@ -399,7 +399,7 @@ cmd_up() {
       --frontend-mode=*) frontend_mode_override="${1#*=}"; shift ;;
       --frontend-mode)   frontend_mode_override="$2"; shift 2 ;;
       --auth=*|--auth)
-        echo "ERROR: --auth was removed — auth always runs via Keycloak (fakeidp is retired)." >&2
+        echo "ERROR: --auth was removed — auth always runs via Keycloak." >&2
         return 2 ;;
       --authenticator-redirect=*)
         authenticator_redirects="$(add "$authenticator_redirects" "${1#*=}")"; shift ;;
@@ -457,17 +457,11 @@ cmd_up() {
   [[ -n "$frontend_mode_override" ]] && FRONTEND_MODE="$frontend_mode_override"
   FRONTEND_MODE="${FRONTEND_MODE:-dev}"
 
-  # Auth always runs via Keycloak; fakeidp is retired. A lingering
-  # AUTH_MODE=fakeidp in an old .env.compose is overridden, loudly.
+  # A lingering AUTH_MODE in an old .env.compose is dead config; warn, loudly.
   if [[ "${AUTH_MODE:-keycloak}" != "keycloak" ]]; then
     echo "WARN: AUTH_MODE=${AUTH_MODE} is retired — auth always runs via Keycloak." >&2
     echo "      Remove AUTH_MODE from $env_file to silence this." >&2
   fi
-  AUTH_MODE="keycloak"
-  # The seed-sample container reads AUTH_MODE too (deploy/seed/profiles.py's
-  # get_login_id_pairs) to pick which roster personas get a login-id fixture —
-  # export so the child `docker compose` process's env-var interpolation sees it.
-  export AUTH_MODE
 
   # NGINX_BFF: Keycloak needs NO special frontend. The SPA is cookie/BFF
   # (same-origin): it calls /auth/login + /api through the gateway and never
@@ -618,7 +612,7 @@ YML
   local kc_base="http://${kc_ip:-localhost}:8085/kc"
 
   echo "=== Generating Keycloak realm import (deploy/compose/keycloak/realm-insight.generated.json) ==="
-  # gen-realm.py's own --authenticator-redirect REPLACES its defaults rather
+  # The generator's own --authenticator-redirect REPLACES its defaults rather
   # than appending, so whenever we pass any URI we must re-state the two
   # defaults too — dropping them would deregister the human login origins
   # and break `./dev-compose.sh up`.
@@ -632,11 +626,19 @@ YML
     done
     echo "    registering redirect URIs:$redirect_args"
   fi
+  # The realm is built from the seeder's roster, so the generator ships in
+  # that package and runs as an installed program. uv provisions the package
+  # into its own .venv on first use — the same tool the stand suite already
+  # requires — instead of this script reaching into the source tree.
+  command -v uv >/dev/null 2>&1 || {
+    echo "ERROR: uv is required to generate the Keycloak realm." >&2
+    echo "       Install it (brew install uv) and re-run; see CONTRIBUTING.md." >&2
+    return 1; }
   # shellcheck disable=SC2086  # redirect_args is a deliberately word-split flag list
-  python3 deploy/compose/keycloak/gen-realm.py \
+  uv run --project "$ROOT_DIR/src/ingestion/tools/seed" insight-seed-realm \
     --dev-email "$dev_lead_email" \
     $redirect_args \
-    --out deploy/compose/keycloak/realm-insight.generated.json
+    --out "$ROOT_DIR/deploy/compose/keycloak/realm-insight.generated.json"
 
   # NGINX_BFF: the AUTHENTICATOR (not the frontend) logs in against Keycloak,
   # server-side, as the pre-seeded `insight-authenticator` confidential client.
@@ -650,12 +652,10 @@ YML
   export AUTHENTICATOR_OIDC_ISSUER="${AUTHENTICATOR_OIDC_ISSUER:-${kc_base}/realms/insight}"
   export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-insight-authenticator}"
   export OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:-insight-authenticator-dev-secret}"
-  # The login-bootstrap resolve is scoped to idp.source_type; keycloak's
-  # sub differs in KIND from fakeidp's (gen-realm.py sets each realm user's
-  # id to their OWN roster uuid, so sub IS that uuid — not the fixed
-  # "fakeidp|dev" string fakeidp issues), so it must be seeded/looked-up
-  # under its own source_type, not the fakeidp default (see
-  # deploy/seed/profiles.py::get_login_id_pairs).
+  # The login-bootstrap resolve is scoped to idp.source_type: keycloak_realm
+  # sets each realm user's id to their OWN roster uuid, so sub IS that uuid and
+  # must be seeded/looked-up under the `keycloak` source_type (see
+  # src/ingestion/tools/seed/profiles.py::get_login_id_pairs).
   export AUTHENTICATOR_IDP_SOURCE_TYPE="keycloak"
   echo "authenticator issuer → ${AUTHENTICATOR_OIDC_ISSUER}"
 
@@ -756,11 +756,10 @@ YML
     contains "$ghcr_list" "$svc" && mkdir -p "deploy/compose/build/$svc"
   done
 
-  # Stop a fakeidp lingering from a stack started before its retirement.
-  # Compose profiles decide what to START, not what to stop, so without this
-  # an in-place `up` would leave both IdPs running. The auth-fakeidp profile
-  # puts the target service in scope for `stop`.
-  "${compose_cmd[@]}" --profile auth-fakeidp --profile auth-keycloak stop fakeidp >/dev/null 2>&1 || true
+  # Remove a fakeidp container lingering from a stack started before its
+  # retirement: the service no longer exists in docker-compose.yml, so an
+  # in-place `up` would otherwise leave both IdPs running.
+  docker rm -f "${COMPOSE_PROJECT_NAME:-insight}-fakeidp" >/dev/null 2>&1 || true
 
   echo "=== docker compose up ==="
   if ! "${compose_cmd[@]}" ${profiles[@]+"${profiles[@]}"} up -d --remove-orphans; then
@@ -953,7 +952,7 @@ cmd_down() {
   "${compose_cmd[@]}" \
     --profile local-mariadb --profile local-clickhouse \
     --profile front-dev --profile front-built --profile front-ghcr \
-    --profile auth-fakeidp --profile auth-keycloak \
+    --profile auth-keycloak \
     --profile build --profile seed \
     --profile local-mariadb --profile local-clickhouse \
     down $([[ "$wipe" == "true" ]] && echo "--volumes --remove-orphans")
@@ -1090,15 +1089,58 @@ Populate the demo dataset. Stack must be up first.
              ~24k rows of 60-day per-team activity in ClickHouse.
   all        Both (default if no arg).
 
-After `silver` or `all` runs, analytics is restarted so its
-metric-catalog schema validator re-checks the freshly-populated tables.
-Without that bounce, every metric stays cached at the boot-time
-`schema_status='error'`, the FE flags every bullet row schema_error=true,
-and section badges read "no peer data" everywhere.
-Tracking upstream as constructorfabric/insight#1307.
+After `silver` or `all` runs, three follow-up steps run automatically:
+the identity projection is refreshed (persons-seed + persons-sync in the
+identity-resolution container — the same pair the k8s CronJobs run), gold
+is rebuilt so observation rows resolve through the refreshed map, and
+analytics is restarted so its metric-catalog schema validator re-checks
+the freshly-populated tables. Without the bounce, every metric stays
+cached at the boot-time `schema_status='error'`, the FE flags every
+bullet row schema_error=true, and section badges read "no peer data"
+everywhere. Tracking upstream as constructorfabric/insight#1307.
 
-See deploy/seed/README.md for the ruff/mypy/venv setup.
+See src/ingestion/tools/seed/README.md for the ruff/mypy/venv setup.
 EOF
+}
+
+# One value from a compose env file: last assignment wins, leading whitespace
+# and one pair of surrounding quotes tolerated. `KEY=value` lines only — the
+# subset every writer of these files (the example + update_env_var) emits.
+env_file_value() {
+  local file="$1" key="$2" value
+  [[ -f "$file" ]] || return 0
+  value="$(sed -nE "s/^[[:space:]]*${key}=//p" "$file" | tail -1)"
+  if [[ "$value" == \"*\" || "$value" == \'*\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+# The persons-seed/sync pair the k8s CronJobs run: gold resolves identities
+# only through the bindings and snapshot these two publish, and compose has
+# no cron to run them.
+seed_identity_projection() {
+  local env_file="$1"; shift
+  local compose_cmd=("$@")
+
+  # Explicit tenant: the cross-tenant fixture makes inference ambiguous.
+  # Same default as docker-compose.yml's seed-sample.
+  local tenant
+  tenant="$(env_file_value "$env_file" TENANT_DEFAULT_ID)"
+  tenant="${tenant:-00000000-df51-5b42-9538-d2b56b7ee953}"
+
+  local subcommand
+  for subcommand in seed sync; do
+    echo "=== identity projection: persons-${subcommand} (as the k8s CronJob runs it) ==="
+    "${compose_cmd[@]}" exec -T \
+        -e "APP__gears__identity_resolution__config__tenant_default_id=${tenant}" \
+        identity-resolution /app/identity-resolution -c /app/config/insight.yaml "$subcommand" || {
+      local status=$?
+      echo "ERROR: persons-${subcommand} failed (exit ${status}; 2 = another run holds the lock," >&2
+      echo "       3 = input guard refused — see the container log above)." >&2
+      return "$status"
+    }
+  done
 }
 
 cmd_seed() {
@@ -1125,18 +1167,32 @@ cmd_seed() {
 
   # Run the seed step itself. NOT `exec` — we still want to bounce
   # analytics after silver/all completes (see cf/insight#1307).
-  "${compose_cmd[@]}" --profile seed run --rm seed-sample "${args[@]}"
+  #
+  # --build: `compose run` reuses whatever image the tag currently holds, and a
+  # seed image left over from an older checkout runs the wrong entrypoint from
+  # the wrong directory — it surfaces as an EACCES on /app/manifest.json after
+  # the whole seed has run. The source is bind-mounted anyway, so the rebuild
+  # is layer-cached and only refreshes entrypoint/WORKDIR/deps.
+  "${compose_cmd[@]}" --profile seed run --build --rm seed-sample "${args[@]}"
   local seed_status=$?
   if [[ $seed_status -ne 0 ]]; then
     return $seed_status
   fi
 
-  # Restart analytics when ClickHouse data was touched. Its schema
-  # validator caches schema_status at startup and never re-checks; without
-  # this nudge the catalog keeps serving the pre-seed 'table_not_found'
-  # verdict and the FE shows "no peer data" everywhere.
   case "${args[0]}" in
     silver|all)
+      # Gold built unresolved above; mint bindings, publish the snapshot,
+      # rebuild. No --build: the seed run above just built the image.
+      echo
+      seed_identity_projection "$env_file" "${compose_cmd[@]}" || return $?
+      echo
+      echo "=== rebuilding gold over the refreshed identity map ==="
+      "${compose_cmd[@]}" --profile seed run --rm seed-sample gold || return $?
+
+      # Restart analytics when ClickHouse data was touched. Its schema
+      # validator caches schema_status at startup and never re-checks; without
+      # this nudge the catalog keeps serving the pre-seed 'table_not_found'
+      # verdict and the FE shows "no peer data" everywhere.
       echo
       echo "=== restarting analytics so it re-validates schema (cf/insight#1307) ==="
       "${compose_cmd[@]}" restart analytics >/dev/null
@@ -1163,6 +1219,7 @@ The main pass removes:
   • all stack containers (insight-*)
   • named volumes: mariadb-data, clickhouse-data, clickhouse-logs,
     redis-data, redpanda-data, rust-target, frontend-node-modules
+  • locally-built images (seed-sample, build containers, ...)
   • host-side build artefacts under deploy/compose/build/
   • the generated authenticator dev signing key
     (deploy/compose/authenticator-dev-keys/)
@@ -1192,6 +1249,7 @@ This will permanently remove Docker state for Compose instance
 $COMPOSE_PROJECT_NAME:
   • containers
   • named volumes
+  • the instance's locally-built images
   • the instance network
 
 Worktree-level build artefacts, generated config, keys, and .env.compose
@@ -1204,6 +1262,7 @@ This will permanently remove the local Insight stack state:
   • containers (insight-*)
   • named volumes (mariadb-data, clickhouse-data, redis-data,
     redpanda-data, rust-target, frontend-node-modules, ...)
+  • locally-built images (seed-sample, build containers, ...)
   • deploy/compose/build/ artefacts
   • deploy/compose/authenticator-dev-keys/ (dev signing key)
   • deploy/compose/override.generated.yml
@@ -1232,13 +1291,19 @@ EOF
   local compose_cmd=(docker compose --project-name "$COMPOSE_PROJECT_NAME" --env-file "$env_file" -f docker-compose.yml)
   [[ -f "$override" ]] && compose_cmd+=(-f "$override")
 
-  echo "=== docker compose down --volumes --remove-orphans ==="
+  # --rmi local: also drop the images compose built for this project (they
+  # carry no custom `image:` tag, which is what "local" matches — the pulled
+  # ghcr images keep their separate question below). A locally-built image
+  # that outlives a prune is worse than a stale volume: the next `run`
+  # silently reuses it even after the source tree it was built from has
+  # moved, and the layer cache makes the rebuild cheap anyway.
+  echo "=== docker compose down --volumes --rmi local --remove-orphans ==="
   "${compose_cmd[@]}" \
     --profile front-dev --profile front-built --profile front-ghcr \
-    --profile auth-fakeidp --profile auth-keycloak \
+    --profile auth-keycloak \
     --profile build --profile seed \
     --profile local-mariadb --profile local-clickhouse \
-    down --volumes --remove-orphans || true
+    down --volumes --rmi local --remove-orphans || true
 
   if [[ -z "$instance" && -d deploy/compose/build ]]; then
     echo "Removing deploy/compose/build/..."
@@ -1269,8 +1334,16 @@ EOF
   # Image removal is a separate question — re-pulling is slow.
   if ask_yes_no "Also remove pulled ghcr.io/constructorfabric/insight-* images?" "n"; then
     local imgs
-    imgs=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
-           | grep -E '^ghcr\.io/constructorfabric/insight-' || true)
+    # A pull whose tag was since taken over by a newer image is listed as
+    # `repo:<none>` — not a valid reference for `docker rmi`. Address those as
+    # `repo@digest`, which removes only the ghcr association: unlike the image
+    # ID, it leaves any other tag on the same image (the e2e rig's
+    # `*:e2e-prebuilt` retags) in place. Tagged pulls keep the repo:tag form.
+    imgs=$(docker images --digests --format '{{.Repository}}:{{.Tag}} {{.Repository}}@{{.Digest}}' 2>/dev/null \
+           | awk '$1 ~ /^ghcr\.io\/constructorfabric\/insight-/ {
+               if ($1 !~ /:<none>$/)      print $1
+               else if ($2 !~ /@<none>$/) print $2
+             }' || true)
     if [[ -z "$imgs" ]]; then
       echo "  No matching images present."
     else
@@ -1475,7 +1548,7 @@ test_stand_write_env() {
 #
 # The list is committed rather than derived. It was read off the evidence
 # models' own sources (src/ingestion/gold/<family>_metric_evidence.sql) against
-# what deploy/seed/generators/ writes:
+# what src/ingestion/tools/seed/generators/ writes:
 #
 #   task    <- task_issue_state / task_status_spans / task_worklog_flow  (task.py)
 #   git     <- class_git_{commits,file_changes,pull_requests,…}          (git.py)
@@ -1623,7 +1696,7 @@ test_stand_test_in_image() {
     return 1
   fi
 
-  local manifest="deploy/seed/manifest.json"
+  local manifest="src/ingestion/tools/seed/manifest.json"
   [[ -f "$manifest" ]] || {
     echo "ERROR: $manifest not found — seed the stand first: ./dev-compose.sh test-stand seed" >&2
     return 1; }
@@ -1648,7 +1721,11 @@ test_stand_test_in_image() {
     --user "$(id -u):$(id -g)"
     --network "container:${TEST_STAND_GATEWAY_CONTAINER}"
     -e "INSIGHT_STAND_BASE_URL=http://localhost:${TEST_STAND_GATEWAY_CONTAINER_PORT}"
-    -v "$PWD/${manifest}:/deploy/seed/manifest.json:ro"
+    # Mounted at a stable path and NAMED, rather than reproducing the suite's
+    # own repo-relative arithmetic inside an image where the tree lives at
+    # /tests and there is nothing above it.
+    -v "$PWD/${manifest}:/stand/manifest.json:ro"
+    -e "INSIGHT_STAND_MANIFEST=/stand/manifest.json"
     -v "$PWD/${TEST_STAND_ARTIFACT_DIR}:/tests/${TEST_STAND_ARTIFACT_DIR}"
     # Named, not inferred. The suite otherwise resolves this by walking up from
     # its own file to the directory holding `tests/` — which is the repo root in

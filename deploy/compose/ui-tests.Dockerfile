@@ -8,7 +8,8 @@
 #   docker run --rm --network container:insight-gateway \
 #     -e INSIGHT_STAND_BASE_URL=http://localhost:8080 \
 #     -e INSIGHT_STAND_PERSONA_PASSWORD=... \
-#     -v "$PWD/deploy/seed/manifest.json:/deploy/seed/manifest.json:ro" \
+#     -v "$PWD/src/ingestion/tools/seed/manifest.json:/stand/manifest.json:ro" \
+#     -e INSIGHT_STAND_MANIFEST=/stand/manifest.json \
 #     insight-ui-tests:dev
 #
 # The network namespace is shared with the gateway rather than joining the
@@ -34,7 +35,7 @@
 # the registry list (v1.61.0, cross-checked against the
 # microsoft/playwright-python v1.61.0 release and PyPI). -noble is the Ubuntu
 # 24.04 LTS base; a -resolute variant of the same version also exists.
-FROM mcr.microsoft.com/playwright/python:v1.61.0-noble@sha256:a9731514f24121d1dcd25d58d0a38146646d290a5998fd80d3e533e7b5e21c69
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble@sha256:aa81288e738725378becba5b3e06cb0f3a7f012a610e87e8d767a090ea3f740d
 
 # uv, pinned the same way (0.12.0).
 COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/

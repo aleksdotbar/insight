@@ -137,7 +137,7 @@ AUTH_REDIRECT_URI=$(render_tpl "$(yq -r '.authenticator.oidc.redirectUri // ""' 
 # only issues a refresh token WITH offline_access (e.g. Entra) adds it here.
 AUTH_SCOPES=$(yq -r '(.authenticator.oidc.scopes // ["openid","email","profile"]) | join(" ")' "$VALUES")
 # Tenant sourcing: the id_token claim naming the single tenant (`tenant_id` on
-# fakeidp/Keycloak, `tid` on Entra) and the fallback for a claim-less IdP
+# Keycloak, `tid` on Entra) and the fallback for a claim-less IdP
 # (e.g. Okta). Empty fallback = fail closed downstream.
 AUTH_TENANT_CLAIM=$(     yq -r '.authenticator.oidc.tenantClaim     // "tenant_id"' "$VALUES")
 AUTH_DEFAULT_TENANT_ID=$(yq -r '.authenticator.oidc.defaultTenantId // ""' "$VALUES")
@@ -150,6 +150,7 @@ AUTH_SOURCE_TYPE=$(yq -r '.authenticator.oidc.sourceType // ""' "$VALUES")
 AUTH_EXTERNAL_ID_CLAIM=$(yq -r '.authenticator.oidc.externalIdClaim // "sub"' "$VALUES")
 # `__override` view-as login (insight#1941/#1944) — dev/demo stands ONLY.
 AUTH_OVERRIDE_ENABLED=$(yq -r '.authenticator.overrideEnabled // false' "$VALUES")
+AUTH_EXPERIMENTS_ENABLED=$(yq -r '.authenticator.experimentsEnabled // false' "$VALUES")
 # The authn-tls discovery FQDN — the minted token `iss` and downstream issuer.
 GATEWAY_ISSUER="https://${RELEASE}-authenticator.${NS_APP}.svc.cluster.local:8443"
 GATEWAY_JWKS_URL="http://${RELEASE}-authenticator.${NS_APP}.svc.cluster.local:8083/.well-known/jwks.json"
@@ -283,6 +284,7 @@ stringData:
   APP__gears__authenticator__config__oidc_scopes: "${AUTH_SCOPES}"
   APP__gears__authenticator__config__service_tokens__audience: "${AUTH_TOKEN_AUD}"
   APP__gears__authenticator__config__override_enabled: "${AUTH_OVERRIDE_ENABLED}"
+  APP__gears__authenticator__config__experiments_enabled: "${AUTH_EXPERIMENTS_ENABLED}"
 EOF
 } | kubectl -n "$NS_APP" apply -f - >/dev/null
 echo "composed → $NS_APP/insight-authenticator-config"

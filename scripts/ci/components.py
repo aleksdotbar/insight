@@ -80,17 +80,6 @@ COMPONENTS = [
         # own component); `triggered_by` is the registry's co-trigger for this.
         "triggered_by": ["insight-clickhouse"],
     },
-    # fakeidp is a dev/e2e test double (see cf/NGINX_BFF.md §10 G6), not shipped
-    # code — but it has real integration tests, so it is covered + gated like any
-    # other crate. Its only cross-crate files are none (standalone deps), so no
-    # cover_ignore_regex is needed.
-    {
-        "name": "fakeidp",
-        "lang": "rust",
-        "root": "src/backend",
-        "package": "fakeidp",
-        "paths": ["src/backend/services/fakeidp"],
-    },
     # routegen is the build-time gateway config compiler (gateway DESIGN
     # DD-GW-02); fmt + clippy + coverage run here. Golden + rejection tests cover
     # the emitter/validator; tests/cli.rs drives the built binary end to end
@@ -176,6 +165,13 @@ COMPONENTS = [
         "cov_package": "source_hubspot",
         "paths": ["src/ingestion/connectors/crm/hubspot"],
     },
+    {
+        "name": "bamboohr",
+        "lang": "python",
+        "root": "src/ingestion/connectors/hr-directory/bamboohr",
+        "cov_package": "source_bamboohr",
+        "paths": ["src/ingestion/connectors/hr-directory/bamboohr"],
+    },
     # Deploy-time ClickHouse schema tooling (the migration Job's Python half:
     # reconcile_bronze_schema, which heals warm-cluster bronze drift — #1991).
     # Owning the whole scripts/ tree means a connectors-ddl snapshot regen also
@@ -226,12 +222,7 @@ COMPONENTS = [
     },
     # `src/frontend/helm` falls under this path but has no measured lines, so it
     # never moves the number.
-    {
-        "name": "frontend",
-        "lang": "js",
-        "root": "src/frontend",
-        "paths": ["src/frontend"],
-    },
+    {"name": "frontend", "lang": "js", "root": "src/frontend", "paths": ["src/frontend"]},
 ]
 
 

@@ -15,7 +15,7 @@ Connectors pull data from your tools — Jira issues, Slack messages, GitHub pul
 - [Prerequisites](#prerequisites)
 - [Contents](#contents)
 - [Anatomy of a connector Secret](#anatomy-of-a-connector-secret)
-- [The 18 available connectors](#the-18-available-connectors)
+- [The 19 available connectors](#the-19-available-connectors)
 - [Example Secret for every connector](#example-secret-for-every-connector)
   - [AI & coding assistants](#ai--coding-assistants)
   - [Source control & CI](#source-control--ci)
@@ -52,16 +52,16 @@ stringData:
   jira_api_token:    "ATATT-CHANGE_ME"
 ```
 
-## The 18 available connectors
+## The 19 available connectors
 
 Replace `CHANGE_ME` (and any other placeholder) values in whichever connector files you need, under `connectors/`:
 
-`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `zoom`, `confluence`, `zendesk`, `bamboohr`, `ms-entra`, `outline`, `hubspot`, `cursor`, `chatgpt-team`, `claude-team`, `claude-enterprise`, `bitbucket-cloud`, `zulip-proxy`.
+`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `zoom`, `confluence`, `zendesk`, `bamboohr`, `ms-entra`, `outline`, `hubspot`, `cursor`, `chatgpt-team`, `claude-team`, `claude-enterprise`, `bitbucket-cloud`, `zulip-proxy`, `github-directory`.
 
 Apply all of them at once, or one at a time:
 
 ```sh
-kubectl -n insight apply -f connectors/      # all 18 connectors at once
+kubectl -n insight apply -f connectors/      # all 19 connectors at once
 # or one at a time:
 kubectl -n insight apply -f connectors/jira.yaml
 ```
@@ -185,6 +185,22 @@ type: Opaque
 stringData:
   bitbucket_token:      "CHANGE_ME"    # Atlassian ATCTT access token (NOT an ATATT API token)
   bitbucket_workspaces: "workspace-a,workspace-b"
+```
+
+```yaml
+# GitHub org roster -> identity_inputs. Required for GitHub-brokered SSO:
+# without it a GitHub login resolves to no person and the callback returns 403.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insight-github-directory-main
+  namespace: insight
+  labels: { app.kubernetes.io/part-of: insight }
+  annotations: { insight.cyberfabric.com/connector: github-directory, insight.cyberfabric.com/source-id: github-directory-main }
+type: Opaque
+stringData:
+  github_token:         "ghp_CHANGE_ME"   # read:org (+ user:email for member emails)
+  github_organizations: '["myorg"]'       # JSON array
 ```
 
 ### Issue tracking & docs

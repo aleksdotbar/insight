@@ -8,11 +8,12 @@
 #   /internal/authz returns 401.
 #
 # The IdP is a real Keycloak importing the generated compose realm
-# (deploy/compose/keycloak/gen-realm.py) with the rig's overlay on top
+# (`insight-seed-realm`, from src/ingestion/tools/seed) with the rig's overlay
+# on top
 # (tests/kc-realm-overlay.py: test users, fast token lifespan, back-channel
-# registration, and a second realm for the host-keyed issuer map). What the
-# retired fakeidp offered as `/_control/*` hooks the suites now drive through
-# the Keycloak admin API and `docker pause` (tests/common/kc.rs).
+# registration, and a second realm for the host-keyed issuer map). IdP-side
+# events the suites need to provoke (logout, revocation, outage) are driven
+# through the Keycloak admin API and `docker pause` (tests/common/kc.rs).
 #
 # Everything runs on localhost, so no IdP-URL rewriting is needed. Usage:
 #   src/backend/services/authenticator/tests/run-e2e.sh
@@ -51,6 +52,15 @@ KC_REALM_B=insight-b
 KC_ADMIN_USER=admin
 KC_ADMIN_PASSWORD=admin
 E2E_USER=dev@company.nonpresent
+# The realm generator lives in the seed package and is run through uv, which
+# resolves and installs it on first use — the same way dev-compose.sh and the
+# gitops `keycloak-realm` target invoke it.
+SEED_DIR="$ROOT_DIR/src/ingestion/tools/seed"
+# Every realm user carries a tenant claim and the generator requires one rather
+# than defaulting to a stand's. Which tenant is immaterial here: the rig
+# resolves people by email (idp.external_id_claim=email), so this only has to
+# be named, and it is the value the compose stack uses.
+KC_TENANT_ID=00000000-df51-5b42-9538-d2b56b7ee953
 pids=()
 
 cleanup() {
@@ -95,7 +105,12 @@ rm -rf "$KC_IMPORT_DIR" && mkdir -p "$KC_IMPORT_DIR"
 # The redirect URIs are the three authenticator instances below; the compose
 # defaults would deregister them (--authenticator-redirect REPLACES, not
 # appends).
-python3 "$ROOT_DIR/deploy/compose/keycloak/gen-realm.py" \
+command -v uv >/dev/null 2>&1 || {
+  echo "uv is required to generate the realm — https://docs.astral.sh/uv/getting-started/installation/" >&2
+  exit 1
+}
+TENANT_DEFAULT_ID="$KC_TENANT_ID" \
+uv run --project "$SEED_DIR" insight-seed-realm \
   --dev-email "$E2E_USER" \
   --authenticator-redirect "http://localhost:$AUTH_PORT/auth/callback" \
   --authenticator-redirect "http://localhost:$AUTH2_PORT/auth/callback" \
@@ -251,7 +266,7 @@ if ! wait_ready authenticator3 "http://localhost:$AUTH3_PORT/.well-known/jwks.js
 fi
 
 # Keycloak coordinates for the suites (tests/common/kc.rs): the login form
-# password and the admin-API/docker seams that replaced fakeidp's hooks.
+# password and the admin-API/docker seams for IdP-side events.
 export E2E_KC_BASE="$KC_BASE"
 export E2E_KC_REALM="$KC_REALM"
 export E2E_KC_CONTAINER="$KC_CT"

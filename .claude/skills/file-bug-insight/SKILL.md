@@ -32,7 +32,7 @@ Each of these owns a slice of the work. Some are still being built out here, so 
 | Skill | Owns | Reach for it when |
 |---|---|---|
 | `playwright-cli` | the browser command surface — snapshots, refs, clicks, screenshots, console, network | exploring a stand or reproducing any UI defect |
-| `drive-ui` | getting an *authenticated* browser on any stand — fakeidp and the `DEV_USER_EMAIL` seed locally, a passkey attach on a remote one — plus the routes and the evidence set | any UI defect, local or remote |
+| `drive-ui` | getting an *authenticated* browser on any stand — the Keycloak realm login and the `DEV_USER_EMAIL` seed locally, a passkey attach on a remote one — plus the routes and the evidence set | any UI defect, local or remote |
 | `metric-parity` | the full bronze → silver → gold walk | collecting the same query at every layer |
 | `release-verify` | install and seed health | settling "product bug, or empty instance?" |
 
@@ -128,6 +128,18 @@ One idea per sentence. Short declarative lines a tired on-call reader parses on 
 
 The second version is also the shape this skill asks for: four things observed, no claim about which side owns the fix.
 
+**Use words the reader already has.** The issue is read by whoever is on triage, not only by someone who has just been in that code. Two habits lose that reader:
+
+- **Shorthand you picked up while debugging.** "Token mint failed", "the reconcile cannot mint", "the hook is lost" — each is a compressed insider phrase. Write what actually happens: *"cannot get an access token"*, *"the token request to the Airbyte API fails"*, *"the Job is never created"*.
+- **A verb doing a noun's job.** If a phrase needs a paragraph to unpack, it is not saving anyone time. Prefer the longer plain phrase over the shorter clever one.
+
+Keep the product's own vocabulary where you *observed* it — table, view and column names inside an error, the API route you called, the metric key on the tile, the medallion layer names. That is what makes the report greppable. The rule is about phrases you invented, not terms the system printed.
+
+- ✗ *"Token mint fails, so no connector is provisioned."*
+- ✓ *"The pipeline cannot get an access token from Airbyte, so no connector is created. The request to `POST /api/v1/applications/token` returns 404."*
+
+The check that catches this: read the Summary as if you had not spent the last hour in the system. If any phrase you invented would send that reader to ask "what is that?", replace it — terms the system printed stay.
+
 **Say each fact once.** Every fact lives in exactly one section. Repetition teaches the reader to skim, and skimming is how the one load-bearing line gets missed.
 
 **Title = the plain, user-visible symptom.** No metric IDs, table or column symbols, or migration names — those live in the body. Don't append the diagnosis as a trailing clause, don't reach for filler adverbs, and don't use a qualifier the reader can't resolve from the title alone ("after a database migration" — which one?).
@@ -135,7 +147,7 @@ The second version is also the shape this skill asks for: four things observed, 
 - ✗ *"YouTrack sync is reported failed and its transforms are skipped even though the data synced successfully"* → ✓ *"YouTrack sync is reported failed and its transforms never run"*
 - ✗ *"A connector sync fails **outright** when the previous sync is still running"* → ✓ drop `outright`; "fails" already says it.
 
-**No prescribed fix and no acceptance criteria** — that is the assignee's call. Describe an expected result in plain language and point at the prototype as the source of truth; don't specify exact colours or pixel values.
+**No prescribed fix and no acceptance criteria** — that is the assignee's call. Describe an expected result in plain language and, where a prototype exists, point at it as the source of truth; don't specify exact colours or pixel values.
 
 ## Worked example
 
@@ -207,7 +219,24 @@ gh project item-edit --project-id PVT_kwDOERGOus4Ba9e9 --id "$ITEM" \
 
 Verify those IDs with `gh project field-list 40 --owner constructorfabric` if an edit fails.
 
-**Images — the honest constraint.** GitHub has **no API to upload an image to an issue**, and `gh` cannot do it either; the web UI uploads via drag-drop. Create the issue with the body, then tell the user to drag the PNGs into the description box. Don't imply they will be attached automatically. For a data or pipeline bug the inline query proof is usually the evidence and no screenshot is needed.
+**Images.** There is no *documented* API, but the web UI's upload endpoint accepts a plain `gh auth token` (verified 2026-08). Upload **before** creating the issue and embed the returned URL in the body, so the asset attaches with the initial render:
+
+```sh
+# Upload one PNG; prints the asset URL to embed. The token rides stdin (-H @-),
+# never curl's argv, so it can't show up in a process listing.
+REPO=constructorfabric/insight   # the repo the issue will live in — swap when reusing elsewhere
+REPO_ID=$(gh api "repos/$REPO" --jq .id)
+ASSET=$(gh auth token | sed 's/^/Authorization: Bearer /' \
+  | curl -sf --connect-timeout 5 --max-time 120 -X POST -H @- -H "Accept: application/json" \
+      --data-binary "@<shot>.png" \
+      "https://uploads.github.com/user-attachments/assets?name=<shot>.png&content_type=image/png&repository_id=$REPO_ID" \
+  | jq -er '.url // empty')
+[ -n "$ASSET" ] || echo "upload failed — use the manual fallback" >&2
+# → https://github.com/user-attachments/assets/<uuid>; write ![<what it shows>]($ASSET)
+#   into $BODY where the evidence belongs — the embed doesn't happen by itself
+```
+
+Three caveats. The endpoint is **undocumented** — if the POST fails (empty `$ASSET`), fall back to the old flow: create the issue, then tell the user to drag the PNGs into the description box (don't imply they attached automatically). Always pass the target repo's `repository_id` — the POST 404s without it, and asset visibility is scoped to that repo. And the screenshot is public the moment the issue is: scrub it like the body (no internal hostnames in the URL bar, no tokens in a visible console). Unattached uploads 404 anonymously until the issue references them — that's normal, not a failure. For a data or pipeline bug the inline query proof is usually the evidence and no screenshot is needed.
 
 ## Verify what landed
 

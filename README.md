@@ -318,6 +318,7 @@ For cluster deployments image tags flow through automatically: the umbrella char
 | `insight-analytics` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-analytics |
 | `insight-identity-resolution` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-identity-resolution |
 | `insight-toolbox` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-toolbox |
+| `insight-seed` (test stands only) | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-seed |
 | `insight-frontend` | this repo | https://github.com/constructorfabric/insight/pkgs/container/insight-frontend |
 | `insight-jira-enrich` | **separate** `constructorfabric/insight-jira-enrich` | https://github.com/constructorfabric/insight/pkgs/container/insight-jira-enrich |
 

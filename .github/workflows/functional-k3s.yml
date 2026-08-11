@@ -61,6 +61,11 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
+      # The keycloak-realm Makefile target generates the roster realm with the
+      # seed package's insight-seed-realm entry point, which runs under uv.
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
       - name: Install gitops CLI tools
         run: |
           set -euo pipefail
@@ -182,17 +187,29 @@ jobs:
           make -C deploy/gitops system ENV="${GITOPS_ENV}" KUBE_CTX="${KUBE_CONTEXT}"
           make -C deploy/gitops system-status ENV="${GITOPS_ENV}" KUBE_CTX="${KUBE_CONTEXT}"
 
+      # deploy-app's chained keycloak-broker-realms target packs the generated
+      # realm into the ConfigMap the keycloak-config-cli hook Job applies.
+      - name: Generate Keycloak realm
+        run: |
+          set -euo pipefail
+          # keycloak-realm no-ops (exit 0) when keycloak.deploy != true; this
+          # smoke requires the realm, so fail closed on a misconfigured env.
+          test "$(yq -r '.keycloak.deploy // false' "deploy/gitops/environments/${GITOPS_ENV}/values.yaml")" = "true"
+          make -C deploy/gitops keycloak-realm ENV="${GITOPS_ENV}" KUBE_CTX="${KUBE_CONTEXT}"
+
       - name: Deploy Insight via gitops Makefile
         run: |
           set -euo pipefail
           helm dependency update charts/insight
           INSIGHT_VERSION="$(yq -r '.version' charts/insight/Chart.yaml)"
+          # 10m: the atomic wait now also covers Keycloak's first boot (DB
+          # schema init) and the post-install keycloak-config-cli hook Job.
           make -C deploy/gitops deploy-app \
             ENV="${GITOPS_ENV}" \
             KUBE_CTX="${KUBE_CONTEXT}" \
             CHART=../../charts/insight \
             INSIGHT_VERSION="${INSIGHT_VERSION}" \
-            TIMEOUT=5m
+            TIMEOUT=10m
 
       - name: Verify Insight workloads
         run: |
