@@ -285,6 +285,9 @@ function DayStrip({
   if (days.length === 0) return null;
 
   const hoveredDay = hovered != null ? (days[hovered] ?? null) : null;
+  // Which way the hover readout grows: rightwards from the bar over the first
+  // half of the strip, leftwards over the second, so it never runs off an end.
+  const leftAnchored = hovered != null && hovered < days.length / 2;
   const silent = silentDays(days);
   // One denominator for the whole period is worth naming: it is the thing a
   // reader argues with when a share looks wrong, and it is invisible in the
@@ -330,9 +333,15 @@ function DayStrip({
               // "3 messages" to "3.5 hours of 8", so any constant guarding the
               // ends is a guess that the longer strings walk straight past.
               // Growing inwards cannot overflow whatever the text says.
-              left: `${(hovered / days.length) * 100}%`,
-              transform:
-                hovered < days.length / 2 ? undefined : "translateX(-100%)",
+              //
+              // Which edge is the bar's own edge depends on the direction it
+              // grows in: a readout on the left half starts at the bar's left
+              // boundary, one on the right half ENDS at its right boundary.
+              // Taking the left boundary for both put every right-half readout
+              // a full bar to the left of the bar it describes, and left the
+              // last bar with a strip of empty space beside it.
+              left: `${((hovered + (leftAnchored ? 0 : 1)) / days.length) * 100}%`,
+              transform: leftAnchored ? undefined : "translateX(-100%)",
             }}
           >
             {dayTitle(metric, hoveredDay)}
