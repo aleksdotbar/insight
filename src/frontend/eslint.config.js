@@ -84,4 +84,45 @@ export default defineConfig([
       "react-hooks/incompatible-library": "off",
     },
   },
+  {
+    // Keep the text scale from growing back.
+    //
+    // It had drifted to twelve sizes and five greys, and none of that was
+    // decided — each one was a reasonable local choice that nobody could see
+    // the sum of. A reader learns a screen by learning its rules, and twelve
+    // sizes with no rule behind them is not a hierarchy, it is decoration.
+    //
+    // So the sizes a screen may use are the ones in `src/lib/type-scale.ts`,
+    // and a size written by hand is refused here rather than found later by
+    // whoever measures it again. Fractional text greys go the same way: two
+    // levels are readable as "read this / you may skip this", five are not
+    // rankable by anyone and the rule stops holding.
+    //
+    // Vendored primitives under components/ui are exempt — their sizing is
+    // that library's business and `shadcn add` rewrites them.
+    files: ["src/**/*.tsx"],
+    ignores: ["src/components/ui/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "Literal[value=/(^|\\s)text-\\[[0-9.]+(px|rem)\\]/]",
+          message:
+            "Hand-set text size. Use a role from src/lib/type-scale.ts, or add one there if none fits.",
+        },
+        {
+          selector:
+            "Literal[value=/(^|\\s)text-(muted-)?foreground\\/[0-9]/]",
+          message:
+            "Fractional text grey. There are two: text-foreground and text-muted-foreground.",
+        },
+        {
+          selector: "Literal[value=/(^|\\s)text-(amber|red|green|emerald|rose|orange|yellow)-[0-9]/]",
+          message:
+            "Raw palette colour. Good/bad is text-success and text-destructive; text-warning is attention without a verdict.",
+        },
+      ],
+    },
+  },
 ]);
