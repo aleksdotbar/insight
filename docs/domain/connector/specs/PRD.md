@@ -718,7 +718,7 @@ Every connector instance MUST expose a health check endpoint indicating its oper
 
 | Dependency | Description | Criticality |
 |------------|-------------|-------------|
-| Connector Orchestrator | Schedules and triggers connector execution runs (see the Ingestion PRD (`docs/domain/ingestion/specs/PRD.md`)) | p1 |
+| Connector Orchestrator | Schedules and triggers connector execution runs (see the Ingestion PRD, `docs/domain/ingestion/specs/PRD.md`) | p1 |
 | Identity Manager | Internal Insight platform service providing `person_id` mapping for source-native user IDs; Silver data can be joined with this mapping at query time or in Gold (see `docs/domain/identity-resolution/`) | p2 |
 | Source System APIs | External SaaS APIs providing data; availability and rate limits vary per source | p1 |
 | Credential/Secrets Management | Secure storage and retrieval of source API credentials per workspace | p1 |
