@@ -50,17 +50,6 @@ connectors:
         value: fake
       insight_tenant_id:
         value: fake
-  github-copilot:
-    path: ai/github-copilot
-    config:
-      github_org:
-        value: my-company
-      github_token:
-        value: fake
-      insight_source_id:
-        value: github-copilot-acme
-      insight_tenant_id:
-        value: fake
   openai:
     path: ai/openai
     config:

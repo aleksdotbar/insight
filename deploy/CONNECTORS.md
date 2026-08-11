@@ -56,7 +56,7 @@ stringData:
 
 Replace `CHANGE_ME` (and any other placeholder) values in whichever connector files you need, under `connectors/`:
 
-`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `salesforce`, `zoom`, `confluence`, `youtrack`, `zendesk`, `workday`, `bamboohr`, `ms-entra`, `figma`, `outline`, `hubspot`, `cursor`, `openai`, `chatgpt-team`, `claude-team`, `claude-admin`, `claude-enterprise`, `github-copilot`, `bitbucket-cloud`, `zulip-proxy`.
+`jira`, `slack`, `github-v2`, `gitlab`, `m365`, `salesforce`, `zoom`, `confluence`, `youtrack`, `zendesk`, `workday`, `bamboohr`, `ms-entra`, `figma`, `outline`, `hubspot`, `cursor`, `openai`, `chatgpt-team`, `claude-team`, `claude-admin`, `claude-enterprise`, `bitbucket-cloud`, `zulip-proxy`.
 
 Apply all of them at once, or one at a time:
 
@@ -136,22 +136,6 @@ metadata:
 type: Opaque
 stringData:
   analytics_api_key: "CHANGE_ME"
-```
-
-```yaml
-# ⚠ CDK connector; org-scoped GitHub PAT
-apiVersion: v1
-kind: Secret
-metadata:
-  name: insight-github-copilot-main
-  namespace: insight
-  labels: { app.kubernetes.io/part-of: insight }
-  annotations: { insight.cyberfabric.com/connector: github-copilot, insight.cyberfabric.com/source-id: github-copilot-main }
-type: Opaque
-stringData:
-  github_token:      "CHANGE_ME"       # PAT with Copilot org metrics scope
-  github_org:        "CHANGE_ME"
-  # github_start_date: "2026-01-01"     # optional; default = 90 days ago
 ```
 
 ```yaml
