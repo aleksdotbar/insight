@@ -42,6 +42,10 @@ from ..schemas import ProblemDocument, Subchart, SubchartForest
 from ..scratch import UNKNOWN_ID
 from .views import forest_emails, walk
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 #: Caller-derived org subchart — takes no person argument, so what comes back
 #: identifies whoever the session belongs to. 401 anonymous (swept in
 #: `test_gateway.py`), 200 with a session, and populated from the seeded org
@@ -67,6 +71,7 @@ def test_subchart_is_200_with_a_session(lead_session: PersonaSession) -> None:
     assert _forest(lead_session).roots, "the authenticated subchart carried no roots"
 
 
+@pytest.mark.security
 def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaSession) -> None:
     """A session that authenticates as somebody else is worse than none.
 
@@ -90,6 +95,7 @@ def test_the_session_belongs_to_the_persona_who_logged_in(lead_session: PersonaS
     )
 
 
+@pytest.mark.security
 def test_org_visibility_scope_differs_by_persona(
     realm_admin_session: PersonaSession,
     lead_session: PersonaSession,
@@ -135,6 +141,7 @@ def test_org_visibility_scope_differs_by_persona(
 
 
 @pytest.mark.requires_seed("dev_lead", "sales_lead")
+@pytest.mark.security
 def test_two_leads_of_different_teams_see_different_people(
     session_for: Callable[[str], PersonaSession],
 ) -> None:
@@ -193,6 +200,7 @@ def test_subchart_of_a_visible_report_is_200(
     assert str(_subtree(lead_session, report.uuid).root.person_id) == report.uuid
 
 
+@pytest.mark.security
 def test_subchart_of_someone_out_of_scope_is_404_not_403(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:

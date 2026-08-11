@@ -281,6 +281,10 @@ The section stays alive after it's written — that is its point:
   more tests".
 - A scenario that will *stay* unimplemented gets its checkbox replaced by **deferred** with a
   reason and owner, so the tracker never silently under-reports.
+- In the stand suites the vector attribution is machine-enforced: every api/ui test carries a
+  vector marker (module `pytestmark` default, per-test override, nearest wins; declared in
+  `tests/pyproject.toml`, checked at collection), so `-m security` runs one vector and an
+  unmarked test aborts the session.
 
 ## Turning a vague line into a scenario
 

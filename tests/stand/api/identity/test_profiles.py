@@ -20,6 +20,10 @@ from insight_stand import Manifest, PersonaSession, identity_path
 
 from ..schemas import ProblemDocument, Profile
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 PROFILES = identity_path("/v1/profiles")
 
 
@@ -81,6 +85,7 @@ def test_resolve_by_id_400_without_a_source(
 
 
 @pytest.mark.requires_seed("dev_lead", "sales_ic")
+@pytest.mark.security
 def test_a_person_outside_the_callers_scope_is_404_not_403(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:
@@ -115,6 +120,7 @@ def test_a_person_outside_the_callers_scope_is_404_not_403(
 
 
 @pytest.mark.requires_seed("dev_lead", "other_tenant_lead")
+@pytest.mark.security
 def test_an_email_in_another_tenant_is_404(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:
@@ -167,6 +173,7 @@ def test_person_id_and_email_are_two_spellings_of_one_identity(
 
 
 @pytest.mark.requires_seed("dev_lead", "sales_ic")
+@pytest.mark.security
 def test_a_person_id_outside_the_callers_scope_is_404(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:

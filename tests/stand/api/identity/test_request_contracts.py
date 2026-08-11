@@ -27,6 +27,10 @@ from insight_stand import ApiClient, PersonaSession, identity_path
 
 from .. import scratch
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 #: `{id}`-taking routes, admin-gated unless noted. `/v1/subchart/{id}` is the
 #: one an ordinary session reaches, so it is asked for by a lead below.
 MALFORMED_ID_ADMIN_ROUTES: tuple[tuple[str, str], ...] = (
@@ -148,6 +152,7 @@ def test_deleting_something_nobody_holds_is_404(
 
 @pytest.mark.requires_seed("admin_operator", "ceo")
 @pytest.mark.parametrize("collection", ADMIN_DELETES, ids=_id)
+@pytest.mark.security
 def test_deleting_without_the_grant_is_403(
     realm_admin_session: PersonaSession, collection: str
 ) -> None:
@@ -194,6 +199,7 @@ def _valid_body(suffix: str) -> dict[str, str]:
 
 @pytest.mark.requires_seed("admin_operator", "ceo")
 @pytest.mark.parametrize(("method", "suffix"), ADMIN_WRITES, ids=_id)
+@pytest.mark.security
 def test_creating_without_the_grant_is_403(
     realm_admin_session: PersonaSession, method: str, suffix: str
 ) -> None:
@@ -228,6 +234,7 @@ def test_an_unknown_journal_id_is_404_on_both_journals(
     assert response.status_code == 404, f"status={response.status_code} {response.text[:300]}"
 
 
+@pytest.mark.security
 def test_an_unauthenticated_caller_never_reaches_any_of_this(api_client: ApiClient) -> None:
     """The whole file's premise, stated once.
 

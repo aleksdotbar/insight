@@ -252,7 +252,11 @@ the gate's central rule and the reason `template` exists.
    one applies — `requires_service_principal` is **mandatory** for any
    `/internal/*` case, or the test hard-fails on a stand that cannot reach the
    token endpoint instead of skipping with a reason.
-6. Write the tests; extend the module docstring's route table.
+6. Write the tests; extend the module docstring's route table. Every test
+   carries exactly one quality-vector marker — a module-level `pytestmark`
+   default with per-test overrides where a test's vector differs (contract
+   correctness is `reliability`; access, tenancy and refusal-of-access cases
+   are `security`) — collection aborts on an unmarked test.
 7. Run and check the ledger:
 
 ```bash

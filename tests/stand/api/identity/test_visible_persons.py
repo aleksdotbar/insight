@@ -33,6 +33,10 @@ from insight_stand import ApiClient, Manifest, PersonaSession, identity_path
 
 from ..schemas import VisiblePersons
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 #: `visible_persons.rs::MAX_PERSON_IDS` — one bound parameter per id.
 _MAX_PERSON_IDS = 1000
 
@@ -45,6 +49,7 @@ UNKNOWN_PERSON_ID = "01900000-0000-7000-8000-000000000000"
 
 
 @pytest.mark.requires_seed("dev_lead", "development_ic", "sales_ic", "other_tenant_lead")
+@pytest.mark.security
 def test_only_the_people_the_caller_may_see_come_back(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:

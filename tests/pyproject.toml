@@ -81,6 +81,14 @@ markers = [
     "requires_ingestion: needs a stand whose manifest declares the 'ingestion' capability; skipped with a reason when it does not",
     "requires_catalogue(*parts): needs rows the analytics seed writes ('table_columns', 'definition_override'); skipped with a reason on a stand seeded without that step",
     "requires_service_principal: needs a stand whose authenticator token listener this runner can reach, so a service principal can be obtained; skipped with a reason when it cannot",
+    # Quality vectors — every stand api/ui test carries exactly one (nearest marker
+    # wins over the module's pytestmark default); enforced at collection time by
+    # tests/stand/conftest.py. Select a vector's tests with `-m <vector>`.
+    "reliability: quality vector — the data promise: correctness, contracts, fail-clear behaviour, journeys completing",
+    "security: quality vector — access control, tenancy and visibility scope, refusals, credential hygiene",
+    "performance: quality vector — speed at reference scale",
+    "efficiency: quality vector — compute cost to run",
+    "versatility: quality vector — breadth across sources, the metric catalog and its surfaces",
 ]
 
 [tool.ruff]

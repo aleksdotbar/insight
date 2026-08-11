@@ -221,7 +221,10 @@ coverage.
 4. Add or extend a page object; keep it assertion-free.
 5. Declare `@pytest.mark.requires_seed(...)` for every person named.
 6. Derive expectations from the manifest; guard against an empty derivation.
-7. Write the `expect` tree in the test.
+7. Write the `expect` tree in the test. Give the module its quality-vector
+   marker (`pytestmark` — journeys proving rendering and data are
+   `reliability`, refused-access journeys `security`); collection aborts on
+   an unmarked test.
 8. Audit fidelity, then run headed once to confirm it fails for the right
    reason when you break the expectation deliberately.
 9. When the journey implements a scenario tracked in a feature issue's Testing

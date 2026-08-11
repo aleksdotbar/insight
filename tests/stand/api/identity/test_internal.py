@@ -49,6 +49,10 @@ from insight_stand import ApiClient, Manifest, PersonaSession, identity_path
 
 from ..schemas import IdentityValue
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 
 def _dev_lead_login_id(stand_manifest: Manifest) -> tuple[str, str]:
     """`(source_type, external_id)` the dev lead's login-bootstrap row was
@@ -98,6 +102,7 @@ def test_by_email_override_serves_a_service_principal(
 
 @pytest.mark.requires_service_principal
 @pytest.mark.requires_seed("dev_lead")
+@pytest.mark.security
 def test_by_email_override_refuses_a_person(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:
@@ -171,6 +176,7 @@ def test_by_external_id_serves_a_service_principal(
 
 @pytest.mark.requires_service_principal
 @pytest.mark.requires_seed("dev_lead")
+@pytest.mark.security
 def test_by_external_id_refuses_a_person(
     lead_session: PersonaSession, stand_manifest: Manifest
 ) -> None:
@@ -233,6 +239,7 @@ def test_by_external_id_missing_external_id_is_400(
 
 @pytest.mark.requires_service_principal
 @pytest.mark.requires_seed("dev_lead")
+@pytest.mark.security
 def test_by_external_id_never_resolves_by_email(
     service_client: ApiClient, stand_manifest: Manifest
 ) -> None:

@@ -29,6 +29,10 @@ from insight_stand import ApiClient, Manifest, analytics_path
 from ..schemas import RunResponse, SavedQuery, SavedQueryListResponse
 from ..scratch import SCRATCH_QUERY_REF, UNKNOWN_ID, create_saved_query, scratch_name
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 QUERIES = analytics_path("/v1/queries")
 
 
@@ -137,6 +141,7 @@ def test_run_query_415_wrong_content_type(api: ApiClient, scratch_saved_query: S
     ["DROP TABLE metrics", "INSERT INTO metrics VALUES (1)"],
     ids=["drop", "insert"],
 )
+@pytest.mark.security
 def test_a_statement_that_is_not_a_read_is_refused_on_create(
     api: ApiClient, statement: str
 ) -> None:
@@ -153,6 +158,7 @@ def test_a_statement_that_is_not_a_read_is_refused_on_create(
     )
 
 
+@pytest.mark.security
 def test_an_update_revalidates_the_sql(api: ApiClient, scratch_saved_query: SavedQuery) -> None:
     """And again on update — a stored query that passed once can be rewritten.
 
@@ -188,6 +194,7 @@ def test_a_deleted_query_leaves_the_listing_and_the_id_stops_resolving(
     )
 
 
+@pytest.mark.security
 def test_run_binds_the_tenant_from_the_session_not_the_request(
     api: ApiClient, stand_manifest: Manifest
 ) -> None:

@@ -30,6 +30,10 @@ from ..schemas import (
     ProblemDocument,
 )
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 METRIC_RESULTS = analytics_path("/v1/metric-results")
 
 
@@ -112,6 +116,7 @@ def test_metric_results_200(api: ApiClient, stand_manifest: Manifest) -> None:
     )
 
 
+@pytest.mark.security
 def test_metric_results_403_for_a_person_out_of_scope(
     api: ApiClient, stand_manifest: Manifest
 ) -> None:
@@ -239,6 +244,7 @@ def test_an_unknown_metric_key_is_400_not_404(api: ApiClient, stand_manifest: Ma
 
 
 @pytest.mark.requires_seed("dev_lead", "sales_ic")
+@pytest.mark.security
 def test_one_hidden_person_refuses_the_whole_request(
     api: ApiClient, stand_manifest: Manifest
 ) -> None:

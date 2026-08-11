@@ -111,6 +111,11 @@ def _manifest() -> Manifest:
 # NOT re-registered here: two declarations of the same marker are two places to
 # drift, and the project config is the one a reader looks at first.
 
+# The five quality vectors of the Insight quality program. Declared as markers
+# in tests/pyproject.toml; every api/ui test must carry exactly one (enforced
+# in pytest_collection_modifyitems below).
+QUALITY_VECTORS = frozenset({"efficiency", "reliability", "performance", "security", "versatility"})
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """`--stand-manifest`, for parity with pytest-base-url's `--base-url`.
@@ -217,8 +222,25 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
       `src/ingestion/tools/seed/analytics.py` writes. A stand seeded without that step is a
       real state, and a test that needs those rows must say so rather than
       assert against an empty universe and pass for the wrong reason.
+    * quality vectors — every api/ui test must carry a vector marker (module
+      `pytestmark` default, per-test override, nearest wins). The attribution
+      is what makes a feature issue's scenario tags auditable against the
+      suite, so an unmarked test aborts the session like a seeding defect.
     """
     del config
+
+    unvectored = [
+        item.nodeid
+        for item in items
+        if ("/stand/api/" in str(item.path) or "/stand/ui/" in str(item.path))
+        and next((m for m in item.iter_markers() if m.name in QUALITY_VECTORS), None) is None
+    ]
+    if unvectored:
+        raise pytest.UsageError(
+            "quality vector missing: every stand api/ui test carries one of "
+            f"({', '.join(sorted(QUALITY_VECTORS))}) — a module-level pytestmark or a "
+            "per-test marker. Unmarked:\n  " + "\n  ".join(unvectored)
+        )
 
     try:
         manifest = _manifest()

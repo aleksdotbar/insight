@@ -33,6 +33,10 @@ from .pages.landing_page import LandingPage
 from .pages.person_view import PersonView
 from .pages.team_view import TeamView
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 
 @pytest.mark.requires_seed("dev_lead", "development_ic")
 def test_the_landing_view_shows_the_persona_and_their_reports(
@@ -67,6 +71,7 @@ def test_the_landing_view_shows_the_persona_and_their_reports(
 
 
 @pytest.mark.requires_seed("dev_lead")
+@pytest.mark.versatility
 def test_the_personal_dashboard_renders_every_metric_domain(
     page: Page,
     base_url: str,

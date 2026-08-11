@@ -51,6 +51,10 @@ from ..schemas.analytics import (
 )
 from .drilldown_matrix import EXPORT_SHAPES, MATRIX, Expectation, Tier
 
+# Quality vector of this module's tests; a test whose vector differs
+# carries its own marker, and the nearest marker wins.
+pytestmark = pytest.mark.reliability
+
 DRILLDOWN = analytics_path("/v1/metric-drilldown")
 DRILLDOWN_EXPORT = analytics_path("/v1/metric-drilldown/export")
 METRIC_RESULTS = analytics_path("/v1/metric-results")
@@ -489,6 +493,7 @@ def _assert_evidence_unavailable(
     )
 
 
+@pytest.mark.versatility
 def test_every_metric_definition_is_in_the_drilldown_matrix(
     drilldown_capabilities: Mapping[str, MetricDrilldownCapability | None],
 ) -> None:
@@ -711,6 +716,7 @@ def test_git_commit_drilldown_exports_all_rows(api: ApiClient, stand_manifest: M
 
 
 @pytest.mark.requires_seed("dev_lead", "sales_ic")
+@pytest.mark.security
 def test_git_commit_drilldown_refuses_a_person_out_of_scope(
     api: ApiClient, stand_manifest: Manifest
 ) -> None:
