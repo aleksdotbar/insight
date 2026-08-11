@@ -12,7 +12,6 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
 
-ARG VITE_SENTRY_DSN
 ARG VITE_APP_RELEASE
 
 RUN pnpm run build
