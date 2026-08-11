@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::domain::metric_definitions::definition::{MetricDirection, MetricFormat, MetricOrigin};
 use crate::domain::metric_definitions::error_code::{MetricSchemaErrorCode, SchemaStatus};
-use crate::domain::metric_definitions::repository::fetch_dimensions;
+use crate::domain::metric_definitions::repository::{fetch_dimensions, fetch_tags};
 use crate::domain::metric_drilldown::{MetricDrilldownCapability, load_capabilities};
 
 /// Response body for `GET /v1/metric-definitions`. Metrics are sorted by
@@ -37,12 +37,20 @@ pub struct MetricDefinitionView {
     /// Compact label for dense surfaces; absent when the full label is
     /// already compact enough.
     pub short_label: Option<String>,
+    /// The single topic this metric belongs to within its family, so a surface
+    /// listing a family can partition it into topics rather than only sorting
+    /// by name. Exactly one per metric; absent only for metrics that declare
+    /// none.
+    pub subject: Option<String>,
     pub description: Option<String>,
     pub explanation: Option<String>,
     pub unit: Option<String>,
     pub format: MetricFormat,
     pub direction: MetricDirection,
     pub dimensions: Vec<String>,
+    /// Cross-cutting labels a surface can filter or search by; many per metric,
+    /// unlike the singular `subject`. Empty when the metric declares none.
+    pub tags: Vec<String>,
     pub is_enabled: bool,
     /// `builtin` metrics read managed observation relations; `custom` metrics
     /// execute inline SQL at query time. The validator stamps `schema_status`
@@ -72,6 +80,7 @@ struct ListingRow {
     metric_key: String,
     label: String,
     short_label: Option<String>,
+    subject: Option<String>,
     description: Option<String>,
     explanation: Option<String>,
     unit: Option<String>,
@@ -111,8 +120,11 @@ pub async fn list_definition_views(
     let dimensions = fetch_dimensions(db, &definition_ids)
         .await
         .map_err(|error| db_error(&error))?;
+    let tags = fetch_tags(db, &definition_ids)
+        .await
+        .map_err(|error| db_error(&error))?;
 
-    let mut metrics = build_views(selected, dimensions)?;
+    let mut metrics = build_views(selected, dimensions, tags)?;
     for metric in &mut metrics {
         metric.drilldown = capabilities.remove(&metric.metric_key);
     }
@@ -142,6 +154,7 @@ fn select_rows(rows: Vec<ListingRow>) -> Vec<ListingRow> {
 fn build_views(
     selected: Vec<ListingRow>,
     mut dimensions: HashMap<Uuid, Vec<String>>,
+    mut tags: HashMap<Uuid, Vec<String>>,
 ) -> Result<Vec<MetricDefinitionView>, CanonicalError> {
     let mut metrics = Vec::with_capacity(selected.len());
     for row in selected {
@@ -165,12 +178,14 @@ fn build_views(
             metric_key: row.metric_key,
             label: row.label,
             short_label: row.short_label,
+            subject: row.subject,
             description: row.description,
             explanation: row.explanation,
             unit: row.unit,
             format,
             direction,
             dimensions: dimensions.remove(&row.definition_id).unwrap_or_default(),
+            tags: tags.remove(&row.definition_id).unwrap_or_default(),
             is_enabled: row.is_enabled,
             origin,
             schema_status,
@@ -194,6 +209,7 @@ async fn fetch_listing_rows(
             d.metric_key AS metric_key, \
             d.label AS label, \
             d.short_label AS short_label, \
+            d.subject AS subject, \
             d.description AS description, \
             d.explanation AS explanation, \
             d.unit AS unit, \
@@ -239,6 +255,7 @@ mod tests {
             metric_key: metric_key.to_owned(),
             label: label.to_owned(),
             short_label: None,
+            subject: None,
             description: None,
             explanation: None,
             unit: None,
@@ -277,12 +294,14 @@ mod tests {
     #[test]
     fn build_views_decodes_columns_and_attaches_dimensions() {
         let mut r = row("git.commits", None, "Commits");
+        r.subject = Some("commits".to_owned());
         r.schema_status = "error".to_owned();
         r.schema_error_code = Some("table_not_found".to_owned());
         let id = r.definition_id;
         let dims = HashMap::from([(id, vec!["repo".to_owned()])]);
+        let tags = HashMap::from([(id, vec!["rate".to_owned()])]);
 
-        let Ok(views) = build_views(vec![r], dims) else {
+        let Ok(views) = build_views(vec![r], dims, tags) else {
             panic!("canonical rows must map");
         };
         assert_eq!(views.len(), 1);
@@ -298,6 +317,8 @@ mod tests {
             Some(MetricSchemaErrorCode::TableNotFound)
         );
         assert_eq!(view.dimensions, vec!["repo".to_owned()]);
+        assert_eq!(view.subject.as_deref(), Some("commits"));
+        assert_eq!(view.tags, vec!["rate".to_owned()]);
     }
 
     #[test]
@@ -305,7 +326,7 @@ mod tests {
         let mut r = row("team.velocity", None, "Velocity");
         r.origin = "custom".to_owned();
 
-        let Ok(views) = build_views(vec![r], HashMap::new()) else {
+        let Ok(views) = build_views(vec![r], HashMap::new(), HashMap::new()) else {
             panic!("canonical rows must map");
         };
         let Some(view) = views.first() else {
@@ -315,16 +336,18 @@ mod tests {
         assert_eq!(view.schema_status, SchemaStatus::Unchecked);
         assert_eq!(view.schema_error_code, None);
         assert_eq!(view.last_observed_date, None);
+        assert_eq!(view.subject, None);
+        assert!(view.tags.is_empty());
     }
 
     #[test]
     fn build_views_rejects_a_noncanonical_enum_value() {
         let mut r = row("git.commits", None, "Commits");
         r.format = "not-a-format".to_owned();
-        assert!(build_views(vec![r], HashMap::new()).is_err());
+        assert!(build_views(vec![r], HashMap::new(), HashMap::new()).is_err());
 
         let mut r = row("git.commits", None, "Commits");
         r.origin = "not-an-origin".to_owned();
-        assert!(build_views(vec![r], HashMap::new()).is_err());
+        assert!(build_views(vec![r], HashMap::new(), HashMap::new()).is_err());
     }
 }

@@ -493,6 +493,20 @@
               "null"
             ]
           },
+          "subject": {
+            "description": "The single topic this metric belongs to within its family, so a surface\nlisting a family can partition it into topics rather than only sorting\nby name. Exactly one per metric; absent only for metrics that declare\nnone.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "description": "Cross-cutting labels a surface can filter or search by; many per metric,\nunlike the singular `subject`. Empty when the metric declares none.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "unit": {
             "type": [
               "string",
@@ -506,6 +520,7 @@
           "format",
           "direction",
           "dimensions",
+          "tags",
           "is_enabled",
           "origin",
           "schema_status"
