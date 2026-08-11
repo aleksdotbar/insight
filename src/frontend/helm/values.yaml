@@ -28,6 +28,8 @@ sentry:
   # Sentry origin the SPA posts to, e.g. "https://sentry.example.com".
   # Empty leaves it out of the CSP, which blocks every event.
   connectSrc: ""
+  # DSN the SPA reads from /config.js at load. Empty disables reporting.
+  dsn: ""
 
 resources:
   requests:
