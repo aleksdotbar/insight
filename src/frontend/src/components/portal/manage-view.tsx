@@ -79,7 +79,7 @@ function MetricCatalogTable() {
   return (
     <div className="flex flex-col gap-3 p-4 md:p-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Metric catalog</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Metric catalog</h1>
         <p className="text-sm text-muted-foreground">
           {metrics.length} metrics · live from{" "}
           <code className="text-xs">/v1/metric-definitions</code>
@@ -158,7 +158,7 @@ function DataHealth() {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Data health</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Data health</h1>
         <p className="text-sm text-muted-foreground">
           Schema-check status across {metrics.length} metrics
         </p>

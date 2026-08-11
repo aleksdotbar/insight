@@ -138,7 +138,7 @@ export function IcNeedsAttention({
                         a row that only reacts to hover is indistinguishable from
                         a line of text until the mouse happens to cross it. */}
                     <ChevronRight
-                      className="size-3.5 shrink-0 self-center text-muted-foreground/50"
+                      className="size-3.5 shrink-0 self-center text-muted-foreground"
                       aria-hidden
                     />
                   </button>

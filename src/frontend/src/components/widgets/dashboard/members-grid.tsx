@@ -505,7 +505,7 @@ function MemberRow({
             ) : null}
           </div>
           {showIssues && counts.bottom > 0 && worstLabel ? (
-            <p className="truncate text-[11px] leading-tight text-muted-foreground">
+            <p className="truncate text-xs leading-tight text-muted-foreground">
               worst: {worstLabel}
             </p>
           ) : null}
@@ -631,7 +631,7 @@ function GridCell({
           <p className="text-xs text-muted-foreground">{memberName}</p>
           <p
             className={cn(
-              "mt-2 text-2xl font-semibold tabular-nums",
+              "mt-2 text-3xl font-semibold tabular-nums",
               PEER_TEXT[focused]
             )}
           >

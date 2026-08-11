@@ -76,7 +76,7 @@ export function KpiTile({
             tile — it already carries a delta badge. */}
         {interactive ? (
           <ChevronRight
-            className="absolute right-3 bottom-3 size-3.5 text-muted-foreground/50"
+            className="absolute right-3 bottom-3 size-3.5 text-muted-foreground"
             aria-hidden
           />
         ) : null}

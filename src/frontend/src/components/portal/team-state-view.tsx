@@ -208,7 +208,7 @@ export function TeamStateView() {
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">
+        <h1 className="text-lg font-semibold tracking-tight">
           {teamName ? `${teamName}'s team` : "Team"}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -223,7 +223,7 @@ export function TeamStateView() {
             <Card key={s.key}>
               <CardContent className="p-4">
                 <div className="text-xs font-medium text-muted-foreground">{s.label}</div>
-                <div className="mt-1 text-2xl font-semibold tabular-nums">{s.text}</div>
+                <div className="mt-1 text-3xl font-semibold tabular-nums">{s.text}</div>
                 <div className="text-xs text-muted-foreground">{s.kind}</div>
               </CardContent>
             </Card>

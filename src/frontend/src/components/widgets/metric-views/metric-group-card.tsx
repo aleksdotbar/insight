@@ -178,7 +178,7 @@ export function MetricGroupCard({
               interactive and gets none. */}
           {isEmpty ? null : (
             <ChevronRight
-              className="size-4 shrink-0 text-muted-foreground/60"
+              className="size-4 shrink-0 text-muted-foreground"
               aria-hidden
             />
           )}

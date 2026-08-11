@@ -76,7 +76,7 @@ function HeroCard({
           <span className={cn("size-1.5 rounded-full", PEER_FILL[color])} />
           <span
             className={cn(
-              "text-[10px] font-semibold tracking-widest uppercase",
+              "text-xs font-semibold tracking-widest uppercase",
               PEER_TEXT[color]
             )}
           >
