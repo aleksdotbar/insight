@@ -183,8 +183,6 @@ Incoming documents pending triage and integration into `docs/`. Not yet canonica
 | `architecture/PRODUCT_SPECIFICATION.md` | Draft | `docs/domain/` or root product spec |
 | `architecture/permissions/` | Draft ADRs | `docs/components/backend/specs/ADR/` |
 | `airbyte-declarative-standalone/` | **Migrated** | `docs/components/connectors/collaboration/m365/` |
-| `stats/backend/` | Draft ADRs | `docs/components/backend/specs/ADR/` |
-| `stats/frontend/` | Draft | `docs/components/frontend/specs/` |
 | `streams/` | Draft schemas | `docs/components/connectors/` — per-source stream definitions |
 
 ---
