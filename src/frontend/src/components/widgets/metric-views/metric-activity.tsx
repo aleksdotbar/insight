@@ -296,7 +296,7 @@ function DayStrip({
     denominators.size === 1 ? [...denominators][0] : null;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="mt-5 flex flex-col gap-1.5">
       {/* The reading appears over the bar the pointer is on, not in the
           caption below. Put anywhere else it is a change in the middle of a
           chart, which is exactly where a reader looking at one bar does not
@@ -322,14 +322,17 @@ function DayStrip({
         {hoveredDay && hovered != null ? (
           <div
             aria-hidden
-            className="pointer-events-none absolute bottom-full z-10 mb-1 -translate-x-1/2 rounded border bg-popover px-1.5 py-0.5 text-xs whitespace-nowrap text-popover-foreground shadow-sm tabular-nums"
+            className="pointer-events-none absolute bottom-full z-10 mb-1 rounded border bg-popover px-1.5 py-0.5 text-xs whitespace-nowrap text-popover-foreground shadow-sm tabular-nums"
             style={{
-              // Centred on its bar, but never past the strip's own edges: at
-              // the first and last days a centred readout hangs outside the
-              // card and gets clipped. `clamp` keeps the anchor honest in the
-              // middle — where nearly every hover lands — and only gives way
-              // within a readout's half-width of each end.
-              left: `clamp(4.5rem, ${((hovered + 0.5) / days.length) * 100}%, calc(100% - 4.5rem))`,
+              // Anchored to the bar's own edge and grown inwards, rather than
+              // centred and clamped. Centring needs to know the readout's
+              // width to keep it inside, and it does not: the text varies from
+              // "3 messages" to "3.5 hours of 8", so any constant guarding the
+              // ends is a guess that the longer strings walk straight past.
+              // Growing inwards cannot overflow whatever the text says.
+              left: `${(hovered / days.length) * 100}%`,
+              transform:
+                hovered < days.length / 2 ? undefined : "translateX(-100%)",
             }}
           >
             {dayTitle(metric, hoveredDay)}

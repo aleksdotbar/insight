@@ -1,5 +1,5 @@
 import { Settings2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AppSidebarFooter } from "@/components/app-sidebar-footer";
 import {
@@ -15,6 +15,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { useShellLayout } from "@/lib/portal/use-shell-layout";
 import type { Zone } from "@/lib/portal/nav-model";
@@ -71,20 +72,72 @@ import { cn } from "@/lib/utils";
  */
 const OPEN_WIDTH = "12rem";
 
-/** Where the context pane ends — the scrim reaches exactly that far. */
+/**
+ * Where the context pane ends, when it is there at all.
+ *
+ * The fade only has work to do while the pane is beside the rail. It collapses
+ * off-canvas on the middle width tier, and a reader can shut it by hand on a
+ * wide one — painting a fixed 19.5rem of gradient in either case laid a dimmed
+ * strip over the content for no reason.
+ */
 const PANE_EDGE = "19.5rem";
+
+/**
+ * How long a pointer has to stay before the labels appear.
+ *
+ * The wait is the whole guard against opening over something a pointer was
+ * only passing. An earlier version delayed the FADE and let the panel become
+ * clickable immediately, which achieved the opposite of that: the invisible
+ * panel is wide, a pointer crossing towards the pane landed on it, that
+ * counted as still being inside, and the rail opened after the delay anyway —
+ * over exactly the row being reached for, having swallowed any click made in
+ * the meantime. Opening on a timer keeps "open" and "visible" the same fact,
+ * so there is no window in which one is true and the other is not.
+ */
+const OPEN_AFTER_MS = 200;
 
 export function LensRail() {
   const layout = useShellLayout();
   const { zones, activeZone, selectZone } = useZoneNav();
-  const [inside, setInside] = useState(false);
-  // Set by a click, cleared on leave, so the next approach expands normally.
+  const { state: paneState } = useSidebar();
+  const paneIsBeside = paneState === "expanded";
+  const [open, setOpen] = useState(false);
+  // Suppresses the hover until the pointer leaves. Only a pointer-driven click
+  // sets it — see the note where it is set.
   const [dismissed, setDismissed] = useState(false);
-  // Held in React rather than expressed as a CSS variant chain: the open state
-  // is the product of two facts, one of which no selector can see, and a rule
-  // that silently fails to match is a bug nothing catches. The delays below are
-  // still CSS — they are about time, not about state.
-  const open = inside && !dismissed;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancel = () => {
+    if (timer.current !== null) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  };
+  const close = () => {
+    cancel();
+    setOpen(false);
+  };
+
+  // A pointer can leave without a leave event: the element can be unmounted
+  // under it by a width change, a dialog can take the pointer, the window can
+  // lose focus. Each of those used to strand the state — cross the rail, narrow
+  // the window to the phone tier and back, and it returned already open with
+  // the pointer nowhere near it.
+  //
+  // Adjusted during render rather than in an effect. An effect would set state
+  // after painting the stale frame, and React flags the cascade; this is the
+  // documented shape for "a fact this state depended on has changed".
+  const [layoutOfState, setLayoutOfState] = useState(layout);
+  if (layoutOfState !== layout) {
+    setLayoutOfState(layout);
+    setOpen(false);
+    setDismissed(false);
+  }
+
+  // Refs may not be touched during render, so the pending timer is dropped
+  // here instead: without this a wait started before a width change would fire
+  // afterwards and open a rail no pointer is on.
+  useEffect(() => cancel, [layout]);
 
   if (layout === "phone") return null;
 
@@ -92,15 +145,35 @@ export function LensRail() {
     <div
       data-testid="lens-rail"
       className="relative z-20 shrink-0"
-      onPointerEnter={() => setInside(true)}
+      onPointerEnter={(e) => {
+        // Touch fires enter at press and leave at release, so a tap would
+        // flash the labels for the length of the tap and nothing else. Leave
+        // it shut there; the same zones are labelled in the pane's drawer.
+        if (e.pointerType === "touch" || dismissed) return;
+        cancel();
+        timer.current = setTimeout(() => setOpen(true), OPEN_AFTER_MS);
+      }}
       onPointerLeave={() => {
-        setInside(false);
+        close();
         setDismissed(false);
+      }}
+      // Keyboard gets the labels too, and immediately: a sighted keyboard user
+      // was tabbing through eight identical icons with the text at zero
+      // opacity, and `title` does not surface on focus in any browser.
+      onFocusCapture={() => {
+        cancel();
+        setOpen(true);
+      }}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          close();
+          setDismissed(false);
+        }
       }}
     >
       <Sidebar
         collapsible="none"
-        className="w-14! overflow-visible border-e [&>div]:overflow-visible"
+        className="w-14! overflow-visible border-e"
       >
         {/* A fade beside the panel, not a flat veil.
             The pane's rows do not object to being dimmed — they object to
@@ -110,17 +183,30 @@ export function LensRail() {
             visible at the pane's, and a row dissolves instead of stopping
             mid-letter. Dimming it uniformly was tried first and did nothing:
             the cut, not the contrast, was the problem. */}
+        {paneIsBeside ? (
         <div
           aria-hidden
           className={cn(
-            "pointer-events-none fixed inset-y-0 bg-gradient-to-r from-background to-transparent transition-opacity duration-150",
-            open ? "opacity-100 delay-200" : "opacity-0 delay-100"
+            // Absolute, like everything else in the rail: `fixed` worked only
+            // because the rail happens to sit at the viewport's edge and no
+            // ancestor establishes a containing block, neither of which is
+            // enforced anywhere.
+            "pointer-events-none absolute inset-y-0 transition-opacity duration-150",
+            // From the panel's own colour, not the page background — the two
+            // tokens differ, most visibly in dark theme, and starting from the
+            // wrong one puts a step exactly at the seam. Mirrored for RTL:
+            // `insetInlineStart` is logical while a gradient direction is not,
+            // so the opaque end landed away from the panel and reinstated the
+            // hard cut this exists to remove.
+            "bg-gradient-to-r from-sidebar to-transparent rtl:bg-gradient-to-l",
+            open ? "opacity-100" : "opacity-0"
           )}
           style={{
             insetInlineStart: OPEN_WIDTH,
             width: `calc(${PANE_EDGE} - ${OPEN_WIDTH})`,
           }}
         />
+        ) : null}
         {/* The panel the labels sit on.
             It takes pointer events WHILE OPEN, and that is not a detail: with
             it inert the gaps between buttons belong to whatever is underneath,
@@ -132,19 +218,30 @@ export function LensRail() {
         <div
           aria-hidden={!open}
           className={cn(
-            "absolute inset-y-0 start-0 border-e bg-sidebar transition-[opacity,box-shadow] duration-150",
+            "absolute inset-y-0 start-0 border-e bg-sidebar transition-opacity duration-150",
             open
-              ? "pointer-events-auto opacity-100 shadow-lg delay-200"
-              : "pointer-events-none opacity-0 delay-100"
+              ? "pointer-events-auto opacity-100 shadow-lg"
+              : "pointer-events-none opacity-0"
           )}
           style={{ width: OPEN_WIDTH }}
+          onClick={close}
         />
         <SidebarHeader className="relative z-10 items-start ps-3">
           <div className="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sm font-bold text-sidebar-primary-foreground">
             I
           </div>
         </SidebarHeader>
-        <SidebarContent>
+        {/* The zone list scrolls while shut and lets the labels out while
+            open. It cannot do both: a box that clips its overflow on one axis
+            clips it on the other too, whatever `overflow-x: visible` says, so
+            the widened buttons were being cut off at the rail's edge.
+            Scrolling is the half worth losing, and only for as long as the
+            labels are showing — a reader who needs to scroll can move the
+            pointer away, which is also how they stop reading the labels. An
+            earlier version escaped the clip with a blanket child selector,
+            which won on specificity against this box's own overflow and left
+            the list unable to scroll at all, open or shut. */}
+        <SidebarContent className={open ? "overflow-visible" : undefined}>
           <SidebarMenu className="items-start gap-1 ps-2">
             {zones.map((z) => (
               <ZoneItem
@@ -152,8 +249,11 @@ export function LensRail() {
                 zone={z}
                 active={activeZone === z.id}
                 open={open}
-                onSelect={(zone) => {
-                  setDismissed(true);
+                onSelect={(zone, viaPointer) => {
+                  if (viaPointer) {
+                    setDismissed(true);
+                    close();
+                  }
                   selectZone(zone);
                 }}
               />
@@ -193,7 +293,7 @@ function ZoneItem({
   zone: Zone;
   active: boolean;
   open: boolean;
-  onSelect: (zone: Zone) => void;
+  onSelect: (zone: Zone, viaPointer: boolean) => void;
 }) {
   const Icon = zone.icon;
 
@@ -207,10 +307,11 @@ function ZoneItem({
         // the same offset either way.
         className={cn(
           "h-10 justify-start gap-2 overflow-hidden p-0 ps-[10px] transition-[width] duration-150",
-          open ? "delay-200" : "w-10 delay-100"
+          open || "w-10"
         )}
         style={open ? { width: `calc(${OPEN_WIDTH} - 1rem)` } : undefined}
-        onClick={() => onSelect(zone)}
+        // `detail` counts pointer clicks: keyboard activation reports 0.
+        onClick={(e) => onSelect(zone, e.detail > 0)}
       >
         <Icon className="shrink-0" />
         {/* Visible only while open, and never a pointer target of its own —
@@ -218,7 +319,7 @@ function ZoneItem({
         <span
           className={cn(
             "truncate transition-opacity duration-150",
-            open ? "opacity-100 delay-200" : "opacity-0 delay-100"
+            open ? "opacity-100" : "opacity-0"
           )}
         >
           {zone.label}
