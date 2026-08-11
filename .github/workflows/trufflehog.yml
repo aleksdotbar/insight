@@ -17,6 +17,7 @@ name: TruffleHog Secrets
 on:
   pull_request:
     branches: [main]
+  merge_group:
   schedule:
     # Nightly sweep, 03:13 UTC — ahead of the Semgrep baseline at 03:27.
     - cron: "13 3 * * *"
@@ -32,7 +33,7 @@ permissions:
 jobs:
   secrets-diff:
     name: secrets (diff)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -49,10 +50,14 @@ jobs:
         # checkout carries every branch, and commits on unmerged ones are scanned too, so an
         # unrelated branch fails this PR. `--branch` confines the walk to the merge ref.
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          SINCE="$(git rev-parse 'HEAD^1' 2>/dev/null || echo "$BASE_SHA")"
+          if [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
+            SINCE="$BASE_SHA"
+          else
+            SINCE="$(git rev-parse 'HEAD^1' 2>/dev/null || echo "$BASE_SHA")"
+          fi
           HEAD_SHA="$(git rev-parse HEAD)"
           echo "Scanning ${SINCE}..HEAD"
           docker run --rm \
@@ -83,7 +88,10 @@ jobs:
 
   secrets-history:
     name: secrets (full history)
-    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      issues: write
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -129,7 +137,17 @@ jobs:
             "${GITHUB_STEP_SUMMARY:-/dev/null}" \
             .github/trufflehog-allowlist.txt \
             report \
-            "every ref (report-only)"
+            "every ref (report-only)" \
+            new-findings.json
+
+      - name: Open an issue per finding outside the baseline
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -s new-findings.json ] || exit 0
+          python3 .github/scripts/trufflehog_notify.py new-findings.json "${GITHUB_REPOSITORY}"
 
   # The git scan above only reaches commits that some ref still points at. Two classes of leak
   # sit outside it, and only the GitHub API can see them: objects orphaned by a force push or a
@@ -141,7 +159,7 @@ jobs:
   # outage should not colour a pull request at all.
   secrets-api:
     name: secrets (GitHub API)
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

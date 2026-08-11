@@ -8,12 +8,17 @@ false positives and never block; anything else does, in `block` mode.
 Raw values are never written to the summary, the log or an artifact: this
 repository is public, so a redacted table is all that leaves the runner.
 
-    trufflehog_gate.py FINDINGS.jsonl SUMMARY.md ALLOWLIST [block|report] TITLE
+    trufflehog_gate.py FINDINGS.jsonl SUMMARY.md ALLOWLIST [block|report] TITLE [NEW.json]
+
+With NEW.json the findings that are not in the allowlist are also written there,
+without their values, for a follow-up step to act on.
 """
+
 import collections
 import hashlib
 import json
 import sys
+from pathlib import Path
 
 
 def fingerprint(detector: str, path: str, raw: str) -> str:
@@ -24,7 +29,7 @@ def read_allowlist(path: str) -> dict[str, str]:
     """{fingerprint: reason}. Lines are `<fp>  <detector>  <path>  # reason`."""
     entries = {}
     try:
-        fh = open(path, encoding="utf-8")
+        fh = Path(path).open(encoding="utf-8")
     except FileNotFoundError:
         return entries
     with fh:
@@ -40,7 +45,7 @@ def read_allowlist(path: str) -> dict[str, str]:
 
 def read_findings(path: str):
     rows, unparsable, skipped = [], 0, 0
-    with open(path, encoding="utf-8") as fh:
+    with Path(path).open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -63,26 +68,33 @@ def read_findings(path: str):
             loc = meta.get("Git") or meta.get("Github") or {}
             detector = d.get("DetectorName", "?")
             path_ = loc.get("file") or loc.get("link") or "?"
-            rows.append({
-                "detector": detector,
-                "verified": bool(d.get("Verified")),
-                "commit": (loc.get("commit") or "")[:8],
-                "file": path_,
-                "line": loc.get("line") or "",
-                "fp": fingerprint(detector, path_, d.get("Raw") or ""),
-            })
+            rows.append(
+                {
+                    "detector": detector,
+                    "verified": bool(d.get("Verified")),
+                    "commit": loc.get("commit") or "",
+                    "file": path_,
+                    "line": loc.get("line") or "",
+                    "fp": fingerprint(detector, path_, d.get("Raw") or ""),
+                }
+            )
     return rows, unparsable, skipped
 
 
 def main() -> int:
     findings, summary_path, allowlist_path, mode, title = sys.argv[1:6]
+    new_json = sys.argv[6] if len(sys.argv) > 6 else None
     rows, unparsable, skipped = read_findings(findings)
     allowed = read_allowlist(allowlist_path)
 
     known = [r for r in rows if r["fp"] in allowed]
     new = [r for r in rows if r["fp"] not in allowed]
 
-    with open(summary_path, "a", encoding="utf-8") as out:
+    if new_json:
+        with Path(new_json).open("w", encoding="utf-8") as fh:
+            json.dump(new, fh, indent=2)
+
+    with Path(summary_path).open("a", encoding="utf-8") as out:
         w = out.write
         w(f"## TruffleHog — {title}\n\n")
         if unparsable or skipped:
@@ -91,26 +103,34 @@ def main() -> int:
             if mode == "block" and unparsable:
                 # A truncated stream drops every finding after the break, so an empty
                 # result cannot be read as a pass.
-                w(f"Scan output was incomplete: {unparsable} unparsable line(s). Findings"
-                  " after the break are missing, so this is not a pass.\n")
+                w(
+                    f"Scan output was incomplete: {unparsable} unparsable line(s). Findings"
+                    " after the break are missing, so this is not a pass.\n"
+                )
                 return 1
             w(f"No new secrets. {len(known)} known finding(s) matched the allowlist.\n")
             return 0
         ver = sum(1 for r in new if r["verified"])
-        w(f"**{len(new)}** new finding(s) — {ver} verified, {len(new) - ver} unverified"
-          f" ({len(known)} known, allowlisted). Values are redacted here on purpose;"
-          " read them from the source commit.\n\n")
+        w(
+            f"**{len(new)}** new finding(s) — {ver} verified, {len(new) - ver} unverified"
+            f" ({len(known)} known, allowlisted). Values are redacted here on purpose;"
+            " read them from the source commit.\n\n"
+        )
         w("| Detector | Verified | Commit | Path | Fingerprint |\n|---|---|---|---|---|\n")
         for r in sorted(new, key=lambda r: (not r["verified"], r["detector"])):
             loc = f":{r['line']}" if r["line"] else ""
-            w(f"| `{r['detector']}` | {'yes' if r['verified'] else 'no'} | `{r['commit']}` |"
-              f" `{r['file']}`{loc} | `{r['fp']}` |\n")
+            w(
+                f"| `{r['detector']}` | {'yes' if r['verified'] else 'no'} | `{r['commit'][:8]}` |"
+                f" `{r['file']}`{loc} | `{r['fp']}` |\n"
+            )
         by_det = collections.Counter(r["detector"] for r in new)
         w(f"\nBy detector: {', '.join(f'{k} x{v}' for k, v in by_det.most_common())}\n")
-        w("\n**Revoke and rotate every credential listed above.** Removing the commit is not"
-          " remediation — assume the value is compromised the moment it was pushed. If a finding"
-          " is a detector false positive on synthetic data, add its fingerprint to"
-          f" `{allowlist_path}` with a reason, in this pull request, so the claim is reviewed.\n")
+        w(
+            "\n**Revoke and rotate every credential listed above.** Removing the commit is not"
+            " remediation — assume the value is compromised the moment it was pushed. If a finding"
+            " is a detector false positive on synthetic data, add its fingerprint to"
+            f" `{allowlist_path}` with a reason, in this pull request, so the claim is reviewed.\n"
+        )
     return 1 if mode == "block" else 0
 
 
