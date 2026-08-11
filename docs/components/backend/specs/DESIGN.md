@@ -570,7 +570,7 @@ Analytics data flows through multiple connectors (GitHub, GitLab, Jira, Slack, e
 
 Cross-source person alias matching (email, username, employee ID). Golden record building (assembling best-value person attributes from multiple sources). Merge and split operations with audit trail. Bootstrap job (seed identity store from `class_people` Silver table). Resolution service (enrich Silver step 1 tables with `person_id` to produce Silver step 2). Conflict detection and manual override UI. GDPR support: v1 via admin scripts for data deletion and export across ClickHouse + MariaDB; schema designed for automated self-service erasure in v2. Storage: MariaDB (own DB -- alias mappings, golden records, merge history). Reads from ClickHouse Silver step 1, writes person_id back via ClickHouse Dictionary integration. Key tech: modkit-db, `clickhouse` crate.
 
-Full architecture documented in [Identity Resolution DESIGN](../../domain/identity-resolution/specs/DESIGN.md).
+Full architecture documented in [Identity Resolution DESIGN](../../../domain/identity-resolution/specs/DESIGN.md).
 
 ##### Responsibility boundaries
 
@@ -767,7 +767,7 @@ Routing rules (owned by the nginx gateway; the ingress only terminates TLS and f
 
 Every `/api/*` route carries the gateway's `auth_request` exchange: session cookie in, `Authorization: Bearer <gateway JWT>` out (see [gateway/DESIGN.md](../gateway/DESIGN.md)).
 
-All responses use RFC 9457 Problem Details for errors. All list endpoints support OData `$filter`, `$orderby`, `$select`, cursor-based pagination per [DNA REST conventions](../../../../DNA/REST/API.md).
+All responses use RFC 9457 Problem Details for errors. All list endpoints support OData `$filter`, `$orderby`, `$select`, cursor-based pagination per [DNA REST conventions](../../../shared/api-guideline/API.md).
 
 ### 3.4 Internal Dependencies
 
@@ -825,7 +825,7 @@ All responses use RFC 9457 Problem Details for errors. All list endpoints suppor
 | Redis | Caching + rate limiting |
 | Redpanda | Event streaming (Kafka-compatible; replaceable with Kafka) |
 | MinIO | S3-compatible storage for CSV exports |
-| Airbyte + Kestra | Ingestion/orchestration layer (managed by [Ingestion Layer](../../domain/ingestion/specs/DESIGN.md)) |
+| Airbyte + Kestra | Ingestion/orchestration layer (managed by [Ingestion Layer](../../../domain/ingestion/specs/DESIGN.md)) |
 | Loki | Log aggregation (Grafana datasource) |
 | Prometheus + Grafana + Alertmanager | Ops monitoring |
 

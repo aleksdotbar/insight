@@ -34,7 +34,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 
 **Key Architectural Decisions**:
 - Silver layer union via dbt tags: each connector's `to_{domain}.sql` tagged with `silver:class_{domain}`, union models auto-discover by tag
-- Connections managed via Airbyte API (`airbyte-toolkit/connect.sh`) with tenant YAML configs
+- Connections managed via Airbyte API (`src/ingestion/reconcile-connectors/main.sh`) with tenant YAML configs
 - Per-tenant Argo CronWorkflows generated from connector `descriptor.yaml`
 - Kind K8s cluster for local development (same Helm charts as production)
 - `insight-toolbox` container runs all management scripts inside the cluster
@@ -179,7 +179,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 - **Depends On**: `cpt-insightspec-feature-local-infra`
 
 - **Scope**:
-  - Script `src/ingestion/tools/upload-manifest.sh` (or similar)
+  - Script `src/ingestion/reconcile-connectors/main.sh`
   - Reads `connector.yaml` from connector package directory
   - Creates or updates source definition in Airbyte via POST/PATCH API
   - Supports all connectors in `src/ingestion/connectors/` via directory scan
@@ -237,7 +237,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 - **Scope**:
   - Tenant credential files in `connections/{tenant}.yaml` (gitignored)
   - `credentials.yaml.example` in each connector package (tracked)
-  - `airbyte-toolkit/connect.sh` reads tenant YAML + connector `descriptor.yaml`
+  - `src/ingestion/reconcile-connectors/main.sh` reads tenant YAML + connector `descriptor.yaml`
   - Creates source + destination + connection via Airbyte API
   - Connection state persisted as K8s ConfigMaps
   - Idempotent — safe to re-run
@@ -425,7 +425,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 - **Scope**:
   - `src/ingestion/connectors/collaboration/m365/connector.yaml` — declarative manifest (OAuth2, pagination, incremental, `tenant_id` via AddFields)
   - `src/ingestion/connectors/collaboration/m365/descriptor.yaml` — package metadata (silver_targets, streams)
-  - `src/ingestion/connectors/collaboration/m365/dbt/to_comms_events.sql` — Bronze → Silver transform with `silver:class_comms_events` tag
+  - `src/ingestion/connectors/collaboration/m365/dbt/m365__collab_chat_activity.sql` — Bronze → Silver transform with `silver:class_collab_chat_activity` tag
   - `src/ingestion/connectors/collaboration/m365/dbt/schema.yml` — column docs + tests
   - `src/ingestion/connectors/collaboration/m365/.env.local.example` — credential template
   - Terraform connection config for m365
@@ -486,13 +486,13 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-k8s-secret-credentials`
 
-- **Purpose**: Enable `airbyte-toolkit/connect.sh` to discover and resolve connector credentials from Kubernetes Secrets via label-based discovery, replacing inline plaintext credentials in tenant YAML. Consumers manage secrets through their own K8s secret infrastructure (Vault + ESO, Sealed Secrets, manual).
+- **Purpose**: Enable `src/ingestion/reconcile-connectors/main.sh` to discover and resolve connector credentials from Kubernetes Secrets via label-based discovery, replacing inline plaintext credentials in tenant YAML. Consumers manage secrets through their own K8s secret infrastructure (Vault + ESO, Sealed Secrets, manual).
 
 - **Depends On**: `cpt-insightspec-feature-terraform-connections`
 
 - **Scope**:
-  - `src/ingestion/airbyte-toolkit/connect.sh` — Secret discovery, credential merge, backward compatibility
-  - `src/ingestion/connections/example-tenant.yaml` — updated to remove inline credentials
+  - `src/ingestion/reconcile-connectors/lib/secrets.sh` — Secret discovery, credential merge, backward compatibility
+  - example tenant config — updated to remove inline credentials
   - `src/ingestion/connectors/*/README.md` — per-connector K8s Secret specification (7 connectors)
 
 - **Out of scope**:

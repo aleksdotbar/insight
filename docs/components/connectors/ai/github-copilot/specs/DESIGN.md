@@ -909,4 +909,4 @@ Future decisions (e.g., handling `download_links` arrays with multiple shards, r
 - **Connector descriptor**: `src/ingestion/connectors/ai/github-copilot/descriptor.yaml`
 - **dbt source + models**: `src/ingestion/connectors/ai/github-copilot/dbt/schema.yml`, `dbt/copilot__ai_dev_usage.sql`, `dbt/copilot__ai_org_usage.sql`
 - **AI Tool domain**: [docs/components/connectors/ai/](../../)
-- **Sibling connectors**: [cursor](../../cursor/specs/DESIGN.md), [claude-admin](../../claude-admin/specs/DESIGN.md), [windsurf](../../windsurf/specs/DESIGN.md)
+- **Sibling connectors**: [cursor](../../cursor/specs/DESIGN.md), [claude-admin](../../claude-admin/specs/DESIGN.md), [windsurf](../../cursor/specs/DESIGN.md)

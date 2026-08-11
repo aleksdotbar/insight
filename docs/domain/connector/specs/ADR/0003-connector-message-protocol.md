@@ -308,7 +308,7 @@ The adapter reads the Airbyte connector's stdout, prefixes stream names with `{i
 - **ADR-0001**: [Stdout Protocol](./0001-connector-integration-protocol.md)
 - **ADR-0002**: [Connector Responsibility Scope](./0002-connector-responsibility-scope.md)
 - **Domain DESIGN**: [Connector Framework DESIGN](../DESIGN.md)
-- **Orchestrator PRD**: [Orchestrator PRD](../../../components/orchestrator/specs/PRD.md)
+- **Orchestrator PRD**: custom Orchestrator, designed but never built (spec removed; see git history)
 
 This decision directly addresses the following requirements and design elements:
 

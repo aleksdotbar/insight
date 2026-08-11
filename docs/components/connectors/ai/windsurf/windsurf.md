@@ -1,7 +1,7 @@
 # Windsurf Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 9 (Windsurf)
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 9 (Windsurf)
 
 Standalone specification for the Windsurf (AI Dev Tool) connector. Expands Source 9 in the main Connector Reference with full table schemas, identity mapping, Silver/Gold pipeline notes, and open questions.
 

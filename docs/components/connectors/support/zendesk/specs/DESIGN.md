@@ -2,7 +2,7 @@
 
 > Version 2.0 — June 2026
 > Issue: INSIGHT-459
-> Based on: [PRD.md](./PRD.md), [`zendesk.md`](../zendesk.md), [Connector Framework DESIGN](../../../../domain/connector/specs/DESIGN.md), [Support Domain README](../../README.md)
+> Based on: [PRD.md](./PRD.md), [`zendesk.md`](../zendesk.md), [Connector Framework DESIGN](../../../../../domain/connector/specs/DESIGN.md), [Support Domain README](../../README.md)
 
 <!-- toc -->
 

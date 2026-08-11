@@ -28,7 +28,7 @@ detected at runtime (§5.4), limits are honored as reported (§5.6).
 - **Thin extractor** ([ADR-0002](../../../../../domain/connector/specs/ADR/0002-connector-responsibility-scope.md)): stdout only, zero DB access, no transformation.
 - **Append-only sync**: `destinationSyncMode=append`. Dedup is a downstream RMT concern, never the connector's.
 - **Envelope on every record**: `insight_tenant_id`, `insight_source_id`, `data_source`, `collected_at`, `unique_key`.
-- **unique_key** ([ADR-0004](../../../../domain/ingestion-data-flow/specs/ADR/0004-unique-key-formula.md)): `{tenant}:{source}:{natural_key_parts}` joined with colons. Colon delimiter (not the ADR's literal dash) because git ref names forbid `:` but allow `-`/`/`, and the prefix parts already carry dashes (tenant UUID, `source_id`). Collision-free under two invariants: (A) `source_id` contains no colon; (B) only the terminal key component may contain a colon — all non-terminal parts are numeric ids or hex SHAs, making concatenation injective. Deviation from ADR-0004 is the git-connector convention.
+- **unique_key** ([ADR-0004](../../../../../domain/ingestion-data-flow/specs/ADR/0004-unique-key-formula.md)): `{tenant}:{source}:{natural_key_parts}` joined with colons. Colon delimiter (not the ADR's literal dash) because git ref names forbid `:` but allow `-`/`/`, and the prefix parts already carry dashes (tenant UUID, `source_id`). Collision-free under two invariants: (A) `source_id` contains no colon; (B) only the terminal key component may contain a colon — all non-terminal parts are numeric ids or hex SHAs, making concatenation injective. Deviation from ADR-0004 is the git-connector convention.
 
 ## 2. Insight Objectives
 
@@ -675,7 +675,7 @@ Still open:
 4. **Approvals shape on the target edition** (CE vs EE) — confirm degradation
    path (verified instance is EE).
 
-## 8. Decisions to Ratify (supersede legacy `../gitlab.md`)
+## 8. Decisions to Ratify (supersede legacy `./PRD.md`)
 
 1. **Drop `gitlab_files` + integer `file_id` lookup** — surrogate keys need
    global state a stateless extractor can't own; ClickHouse compresses repeated

@@ -470,7 +470,7 @@ All timestamps persisted in the Bronze layer **MUST** be stored in UTC (ISO 8601
 
 Tasks and Events are separate streams, merged at Silver. All entity streams include soft-deleted records with `IsDeleted` flag. Field names are preserved in source-native PascalCase. All records include `data_source`, `tenant_id`, `source_instance_id`, and URN-based `pk`.
 
-**Field-level schemas**: Defined in [`salesforce.md`](../salesforce.md) (Bronze table definitions with column types, descriptions, and API field mappings).
+**Field-level schemas**: Defined in [`salesforce.md`](./DESIGN.md) (Bronze table definitions with column types, descriptions, and API field mappings).
 
 **Breaking Change Policy**: Adding new fields is non-breaking. Removing or renaming fields requires a migration.
 

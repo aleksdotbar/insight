@@ -323,7 +323,7 @@ When a connection's catalog drifts in a way that requires recreation (changed pr
 
 - [ ] `p2` - **ID**: `cpt-insightspec-fr-secret-validation`
 
-The toolkit **MUST** provide a read-only command (`secrets/validate.sh`) that compares cluster Secrets in the `data` namespace against `secrets/connectors/*.yaml.example` schemas and reports drift between the OnePasswordItem custom resource and its child Secret (labels and annotations). The command **MUST NOT** modify any cluster object and **MUST** exit non-zero only on schema violations (missing required fields, missing labels), warnings on annotation drift.
+The toolkit **MUST** provide a read-only command (`src/ingestion/reconcile-connectors/lib/validate.sh`) that compares cluster Secrets in the `data` namespace against `secrets/connectors/*.yaml.example` schemas and reports drift between the OnePasswordItem custom resource and its child Secret (labels and annotations). The command **MUST NOT** modify any cluster object and **MUST** exit non-zero only on schema violations (missing required fields, missing labels), warnings on annotation drift.
 
 **Rationale**: 1Password operator copies labels onto child Secrets but not custom annotations. Without an explicit drift check, a connector can silently fall out of discovery when its CR diverges from its Secret. Read-only failure modes keep the validator safe to run any time.
 

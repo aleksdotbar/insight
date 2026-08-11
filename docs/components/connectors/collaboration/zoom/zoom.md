@@ -1,7 +1,7 @@
 # Zoom Connector Specification
 
 > Version 2.1 — March 2026
-> Based on: [`PRD.md`](./specs/PRD.md), [`DESIGN.md`](./specs/DESIGN.md), and [`manifest.yaml`](../../../../../src/connectors/collaboration/zoom/manifest.yaml)
+> Based on: [`PRD.md`](./specs/PRD.md), [`DESIGN.md`](./specs/DESIGN.md), and [`manifest.yaml`](../../../../../src/ingestion/connectors/collaboration/zoom/connector.yaml)
 
 Standalone specification for the Zoom collaboration connector. This document is intentionally aligned to the current declarative manifest so that an agent can regenerate the same connector behavior from the specs with minimal ambiguity.
 
@@ -323,4 +323,4 @@ The current manifest uses a bounded request window for messages but not a statef
 
 ### OQ-ZOOM-3: Missing project-wide connector reference
 
-Project rules reference `docs/CONNECTORS_REFERENCE.md`, but that file is currently absent. Zoom-specific docs therefore need to stay explicit about implemented fields and runtime behavior.
+Project rules reference `inbox/CONNECTORS_REFERENCE.md`, but that file is currently absent. Zoom-specific docs therefore need to stay explicit about implemented fields and runtime behavior.

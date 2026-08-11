@@ -1,7 +1,7 @@
 # YouTrack Connector Specification
 
 > Version 1.1 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 4 (YouTrack), OQ-5, OQ-6
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 4 (YouTrack), OQ-5, OQ-6
 
 Standalone specification for the YouTrack (Task Tracking) connector.
 

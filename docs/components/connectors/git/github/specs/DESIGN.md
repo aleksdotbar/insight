@@ -71,8 +71,8 @@ Fault tolerance is achieved through Airbyte CDK retry semantics, slice-level and
 
 | NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
 |--------|-------------|--------------|-----------------|----------------------|
-| `cpt-insightspec-nfr-gh-auth` | Support PAT + GitHub App token | `clients/auth.py` | Header builders for REST and GraphQL; strategy pattern selects auth type based on config | Config validation test + integration test with each auth type |
-| `cpt-insightspec-nfr-gh-rate-limiting` | Respect rate limits; backoff on 429 | `clients/rate_limiter.py` | Shared REST + GraphQL budget tracker with proactive backoff when remaining drops below `rate_limit_threshold` | Unit test retry logic; integration test with mock rate-limited server |
+| `cpt-insightspec-nfr-gh-auth` | Support PAT + GitHub App token | `source_github_v2/auth.py` | Header builders for REST and GraphQL; strategy pattern selects auth type based on config | Config validation test + integration test with each auth type |
+| `cpt-insightspec-nfr-gh-rate-limiting` | Respect rate limits; backoff on 429 | `streams/base.py` | Shared REST + GraphQL budget tracker with proactive backoff when remaining drops below `rate_limit_threshold` | Unit test retry logic; integration test with mock rate-limited server |
 | `cpt-insightspec-nfr-gh-schema-compliance` | All data lands in Bronze then transforms to unified `git_*` Silver tables | Stream classes + dbt models | Connector writes to `bronze_github.*`; dbt transforms to `git_*` Silver tables; no GitHub-specific Silver tables | Schema diff test against `git/README.md` table definitions |
 | `cpt-insightspec-nfr-gh-data-source` | `data_source = "insight_github"` on all rows | dbt Silver models | Injected by dbt during Bronze-to-Silver transformation | Row-level assertion in dbt tests |
 | `cpt-insightspec-nfr-gh-idempotent` | Upsert semantics, no duplicates | Airbyte deduplication + dbt incremental models | Airbyte deduplicates on natural PKs; dbt incremental models use merge strategy | Run collection twice; verify row counts unchanged |
@@ -311,7 +311,7 @@ Shared budget tracker for both REST and GraphQL API calls. Prevents rate limit e
 ##### Responsibility boundaries
 
 - Does NOT execute HTTP requests (called by stream classes to check/update budget).
-- Does NOT implement retry logic (that is in `clients/concurrent.py` and stream base classes).
+- Does NOT implement retry logic (that is in the stream base classes).
 
 ---
 
@@ -369,12 +369,12 @@ Provides `GitHubRestStream` and `GitHubGraphQLStream` base classes that extend t
 
 - `GitHubRestStream` — base for all REST streams; handles Link header pagination, REST error classification, `Accept: application/vnd.github.v3+json` header.
 - `GitHubGraphQLStream` — base for all GraphQL streams; handles `pageInfo` cursor pagination, GraphQL error classification, `rateLimit` response parsing.
-- Both base classes integrate with `clients/auth.py` for header injection and `clients/rate_limiter.py` for budget tracking.
+- Both base classes integrate with `source_github_v2/auth.py` for header injection, and track the rate-limit budget inline.
 
 ##### Responsibility boundaries
 
 - Does NOT define stream-specific logic (URL paths, record transformation, cursor fields).
-- Does NOT implement concurrent execution (delegated to `clients/concurrent.py`).
+- Does NOT implement concurrent execution.
 
 ---
 
@@ -414,10 +414,10 @@ class SourceGitHub(AbstractSource):
 
 | Dependency Module | Interface Used | Purpose |
 |-------------------|----------------|---------|
-| `clients/auth.py` | `rest_headers()`, `graphql_headers()` | Auth header construction |
-| `clients/rate_limiter.py` | `update_rest()`, `update_graphql()`, `wait_if_needed()`, `throttle()` | Rate limit budget tracking |
-| `clients/concurrent.py` | `fetch_parallel_with_slices()`, `retry_request()` | Bounded parallel child fetches |
-| `graphql/queries.py` | Query string constants | GraphQL query definitions |
+| `source_github_v2/auth.py` | `rest_headers()`, `graphql_headers()` | Auth header construction |
+| `streams/base.py` | not extracted into a separate module | Rate limit budget tracking |
+| `streams/base.py` | not extracted into a separate module | Bounded parallel child fetches |
+| `src/ingestion/connectors/git/github-v2/source_github_v2/queries.py` | Query string constants | GraphQL query definitions |
 | `streams/base.py` | `GitHubRestStream`, `GitHubGraphQLStream` | Stream base classes |
 
 **Dependency Rules**:
@@ -706,7 +706,7 @@ User-Agent: insight-github-connector/1.0
 
 **REST Pagination**: `Link: <url>; rel="next"` header chain
 
-**Key GraphQL Queries** (defined in `graphql/queries.py`):
+**Key GraphQL Queries** (defined in `src/ingestion/connectors/git/github-v2/source_github_v2/queries.py`):
 
 | Query | Batch Size | Used By Stream | Purpose |
 |-------|-----------|---------------|---------|
@@ -836,9 +836,8 @@ At Silver Step 2:
 ## 5. Traceability
 
 - **PRD**: [PRD.md](./PRD.md)
-- **Unified git schema**: [`docs/components/connectors/git/README.md`](../README.md)
-- **Legacy GitHub spec**: [`docs/components/connectors/git/github/github.md`](../github.md)
-- **Connectors architecture**: [`docs/architecture/CONNECTORS_ARCHITECTURE.md`](../../../../architecture/CONNECTORS_ARCHITECTURE.md)
+- **Unified git schema**: [`docs/components/connectors/git/README.md`](../../README.md)
+- **Connectors architecture**: [`inbox/architecture/CONNECTORS_ARCHITECTURE.md`](../../../../../../inbox/architecture/CONNECTORS_ARCHITECTURE.md)
 
 ---
 

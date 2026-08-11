@@ -467,7 +467,7 @@ Connection: workday-{source-id}
 
 - **PRD**: [PRD.md](./PRD.md)
 - **Domain README**: [../../README.md](../../README.md) — HR Silver Layer design
-- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../domain/connector/specs/DESIGN.md)
+- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../../domain/connector/specs/DESIGN.md)
 - **BambooHR counterpart**: [../../bamboohr/specs/DESIGN.md](../../bamboohr/specs/DESIGN.md) — the pattern this connector mirrors
 - **ADR directory**: [./ADR/](./ADR/)
 

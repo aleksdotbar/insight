@@ -26,7 +26,7 @@ date: 2026-04-02
 
 ## 1. Overview
 
-The Backend DESIGN defines 8 microservices, 1 custom authz plugin, 4 shared crates, and infrastructure (Helm, ArgoCD). This decomposition maps those components to implementation features ordered by the [PLAN.md](../PLAN.md) delivery roadmap (v0.1-v0.7).
+The Backend DESIGN defines 8 microservices, 1 custom authz plugin, 4 shared crates, and infrastructure (Helm, ArgoCD). This decomposition maps those components to implementation features ordered by the delivery roadmap (v0.1-v0.7).
 
 Decomposition strategy: **one feature per service or shared crate**, grouped by delivery version. Each feature is independently implementable and testable. Dependencies between features are explicit — no feature starts until its dependencies are marked complete.
 

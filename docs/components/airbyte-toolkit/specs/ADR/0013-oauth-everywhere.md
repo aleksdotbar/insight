@@ -76,7 +76,7 @@ Chosen option: **Option B — OAuth everywhere**.
 
 ## More Information
 
-- Implementation: `ab_get_token` in [airbyte.sh](../../../../src/ingestion/reconcile-connectors/lib/airbyte.sh); `trigger-sync` / `poll-job` script blocks in [airbyte-sync.yaml](../../../../charts/insight/templates/ingestion/airbyte-sync.yaml).
+- Implementation: `ab_get_token` in [airbyte.sh](../../../../../src/ingestion/reconcile-connectors/lib/airbyte.sh); `trigger-sync` / `poll-job` script blocks in [airbyte-sync.yaml](../../../../../charts/insight/templates/ingestion/airbyte-sync.yaml).
 - Helm value: `airbyte.authSecret.{name,clientIdKey,clientSecretKey}`.
 - Related decisions:
   - `cpt-insightspec-adr-airbyte-workspace-as-namespace` (ADR-0009) — workspace auto-discovery uses the same auth.

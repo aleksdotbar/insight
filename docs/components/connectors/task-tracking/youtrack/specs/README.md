@@ -120,7 +120,7 @@ Mirrors Jira's IO layer.
 
 #### Phase C-6 — Test Invariants & E2E Smoke (DECOMPOSITION §2.10) — E: 2-3 days
 
-- Rust unit tests — extend `src/ingestion/connectors/task-tracking/youtrack/enrich/src/core/tests.rs` with fixtures covering every activity category enumerated in Connector ADR-002.
+- Rust unit tests — extend `src/ingestion/connectors/task-tracking/jira/enrich/src/core/tests.rs` with fixtures covering every activity category enumerated in Connector ADR-002.
 - dbt tests — run `dbt test --select tag:task` and verify all 11 invariants from PR #205 pass for YouTrack rows.
 - E2E smoke on test-tenant:
   1. Apply K8s Secret with test-tenant creds.

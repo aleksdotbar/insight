@@ -486,7 +486,7 @@ BambooHR `id` and `supervisorEId` are BambooHR-internal identifiers — retained
 
 - **PRD**: [PRD.md](./PRD.md)
 - **Domain README**: [../../README.md](../../README.md) — HR Silver Layer design
-- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../domain/connector/specs/DESIGN.md)
+- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../../domain/connector/specs/DESIGN.md)
 - **ADR directory**: [./ADR/](./ADR/)
 
 ---

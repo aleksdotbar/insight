@@ -194,17 +194,16 @@ Incoming documents pending triage and integration into `docs/`. Not yet canonica
 
 | Domain | Sources | Silver Stream |
 |--------|---------|---------------|
-| Version Control | GitHub, Bitbucket Server, GitLab | `class_commits`, `class_pr_activity` |
-| Task Tracking | YouTrack, Jira | `class_task_tracker` |
-| Collaboration | M365, Slack, Zoom, Zulip | `class_communication_metrics`, `class_document_metrics` |
-| Wiki | Confluence, Outline | `class_wiki_pages`, `class_wiki_activity` |
-| Support | Zendesk, JSM | `class_support_activity` |
-| AI Dev Tools | Cursor, Windsurf, Copilot, JetBrains | `class_ai_dev_usage` |
-| AI Tools | Claude Admin, Claude Enterprise, OpenAI API, ChatGPT Team | `class_ai_api_usage`, `class_ai_tool_usage` |
-| HR / Directory | BambooHR, Workday, LDAP | `class_people`, `class_org_units` |
-| CRM | HubSpot, Salesforce | TBD |
+| Version Control | GitHub, GitHub Directory, GitLab, Bitbucket Cloud | `class_git_commits`, `class_git_pull_requests`, `class_git_repositories`, `class_git_file_changes` |
+| Task Tracking | YouTrack, Jira | `class_task_projects`, `class_task_statuses`, `class_task_worklogs`, `class_task_field_history` |
+| Collaboration | M365, Slack, Zoom, Zulip (proxy) | `class_collab_chat_activity`, `class_collab_email_activity`, `class_collab_meeting_activity`, `class_collab_document_activity` |
+| Wiki | Confluence, Outline | `class_wiki_pages`, `class_wiki_activity`, `class_wiki_engagement` |
+| Support | Zendesk | `class_support_activity` |
+| AI Dev Tools | Cursor, GitHub Copilot | `class_ai_dev_usage` |
+| AI Tools | Claude Admin, Claude Enterprise, Claude Team, OpenAI, ChatGPT Team | `class_ai_api_usage`, `class_ai_assistant_usage`, `class_ai_org_usage`, `class_ai_cost` |
+| HR / Directory | BambooHR, Workday, Active Directory, MS Entra | `class_people`, `class_person_attribute_claims`, `class_hr_events` |
+| CRM | HubSpot, Salesforce | `class_crm_accounts`, `class_crm_contacts`, `class_crm_deals`, `class_crm_activities` |
 | Design Tools | Figma | `class_design_activity` |
-| Quality / Testing | Allure TestOps | TBD |
 
 ---
 

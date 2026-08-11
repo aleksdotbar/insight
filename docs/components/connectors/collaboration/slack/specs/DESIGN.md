@@ -517,4 +517,4 @@ The following checklist domains have been evaluated and determined not applicabl
 | [PRD.md](./PRD.md) | Product intent and scope |
 | [DESIGN.md](./DESIGN.md) | implementation-aligned technical design |
 | [slack.md](../slack.md) | Standalone connector reference with Bronze table schemas |
-| [`manifest.yaml`](../../../../../../src/connectors/collaboration/slack/manifest.yaml) | Source of truth for executable implementation (future) |
+| [`manifest.yaml`](../../../../../../src/ingestion/connectors/collaboration/slack/connector.yaml) | Source of truth for executable implementation (future) |
