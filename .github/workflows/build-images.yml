@@ -841,7 +841,6 @@ jobs:
           context: src/frontend
           platforms: ${{ matrix.platform }}
           build-args: |
-            VITE_SENTRY_DSN=${{ secrets.FRONTEND_SENTRY_DSN }}
             VITE_APP_RELEASE=${{ needs.changes.outputs.build_tag }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-frontend,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=frontend-${{ matrix.arch }}
