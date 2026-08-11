@@ -1,7 +1,7 @@
 # HubSpot Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 16 (HubSpot)
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 16 (HubSpot)
 
 Standalone specification for the HubSpot (CRM) connector. Expands Source 16 in the main Connector Reference with full table schemas, identity mapping, Silver/Gold pipeline notes, and open questions.
 

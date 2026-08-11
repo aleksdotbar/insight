@@ -185,7 +185,7 @@ Monitoring table — not an analytics source.
 
 ### `support_sla` — SLA policy status per ticket (JSM only)
 
-JSM-specific table — not produced by the Zendesk connector. Captures SLA policy breach and compliance status per ticket at collection time. See `docs/connectors/support/jsm.md` for the full field definition.
+JSM-specific table — not produced by the Zendesk connector. Captures SLA policy breach and compliance status per ticket at collection time. See `docs/components/connectors/support/jsm/jsm.md` for the full field definition.
 
 JSM exposes explicit SLA policy objects (via `GET /rest/servicedeskapi/request/{id}/sla`) with breach status, remaining time, and goal targets. Zendesk pre-computes equivalent timing metrics directly on ticket objects (`metric_set`) and does not expose SLA policy objects via its API — so there is no Zendesk equivalent of this table.
 

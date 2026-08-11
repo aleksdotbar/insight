@@ -635,7 +635,7 @@ Owns the one-shot import of frontend-hardcoded metadata (`BULLET_DEFS`, `IC_KPI_
 
 #### Error Envelope (applies to every endpoint in §3.3)
 
-Every 4xx / 5xx response across `POST /v1/catalog/get_metrics` and `/v1/admin/metric-thresholds/*` is an **RFC 9457 Problem Details** payload served with `Content-Type: application/problem+json`. The catalog follows the cyberfabric canonical error contract (DNA `REST/API.md §7` + `REST/STATUS_CODES.md`) implemented by the `modkit-canonical-errors` Rust crate. Per-handler error mapping uses the crate's `CanonicalError` enum and its `#[resource_error("gts.cf.insight.metric_catalog.<resource>.v1~")]` macro to scope context to the metric-catalog domain.
+Every 4xx / 5xx response across `POST /v1/catalog/get_metrics` and `/v1/admin/metric-thresholds/*` is an **RFC 9457 Problem Details** payload served with `Content-Type: application/problem+json`. The catalog follows the cyberfabric canonical error contract (DNA `REST/API.md §7` + `docs/shared/api-guideline/STATUS_CODES.md`) implemented by the `modkit-canonical-errors` Rust crate. Per-handler error mapping uses the crate's `CanonicalError` enum and its `#[resource_error("gts.cf.insight.metric_catalog.<resource>.v1~")]` macro to scope context to the metric-catalog domain.
 
 **Envelope shape**:
 

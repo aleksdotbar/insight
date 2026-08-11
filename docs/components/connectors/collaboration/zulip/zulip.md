@@ -1,7 +1,7 @@
 # Zulip Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 7 (Zulip), OQ-4
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 7 (Zulip), OQ-4
 
 Standalone specification for the Zulip (Chat) connector. Expands Source 7 in the main Connector Reference with full table schemas, proposed OQ-4 field additions, identity mapping, Silver pipeline notes, and open questions.
 

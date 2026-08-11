@@ -76,8 +76,8 @@ The legacy env `RECONCILE_DESTINATION_ID` remains a soft override: if set, recon
 
 ## More Information
 
-- Implementation: `ab_ensure_destination` + `ab_destination_definition_id_by_name` in [airbyte.sh](../../../../src/ingestion/reconcile-connectors/lib/airbyte.sh); `reconcile_resolve_destination_id` in [reconcile.sh](../../../../src/ingestion/reconcile-connectors/lib/reconcile.sh).
-- Helm wiring: `RECONCILE_DEST_CLICKHOUSE_*` env vars in [reconcile-cron.yaml](../../../../charts/insight/templates/ingestion/reconcile-cron.yaml).
+- Implementation: `ab_ensure_destination` + `ab_destination_definition_id_by_name` in [airbyte.sh](../../../../../src/ingestion/reconcile-connectors/lib/airbyte.sh); `reconcile_resolve_destination_id` in [reconcile.sh](../../../../../src/ingestion/reconcile-connectors/lib/reconcile.sh).
+- Helm wiring: `RECONCILE_DEST_CLICKHOUSE_*` env vars in [reconcile-cron.yaml](../../../../../charts/insight/templates/ingestion/reconcile-cron.yaml).
 - Related decisions:
   - `cpt-insightspec-adr-airbyte-workspace-as-namespace` (ADR-0009) — workspace where the destination lives.
   - `cpt-insightspec-adr-version-driven-reconcile` (ADR-0001) — overall reconcile loop that owns this resource.

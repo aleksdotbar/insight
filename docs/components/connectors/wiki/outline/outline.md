@@ -1,9 +1,9 @@
 # Outline Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/connectors/wiki/README.md` unified schema, Outline REST API
+> Based on: `docs/components/connectors/wiki/README.md` unified schema, Outline REST API
 
-Standalone specification for the Outline connector. Maps Outline (Knowledge Base) API data to the unified Bronze wiki schema (`wiki_*` tables) defined in [`README.md`](README.md).
+Standalone specification for the Outline connector. Maps Outline (Knowledge Base) API data to the unified Bronze wiki schema (`wiki_*` tables) defined in [`../README.md`](../README.md).
 
 <!-- toc -->
 
@@ -49,13 +49,13 @@ Standalone specification for the Outline connector. Maps Outline (Knowledge Base
 
 **Views limitation**: `views.list` returns aggregate view counts per document (total `count` + `lastViewedAt`), NOT per-user per-day data. This is a fundamental difference from Confluence Analytics. See OQ-OTL-1.
 
-**Terminology**: Outline uses "document" and "collection" where the unified schema uses "page" and "space". Field mapping follows the terminology table in [`README.md`](README.md).
+**Terminology**: Outline uses "document" and "collection" where the unified schema uses "page" and "space". Field mapping follows the terminology table in [`../README.md`](../README.md).
 
 ---
 
 ## Bronze Tables
 
-> All Outline data is inserted into the shared `wiki_*` tables with `data_source = 'insight_outline'`. The schema is defined in [`README.md`](README.md). This section documents field-level mapping from Outline API response to Bronze columns.
+> All Outline data is inserted into the shared `wiki_*` tables with `data_source = 'insight_outline'`. The schema is defined in [`../README.md`](../README.md). This section documents field-level mapping from Outline API response to Bronze columns.
 
 ### `wiki_spaces` — Collection directory (Outline mapping)
 

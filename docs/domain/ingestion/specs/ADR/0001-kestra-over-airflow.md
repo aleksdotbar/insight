@@ -137,7 +137,7 @@ A custom-built orchestrator designed specifically for the Insight platform, as d
 - Kestra documentation: https://kestra.io/docs
 - Kestra Airbyte plugin: https://kestra.io/plugins/plugin-airbyte
 - Kestra dbt plugin: https://kestra.io/plugins/plugin-dbt
-- Previous custom Orchestrator PRD: [Orchestrator PRD](../../../../components/orchestrator/specs/PRD.md) (superseded by this decision)
+- Previous custom Orchestrator PRD: superseded by this decision; spec removed (see git history)
 - Previous connector integration protocol: [ADR-0001](../../../connector/specs/ADR/0001-connector-integration-protocol.md) (superseded — Airbyte Protocol replaces stdout JSON protocol)
 
 ## Traceability

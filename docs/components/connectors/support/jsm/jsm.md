@@ -1,7 +1,7 @@
 # Jira Service Management (JSM) Connector Specification
 
 > Version 2.0 — March 2026
-> Based on: `docs/connectors/support/README.md` (Support domain schema)
+> Based on: `docs/components/connectors/support/README.md` (Support domain schema)
 
 Standalone specification for the Jira Service Management (ITSM / Service Desk) connector. JSM is a distinct Atlassian product from Jira Software — focused on inbound support and ITSM workflows rather than development project management.
 
@@ -73,7 +73,7 @@ Standalone specification for the Jira Service Management (ITSM / Service Desk) c
 
 ### `support_tickets` — Ticket metadata and current state
 
-Maps to the unified `support_tickets` table defined in `docs/connectors/support/README.md`. Current state snapshot, updated on each collection run.
+Maps to the unified `support_tickets` table defined in `docs/components/connectors/support/README.md`. Current state snapshot, updated on each collection run.
 
 **API**: `GET /rest/api/3/issue/{id}` — full issue detail. For initial load and incremental sync, discover issues via JQL: `GET /rest/api/3/search?jql=project+in+({project_keys})+AND+updated>={cursor}`. Use `GET /rest/servicedeskapi/servicedesk/{id}/queue/{queueId}/issue` as a supplemental discovery path per queue.
 
@@ -372,4 +372,4 @@ The project-based path is recommended for completeness. The queue path is supple
 
 ### OQ-JSM-4: `class_support_sla` — Silver schema design
 
-The `support_sla` table introduces `class_support_sla`, a JSM-specific Silver target not produced by the Zendesk connector. Design of this table is planned but not finalised — it needs to accommodate multiple SLA policies per ticket and enable time-series breach analysis from periodic snapshots. Relevant prior art in `docs/connectors/support/README.md` OQ-SUP-1.
+The `support_sla` table introduces `class_support_sla`, a JSM-specific Silver target not produced by the Zendesk connector. Design of this table is planned but not finalised — it needs to accommodate multiple SLA policies per ticket and enable time-series breach analysis from periodic snapshots. Relevant prior art in `docs/components/connectors/support/README.md` OQ-SUP-1.

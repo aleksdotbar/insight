@@ -8,7 +8,7 @@ Collected data is mapped to the unified `git_*` Silver schema (see [`docs/compon
 
 | File | Description |
 |------|-------------|
-| [`bitbucket.md`](./bitbucket.md) | Original reference document — full API, field mapping, and collection notes |
+| [`bitbucket.md`](./specs/DESIGN.md) | Original reference document — full API, field mapping, and collection notes |
 | [`specs/PRD.md`](./specs/PRD.md) | Product Requirements Document — actors, functional & non-functional requirements, use cases, acceptance criteria |
 | [`specs/DESIGN.md`](./specs/DESIGN.md) | Technical Design — architecture, component model, sequence diagrams, field mappings, DB schema; intended as the basis for code generation |
 

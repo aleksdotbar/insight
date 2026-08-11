@@ -440,7 +440,7 @@ Both fields are required. `tenant_id` is a platform invariant — every connecto
 
 #### tenant_id Injection
 
-Per the ingestion layer tenant isolation principle (see [Ingestion Layer DESIGN](../../../../domain/ingestion/specs/DESIGN.md)), every record emitted by the connector MUST contain `tenant_id`. This is achieved via an `AddFields` transformation in the manifest:
+Per the ingestion layer tenant isolation principle (see [Ingestion Layer DESIGN](../../../../../domain/ingestion/specs/DESIGN.md)), every record emitted by the connector MUST contain `tenant_id`. This is achieved via an `AddFields` transformation in the manifest:
 
 ```yaml
 # In spec.connection_specification:
@@ -975,5 +975,5 @@ Additional architectural decisions documented inline:
 - **PRD**: [PRD.md](./PRD.md)
 - **ADRs**: [ADR/](./ADR/) (none yet — see ADR Status above)
 - **Source specification**: [../../cursor/cursor.md](../../cursor/cursor.md)
-- **Reference implementation**: [../../cursor/additional/](../../cursor/additional/) (production code, not part of connector)
+- **Reference implementation**: external production code, not part of this connector
 - **AI Tool domain**: [docs/components/connectors/ai/](../../)

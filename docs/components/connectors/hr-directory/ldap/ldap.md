@@ -1,7 +1,7 @@
 # LDAP / Active Directory Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 12 (LDAP / Active Directory)
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 12 (LDAP / Active Directory)
 
 Standalone specification for the LDAP / Active Directory (Directory) connector. Expands Source 12 in the main Connector Reference with full table schemas, identity mapping, Silver/Gold pipeline notes, and open questions.
 

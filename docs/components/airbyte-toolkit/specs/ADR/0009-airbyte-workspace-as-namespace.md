@@ -50,7 +50,7 @@ Chosen option: **Option B — single dedicated workspace + `custom: true` filter
 
 **Justification**: every custom-built Airbyte definition has `custom: true`; built-in registry definitions are `custom: false`. The filter is a one-line check (`if def.custom != true: skip`), no rename is required, and no extra workspace lifecycle is introduced.
 
-The workspace UUID itself is **discovered at runtime**, not configured. Reconcile calls `POST /api/v1/workspaces/list_by_organization_id` with the Airbyte built-in default organization id (`00000000-0000-0000-0000-000000000000`) and asserts exactly one workspace. This is implemented in `ab_workspace_id` ([airbyte.sh](../../src/ingestion/reconcile-connectors/lib/airbyte.sh)) and is the **only** path used by reconcile, adoption, GC, and the migrate-orphan tool. Rationale: every supported deploy of Insight runs against a single-workspace Airbyte instance (DESIGN §2.2); the operator already provisions the instance — making them re-type its workspace UUID into Helm values is needless ceremony, prone to drift (the value can be wrong even when Airbyte is healthy, leading to silent "0 connectors" runs), and gives no additional safety the `custom: true` filter does not already provide. Fail-fast is preserved: if `len(workspaces) != 1`, `ab_workspace_id` exits non-zero and reconcile aborts with a clear stderr message.
+The workspace UUID itself is **discovered at runtime**, not configured. Reconcile calls `POST /api/v1/workspaces/list_by_organization_id` with the Airbyte built-in default organization id (`00000000-0000-0000-0000-000000000000`) and asserts exactly one workspace. This is implemented in `ab_workspace_id` ([airbyte.sh](../../../../../src/ingestion/reconcile-connectors/lib/airbyte.sh)) and is the **only** path used by reconcile, adoption, GC, and the migrate-orphan tool. Rationale: every supported deploy of Insight runs against a single-workspace Airbyte instance (DESIGN §2.2); the operator already provisions the instance — making them re-type its workspace UUID into Helm values is needless ceremony, prone to drift (the value can be wrong even when Airbyte is healthy, leading to silent "0 connectors" runs), and gives no additional safety the `custom: true` filter does not already provide. Fail-fast is preserved: if `len(workspaces) != 1`, `ab_workspace_id` exits non-zero and reconcile aborts with a clear stderr message.
 
 Multi-tenant isolation continues to be expressed at the descriptor / connection-name level, not workspace level.
 
@@ -101,7 +101,7 @@ Provision a dedicated Airbyte workspace for Insight, filter by `workspace_id == 
 ## More Information
 
 - The `custom: true` flag is a stable attribute of `source_definitions` across Airbyte 0.50+ versions in our deployment matrix.
-- Workspace identity is auto-discovered via `ab_workspace_id` ([airbyte.sh](../../src/ingestion/reconcile-connectors/lib/airbyte.sh)) — no env var, no Helm value, no CLI flag.
+- Workspace identity is auto-discovered via `ab_workspace_id` ([airbyte.sh](../../../../../src/ingestion/reconcile-connectors/lib/airbyte.sh)) — no env var, no Helm value, no CLI flag.
 - Related decisions:
   - `cpt-insightspec-adr-version-driven-reconcile` (ADR-0001) — overall reconcile flow that consumes the filter.
   - `cpt-insightspec-adr-nocode-via-builder-projects` (ADR-0010) — nocode publish flow that depends on this namespace.

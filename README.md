@@ -193,16 +193,15 @@ Incoming documents pending triage and integration into `docs/`. Not yet canonica
 
 | Domain | Sources | Silver Stream |
 |--------|---------|---------------|
-| Version Control | GitHub, Bitbucket Server, GitLab | `class_commits`, `class_pr_activity` |
-| Task Tracking | Jira | `class_task_*` |
-| Collaboration | M365, Slack, Zoom, Zulip | `class_communication_metrics`, `class_document_metrics` |
-| Wiki | Confluence, Outline | `class_wiki_pages`, `class_wiki_activity` |
-| Support | Zendesk, JSM | `class_support_activity` |
+| Version Control | GitHub, GitHub Directory, GitLab, Bitbucket Cloud | `class_git_commits`, `class_git_pull_requests`, `class_git_repositories`, `class_git_file_changes` |
+| Task Tracking | Jira | `class_task_projects`, `class_task_statuses`, `class_task_worklogs`, `class_task_field_history` |
+| Collaboration | M365, Slack, Zoom, Zulip (proxy) | `class_collab_chat_activity`, `class_collab_email_activity`, `class_collab_meeting_activity`, `class_collab_document_activity` |
+| Wiki | Confluence, Outline | `class_wiki_pages`, `class_wiki_activity`, `class_wiki_engagement` |
+| Support | Zendesk | `class_support_activity` |
 | AI Dev Tools | Cursor | `class_ai_dev_usage` |
-| AI Tools | Claude Enterprise, Claude Team, ChatGPT Team | `class_ai_assistant_usage`, `class_ai_overage` |
-| HR / Directory | BambooHR, LDAP | `class_people`, `class_hr_events` |
-| CRM | HubSpot | `class_crm_*` |
-| Quality / Testing | Allure TestOps | TBD |
+| AI Tools | Claude Enterprise, Claude Team, ChatGPT Team | `class_ai_assistant_usage`, `class_ai_dev_usage`, `class_ai_overage` |
+| HR / Directory | BambooHR, Active Directory, MS Entra | `class_people`, `class_person_attribute_claims`, `class_hr_events` |
+| CRM | HubSpot | `class_crm_accounts`, `class_crm_contacts`, `class_crm_deals`, `class_crm_activities` |
 
 ---
 

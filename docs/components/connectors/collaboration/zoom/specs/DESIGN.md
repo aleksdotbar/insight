@@ -475,4 +475,4 @@ The Zoom feeder `zoom__collab_meeting_activity` writes into the cross-vendor `si
 | [PRD.md](./PRD.md) | Product intent and scope |
 | [DESIGN.md](./DESIGN.md) | Current implementation-aligned technical design |
 | [zoom.md](../zoom.md) | Standalone connector reference aligned to this design |
-| [`manifest.yaml`](../../../../../../src/connectors/collaboration/zoom/manifest.yaml) | Source of truth for executable current implementation |
+| [`manifest.yaml`](../../../../../../src/ingestion/connectors/collaboration/zoom/connector.yaml) | Source of truth for executable current implementation |

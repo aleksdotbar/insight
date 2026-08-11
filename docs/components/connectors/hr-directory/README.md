@@ -318,7 +318,7 @@ Does not write to Silver tables directly. Does not modify source field values â€
 
 ### 3.3 API Contracts
 
-Not applicable. `class_people` and `class_org_units` are internal ClickHouse tables consumed directly by Gold layer analytics jobs via native ClickHouse queries. No external API is exposed for this layer. Authentication and authorisation for query-time access are handled by the Permission Architecture (see [PERMISSION_DESIGN.md](../permissions/PERMISSION_DESIGN.md)).
+Not applicable. `class_people` and `class_org_units` are internal ClickHouse tables consumed directly by Gold layer analytics jobs via native ClickHouse queries. No external API is exposed for this layer. Authentication and authorisation for query-time access are handled by the Permission Architecture (see [PERMISSION_DESIGN.md](../../../../inbox/architecture/permissions/PERMISSION_DESIGN.md)).
 
 ### 3.4 Internal Dependencies
 
@@ -514,10 +514,10 @@ Tenure and org-change analytics must read the per-source `*_snapshot` / `*_field
 
 ## 5. Traceability
 
-- **PERMISSION_DESIGN**: [../permissions/PERMISSION_DESIGN.md](../permissions/PERMISSION_DESIGN.md)
-- **ADR-002 Workspace Isolation**: [../permissions/ADR_002_WORKSPACE_ISOLATION.md](../permissions/ADR_002_WORKSPACE_ISOLATION.md)
-- **Identity Resolution V3**: [../IDENTITY_RESOLUTION_V3.md](../IDENTITY_RESOLUTION_V3.md)
-- **Connectors Reference**: [../../CONNECTORS_REFERENCE.md](../../CONNECTORS_REFERENCE.md)
+- **PERMISSION_DESIGN**: [../permissions/PERMISSION_DESIGN.md](../../../../inbox/architecture/permissions/PERMISSION_DESIGN.md)
+- **ADR-002 Workspace Isolation**: [../permissions/ADR_002_WORKSPACE_ISOLATION.md](../../../../inbox/architecture/permissions/ADR_002_WORKSPACE_ISOLATION.md)
+- **Identity Resolution V3**: [../IDENTITY_RESOLUTION_V3.md](../../../../inbox/architecture/IDENTITY_RESOLUTION_V3.md)
+- **Connectors Reference**: [../../CONNECTORS_REFERENCE.md](../../../../inbox/CONNECTORS_REFERENCE.md)
 
 This design directly implements:
 

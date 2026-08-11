@@ -430,7 +430,7 @@ All timestamps persisted in the Bronze layer **MUST** be stored in UTC (ISO 8601
 
 **Field-level schemas**: Defined in [`jira.md`](../jira.md) (Bronze table definitions with column types, descriptions, and API field mappings).
 
-**Bronze-to-Silver mapping**: Defined in the [Task Tracking unified schema](../README.md) (Section "Jira" — mapping from `jira_*` Bronze tables to `task_tracker_*` Silver tables).
+**Bronze-to-Silver mapping**: Defined in the [Task Tracking unified schema](../../README.md) (Section "Jira" — mapping from `jira_*` Bronze tables to `task_tracker_*` Silver tables).
 
 **Breaking Change Policy**: Adding new fields is non-breaking. Removing or renaming fields requires a migration.
 

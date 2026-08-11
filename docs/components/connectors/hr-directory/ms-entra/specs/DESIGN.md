@@ -169,7 +169,7 @@ The App Registration must hold `Microsoft Graph → User.Read.All` of type Appli
 
 **Technology**: YAML declarative manifest + Microsoft Graph user resource
 
-**Location**: [`src/ingestion/connectors/hr-directory/ms-entra/connector.yaml`](../../../../../src/ingestion/connectors/hr-directory/ms-entra/connector.yaml)
+**Location**: [`src/ingestion/connectors/hr-directory/ms-entra/connector.yaml`](../../../../../../src/ingestion/connectors/hr-directory/ms-entra/connector.yaml)
 
 **Core Entities**:
 
@@ -522,11 +522,11 @@ The connector intentionally does **not** use the JWT `sub` claim as an identity 
 
 - **PRD**: [PRD.md](./PRD.md)
 - **Domain README**: [../../README.md](../../README.md) — HR Silver Layer design
-- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../domain/connector/specs/DESIGN.md)
+- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../../domain/connector/specs/DESIGN.md)
 - **ADR directory**: [./ADR/](./ADR/)
 - **Implementation**:
-  - Connector package: [`src/ingestion/connectors/hr-directory/ms-entra/`](../../../../../src/ingestion/connectors/hr-directory/ms-entra/)
-  - K8s Secret template: [`src/ingestion/secrets/connectors/ms-entra.yaml.example`](../../../../../src/ingestion/secrets/connectors/ms-entra.yaml.example)
+  - Connector package: [`src/ingestion/connectors/hr-directory/ms-entra/`](../../../../../../src/ingestion/connectors/hr-directory/ms-entra/)
+  - K8s Secret template: [`src/ingestion/secrets/connectors/ms-entra.yaml.example`](../../../../../../src/ingestion/secrets/connectors/ms-entra.yaml.example)
 
 ---
 

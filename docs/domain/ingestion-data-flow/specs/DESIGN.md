@@ -209,7 +209,7 @@ For rows produced outside Airbyte (Rust binaries, dbt explode models that fan on
 
 The cost of `append`-only is that full-refresh streams accumulate N copies per entity across syncs — this is mitigated by `cpt-dataflow-principle-promote-bronze` (RMT collapses duplicates by `_airbyte_extracted_at` on merge or `FINAL`).
 
-Configuration is enforced in `src/ingestion/airbyte-toolkit/connect.sh` — every Airbyte connection is created with `dest_sync_mode = "append"`, no exceptions.
+Configuration is enforced in `src/ingestion/reconcile-connectors/main.sh` — every Airbyte connection is created with `dest_sync_mode = "append"`, no exceptions.
 
 **ADRs**: `cpt-dataflow-adr-promote-bronze-to-rmt`
 

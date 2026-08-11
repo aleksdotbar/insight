@@ -35,13 +35,13 @@ Symptom if missing: the Connector Builder UI shows `Could not validate your conn
 
 ## Required RBAC
 
-The chart now creates `<release>-reconcile` ServiceAccount + Role + RoleBinding ([reconcile-rbac.yaml](../../../charts/insight/templates/ingestion/reconcile-rbac.yaml)). Roles needed:
+The chart now creates `<release>-reconcile` ServiceAccount + Role + RoleBinding ([reconcile-rbac.yaml](../../../../charts/insight/templates/ingestion/reconcile-rbac.yaml)). Roles needed:
 
 - `secrets`, `configmaps` — get/list/watch (read airbyte-auth-secrets, connector secrets)
 - `argoproj.io/workflows`, `argoproj.io/cronworkflows`, `argoproj.io/workflowtaskresults` — full CRUD (controller writes back results)
 - `pods`, `pods/log` — get/watch/patch (Argo executor needs)
 
-Argo workflows triggered by reconcile run under this SA via `serviceAccountName:` set in [sync-trigger.yaml.tpl](../../../src/ingestion/reconcile-connectors/templates/sync-trigger.yaml.tpl) and [cron-workflow.yaml.tpl](../../../src/ingestion/reconcile-connectors/templates/cron-workflow.yaml.tpl).
+Argo workflows triggered by reconcile run under this SA via `serviceAccountName:` set in [sync-trigger.yaml.tpl](../../../../src/ingestion/reconcile-connectors/templates/sync-trigger.yaml.tpl) and [cron-workflow.yaml.tpl](../../../../src/ingestion/reconcile-connectors/templates/cron-workflow.yaml.tpl).
 
 If the cluster's Argo controller already has its own `argo-workflow-executor` Role, it covers the executor side, but the reconcile SA still needs the secret-read perms — those are not standard Argo executor permissions.
 

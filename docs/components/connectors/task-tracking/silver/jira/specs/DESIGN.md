@@ -599,7 +599,7 @@ WHERE s.event_kind = 'initial';
 ### 4.7 Build & Deploy
 
 - Multi-stage Dockerfile: `rust:1.84-alpine` builder → `gcr.io/distroless/cc` runtime.
-- `build.sh` sibling of `connectors/task-tracking/jira/connector.yaml`: `docker build` → `kind load docker-image` (mirrors `airbyte-toolkit/build-connector.sh` but for Rust).
+- `build.sh` sibling of `connectors/task-tracking/jira/connector.yaml`: `docker build` → `kind load docker-image` (mirrors `src/ingestion/reconcile-connectors/lib/cdk-build.sh` but for Rust).
 - CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test --all-features`, `cargo test --test 'integration_*' -- --test-threads=1`.
 
 ## 5. Traceability

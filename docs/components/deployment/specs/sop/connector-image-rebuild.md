@@ -68,7 +68,7 @@ End-to-end from developer push to dev cluster running new image: **typically 15�
 - `discover` — scans descriptors, emits matrix.
 - `build` — matrix job; one run per matching `images.<key>` entry.
 - `toolbox` — rebuilds on any `src/ingestion/**` change.
-- `bump-descriptors` — patches `images.<key>.image` AND bumps `descriptor.version` (one minor per affected connector) in affected descriptors; commits without `[skip ci]`; produces commit A. Calls `.github/workflows/scripts/bump-descriptor-version.py`, which fails loud on non-semver `version` values.
+- `bump-descriptors` — patches `images.<key>.image` AND bumps `descriptor.version` (one minor per affected connector) in affected descriptors; commits without `[skip ci]`; produces commit A. Calls `.github/workflows/scripts/bump-descriptor-version.sh`, which fails loud on non-semver `version` values.
 - `publish-chart` — bumps umbrella + pushes chart; produces commit B; skipped in Run 1 if bump-descriptors committed.
 
 ## Image identity (where does the build know what to build?)
@@ -96,7 +96,7 @@ No build identity lives in the workflow YAML. Renaming a GHCR image, moving a Do
 - Same failure mode as `publish-chart`'s commit step — they share the App.
 
 ### "bump-descriptors job fails with non-semver version"
-- The `Bump descriptor.version (minor) for each patched connector` step runs `.github/workflows/scripts/bump-descriptor-version.py`, which rejects values that aren't strict semver `MAJOR.MINOR.PATCH` per ADR-0015 (leading zeros like `2026.05.04`, two-segment like `1.0`, anything with a `v` prefix or pre-release suffix).
+- The `Bump descriptor.version (minor) for each patched connector` step runs `.github/workflows/scripts/bump-descriptor-version.sh`, which rejects values that aren't strict semver `MAJOR.MINOR.PATCH` per ADR-0015 (leading zeros like `2026.05.04`, two-segment like `1.0`, anything with a `v` prefix or pre-release suffix).
 - The error message names the descriptor path and quotes the offending value. Fix the `version:` field manually in that descriptor (e.g. `version: "1.0.0"`), commit + push, and the next CI run will succeed.
 - The image was already pushed to GHCR before this step ran, so re-running CI after the fix does NOT rebuild the image — `discover-images` filters by changed `context` paths and a pure version edit doesn't match any image's context. Push an empty commit (`git commit --allow-empty -m "ci: re-trigger after version fix" && git push`) to force a re-attempt with the correct flow.
 
@@ -126,4 +126,4 @@ No build identity lives in the workflow YAML. Renaming a GHCR image, moving a Do
 - [ADR-0001](../ADR/0001-chart-publishing-on-merge.md) — Chart publishing on merge.
 - [ADR-0016](../../../airbyte-toolkit/specs/ADR/0016-descriptor-images-block.md) — Descriptor `images:` block as single source of truth (supersedes ADR-0011 and ADR-0014).
 - [build-images.yml](../../../../../.github/workflows/build-images.yml) — the workflow itself.
-- [Connector creation skill](../../../../../.cf-studio/.core/skills/connector/workflows/create.md) — Phase 3.7 documents the `images:` block + CI contract for image-bearing connectors.
+- [Connector creation skill](../../../../../.claude/skills/connector/workflows/create.md) — Phase 3.7 documents the `images:` block + CI contract for image-bearing connectors.

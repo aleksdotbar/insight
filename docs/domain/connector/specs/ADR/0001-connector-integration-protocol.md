@@ -143,7 +143,7 @@ Platforms using a comparable stdout/message-based connector protocol:
 ## Traceability
 
 - **PRD**: [Backend PRD](../../../../components/backend/specs/PRD.md)
-- **Orchestrator PRD**: [Orchestrator PRD](../../../../components/orchestrator/specs/PRD.md)
+- **Orchestrator PRD**: custom Orchestrator, designed but never built (spec removed; see git history)
 - **Connector Framework DESIGN**: [DESIGN.md](../DESIGN.md)
 
 This decision directly addresses the following requirements and design elements:

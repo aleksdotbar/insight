@@ -66,7 +66,7 @@ Defines the Silver layer for collaboration connectors. The Silver layer has two 
 
 ## Silver Tables — Step 1: Unified Schema (pre-Identity Resolution)
 
-> **Silver Step 1**: Data from source-specific Bronze tables ([m365.md](m365.md), [zulip.md](zulip.md), [slack.md](slack.md), [zoom.md](zoom.md)) is normalized and written here. No `person_id` yet — Identity Resolution runs in Step 2.
+> **Silver Step 1**: Data from source-specific Bronze tables ([m365](m365/README.md), [zulip](zulip/zulip.md), [slack](slack/slack.md), [zoom](zoom/zoom.md)) is normalized and written here. No `person_id` yet — Identity Resolution runs in Step 2.
 
 ### `collab_chat_activity` — Chat messages per user per date
 
@@ -236,7 +236,7 @@ Identity anchor for collaboration analytics. M365 does not expose a standalone u
 
 ## Source Mapping
 
-> Per-source Bronze schemas (raw connector output) are defined in [m365.md](m365.md), [zulip.md](zulip.md), [slack.md](slack.md), and [zoom.md](zoom.md). The tables below describe how those Bronze records are normalized into Silver Step 1 unified tables.
+> Per-source Bronze schemas (raw connector output) are defined in [m365](m365/README.md), [zulip](zulip/zulip.md), [slack](slack/slack.md), and [zoom](zoom/zoom.md). The tables below describe how those Bronze records are normalized into Silver Step 1 unified tables.
 
 ### Microsoft 365
 

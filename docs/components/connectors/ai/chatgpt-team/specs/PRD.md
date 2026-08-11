@@ -2,7 +2,7 @@
 
 > Version 2.0 — June 2026
 > Supersedes: v1.0 (March 2026) — data source corrected from the OpenAI Admin API to a customer-hosted browser proxy over `chatgpt.com`. See [ADR-001](./ADR/ADR-001-browser-proxy-architecture.md).
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 19 (ChatGPT Team); reference connector `claude-team`.
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 19 (ChatGPT Team); reference connector `claude-team`.
 
 <!-- toc -->
 

@@ -2,7 +2,7 @@
 
 > Version 2.0 — June 2026
 > Previous: v1.1 May 2026
-> Based on: `docs/connectors/support/README.md` (Support domain schema)
+> Based on: `docs/components/connectors/support/README.md` (Support domain schema)
 > Decisions: INSIGHT-459 Phase 1 scope locked; see Resolved Questions.
 > Phase 2 (Ticket Audits `support_ticket_events`) + Silver (`class_support_activity`) + Gold (`support_bullet_rows`) are now SHIPPED (INSIGHT-459). `support_collection_runs` de-scoped (declarative manifests cannot emit a connector-generated stream — monitoring via Airbyte platform job stats).
 
@@ -74,7 +74,7 @@ Standalone specification for the Zendesk (Support / Helpdesk) connector.
 
 ### `support_tickets` — Ticket metadata and current state
 
-Maps to the unified `support_tickets` table defined in `docs/connectors/support/README.md`. Current state snapshot, updated on each collection run.
+Maps to the unified `support_tickets` table defined in `docs/components/connectors/support/README.md`. Current state snapshot, updated on each collection run.
 
 **API**: `GET /api/v2/incremental/tickets.json?start_time={unix_ts}` (incremental). Side-load `metric_sets` via `?include=metric_sets` to retrieve timing fields in the same response without extra calls.
 

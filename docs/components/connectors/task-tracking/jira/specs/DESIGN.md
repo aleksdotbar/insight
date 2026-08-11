@@ -2,7 +2,7 @@
 
 > Version 1.2 — April 2026
 > Revised: aligned with upstream Connector Framework spec §4.1–§4.10 (config naming, unique_key, descriptor format)
-> Based on: [PRD.md](./PRD.md), [`jira.md`](../jira.md), [Connector Framework DESIGN](../../../../domain/connector/specs/DESIGN.md)
+> Based on: [PRD.md](./PRD.md), [`jira.md`](../jira.md), [Connector Framework DESIGN](../../../../../domain/connector/specs/DESIGN.md)
 
 <!-- toc -->
 
@@ -765,8 +765,8 @@ Jira JQL only accepts dates in `yyyy-MM-dd` or `yyyy-MM-dd HH:mm` format. The Ji
 
 - **PRD**: [PRD.md](./PRD.md)
 - **Bronze table schemas**: [`jira.md`](../jira.md)
-- **Connector Framework**: [`docs/domain/connector/specs/DESIGN.md`](../../../../domain/connector/specs/DESIGN.md)
-- **Connector Framework** (config naming §4.1, AddFields §4.6, descriptor §4.10): [`docs/domain/connector/specs/DESIGN.md`](../../../../domain/connector/specs/DESIGN.md)
+- **Connector Framework**: [`docs/domain/connector/specs/DESIGN.md`](../../../../../domain/connector/specs/DESIGN.md)
+- **Connector Framework** (config naming §4.1, AddFields §4.6, descriptor §4.10): [`docs/domain/connector/specs/DESIGN.md`](../../../../../domain/connector/specs/DESIGN.md)
 - **Task Tracking domain**: [`docs/components/connectors/task-tracking/`](../)
 
 ---

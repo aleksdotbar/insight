@@ -1,9 +1,9 @@
 # Slack Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/connectors/collaboration/README.md` unified schema, OQ-COLLAB-4
+> Based on: `docs/components/connectors/collaboration/README.md` unified schema, OQ-COLLAB-4
 
-Standalone specification for the Slack (Chat) connector. Maps Slack API data to the unified Bronze collaboration schema (`collab_*` tables) defined in [`README.md`](README.md).
+Standalone specification for the Slack (Chat) connector. Maps Slack API data to the unified Bronze collaboration schema (`collab_*` tables) defined in [`../README.md`](../README.md).
 
 <!-- toc -->
 
@@ -65,7 +65,7 @@ Standalone specification for the Slack (Chat) connector. Maps Slack API data to 
 
 ## Bronze Tables
 
-> All Slack data is inserted into the shared `collab_*` tables with `data_source = 'insight_slack'`. The schema is defined in [`README.md`](README.md). This section documents which fields are populated and how Slack API values map to unified fields.
+> All Slack data is inserted into the shared `collab_*` tables with `data_source = 'insight_slack'`. The schema is defined in [`../README.md`](../README.md). This section documents which fields are populated and how Slack API values map to unified fields.
 
 ### `collab_chat_activity` — Chat messages per user per date (Slack mapping)
 

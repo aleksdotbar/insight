@@ -143,7 +143,7 @@ The companion document is the deployment SPEC at [`gitops/README.md`](../../gito
 
 The implementation lives in:
 
-- `constructorfabric/insight/.github/workflows/build-images.yml` -- the per-merge publishing workflow (Phase 2 of the deploy consolidation).
+- `.github/workflows/build-images.yml` -- the per-merge publishing workflow (Phase 2 of the deploy consolidation).
 - `infra/insight-gitops/.insight-version` -- the one-line semver pin.
 - `infra/insight-gitops/Makefile` -- pulls the chart from OCI, pinned to `.insight-version`.
 - `infra/insight-gitops/scripts/poller.sh` -- bumps `.insight-version` based on the highest semver tag at `oci://ghcr.io/constructorfabric/charts/insight`.
