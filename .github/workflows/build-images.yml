@@ -837,21 +837,11 @@ jobs:
       # No `file:` — the Dockerfile is at the context root.
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         id: build
-        env:
-          # Both arches emit identical maps under one release, and a
-          # pull_request image is discarded.
-          UPLOAD_SOURCEMAPS: ${{ needs.changes.outputs.should_push == 'true' && matrix.arch == 'amd64' }}
         with:
           context: src/frontend
           platforms: ${{ matrix.platform }}
           build-args: |
-            VITE_SENTRY_DSN=${{ secrets.FRONTEND_SENTRY_DSN }}
             VITE_APP_RELEASE=${{ needs.changes.outputs.build_tag }}
-            SENTRY_UPLOAD=${{ env.UPLOAD_SOURCEMAPS }}
-          # Quoted: the value is a multiline dotenv, and the action reads
-          # unquoted newlines as further entries.
-          secrets: |
-            "sentry_env=${{ env.UPLOAD_SOURCEMAPS == 'true' && secrets.SENTRY_BUILD_ENV || '' }}"
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/insight-frontend,push-by-digest=true,name-canonical=true,push=${{ needs.changes.outputs.should_push == 'true' }}
           cache-from: type=gha,scope=frontend-${{ matrix.arch }}
           cache-to: ${{ needs.changes.outputs.should_push == 'true' && format('type=gha,mode=max,scope=frontend-{0},ignore-error=true', matrix.arch) || '' }}

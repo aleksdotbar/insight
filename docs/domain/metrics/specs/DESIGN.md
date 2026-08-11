@@ -23,8 +23,10 @@
 - [Custom Metrics](#custom-metrics)
   - [Execution wire](#execution-wire)
   - [Observation contract the custom SQL must emit](#observation-contract-the-custom-sql-must-emit)
+  - [Catalog visibility](#catalog-visibility)
   - [Reconcile-safety of custom rows](#reconcile-safety-of-custom-rows)
   - [Validation and execution role](#validation-and-execution-role)
+  - [Tenant safety of custom SQL](#tenant-safety-of-custom-sql)
 - [Frontend Contract](#frontend-contract)
 - [Non-Goals](#non-goals)
 
@@ -323,6 +325,7 @@ metric_source_dimensions
 metric_definitions
 metric_definition_inputs
 metric_definition_dimensions
+metric_definition_tags
 ```
 
 `metric_sources` stores typed source refs.
@@ -336,6 +339,8 @@ metric_definition_dimensions
 ```text
 metric_key
 label
+short_label
+subject
 description
 explanation
 unit
@@ -350,6 +355,17 @@ is_enabled
 schema_status
 schema_error_code
 ```
+
+`subject` is the single topic a metric belongs to within its family — the
+grouping a surface listing a whole family uses to partition it into topics
+(`meetings`, `messages`, `email`, `documents`) rather than only sorting by
+name. Exactly one per metric, which is the partition a source key cannot
+provide: `metric_definition_inputs` binds each input to its own measure, so a
+ratio's numerator and denominator may come from different sources, and a
+grouping derived from the source is not a partition. Every builtin declares a
+subject; a builtin registry test (`every_metric_declares_a_shaped_subject`)
+enforces presence and shape. The column is nullable so a custom definition may
+omit it.
 
 `unit` is a display suffix for formats that do not fully determine
 presentation on their own (e.g. `"lines"`, `"days"`, `"h"`). `percent` and
@@ -371,6 +387,14 @@ denominator
 ```
 
 `metric_definition_dimensions` maps metrics to source dimensions.
+
+`metric_definition_tags` holds a metric's cross-cutting tags — free-form slugs
+a surface can filter or search by (`rate`, `duration`, `distribution`), many
+per metric, unlike the singular `subject`. Tags are not bound to a source, so
+this table carries the tag string directly rather than referencing
+`metric_source_dimensions`. A builtin registry test
+(`metric_tags_are_shaped_and_unique_per_metric`) pins their shape and
+per-metric uniqueness.
 
 Rules:
 
@@ -609,6 +633,12 @@ Schema validation checks:
   `unchecked`, never `error`: filtered measures legitimately go quiet, and
   absence of data is indistinguishable from an unemitted measure.
 - probe failures never overwrite a previously established status.
+- custom observation SQL sources are not probed: the validator reads
+  materialized relations only, and executing tenant-authored SQL would leave
+  the `presentation_ro` execution role custom SQL is confined to. Custom
+  definitions therefore keep `schema_status = 'unchecked'` and never receive
+  `last_observed_date`; the listing exposes `origin` so readers can tell
+  these fields do not apply, instead of reading them as "never measured".
 - the validator sweeps periodically, not once at startup: managed relations
   are dbt-created and may appear after the service boots (fresh deploys) or
   regress later (a bad model change); both converge within one sweep with no
@@ -630,10 +660,13 @@ derived from it.
 1. Add one entry to the `metrics` list in
    `src/backend/services/analytics/src/domain/metric_definitions/registry.yaml`:
    metric key (`namespace.metric_name`, lowercase snake case), label,
-   description, unit, format, direction, entity type, computation, input role
-   mapping to the measure, allowed dimensions, peer cohort key.
+   subject (the one topic within the family this metric groups under — a
+   lowercase snake-case slug, required), description, unit, format, direction,
+   entity type, computation, input role mapping to the measure, allowed
+   dimensions, peer cohort key, and optionally tags (cross-cutting slugs).
 2. Run `cargo test -p analytics` — the registry invariant tests validate
-   key shapes, input/measure references, and computation field combinations.
+   key shapes, subject/tag shapes, input/measure references, and computation
+   field combinations.
 
 The reconciler seeds the definition on the next deploy. If every input measure
 has healthy evidence metadata, the metric automatically receives drilldown,
@@ -773,6 +806,15 @@ measure_key, observed_at, value, subject_key, dimensions
 ```
 
 Column semantics match the Source Measure Observation Contract above.
+
+### Catalog visibility
+
+`GET /v1/metric-definitions` exposes each definition's `origin` (`builtin` /
+`custom`). `schema_status` and `last_observed_date` are stamped by the
+managed-relation validator only, so for `origin = 'custom'` they stay
+`unchecked` / absent regardless of the data the metric serves; a consumer
+that treats a missing `last_observed_date` as "this metric has never
+measured anything" must scope that reading to `origin = 'builtin'`.
 
 ### Reconcile-safety of custom rows
 
