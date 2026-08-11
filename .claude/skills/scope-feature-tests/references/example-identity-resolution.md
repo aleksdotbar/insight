@@ -37,12 +37,12 @@ coverage**, and the risk lived entirely off the email column. That reframed the 
 > **Out of scope:** fuzzy/alias matching, merge/split, unmapped queue, GDPR purge, ClickHouse
 > analytical tables. (None are built in C# — testing them would score the port against unbuilt work.)
 >
-> ## Test groups
+> ## Plan
 >
-> **1a. Seed → one person** — seed sources unify into a single email-keyed `person_id`; email
+> **1a. Seed → one person** (identity-e2e) — seed sources unify into a single email-keyed `person_id`; email
 > case/format unifies; shared emails don't over-link; unresolved fails safe.
 >
-> **1b. Resolve from all sources** — each source × its join key lands on the correct `person_id`.
+> **1b. Resolve from all sources** (identity-e2e) — each source × its join key lands on the correct `person_id`.
 >
 > | Source | Links on | Expected |
 > |---|---|---|
@@ -55,15 +55,19 @@ coverage**, and the risk lived entirely off the email column. That reframed the 
 > Outcome per cell: resolved to correct `person_id` / unresolved / mis-linked. Metric =
 > per-source resolution coverage + unresolved %.
 >
-> **2. Org graph** — manager + team resolve, correct depth/source, handle root & cycles.
-> **3. Stability & lifecycle** — re-seed stable (no dupes); new connector links; joiner/leaver/rename.
-> **4. Tenant isolation & access** — no cross-tenant leakage; tenant-context + admin gating.
-> **5. Interface & data** — API contract; schema migration & cutover; analytics-api + e2e green.
+> **2. Org graph** (identity-e2e) — manager + team resolve, correct depth/source, handle root & cycles.
+> **3. Stability & lifecycle** (identity-e2e) — re-seed stable (no dupes); new connector links; joiner/leaver/rename.
+> **4. Tenant isolation & access** (stand-api) — no cross-tenant leakage; tenant-context + admin gating.
+> **5. Interface & data** (stand-api) — API contract; schema migration & cutover; analytics +
+> e2e green.
 >
 > ## Acceptance
 > - [ ] All groups pass
+> - [ ] every criterion of the reviewed AC set maps to a group (deferred ones carry a reason
+>       and an owner)
 > - [ ] Per-source resolution coverage measured; no source silently unresolved/mis-linked
-> - [ ] C#-vs-Rust differential: same data → identical persons, bindings, org edges (zero diff)
+> - [ ] C#-vs-Rust differential: same seeded data → persons, bindings, org edges all tagged
+>       `exact` — a port is the case where the whole diff table is `exact`, so any diff is a finding
 
 ## What to notice about the altitude
 
@@ -71,5 +75,5 @@ coverage**, and the risk lived entirely off the email column. That reframed the 
   the gaps are otherwise invisible.
 - The boundary explicitly defers the ~15-day matching/merge surface — so the port isn't judged
   against features that don't exist in the thing it's porting.
-- The acceptance gate is a real gate: a **differential** on real data (zero diff) is the strongest
+- The acceptance gate is a real gate: a **differential** on the same seeded data is the strongest
   possible proof for a port, far stronger than any hand-written case list.

@@ -31,19 +31,30 @@ already exists; no temporal store yet; two person stores risk a split-brain). Fi
 required enumerating surfaces, state machines, and a coverage matrix.
 
 **Then none of that scaffolding got filed.** The first draft that *did* get filed carried it all —
-`S1…S9`, `SM1…SM4`, `T1…T8`, the matrix, the symbol names — and the reaction was, in order: "too
-much detail, I need a human-understandable plan" → "too much to read, I need a very short
-definition of the main effort." Three passes. What survived was ~10 lines:
+`S1…S9`, `SM1…SM4`, `T1…T8`, the matrix, the symbol names — and review feedback asked twice for less:
+first for a human-understandable plan, then for a very short definition of the main effort.
+What survived was the compact form:
 
+> <details>
+> <summary>🧪 QA testing scope — functional role cohorts (#1455)</summary>
+>
 > New feature — nothing to compare against, so we test correctness. One fixture (a Tech Lead =
-> coding + code review + mentoring) threaded through everything. Biggest risk first: (1) set of
-> roles holds everywhere; (2) admin override beats HR and survives the next sync; (3) per-role
-> activity is honest — coding measurable, code review expected-fail, no-source roles show "no
-> data"; (4) metrics per cohort correct, department numbers unchanged; (5) role changes preserve
-> history; (6) RoleSwitcher runs on real roles. **Out:** derivation algorithm, expected-vs-actual
-> matching. **~4 QA-days.**
+> coding + code review + mentoring) threaded through everything.
+>
+> 1. **Set of roles holds everywhere** — identity-e2e — anything treating a role as
+>    single-valued breaks the feature.
+> 2. **Admin override beats HR** — stand-api — and survives the next sync.
+> 3. **Per-role activity is honest** — metric-spec — coding measurable, code review
+>    expected-fail, no-source roles show "no data".
+> 4. **Metrics per cohort correct** — metric-spec — department numbers unchanged.
+> 5. **Role changes preserve history** — identity-e2e.
+> 6. **RoleSwitcher runs on real roles** — stand-ui.
+>
+> **Out:** derivation algorithm, expected-vs-actual matching. **~4 QA-days, automated.**
+>
+> </details>
 
-That the analysis was deep shows up as *good choices* in those six lines — the fixture, the risk
+That the analysis was deep shows up as *good choices* in those six bullets — the fixture, the risk
 order, the honest-gap calls — not as six pages.
 
 ## What to notice

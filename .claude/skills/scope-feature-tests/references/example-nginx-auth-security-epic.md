@@ -12,8 +12,8 @@ lineage) onto a security feature, and so it remembers to make the scope *operati
 
 ## What made the shape different
 
-- **No differential.** The old gateway is deleted outright — no prod installs, nothing to
-  reproduce. Forcing a "reproduces the old behavior" gate would be wrong. The gate is **security
+- **No differential.** The old gateway is replaced outright — no installed baseline to
+  preserve, nothing to reproduce. Forcing a "reproduces the old behavior" gate would be wrong. The gate is **security
   properties hold** + the spec's own acceptance criteria.
 - **EPIC altitude.** The 11 sub-issues own their component tests; this scope is the cross-cutting
   **end-to-end security acceptance of the assembled system** — the tests that only exist once the

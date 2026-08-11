@@ -1,6 +1,6 @@
 ---
 name: stand-api-test
-description: "Write, fix, or review HTTP contract tests in tests/stand/api/ — the deployed-stand suite against a real gateway, real Keycloak sessions and real backend images. Covers the operation catalogue, which persona session to take, requires_seed markers, the scratch-resource policy, the hand-written vs generated response models, status-code discipline (identity 404 vs analytics 403 outside a scope, 400 vs 415 vs 422) and the endpoint coverage gate. Use when adding or changing anything under tests/stand/api/, closing a coverage-gate gap, or turning a stand-scenarios claim into an API case. For browser journeys use stand-ui-test; for the in-process analytics rig under src/ingestion/tests/e2e/api/ use api-test instead — they are different suites with different rules."
+description: "Write, fix, or review HTTP contract tests in tests/stand/api/ — the deployed-stand suite against a real gateway, real Keycloak sessions and real backend images. Covers the operation catalogue, which persona session to take, requires_seed markers, the scratch-resource policy, the hand-written vs generated response models, status-code discipline (identity 404 vs analytics 403 outside a scope, 400 vs 415 vs 422) and the endpoint coverage gate. Use when adding or changing anything under tests/stand/api/, closing a coverage-gate gap, or turning a stand-scenarios claim into an API case. For browser journeys use stand-ui-test. The in-process analytics HTTP rig that once lived at src/ingestion/tests/e2e/api/ (the api-test skill) was retired in favour of this suite — only the data-path metrics rig remains in-process (metric-test)."
 disable-model-invocation: false
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
@@ -11,12 +11,11 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 HTTP tests against a **deployed** Insight — the gateway BFF in front of pinned
 service images, sessions won by real Keycloak logins. No browser.
 
-**This is not `src/ingestion/tests/e2e/api/`.** That rig runs an analytics
-binary in-process and mints its own gateway JWT per request, where this suite wins
-a real Keycloak session; it owns four blocking coverage gates. Use
-the `api-test` skill for it. The two suites prove different things and the
-rules differ — most sharply on mutation, because a stand persists between runs
-and the rig discards its whole stack.
+**`src/ingestion/tests/e2e/api/` no longer exists.** That in-process rig's
+HTTP contract lanes were retired in favour of this suite ("refactor(e2e):
+retire the rig's HTTP contract lanes, keep the data path"); the `api-test`
+skill describes the retired suite and remains only as history. The data-path
+metrics rig stays in-process — see `metric-test`.
 
 Environment, sessions and triage: `insight-stand`. What to test:
 `stand-scenarios`.
@@ -256,7 +255,8 @@ the gate's central rule and the reason `template` exists.
    carries exactly one quality-vector marker — a module-level `pytestmark`
    default with per-test overrides where a test's vector differs (contract
    correctness is `reliability`; access, tenancy and refusal-of-access cases
-   are `security`) — collection aborts on an unmarked test.
+   are `security`; catalog-breadth checks are `versatility`) — collection
+   aborts on an unmarked test.
 7. Run and check the ledger:
 
 ```bash
@@ -284,5 +284,5 @@ python3 tests/lib/insight_stand/coverage.py \
 9. When the test implements a scenario tracked in a feature issue's Testing
    section, cite it in the test docstring (`#2163 scenario 3`) — the id is the
    link, never copy scenario or AC prose into the test — and after merge check
-   the scenario's box in the issue with a link to the test. Unchecked boxes are
-   how the feature's coverage gaps stay visible.
+   the scenario's box in the issue with a link to the test. The test's vector
+   marker must equal the scenario's vector tag.

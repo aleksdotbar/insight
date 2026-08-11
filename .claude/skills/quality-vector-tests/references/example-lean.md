@@ -53,8 +53,10 @@ drill-down must account for 42) has no scenario at all.
 Drill-down exists to make a number believable, so the headline scenario is the trust invariant
 itself (BR-1): the evidence returned must account for exactly the value it explains. Everything
 else guards the honesty of what surrounds it — volume, coverage, speed and exposure. Speed and
-run-cost run on the reference-org dataset. The BR ids are the issue's own; scenarios 6–8 have no
-criterion behind them — proposed to the author in the AC review.
+run-cost run on the reference-org dataset. The BR ids are the issue's own. Criteria map:
+BR-1,BR-2 → 1 · BR-3 → 2 · BR-9 → 4 · BR-10,BR-11 → 3 · BR-12,BR-18 → 5; the remaining BRs
+are proven by the epic's other subtasks, and scenarios 6–8 await the criteria proposed to the
+author in the AC review.
 
 - [ ] 1. **Count match** — Reliability · metric-spec · BR-1, BR-2 — for each catalog metric, run
       the metric query and the drill query with identical period, person and filters → the drilled
@@ -85,7 +87,7 @@ criterion behind them — proposed to the author in the AC review.
   honesty**, "Cover all 25 connector data" → **Connector coverage**, "No critical issues in the ci
   pipeline" → **Critical findings**.
 - Gave every countable expect a denominator counted from the repo (60 metrics, 26 connectors,
-  3,000/500) — and corrected the issue's own "25 connectors" to the 26 the tree actually has.
+  3,000/500) — and corrected the issue's own "25 connectors" to the 26 the tree had when this was written.
 - Moved "pagination tests" and "Coverage" from Efficiency to **Reliability** — paging correctness
   is a correctness claim; Efficiency kept the author's genuine run-cost item.
 - Split "100% reconciliation" from "0 leaked records" into scenarios 1 and 2, because one expect

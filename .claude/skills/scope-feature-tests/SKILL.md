@@ -3,8 +3,8 @@ name: scope-feature-tests
 description: >-
   Scope the testing for a feature in constructorfabric/insight — turn a GitHub issue (or a
   described feature) into a lean, code-grounded test scope: the axes/dimensions of checking,
-  grouped test areas, an in/out-of-scope boundary, and an acceptance gate, then optionally file
-  it as a linked test subtask. Use this whenever the user wants to plan HOW a feature will be
+  grouped test areas with a target suite each, an in/out-of-scope boundary, and an acceptance
+  gate, then optionally file it as a linked test subtask. Use this whenever the user wants to plan HOW a feature will be
   tested — "scope the tests for #1602", "what do we need to check here", "how are we going to
   test this once it's done", "define the test dimensions / groups / axes", "make a test plan or
   test scope", "create a test subtask for this feature", or when reviewing a feature to decide
@@ -13,8 +13,9 @@ description: >-
   ../insight checkout when working from elsewhere — (not generic checklists) and
   correcting the feature's stated framing against what the code really does — including reviewing
   the issue's acceptance criteria first and proposing a corrected set when they are arbitrary,
-  and mapping the touched components' malfunctions as a test axis. This is the
-  QA-scoping counterpart to file-bug-insight (which reports an observed defect): prefer this when
+  and mapping the touched components' malfunctions as a test axis. Its authoring counterpart is
+  quality-vector-tests, which lays the resulting coverage into the feature body as tracked
+  scenarios. This is the QA-scoping counterpart to file-bug-insight (which reports an observed defect): prefer this when
   the task is planning coverage for work being or about to be built, and keep the altitude at
   dimensions/groups, not individual test cases.
 ---
@@ -83,17 +84,21 @@ flagged, not tested around). If the set needs changing, propose the corrected AC
 user *before* designing coverage — the author owns that contract, so it lands in the issue only
 on confirmation. Everything downstream (the groups, the gate, the Testing section
 `quality-vector-tests` writes) maps to the agreed set; a deferred AC keeps an explicit reason and
-owner rather than vanishing.
+owner rather than vanishing. The **real** check usually needs step 2's grounding to answer —
+treat the review as provisional until grounding confirms it — and a deferred AC can stay in
+scope as an executable `xfail` gate (see the boundary traps in step 5) instead of dropping out.
 
 ### 2. Ground it in the real code and data flow
-This is the core. Investigate the sibling `../insight` (and `../insight-front` for UI). Do not
+This is the core. Investigate this repo — `src/backend`, `src/ingestion` (and its dbt),
+`src/frontend` for UI; when invoked from outside an insight checkout, the sibling `../insight`
+clone is the fallback. Do not
 scope from memory or the issue alone. Look at:
 - The **implementation** being tested (the service / module / connector).
-- The **data flow** end to end: Bronze → dbt Silver → Gold views → analytics-api → SPA. Trace
+- The **data flow** end to end: Bronze → dbt Silver → Gold views → analytics → SPA. Trace
   where the thing under test actually *reads* vs *writes*. Which sources *seed* it vs merely
   *consume* it? What's the real join key at each hop?
 - The **consumer contract** — who calls it and what shape they depend on (e.g.
-  `../insight-front/src/api/`, `analytics-api` clients).
+  `src/frontend/src/api/`, `analytics` clients).
 - **Design docs / specs** in the repo (`docs/`, `inbox/`, cypilot specs) for intended behavior.
 - **The existing test coverage** — read the unit/integration/e2e tests already there. A good scope
   points at the *gaps* (what's unverified), not what's already green. Note which surfaces have zero
@@ -111,16 +116,14 @@ scope from memory or the issue alone. Look at:
 
 **In-progress features live on a branch, not `main`.** If `main` doesn't contain the code, find
 the implementation: `gh pr list --search`, `git branch -r | grep`, and read the actual branch
-(worktree it via `git -C ../insight worktree add`, or `git show <branch>:<path>`). Scope against
+(worktree it via `git worktree add`, or `git show <branch>:<path>`). Scope against
 the real implementation + its `DESIGN.md`, not the issue's prose — the two often diverge, and a
 branch's DESIGN doc is frequently the richest single source of the test surface.
 
-Enumerate worktrees authoritatively via the hub (`git -C ../insight worktree list --porcelain`
-or `scripts/repos.sh worktrees`) — never glob directory names. Spawn parallel `Explore` agents
-when the surface is broad. Reading the code, migrations, and schema is normally enough to *scope*
-coverage; `scripts/ch.sh` (live ClickHouse) and `./wiki` (bronze→silver→gold lineage) are
-optional sharpeners for a specific check, not a prerequisite — you're planning tests, not
-executing them.
+Enumerate worktrees authoritatively (`git worktree list --porcelain`) — never glob directory
+names. Spawn parallel `Explore` agents when the surface is broad. Reading the code, migrations,
+and schema is normally enough to *scope* coverage; a live stand's ClickHouse is an optional
+sharpener for a specific check, not a prerequisite — you're planning tests, not executing them.
 
 **When the code contradicts the framing, say so out loud and let it reshape the scope.** This is
 the skill's whole point, not a footnote. Grounding this deep regularly turns up an **actual defect**
@@ -162,7 +165,7 @@ own headline test group rather than burying it inside the correctness group.
 Two boundary traps worth naming explicitly:
 - **Don't gate on deliberately-deferred behavior.** The issue's generic ACs often imply behavior
   the code intentionally doesn't implement yet (e.g. "no cross-tenant leakage" when the platform
-  deliberately runs single-tenant and doesn't filter the warehouse tenant id). Gating on it fails
+  deliberately runs single-tenant and leaves tenant filtering outside the current design scope). Gating on it fails
   by design and scores the feature against unbuilt work. But confirm the boundary with the user
   rather than silently excluding — they may want it **kept in scope as executable `xfail`**: the
   gate that turns green when the deferred piece lands, so a known gap stays visible instead of
@@ -178,11 +181,12 @@ Add sub-bullets or a matrix only where they carry real signal. Resist enumeratin
 cases — if you're writing "test that email with trailing space unifies," you've dropped too low.
 
 **Give each group a home: the target component, then the cheapest suite that can falsify it.**
-The layer menu depends on what the group targets — frontend: fe-unit → fe-component → stand-ui;
-backend by function: rust-unit → metric-spec / auth-rig / identity-e2e → stand-api; ingestion:
-connector-tests → dbt-tests → metric-spec; cross-cutting: ci-static, manual. The table with
-definitions lives in `quality-vector-tests`' layer section; the tag names the suite the tests
-will land in, which is what makes a coverage gap checkable later. Browser journeys pay a
+The suite menu depends on the component the group targets — take it from the per-component
+layer table in `quality-vector-tests` step 4 rather than from memory (the ladders differ by
+backend function, and auth claims can terminate in `stand-ui`). The tag names the suite the
+tests will land in, which is what makes a coverage gap checkable later. Suite tags and
+criterion ids are exempt from the strip-internal-identifiers rule below — they are the
+tracking scheme itself. Browser journeys pay a
 permanent flake tax: a stand-ui group must say what is user-visible about the claim that a
 cheaper suite cannot observe.
 
@@ -233,7 +237,8 @@ correct but unread has failed.
 ### 8. Offer to file it
 Offer to file the scope as a **linked test subtask** under the parent feature via the
 `github-task` skill (Type `Task`, added to the Insights board, attached as a sub-issue). Draft
-for review first; don't auto-create. Do **not** reimplement issue mechanics here — compose with
+for review first; don't auto-create. When the coverage belongs in the feature body instead,
+hand the groups to `quality-vector-tests` — it lays them out as the tracked scenario checkboxes. Do **not** reimplement issue mechanics here — compose with
 `github-task`.
 
 ## Common axes worth probing (prompts, not a fixed checklist)
@@ -251,7 +256,7 @@ Use these to interrogate the feature — keep the ones the code makes real, drop
   consumers and existing e2e stay green.
 - **Migration & cutover** (esp. ports) — new impl boots on the old schema/data, no re-migration
   or loss; drop-in swap is invisible to consumers.
-- **The differential gate** (ports, consolidations, migrations) — same real dataset → new output
+- **The differential gate** (ports, consolidations, migrations) — same seeded dataset → new output
   vs what it replaces. **It is rarely pure zero-diff.** Tag each item: `exact` (must match),
   `known-diff(direction)` (a deliberate semantic change — assert the direction, don't fail it), or
   `merge/scale-preserving` (siblings collapse into one — merged == Σ parts, source → breakdown).
@@ -288,8 +293,8 @@ check genuinely can't be automated.
 baseline to compare, so we test correctness" or "port — must reproduce the old counter">.
 <Optional: one clause naming the single fixture / dataset threaded through everything.>
 
-1. **<Biggest risk, plain words>** — <what breaks the feature if this is wrong>.
-2. **<Next risk>** — <one plain sentence>.
+1. **<Biggest risk, plain words>** — <suite> — <what breaks the feature if this is wrong>.
+2. **<Next risk>** — <suite> — <one plain sentence>.
 ... (~6 bullets, worst first)
 
 **Out:** <what's deferred / owned elsewhere>. **~<N> QA-days, automated.**
@@ -314,7 +319,8 @@ resolve-only sources, or the key axis of variation>.
 
 ## Plan
 
-**1. <Verb> <the action>** — <what to set up → what to assert; matrix only where it adds signal>.
+**1. <Verb> <the action>** (<suite> · the AC-<n> it proves) — <what to set up → what to assert;
+matrix only where it adds signal>.
 **2. <Verb> …** — <one line>.
 ... (~5–8 steps; reusable harnesses first, then the gate, then apply per case)
 

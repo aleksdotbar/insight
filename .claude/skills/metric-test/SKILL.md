@@ -240,7 +240,8 @@ with a dedicated spec (see `metrics/collab_emails_read.test.yaml`):
    person silently drops out of the team/department (no error), and the median/range is computed
    over the wrong roster. Set the SAME email on both `workEmail` and `userPrincipalName`.
 4. **Write the `description`** (metric + bronze→silver→gold formula + Team/Cases —
-   see § `description`), then **`bronze`** with `$ref`+overrides; include a duplicate
+   see § `description`; a spec implementing a tracked feature scenario cites it
+   here — see § Feature-scenario traceability), then **`bronze`** with `$ref`+overrides; include a duplicate
    row when the metric should dedup.
 5. **Write `cases`**: one batch `query` per metric under test (and one `metric_key` per
    file — see File layout); assert ONLY the target metric's few fields via `find`+`equal`,
@@ -355,6 +356,7 @@ aren't in the snapshot yet:
 ## Feature-scenario traceability
 
 When a spec implements a scenario tracked in a feature issue's Testing section,
-cite it in the YAML's top-of-file comment (`# #2163 scenario 1`) — the id is
+cite it inside the spec's `description` (`… — #2163 scenario 1`) — the id is
 the link, never copy scenario or AC prose — and after merge check the
-scenario's box in the issue with a link to the spec file.
+scenario's box in the issue with a link to the spec file. The scenario's
+vector has no marker mechanism in this suite; it lives issue-side only.

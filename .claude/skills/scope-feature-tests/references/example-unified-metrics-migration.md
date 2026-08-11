@@ -27,11 +27,11 @@ Reading the branch (`feat/unified-metrics` — the code was **not on `main`**; f
    (`active_days`/`cost` widen to include assistant data; `dev_conversations` changes source +
    tool set). A blanket "identical output" gate would fail intended behavior. → three-way tag:
    `exact` (7) / `known-diff(direction)` (3) / `merge` (future waves).
-2. **"No cross-tenant leakage" is deliberately deferred.** The platform runs single-tenant and the
-   compiled queries intentionally don't filter the warehouse tenant id. Gating on isolation fails
+2. **"No cross-tenant leakage" is deliberately deferred.** The platform runs single-tenant and tenant
+   filtering of the compiled queries is outside the current design scope. Gating on isolation fails
    by design. The user chose to **keep it in scope as `xfail`** — the gate that turns green when
    the tenant predicate lands — rather than drop it (a known gap stays visible).
-3. **The UI is unbuilt.** The renderer + modal migration don't exist yet in `insight-front`. Not
+3. **The UI is unbuilt.** The renderer + modal migration didn't exist yet in the frontend. Not
    "out of scope" — **sequenced behind that build**, still required for wave sign-off.
 4. **A real defect, not a test dimension.** Grounding the reconciler showed a non-transactional
    DELETE-then-INSERT of a definition's inputs, run on every replica at boot → a zero-input window
@@ -48,24 +48,25 @@ Reading the branch (`feat/unified-metrics` — the code was **not on `main`**; f
 > **Axes:** metric (each seeded metric × its views) · computation × view (sum/ratio × period/peer/
 > timeseries/breakdown) · tenant (resolution, tenant-vs-product defs, isolation) · wave.
 >
-> **Plan** (harnesses first, then the gate, then per-case):
-> 1. **Build** the metric×view matrix harness — registry-driven; a new metric is covered with no
+> ## Plan — harnesses first, then the gate, then per-case:
+> 1. **Build** the metric×view matrix harness (metric-spec) — registry-driven; a new metric is covered with no
 >    code change (prove with a throwaway metric).
-> 2. **Exercise** edge semantics — seed empty/zero-denominator/sparse/missing-dimension; assert
+> 2. **Exercise** edge semantics (metric-spec) — seed empty/zero-denominator/sparse/missing-dimension; assert
 >    sum→0, ratio→null, dense timeseries, breakdown observed-only, peer drops nulls.
-> 3. **Stand up** the migration differential (the gate) — old path vs engine on same data, each
+> 3. **Stand up** the migration differential (the gate; metric-spec) — old path vs engine on same data, each
 >    metric tagged `exact` / `known-diff` / `merge`. [AI table]
-> 4. **Test** definitions & reconciliation — precedence/fallback; reconciler idempotent, disables
+> 4. **Test** definitions & reconciliation (rust-unit) — precedence/fallback; reconciler idempotent, disables
 >    not deletes, safe under concurrent boot (no zero-input window).
-> 5. **Drive** schema-status + request rejection (caps + invalid inputs).
-> 6. **Verify** contracts + no-namespace-branching + dual-path coexistence.
-> 7. **Test** tenant isolation — two tenants; xfail the cross-tenant-data assertions until the
+> 5. **Drive** schema-status + request rejection (stand-api) — caps + invalid inputs.
+> 6. **Verify** contracts + no-namespace-branching + dual-path coexistence (stand-api).
+> 7. **Test** tenant isolation (metric-spec) — two tenants; xfail the cross-tenant-data assertions until the
 >    warehouse predicate lands.
-> 8. **Validate** in the UI once the renderer lands (sequenced; gates sign-off).
+> 8. **Validate** in the UI once the renderer lands (stand-ui; sequenced; gates sign-off).
 >
 > **Acceptance:** matrix + differential registry-driven (new metric ⇒ no code change); differential
 > tagged, never blanket zero-diff; reconciler safe under concurrent boot; tenant scoping proven
-> (isolation xfail until filter lands); existing screens keep working.
+> (isolation xfail until filter lands); existing screens keep working; every criterion of the
+> reviewed AC set maps to a group.
 
 ## What to notice
 

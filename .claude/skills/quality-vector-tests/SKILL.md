@@ -34,8 +34,8 @@ engineer or QA lead reading a feature sees the *same shape* of test plan every t
 A Testing section is a **tracker, not an essay**. Each scenario is one checkbox line a stranger
 could execute and score:
 
-> `- [ ] 3. **Refusal landing** — Reliability · stand-ui · AC-2 — drive all three unhappy paths;
-> each lands back on the sign-in screen, every option intact, reason shown.`
+> `- [ ] 3. **Refusal landing** — Reliability · stand-ui · AC-2 — drive all three unhappy paths
+> → each lands back on the sign-in screen, every option intact, reason shown.`
 
 The box starts unchecked. When the test lands, the box gets checked and the line gets a link to
 the test. The post-implementation coverage audit is literally reading the unchecked boxes — GitHub
@@ -81,10 +81,26 @@ The author owns that contract: the revised set goes into the issue's Acceptance 
 only on confirmation. Scenarios then map to the agreed set. An AC that stays but can't be tested
 yet is marked **deferred** with a reason and owner in the Testing section — never left untagged.
 
+Three mechanics that make the tags resolvable:
+
+- **Issue-native criterion ids win.** When the issue defines its own ids (`BR-n`, `REQ-n`), cite
+  those verbatim; `AC-n` is the fallback for unlabelled checkbox criteria.
+- **File the numbering back.** The same edit that lands the Testing section prefixes each
+  acceptance criterion with its id (`AC-1.` …) — a numbering-only change that needs no
+  confirmation — otherwise the section cites ids no reader can resolve.
+- **A scenario may lack a criterion only while its proposal is pending.** The completeness check
+  normally supplies a criterion for every scenario; until the author confirms a proposed one, the
+  scenario stays untagged and the framing paragraph names it explicitly ("scenarios 6–8 await the
+  proposed criteria"). Silence is not an option. Malfunction scenarios are the common case:
+  degraded behaviour rarely has a criterion until the review's completeness check proposes one,
+  so they arrive tagged with the proposed id or named as awaiting it.
+
 ### 2. Ground the scenarios in the real feature
 **Not every job needs this step.** When the request is purely cosmetic — regrouping existing
 scenarios under the right vectors, fixing numbering, tightening wording, with no scenario added,
-removed or re-targeted — read the issue body and go straight to step 4.
+removed or re-targeted — read the issue body and skip to step 4, running step 3's ten-second
+lookup first for any tool a kept line names: a pure reformat that preserves an inherited
+"Lighthouse" or "k6" line is exactly the silent-green failure step 3 exists to catch.
 
 Otherwise, don't invent a generic checklist. Read the issue and the actual implementation the same
 way `scope-feature-tests` does — pull the issue (`gh issue view n --repo constructorfabric/insight
@@ -159,6 +175,10 @@ row that can falsify the claim; issues use the tags, never reproduce this table:
 | Ingestion (connectors + dbt) | `connector-tests` (per-connector suites under `src/ingestion/connectors/*/*/tests`) → `dbt-tests` (data tests over silver/gold) → `metric-spec` (bronze → dbt → served metric, end to end) |
 | Cross-cutting | `ci-static` (secret scan, image scan, coverage gates in `.github/`) · `manual` (docs walkthroughs, once-per-release legs a stand cannot drive) |
 
+Performance and Efficiency scenarios have no suite of their own today — no load or soak lane is
+wired anywhere in the repo — so they take `manual` (or `stand-api` only when that suite can
+genuinely issue the run) and say so in the line, as the tool-verification step demands.
+
 A `stand-ui` tag carries the same burden the UI suite itself imposes: the scenario must be about
 what a user *sees or traverses* — rendering, navigation, a real sign-in — and the justification
 should name what is user-visible that a cheaper suite cannot observe. Browser tests pay a
@@ -220,10 +240,12 @@ latency is measured on the shared runtime.>
 ```
 
 Order scenarios by risk, headline first — for most Insight features that's **Reliability** (the
-data promise: the number is right). Scenarios of the same vector sit together so the vector name
-reads once per group. When one sentence genuinely can't hold a scenario (a multi-part oracle, a
-tagged differential), spill into two or three sub-bullets — but treat that as the exception; a
-section of anatomy-per-scenario is the old failure mode.
+data promise: the number is right). Scenarios of the same vector sit together so a vector's
+block reads contiguously — the tag still repeats on every line. When one sentence genuinely
+can't hold a scenario (a multi-part oracle, a tagged differential), spill into two or three
+sub-bullets — plain bullets, never checkboxes, so GitHub's checked/total count stays one box per
+scenario — but treat that as the exception; a section of anatomy-per-scenario is the old failure
+mode.
 
 ### Rules that make the format work
 
@@ -238,8 +260,10 @@ section of anatomy-per-scenario is the old failure mode.
   Security; the refusal that must *land the user somewhere sane* is Reliability).
 - **One scenario → one suite tag.** If it needs two suites, it's two scenarios. The tag is
   checkable — a wrong tag shows up as a test living in the wrong home.
-- **Number continuously** across the whole section (1..N), so people can refer to "scenario 4"
-  unambiguously.
+- **Numbers are permanent.** Number continuously (1..N) when first writing the section; after
+  that a number is never reused or shifted — new scenarios append with fresh numbers, a dropped
+  scenario keeps its line marked ~~dropped~~, and every edit regenerates the AC map line. Merged
+  tests cite scenario numbers in their docstrings, so renumbering silently repoints them.
 - **Every vector appears.** A vector with nothing to check says **n/a** and why, in one line.
   Silence reads as an oversight; an explicit n/a reads as a decision. Don't invent a scenario to
   fill a vector — an honest n/a beats a padded one.
@@ -264,17 +288,20 @@ section of anatomy-per-scenario is the old failure mode.
   to make their intent trackable, not to replace it. Add at most the one scenario whose absence
   would make the section dishonest — usually the differential/parity gate — and flag it explicitly
   rather than slipping it in.
-- **The differential/parity gate is the headline** for ports, consolidations, and migrations, and
-  is tagged, never blanket zero-diff: `exact` (must match) / `known-diff(direction)` (deliberate
-  change — assert the direction) / `merge` (siblings collapse — merged == Σ parts).
+- **The differential/parity gate is the headline** for ports, consolidations, and migrations. It
+  carries `*(main gate)*` right after the scenario name — the one extra tag the format allows —
+  and its diff expectations are tagged, never blanket zero-diff: `exact` (must match) /
+  `known-diff(direction)` (deliberate change — assert the direction) / `merge` (siblings collapse
+  — merged == Σ parts).
 
 ## Tracking coverage after implementation
 
 The section stays alive after it's written — that is its point:
 
-- A test that implements scenario n cites the issue and scenario in its docstring
-  (`#2163 scenario 3`), and the scenario's box gets checked with a link to the test
-  (`→ tests/stand/api/test_github_login.py`). Link by id, never copy scenario or AC prose into
+- A test that implements scenario n cites the issue and scenario in its docstring — or, for a
+  metric-spec YAML, in its `description` — (`#2163 scenario 3`), and the scenario's box gets
+  checked with a link to the test
+  (`→ tests/stand/ui/test_login.py`). Link by id, never copy scenario or AC prose into
   the test — copies drift, the id is the link.
 - The **gap audit** is: fetch the issue, read the unchecked boxes. Each unchecked box after
   implementation is a named, attributed coverage gap — vector, suite, AC — not a vague "needs
@@ -284,9 +311,13 @@ The section stays alive after it's written — that is its point:
 - In the stand suites the vector attribution is machine-enforced: every api/ui test carries a
   vector marker (module `pytestmark` default, per-test override, nearest wins; declared in
   `tests/pyproject.toml`, checked at collection), so `-m security` runs one vector and an
-  unmarked test aborts the session.
+  unmarked test aborts the session. The marker must equal the scenario's vector tag.
+  metric-spec YAML has no marker mechanism — its vector lives issue-side only.
 
 ## Turning a vague line into a scenario
+
+Numbers are omitted from these rows only because each is a single line out of context; in a
+filed section every scenario is numbered.
 
 | Author wrote | Scenario line |
 |---|---|

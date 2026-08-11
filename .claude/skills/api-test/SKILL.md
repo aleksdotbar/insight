@@ -1,12 +1,17 @@
 ---
 name: api-test
-description: "Write, fix, or review the analytics endpoint contract tests in src/ingestion/tests/e2e/api/ — the IN-PROCESS rig: an analytics binary on real MariaDB + ClickHouse, auth-enabled with a minted gateway JWT per request, one pytest case per (path, method, status code), fixtures in api/conftest.py, shared constants in api/endpoint_helpers.py, response bodies validated against the committed OpenAPI spec, and the per-operation coverage gate in lib/api_coverage.py. Use when adding coverage for an analytics route, changing an api/test_*.py module or its fixtures, closing a coverage gap the gate reports, retiring an xfail after a product fix, or reviewing any of the above. For HTTP contract tests against a DEPLOYED stand — real gateway, real Keycloak sessions, pinned service images — under tests/stand/api/, use stand-api-test instead. Both suites exercise the same analytics routes (/v1/metric-results, /v1/queries, /v1/metric-drilldown) and both have a coverage gate, so the route name alone never tells them apart: the discriminator is which suite the file lives in."
+description: "HISTORICAL — the suite this skill describes was retired: its HTTP contract lanes folded into tests/stand/api (use stand-api-test); only the data-path metrics rig remains in-process (use metric-test). Kept as a record of the retired rig: the analytics endpoint contract tests that lived in src/ingestion/tests/e2e/api/ — the IN-PROCESS rig: an analytics binary on real MariaDB + ClickHouse, auth-enabled with a minted gateway JWT per request, one pytest case per (path, method, status code), fixtures in api/conftest.py, shared constants in api/endpoint_helpers.py, response bodies validated against the committed OpenAPI spec, and the per-operation coverage gate in lib/api_coverage.py. Use when adding coverage for an analytics route, changing an api/test_*.py module or its fixtures, closing a coverage gap the gate reports, retiring an xfail after a product fix, or reviewing any of the above. For HTTP contract tests against a DEPLOYED stand — real gateway, real Keycloak sessions, pinned service images — under tests/stand/api/, use stand-api-test instead. Both suites exercise the same analytics routes (/v1/metric-results, /v1/queries, /v1/metric-drilldown) and both have a coverage gate, so the route name alone never tells them apart: the discriminator is which suite the file lives in."
 disable-model-invocation: false
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # Endpoint contract tests (api/)
+
+> **Retired.** `src/ingestion/tests/e2e/api/` was removed ("refactor(e2e): retire the
+> rig's HTTP contract lanes, keep the data path"). Analytics HTTP contract coverage lives
+> in `tests/stand/api/` (`stand-api-test`); the metrics rig survives (`metric-test`). This
+> file remains as history.
 
 `src/ingestion/tests/e2e/api/` proves the analytics HTTP contract: **every
 operation in the committed OpenAPI spec, one test per (path, method, status

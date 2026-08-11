@@ -61,7 +61,7 @@ Grounding also caught scaffolding reality the issue glosses: **Slack has zero e2
 > **5. Consumer contract & cutover** — new keys registered; FE breakdown actually renders (dead
 > today, `breakdown={[]}`); retired keys pulled from FE key-maps *and* the downstream trend view
 > that hard-codes them; existing collab e2e migrated; new `bronze_slack` scaffolding added;
-> analytics-api restarted after reseed.
+> analytics restarted after reseed.
 >
 > ## Acceptance
 > - [ ] All groups pass

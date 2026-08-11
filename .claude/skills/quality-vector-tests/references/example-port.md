@@ -22,19 +22,21 @@ deferred, kept-red scenario.
 
 Port of the C# identity service to Rust. The person is **email-keyed** by the seed sources
 (HR/Entra/comms/AI); every other source must map its own key onto that person. Speed runs on the
-3,000-person demo org.
+3,000-person demo org. All 4/4 acceptance criteria covered: AC-1 → 1,2 · AC-2 → 3 ·
+AC-3 → 4 · AC-4 → 5; scenarios 6–8 await the criteria proposed in the AC review (the issue
+defined none for speed, run-cost or scanning).
 
-- [ ] 1. **People diff** *(main gate)* — Reliability · identity-e2e — run the C# and Rust
+- [ ] 1. **People diff** *(main gate)* — Reliability · identity-e2e · AC-1 — run the C# and Rust
       services over the same seeded dataset and compare the resolved person set → 0 differences.
-- [ ] 2. **False merges** — Reliability · identity-e2e — build a fixture of known-distinct
+- [ ] 2. **False merges** — Reliability · identity-e2e · AC-1 — build a fixture of known-distinct
       near-duplicate identities (shared names, shared display-names, recycled logins), resolve
       each → 0 distinct humans merged into one person.
-- [ ] 3. **Endpoint coverage** — Reliability · stand-api — e2e across MariaDB + ClickHouse +
+- [ ] 3. **Endpoint coverage** — Reliability · stand-api · AC-2 — e2e across MariaDB + ClickHouse +
       identity with a contract check → 3/3 endpoints covered, 0 regressions on existing screens.
-- [ ] 4. **Org-chart sync** — Versatility · identity-e2e — per-provider fixtures (MS Entra,
+- [ ] 4. **Org-chart sync** — Versatility · identity-e2e · AC-3 — per-provider fixtures (MS Entra,
       BambooHR; Workday / AD as they land) → 2/2 live providers resolve reporting lines: manager
       and team at correct depth, root and cycles handled.
-- [ ] 5. **Cross-namespace resolution** — Versatility · identity-e2e — fixtures across all 26
+- [ ] 5. **Cross-namespace resolution** — Versatility · identity-e2e · AC-4 — fixtures across all 26
       connectors → reviewer-namespace identities (GitHub login / Bitbucket display-name) resolved
       wherever evidence allows; git→HR ≈ 68% today — kept as a scenario that stays red until
       cross-namespace resolution lands, rather than a silently deferred gap.
