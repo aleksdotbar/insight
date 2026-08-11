@@ -53,6 +53,12 @@ const labelOf = (name: string) =>
   screen.getByRole("button", { name }).querySelector("span:not(.sr-only)");
 
 beforeEach(() => {
+  // `shouldAdvanceTime` is required, not incidental: `userEvent` awaits a real
+  // promise between events, and with a clock that only moves when a test moves
+  // it that await is never resolved — every pointer interaction here hangs
+  // until the runner's timeout. It does mean the opening wait can expire on
+  // its own mid-test, which is harmless: the next action either wanted it open
+  // anyway, or is a leave, and a leave cancels the pending timer as it closes.
   vi.useFakeTimers({ shouldAdvanceTime: true });
   mocks.layout = "wide";
   mocks.selected = [];
@@ -165,6 +171,28 @@ describe("LensRail state that only breaks in a particular order", () => {
     mocks.layout = "wide";
     rerender(<SidebarProvider><LensRail /></SidebarProvider>);
     expect(labelOf("Overview")).toHaveClass("opacity-0");
+  });
+
+  it("keeps the labels while the keyboard is still inside it", async () => {
+    // Two ways in, and only one of them is the pointer's to end. A pointer
+    // crossing the rail on its way somewhere else used to collapse it under a
+    // focused button, putting a keyboard user back on an unlabelled icon they
+    // had no way to re-reveal.
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    rail();
+    const el = screen.getByTestId("lens-rail");
+    await user.tab();
+    await user.tab();
+    expect(labelOf("People")).toHaveClass("opacity-100");
+
+    await user.hover(el);
+    await user.unhover(el);
+    settle();
+    expect(labelOf("People")).toHaveClass("opacity-100");
+
+    // Leaving with the keyboard is what ends a keyboard visit.
+    act(() => (document.activeElement as HTMLElement).blur());
+    expect(labelOf("People")).toHaveClass("opacity-0");
   });
 
   it("stays shut for a pointer that is only passing through", async () => {
