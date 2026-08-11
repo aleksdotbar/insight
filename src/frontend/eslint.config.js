@@ -106,19 +106,28 @@ export default defineConfig([
       "no-restricted-syntax": [
         "error",
         {
+          // `(^|[\\s:])` rather than `(^|\\s)`: a variant prefix sits directly
+          // against the utility, so `hover:text-[13px]` and `sm:text-[13px]`
+          // walked past the whitespace-anchored version. A guard with a hole
+          // in it is worse than none, because it is believed.
           selector:
-            "Literal[value=/(^|\\s)text-\\[[0-9.]+(px|rem)\\]/]",
+            "Literal[value=/(^|[\\s:])text-\\[[0-9.]+(px|rem)\\]/]",
           message:
             "Hand-set text size. Use a role from src/lib/type-scale.ts, or add one there if none fits.",
         },
         {
           selector:
-            "Literal[value=/(^|\\s)text-(muted-)?foreground\\/[0-9]/]",
+            "Literal[value=/(^|[\\s:])text-(muted-)?foreground\\/[0-9]/]",
           message:
             "Fractional text grey. There are two: text-foreground and text-muted-foreground.",
         },
         {
-          selector: "Literal[value=/(^|\\s)text-(amber|red|green|emerald|rose|orange|yellow)-[0-9]/]",
+          // Every palette family, not the handful that happened to be in the
+          // tree when this was written — the next colour reached for will be
+          // one of the others. `text-black` and `text-white` carry no number
+          // and were missed for that reason alone.
+          selector:
+            "Literal[value=/(^|[\\s:])text-((slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-[0-9]|(black|white)\\b)/]",
           message:
             "Raw palette colour. Good/bad is text-success and text-destructive; text-warning is attention without a verdict.",
         },

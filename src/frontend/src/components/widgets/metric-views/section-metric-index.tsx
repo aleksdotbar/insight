@@ -4,7 +4,7 @@ import {
   PeerMark,
 } from "@/components/widgets/metric-views/peer-mark";
 import { formatMetricValue } from "@/lib/format";
-import { TEXT_EYEBROW, TEXT_LABEL, TEXT_NAME } from "@/lib/type-scale";
+import { TEXT_BODY, TEXT_EYEBROW, TEXT_LABEL, TEXT_NAME } from "@/lib/type-scale";
 import { cn } from "@/lib/utils";
 import { metricComparisons } from "@/lib/insight/metric-comparison";
 import { derivePeerStanding } from "@/lib/metrics/peer-standing";
@@ -95,8 +95,12 @@ export function SectionMetricIndex({
             <dt className={cn("min-w-0 flex-1 truncate", TEXT_NAME)}>
               <MetricName metric={metric} />
             </dt>
-            <dd className={cn("flex shrink-0 items-baseline gap-2 tabular-nums", TEXT_LABEL)}>
-              <span className="w-32 text-right">
+            {/* Layout only. Putting the label role on the container greyed
+                the person's own value along with its median, so the subject of
+                the row and the context around it read the same — which is the
+                distinction this scale exists to make. */}
+            <dd className="flex shrink-0 items-baseline gap-2 tabular-nums">
+              <span className={cn("w-32 text-right", TEXT_BODY)}>
                 {formatMetricValue(
                   forEntity(metric, entityId).value,
                   metric.format,
@@ -107,7 +111,7 @@ export function SectionMetricIndex({
                   anything. Uncoloured: a list of thirty numbers lit up by
                   quartile is a scoreboard, and the reader did not ask to be
                   scored on every one of them. */}
-              <span className="w-28 text-right text-muted-foreground">
+              <span className={cn("w-28 text-right", TEXT_LABEL)}>
                 {metricComparisons(metric, null, entityId).median ?? ""}
               </span>
               {/* And how far off that middle, on the axis every row shares.
