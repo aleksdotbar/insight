@@ -71,7 +71,7 @@ Sales activity analytics is the primary signal for **Sales rep productivity meas
 
 ## Silver Tables — Step 1: Unified Schema (pre-Identity Resolution)
 
-> **Silver Step 1**: Data from source-specific Bronze tables ([hubspot.md](hubspot.md) and [salesforce.md](salesforce.md)) is normalized and written here. No `person_id` yet — Identity Resolution runs in Step 2.
+> **Silver Step 1**: Data from source-specific Bronze tables ([hubspot](hubspot/hubspot.md) and [salesforce](salesforce/specs/DESIGN.md)) is normalized and written here. No `person_id` yet — Identity Resolution runs in Step 2.
 
 ### `crm_users` — Internal salesperson directory
 
@@ -238,7 +238,7 @@ Reference data only. Used to group deals and activities by company.
 
 ## Source Mapping
 
-> Per-source Bronze schemas (raw connector output) are defined in [hubspot.md](hubspot.md) and [salesforce.md](salesforce.md). The tables below describe how those Bronze records are normalized into Silver Step 1 unified tables.
+> Per-source Bronze schemas (raw connector output) are defined in [hubspot](hubspot/hubspot.md) and [salesforce](salesforce/specs/DESIGN.md). The tables below describe how those Bronze records are normalized into Silver Step 1 unified tables.
 
 ### HubSpot
 

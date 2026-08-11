@@ -216,8 +216,8 @@ ADR-0001 decided the **delivery mechanism** (stdout JSON-per-line protocol). Thi
 
 - **Domain DESIGN**: [Connector Framework DESIGN](../DESIGN.md)
 - **ADR-0001**: [Stdout Protocol](./0001-connector-integration-protocol.md)
-- **Bitbucket PRD**: [PRD v1.3](../../../components/connectors/git/bitbucket-server/specs/PRD.md)
-- **Bitbucket DESIGN**: [DESIGN v2.0](../../../components/connectors/git/bitbucket-server/specs/DESIGN.md)
+- **Bitbucket PRD**: [PRD v1.3](../../../../components/connectors/git/bitbucket-server/specs/PRD.md)
+- **Bitbucket DESIGN**: [DESIGN v2.0](../../../../components/connectors/git/bitbucket-server/specs/DESIGN.md)
 
 This decision directly addresses the following requirements and design elements:
 

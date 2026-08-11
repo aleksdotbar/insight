@@ -78,9 +78,9 @@ contribution.
 - **PRD**: [PRD.md](./PRD.md)
 - **Design**: [DESIGN.md](./DESIGN.md)
 - **Reproducibility log**: [../REPRODUCIBILITY-LOG.md](../REPRODUCIBILITY-LOG.md)
-- **Skill workflows**: `.cf-studio/.core/skills/connector/workflows/create.md`,
-  `.cf-studio/.core/skills/connector/workflows/test.md`,
-  `.cf-studio/.core/skills/connector/workflows/validate.md`
+- **Skill workflows**: `.claude/skills/connector/workflows/create.md`,
+  `.claude/skills/connector/workflows/test.md`,
+  `.claude/skills/connector/workflows/validate.md`
 - **Reference manifest** (incompatible 0.57.0): `zulip_proxy.yaml` (local workspace copy, not in repo)
 - **Closest existing connector for dbt patterns**: `src/ingestion/connectors/collaboration/zoom/`
 - **Dependencies**: `promote_bronze_to_rmt`, `identity_inputs_from_history`, `snapshot`,

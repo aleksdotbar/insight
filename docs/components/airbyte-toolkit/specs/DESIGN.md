@@ -988,7 +988,7 @@ Old scripts to delete after toolkit is operational:
 |------------|-------------|
 | `scripts/airbyte-state.sh` | `airbyte-toolkit/lib/state.sh` |
 | `scripts/sync-airbyte-state.sh` | `airbyte-toolkit/sync-state.sh` |
-| `scripts/resolve-airbyte-env.sh` | `airbyte-toolkit/lib/env.sh` |
+| `scripts/resolve-airbyte-env.sh` | `src/ingestion/reconcile-connectors/lib/env.sh` |
 | `scripts/upload-manifests.sh` | `airbyte-toolkit/register.sh` |
 | `scripts/apply-connections.sh` | `airbyte-toolkit/connect.sh` |
 

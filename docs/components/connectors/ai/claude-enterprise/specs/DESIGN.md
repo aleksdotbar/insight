@@ -897,6 +897,6 @@ Decisions crossing into ADR territory (e.g., a volume-sharding strategy from `OQ
 ## 5. Traceability
 
 - **PRD**: [PRD.md](./PRD.md)
-- **ADRs**: [ADR/](./ADR/) *(empty for now)*
+- **ADRs**: none recorded yet
 - **Connector directory** (target): `src/ingestion/connectors/ai/claude-enterprise/`
 - **AI Tool domain**: [docs/components/connectors/ai/](../../)

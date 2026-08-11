@@ -76,7 +76,7 @@ The Design Tools Silver Layer transforms raw Bronze records from design tool con
 
 The output is a unified Silver table for design activity — the single source of truth for design team productivity metrics consumed by the Gold query layer.
 
-> **Supersedes**: This PRD replaces the former `docs/connectors/design/README.md` which described unified Bronze schemas with aggregation at collection time. That approach has been deprecated in favour of raw Bronze records with Silver-layer aggregation.
+> **Supersedes**: This PRD replaces the former `docs/components/connectors/ui-design/README.md` which described unified Bronze schemas with aggregation at collection time. That approach has been deprecated in favour of raw Bronze records with Silver-layer aggregation.
 
 ### 1.2 Background / Problem Statement
 

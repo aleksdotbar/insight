@@ -389,7 +389,7 @@ Canonical Silver schemas (`class_{domain}`) MUST be versioned independently from
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-cn-config-authz`
 
-Connector instance management (configure, activate, deactivate, delete) MUST be protected by the platform's Permission Architecture (see `docs/architecture/permissions/PERMISSION_PRD.md`). The connector framework MUST declare the required permission scopes and enforce them through the platform's Role + Explicit Scope Grant model. Credential provisioning MUST be restricted to the workspace in which the connector operates — no cross-workspace credential access.
+Connector instance management (configure, activate, deactivate, delete) MUST be protected by the platform's Permission Architecture (see `inbox/architecture/permissions/PERMISSION_PRD.md`). The connector framework MUST declare the required permission scopes and enforce them through the platform's Role + Explicit Scope Grant model. Credential provisioning MUST be restricted to the workspace in which the connector operates — no cross-workspace credential access.
 
 **Rationale**: Connectors access external systems with customer credentials; unrestricted configuration creates a risk of unauthorized data collection or credential exposure.
 
@@ -399,7 +399,7 @@ Connector instance management (configure, activate, deactivate, delete) MUST be 
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-cn-mapping-approval`
 
-Silver layer field mapping activation MUST be gated by a dedicated permission scope defined in the Permission Architecture (see `docs/architecture/permissions/PERMISSION_PRD.md`). The connector framework MUST enforce that only users with the mapping approval scope can publish Silver mappings to production. The approval chain MUST be auditable.
+Silver layer field mapping activation MUST be gated by a dedicated permission scope defined in the Permission Architecture (see `inbox/architecture/permissions/PERMISSION_PRD.md`). The connector framework MUST enforce that only users with the mapping approval scope can publish Silver mappings to production. The approval chain MUST be auditable.
 
 **Rationale**: Silver mappings determine what data reaches analytics. Incorrect mappings can produce misleading metrics at scale; a review gate prevents unvetted semantic decisions from reaching production.
 
@@ -409,7 +409,7 @@ Silver layer field mapping activation MUST be gated by a dedicated permission sc
 
 - [ ] `p2` - **ID**: `cpt-insightspec-fr-cn-authorship-tiers`
 
-The system MUST enforce distinct permission boundaries for the three authorship tiers, using the platform's Permission Architecture (see `docs/architecture/permissions/PERMISSION_PRD.md`): (1) first-party authors MAY modify the framework and all connectors; (2) community authors MAY submit connectors for review but MUST NOT deploy without approval; (3) self-service authors MAY build workspace-scoped connectors but MUST NOT publish to the global catalog.
+The system MUST enforce distinct permission boundaries for the three authorship tiers, using the platform's Permission Architecture (see `inbox/architecture/permissions/PERMISSION_PRD.md`): (1) first-party authors MAY modify the framework and all connectors; (2) community authors MAY submit connectors for review but MUST NOT deploy without approval; (3) self-service authors MAY build workspace-scoped connectors but MUST NOT publish to the global catalog.
 
 **Rationale**: Without tier-based permissions, community or self-service connectors could bypass quality controls or affect other workspaces.
 
@@ -718,7 +718,7 @@ Every connector instance MUST expose a health check endpoint indicating its oper
 
 | Dependency | Description | Criticality |
 |------------|-------------|-------------|
-| Connector Orchestrator | Schedules and triggers connector execution runs (see `docs/components/connectors-orchestrator/specs/PRD.md`) | p1 |
+| Connector Orchestrator | Schedules and triggers connector execution runs (see the Ingestion PRD, `docs/domain/ingestion/specs/PRD.md`) | p1 |
 | Identity Manager | Internal Insight platform service providing `person_id` mapping for source-native user IDs; Silver data can be joined with this mapping at query time or in Gold (see `docs/domain/identity-resolution/`) | p2 |
 | Source System APIs | External SaaS APIs providing data; availability and rate limits vary per source | p1 |
 | Credential/Secrets Management | Secure storage and retrieval of source API credentials per workspace | p1 |

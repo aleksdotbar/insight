@@ -700,7 +700,7 @@ Salesforce `Id` (18-char) on all records and `OwnerId` on entity records are Sal
 
 - **PRD**: [PRD.md](./PRD.md)
 - **Domain README**: [../../README.md](../../README.md) — CRM domain overview
-- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../domain/connector/specs/DESIGN.md)
+- **Connector Framework DESIGN**: [../../../../domain/connector/specs/DESIGN.md](../../../../../domain/connector/specs/DESIGN.md)
 - **ADR directory**: [./ADR/](./ADR/)
 
 ---

@@ -1,7 +1,7 @@
 # Cursor Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 8 (Cursor)
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 8 (Cursor)
 
 Standalone specification for the Cursor (AI Dev Tool) connector. Expands Source 8 in the main Connector Reference with full table schemas, identity mapping, Silver/Gold pipeline notes, and open questions.
 

@@ -1547,4 +1547,4 @@ Per-stream breakdown of incremental sync support. For cursor SQL queries and the
 
 - **PRD**: [PRD.md](./PRD.md)
 - **Unified git schema**: [`docs/components/connectors/git/README.md`](../README.md)
-- **Connectors architecture**: [`docs/architecture/CONNECTORS_ARCHITECTURE.md`](../../../../architecture/CONNECTORS_ARCHITECTURE.md)
+- **Connectors architecture**: [`inbox/architecture/CONNECTORS_ARCHITECTURE.md`](../../../../../../inbox/architecture/CONNECTORS_ARCHITECTURE.md)

@@ -1,7 +1,7 @@
 # Jira Connector Specification
 
 > Version 1.1 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 5 (Jira)
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 5 (Jira)
 
 Standalone specification for the Jira (Task Tracking) connector.
 

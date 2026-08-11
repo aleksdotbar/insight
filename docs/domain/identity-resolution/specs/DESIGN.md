@@ -906,7 +906,7 @@ See [ADR-0002](ADR/0002-stable-person-id-via-persons-observations.md) for the fu
 1. Connector secrets applied (`./secrets/apply.sh`).
 2. Kubernetes deploy (`cd deploy/gitops && make deploy ENV=<env>`) — installs Airbyte + Argo Workflows (L2 system) and the Insight umbrella chart (L3 app). The umbrella's `identity-db-init-job` Helm pre-install Job provisions the `identity` MariaDB database and grants. The identity-resolution pod then starts and applies its sea-orm migrations (including the `persons` table) at startup via `run_migrations(&db)` in `main.rs`.
 3. `./src/ingestion/reconcile-connectors.sh` — registers connectors, creates Airbyte connections + per-connector CronWorkflows. (ClickHouse migrations run via the `clickhouse-migrate` Helm Hook Job on helm install/upgrade in step 2, not from a host script.)
-4. Airbyte sync produces Bronze data (`./sync-all.sh` + wait).
+4. Airbyte sync produces Bronze data (`./run-sync.sh` + wait).
 5. dbt models run to populate `identity.identity_inputs` (`dbt run --select +identity_inputs`).
 6. Seed run — the `identity-resolution seed` subcommand, scheduled by the umbrella chart (or invoked manually for ad-hoc reseeds).
 
@@ -1290,5 +1290,5 @@ Phase 1 seed and connector models derive `insight_tenant_id` (UUID) and `insight
 - **Source walkthrough**: `inbox/architecture/EXAMPLE_IDENTITY_PIPELINE.md` — end-to-end example: Anna Ivanova
 - **Related (person domain)**: Person domain DESIGN — golden record, person attributes, person-level conflicts
 - **Related (org-chart domain)**: Org-chart domain DESIGN — org_units, person_assignments, SCD Type 2 hierarchy
-- **Related (permissions)**: `docs/architecture/permissions/PERMISSION_DESIGN.md` — permission architecture consuming identity data
+- **Related (permissions)**: `inbox/architecture/permissions/PERMISSION_DESIGN.md` — permission architecture consuming identity data
 - **Connectors**: `docs/components/connectors/hr-directory/` — HR connector specifications (sources for Bootstrap)

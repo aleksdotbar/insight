@@ -54,7 +54,7 @@ Workday has no fixed bulk API, so the connector ships a **report contract** inst
 1. **Workers report** — data source All Workers; 20 contract columns (identity, org, job, classification, location, dates, `Last_Functionally_Updated`, `Scheduled_Weekly_Hours`). Extra customer columns are allowed and flow into Bronze `raw_data`.
 2. **Leave report** — time-off requests; 9 contract columns plus mandatory `From_Date`/`To_Date` prompts enabled as web service parameters.
 
-The full alias tables live in the connector [README](../../../../src/ingestion/connectors/hr-directory/workday/README.md); the API contract is specified in [DESIGN §3.3](./specs/DESIGN.md).
+The full alias tables live in the connector [README](../../../../../src/ingestion/connectors/hr-directory/workday/README.md); the API contract is specified in [DESIGN §3.3](./specs/DESIGN.md).
 
 Both streams are **full refresh** — RaaS returns the complete report result per call (no pagination, no delta). This is the same extraction model as BambooHR and reuses its entire downstream pipeline.
 

@@ -94,11 +94,11 @@ date: 2026-03-23
 
 ### 1.1 Purpose
 
-The Ingestion Layer provides the end-to-end data pipeline from external source APIs to unified Silver step 1 tables. It replaces the previously designed custom Orchestrator ([Orchestrator PRD](../../../components/orchestrator/specs/PRD.md)) and custom Connector Framework ([Connector Framework PRD](../../connector/specs/PRD.md)) with an industry-standard stack: Airbyte for data extraction, Argo Workflows for orchestration, and dbt-clickhouse for Bronze-to-Silver transformations. Everything runs in Kubernetes (Kind for local development).
+The Ingestion Layer provides the end-to-end data pipeline from external source APIs to unified Silver step 1 tables. It replaces the previously designed custom Orchestrator (designed but never built; spec removed) and custom Connector Framework ([Connector Framework PRD](../../connector/specs/PRD.md)) with an industry-standard stack: Airbyte for data extraction, Argo Workflows for orchestration, and dbt-clickhouse for Bronze-to-Silver transformations. Everything runs in Kubernetes (Kind for local development).
 
 ### 1.2 Background / Problem Statement
 
-The previous approach relied on a custom stdout JSON protocol for connectors, a custom runner for execution, and a custom orchestrator for scheduling. While architecturally sound, this approach required significant engineering investment to build and maintain. The ingestion layer adopts proven open-source tools — Airbyte provides 300+ pre-built connectors and a declarative connector builder, Argo Workflows provides Kubernetes-native DAG orchestration, and dbt provides battle-tested SQL transformation framework. Connections are managed via Airbyte API (see `airbyte-toolkit/connect.sh`).
+The previous approach relied on a custom stdout JSON protocol for connectors, a custom runner for execution, and a custom orchestrator for scheduling. While architecturally sound, this approach required significant engineering investment to build and maintain. The ingestion layer adopts proven open-source tools — Airbyte provides 300+ pre-built connectors and a declarative connector builder, Argo Workflows provides Kubernetes-native DAG orchestration, and dbt provides battle-tested SQL transformation framework. Connections are managed via Airbyte API (see `reconcile_connections()` in `src/ingestion/reconcile-connectors/lib/reconcile.sh`).
 
 ### 1.3 Goals (Business Outcomes)
 
@@ -364,7 +364,7 @@ Airbyte **MUST** use ClickHouse as the primary destination for all connector syn
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-ing-dbt-bronze-to-silver`
 
-dbt models **MUST** transform Bronze tables into Silver step 1 unified tables (`class_{domain}`). Each connector package **MUST** include dbt models (e.g., `dbt/to_git.sql`, `dbt/to_collaboration.sql`) for its Silver targets.
+dbt models **MUST** transform Bronze tables into Silver step 1 unified tables (`class_{domain}`). Each connector package **MUST** include dbt models named `dbt/{source}__{table}.sql` (e.g. `dbt/github__commits.sql`, `dbt/slack__collab_chat_activity.sql`) for its Silver targets.
 
 **Rationale**: Silver tables provide the unified schema that downstream analytics and identity resolution depend on.
 
@@ -396,7 +396,7 @@ Silver tables **MUST** follow the established unified schemas (`class_commits`, 
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-ing-terraform-connections`
 
-Airbyte connections (source + destination + configured catalog) **MUST** be managed via `airbyte-toolkit/connect.sh` which calls the Airbyte API directly. Connection configurations **MUST** be defined in tenant YAML files (`connections/{tenant}.yaml`) and connector descriptors (`descriptor.yaml`). Credentials **MUST NOT** be committed to version control.
+Airbyte connections (source + destination + configured catalog) **MUST** be managed via `reconcile_connections()` in `src/ingestion/reconcile-connectors/lib/reconcile.sh`, which calls the Airbyte API directly. Connection configurations **MUST** be defined in tenant YAML files (`connections/{tenant}.yaml`) and connector descriptors (`descriptor.yaml`). Credentials **MUST NOT** be committed to version control.
 
 **Rationale**: Configuration as code prevents drift and enables reproducible deployments. Direct API calls avoid Terraform provider version compatibility issues.
 
@@ -406,7 +406,7 @@ Airbyte connections (source + destination + configured catalog) **MUST** be mana
 
 - [ ] `p2` - **ID**: `cpt-insightspec-fr-ing-airbyte-api-custom`
 
-Custom connectors (nocode manifests and CDK Docker images) **MUST** be registered with Airbyte via `airbyte-toolkit/register.sh` which calls the Airbyte API.
+Custom connectors (nocode manifests and CDK Docker images) **MUST** be registered with Airbyte via `reconcile_definitions()` in `src/ingestion/reconcile-connectors/lib/reconcile.sh`, which calls the Airbyte API.
 
 **Rationale**: Connector definitions are dynamic and tightly coupled to the connector package lifecycle.
 
@@ -418,7 +418,7 @@ Custom connectors (nocode manifests and CDK Docker images) **MUST** be registere
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-ing-package-structure`
 
-Each connector **MUST** be packaged as a directory at `/src/ingestion/connectors/{connector_class}/{source_name}/` containing: (1) connector definition (`connector.yaml` for nocode or `src/` for CDK code), (2) dbt models in `dbt/` (e.g., `dbt/to_git.sql`, `dbt/to_collaboration.sql`, `dbt/to_identity_resolution.sql`) for Bronze-to-Silver transformations, (3) a `descriptor.yaml` declaring the package name, Silver targets, and stream definitions.
+Each connector **MUST** be packaged as a directory at `/src/ingestion/connectors/{connector_class}/{source_name}/` containing: (1) connector definition (`connector.yaml` for nocode or `src/` for CDK code), (2) dbt models in `dbt/` named `{source}__{table}.sql` (e.g. `dbt/github__commits.sql`, `dbt/slack__collab_chat_activity.sql`) for Bronze-to-Silver transformations, (3) a `descriptor.yaml` declaring the package name, Silver targets, and stream definitions.
 
 **Rationale**: Self-contained packages enable independent development, testing, and deployment of connectors with their transformations.
 
@@ -530,7 +530,7 @@ dbt model contracts via `schema.yml`: column types, not-null constraints, accept
 
 - [ ] `p1` - **ID**: `cpt-insightspec-contract-ing-airbyte-rest-api`
 
-Airbyte REST API (v1) for programmatic management of sources, destinations, connections, and connector definitions. Used by `airbyte-toolkit/connect.sh` and `airbyte-toolkit/register.sh`.
+Airbyte REST API (v1) for programmatic management of sources, destinations, connections, and connector definitions. Used by `src/ingestion/reconcile-connectors/main.sh` and its `lib/reconcile.sh` helpers.
 
 ## 8. Use Cases
 

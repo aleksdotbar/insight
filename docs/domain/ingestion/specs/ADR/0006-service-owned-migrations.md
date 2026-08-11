@@ -71,7 +71,7 @@ while keeping the ownership rules identical.
 
 - The `identity` (.NET 9) service owns the MariaDB database `identity`.
 - Schema defined in
-  `src/backend/services/identity/src/Insight.Identity.Infrastructure/Migrations/001_persons.sql`
+  `src/backend/services/identity-resolution/src/migration/sql/001_persons.sql`
   and `002_account_person_map.sql` (plain SQL, applied via DbUp).
 - Migration runner: `Insight.Identity.Infrastructure.MigrationRunner`,
   invoked from `Program.cs` before the HTTP listener starts.

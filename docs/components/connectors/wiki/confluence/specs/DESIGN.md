@@ -1,7 +1,7 @@
 # DESIGN — Confluence Connector
 
 > Version 1.2 — April 2026 (Aligned with upstream Connector Framework spec §4.1-§4.10)
-> Based on: [PRD.md](./PRD.md), [`confluence.md`](../confluence.md), [Wiki Unified Schema](../../README.md), [Connector Framework DESIGN](../../../../domain/connector/specs/DESIGN.md)
+> Based on: [PRD.md](./PRD.md), [`confluence.md`](../confluence.md), [Wiki Unified Schema](../../README.md), [Connector Framework DESIGN](../../../../../domain/connector/specs/DESIGN.md)
 
 <!-- toc -->
 
@@ -752,7 +752,7 @@ Confluence v2 API returns timestamps in ISO 8601 format (e.g., `2026-04-01T14:30
 - **PRD**: [PRD.md](./PRD.md)
 - **Bronze table schemas**: [`confluence.md`](../confluence.md)
 - **Unified wiki schema**: [`README.md`](../../README.md)
-- **Connector Framework**: [`docs/domain/connector/specs/DESIGN.md`](../../../../domain/connector/specs/DESIGN.md) — §4.1 (config naming), §4.6 (mandatory fields: `tenant_id`, `source_id`, `unique_key`), §4.10 (descriptor format)
+- **Connector Framework**: [`docs/domain/connector/specs/DESIGN.md`](../../../../../domain/connector/specs/DESIGN.md) — §4.1 (config naming), §4.6 (mandatory fields: `tenant_id`, `source_id`, `unique_key`), §4.10 (descriptor format)
 - **Wiki domain**: [`docs/components/connectors/wiki/`](../../)
 
 ---

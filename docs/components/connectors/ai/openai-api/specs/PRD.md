@@ -1,7 +1,7 @@
 # PRD — OpenAI API Connector
 
 > Version 1.0 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 18 (OpenAI API), OQ-3
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 18 (OpenAI API), OQ-3
 
 <!-- toc -->
 

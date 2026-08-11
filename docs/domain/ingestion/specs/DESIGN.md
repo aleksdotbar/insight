@@ -672,7 +672,7 @@ Key deployment decisions:
 - ClickHouse, MariaDB, Redis and Redpanda are deployed as separate L2 releases in `insight-infra` (gitops `make system-*`); the umbrella no longer bundles them as subcharts (removed in chart `0.2.0`). The umbrella consumes them through the unified `<dep>.host / .port / .database / .username / .passwordSecret` shape — see `charts/insight/values.yaml`.
 - ClickHouse runs as a separate L2 release in `insight-infra` (gitops `make system-clickhouse`); the umbrella addresses it through `clickhouse.host`/`.port` (default `clickhouse.insight-infra.svc.cluster.local:8123`) over the HTTP interface. Health probes use HTTP GET `/ping` (not `clickhouse-client` exec — avoids CLI flag parsing issues with auto-generated passwords).
 - MariaDB per-service databases are provisioned by a Helm Hook Job (`charts/insight/templates/mariadb-init-svcdbs-job.yaml`, `pre-install,pre-upgrade`) that dials the external `mariadb.host` and runs `CREATE DATABASE` + `GRANT` for each owned database — idempotent (`IF NOT EXISTS`) across helm upgrades. Each owning service then runs its own SeaORM migrations at startup — see §4.4.2 and [ADR-0006](ADR/0006-service-owned-migrations.md).
-- CDK connector build script (`airbyte-toolkit/build-connector.sh`) uses `CLUSTER_NAME` env var (default `insight`) for Kind image loading — not hardcoded.
+- CDK connector build script (`src/ingestion/reconcile-connectors/lib/cdk-build.sh`) uses `CLUSTER_NAME` env var (default `insight`) for Kind image loading — not hardcoded.
 - Airbyte port-forward uses `nohup ... & disown` to avoid blocking the terminal.
 - Argo `dbt-run` WorkflowTemplate uses locally-built `insight-toolbox:local` image (with `imagePullPolicy: IfNotPresent`) — not `ghcr.io/constructorfabric/insight-toolbox:latest`. Local builds via `tools/toolbox/build.sh` pick up dbt model changes without requiring a registry push. Template also accepts `full_refresh` parameter (pass `--full-refresh` to recreate tables from scratch).
 - CoreDNS is patched to use public DNS upstream (`8.8.8.8`, `8.8.4.4`) — WSL's `/etc/resolv.conf` points to an internal WSL nameserver that cannot reliably resolve external domains (e.g. `login.microsoftonline.com`). Patch lives in `scripts/dev/patch-coredns-wsl.sh` (idempotent, opt-out via `SKIP_COREDNS_PATCH=1`); Windows/WSL+Kind operators run it manually against their cluster after bootstrap.
@@ -738,7 +738,7 @@ The gitops Makefile with `ENV=local` brings up the whole stack:
 
 `ENV=local` runs the wizard once and then the `bootstrap → system → deploy-app`
 chain. The cluster topology, layer model and namespace conventions are owned by
-the [gitops SPEC](../../components/deployment/gitops/README.md).
+the [gitops SPEC](../../../components/deployment/gitops/README.md).
 
 #### Startup scripts
 
@@ -746,13 +746,13 @@ the [gitops SPEC](../../components/deployment/gitops/README.md).
 |--------|---------|
 | `cd deploy/gitops && make deploy ENV=local` | Brings up the full local stack: bootstrap (L0), Airbyte + Argo Workflows + the L2 system services, then the Insight umbrella chart (L3). Idempotent — re-running reconciles. Honours `$KUBECONFIG`. |
 | `src/ingestion/reconcile-connectors.sh` | Declarative connector reconcile: `adopt` pre-existing Airbyte resources, then create / update / GC definitions, sources, connections, and per-connector sync CronWorkflows to match descriptor + Secret state. Idempotent; also runs in-cluster on a schedule via the reconcile CronWorkflow. (ClickHouse migrations are applied separately by the `clickhouse-migrate` Helm Hook Job on every install/upgrade — see §4.4.1. MariaDB schema is applied per-service by each backend service's own sea-orm `Migrator` at startup — see §4.4 and [ADR-0006](ADR/0006-service-owned-migrations.md). Per-service MariaDB databases are provisioned by the `mariadb-init-svcdbs` Helm Hook Job against the external `mariadb.host`.) |
-| `src/ingestion/sync-all.sh` | Trigger Airbyte sync for all connections. Reads connection IDs from state, calls Airbyte API. Use after the first reconcile to start the first data load, or anytime to re-sync all sources. |
+| `src/ingestion/run-sync.sh` | Trigger Airbyte sync for all connections. Reads connection IDs from state, calls Airbyte API. Use after the first reconcile to start the first data load, or anytime to re-sync all sources. |
 
 **First-time setup**:
 1. Copy connector secret examples → fill credentials (`src/ingestion/secrets/connectors/`)
 2. `cd deploy/gitops && make deploy ENV=local` — full stack deployment (answer the wizard prompts on first run)
 3. `./src/ingestion/reconcile-connectors.sh` — connectors, connections, per-connector CronWorkflows (ClickHouse migrations run automatically via the `clickhouse-migrate` Hook Job during step 2's helm install)
-4. `cd src/ingestion && ./sync-all.sh` — trigger first Airbyte sync for all connections
+4. `cd src/ingestion && ./run-sync.sh` — trigger first Airbyte sync for all connections
 
 **Re-running**: `make deploy ENV=local` is idempotent — re-running on a converged cluster reconciles the stack in place.
 
@@ -865,7 +865,7 @@ This design supersedes:
 
 | Component | Document | Reason |
 |-----------|----------|--------|
-| Custom Orchestrator | [Orchestrator PRD](../../../components/orchestrator/specs/PRD.md) | Replaced by Argo Workflows -- see [ADR-0002](ADR/0002-argo-over-kestra.md) |
+| Custom Orchestrator | Designed but never built; spec removed | Replaced by Argo Workflows -- see [ADR-0002](ADR/0002-argo-over-kestra.md) |
 | Custom Connector Framework | [Connector Framework DESIGN](../../connector/specs/DESIGN.md) | Replaced by Airbyte connector runtime |
 | Stdout JSON Protocol | [ADR-0001](../../connector/specs/ADR/0001-connector-integration-protocol.md) | Replaced by Airbyte Protocol |
 

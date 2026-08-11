@@ -57,7 +57,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 **Donor code references** (private repo, accessed by maintainers via the Phase 1 research notes — paths inside the donor repo are stable):
 
-- v2 — `monitor` repo, path `sources/youtrack/src/` — `youtrack/types.ts`, `youtrack/client.ts`, `replay/*` (replay algorithm donor for feature 2.6).
+- v2 — `monitor` repo, path `sources/youtrack/src/` — `src/frontend/src/auth/types.ts`, `youtrack/client.ts`, `replay/*` (replay algorithm donor for feature 2.6).
 - v1 — `monitor` repo, path `packages/cli/commands/youTrack/` — `fields/IssueActivities.ts` (activity category enumeration), `requests/fetchYouTrackUsers.ts` (users endpoint).
 - v1 KB-capacity ignored — project-specific legacy, out of scope.
 
@@ -69,7 +69,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 - [ ] `p1` - **ID**: `cpt-insightspec-status-youtrack-overall`
 
-### 2.1 [Bronze Airbyte Manifest Skeleton](feature-bronze-manifest/) — HIGH
+### 2.1 Bronze Airbyte Manifest Skeleton — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-bronze-manifest`
 
@@ -126,7 +126,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.2 [Bronze Directory Streams (Full-Refresh)](feature-bronze-directories/) — HIGH
+### 2.2 Bronze Directory Streams (Full-Refresh) — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-bronze-directories`
 
@@ -186,7 +186,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.3 [Bronze Incremental Issues & Substreams](feature-bronze-issues/) — HIGH
+### 2.3 Bronze Incremental Issues & Substreams — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-bronze-issues`
 
@@ -251,7 +251,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.4 [Project-Scoped Custom Field Ingestion](feature-custom-fields/) — HIGH
+### 2.4 Project-Scoped Custom Field Ingestion — HIGH
 
 - [x] `p1` - **ID**: `cpt-insightspec-feature-youtrack-custom-fields`
 
@@ -296,7 +296,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.5 [dbt Connector-Level Staging](feature-dbt-staging/) — HIGH
+### 2.5 dbt Connector-Level Staging — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-dbt-staging`
 
@@ -358,7 +358,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.6 [Rust `youtrack-enrich` — Core (Replay Engine)](feature-enrich-core/) — HIGH
+### 2.6 Rust `youtrack-enrich` — Core (Replay Engine) — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-enrich-core`
 
@@ -414,7 +414,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.7 [Rust `youtrack-enrich` — IO (ClickHouse)](feature-enrich-io/) — HIGH
+### 2.7 Rust `youtrack-enrich` — IO (ClickHouse) — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-enrich-io`
 
@@ -473,7 +473,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.8 [Argo Workflow & CLI Integration](feature-argo-workflow/) — HIGH
+### 2.8 Argo Workflow & CLI Integration — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-argo-workflow`
 
@@ -483,7 +483,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 - **Scope**:
   - `src/ingestion/workflows/templates/tt-enrich-youtrack-run.yaml` — new WorkflowTemplate, symmetric to `tt-enrich-jira-run.yaml`.
-  - Update `src/ingestion/workflows/templates/ingestion-pipeline.yaml` — add `youtrack` branch; raise `airbyte-sync` poll deadline if first-time sync exceeds default.
+  - Update `charts/insight/templates/ingestion/ingestion-pipeline.yaml` — add `youtrack` branch; raise `airbyte-sync` poll deadline if first-time sync exceeds default.
   - Update `src/ingestion/tools/toolbox/build.sh` — build `youtrack-enrich` image (add to connectors array or generalize).
   - Verify `run-sync.sh youtrack <tenant>` submits the full pipeline.
 
@@ -523,7 +523,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.9 [Silver Plug-In Verification](feature-silver-plugin/) — MEDIUM
+### 2.9 Silver Plug-In Verification — MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-insightspec-feature-youtrack-silver-plugin`
 
@@ -574,7 +574,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 
 ---
 
-### 2.10 [Test Invariants & E2E Smoke](feature-tests-e2e/) — HIGH
+### 2.10 Test Invariants & E2E Smoke — HIGH
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-youtrack-tests-e2e`
 
@@ -583,7 +583,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
 - **Depends On**: cpt-insightspec-feature-youtrack-silver-plugin, cpt-insightspec-feature-youtrack-argo-workflow
 
 - **Scope**:
-  - Rust unit tests — extend `src/ingestion/connectors/task-tracking/youtrack/enrich/src/core/tests.rs` with fixtures covering every activity category enumerated in Phase 1 research.
+  - Rust unit tests — extend `src/ingestion/connectors/task-tracking/jira/enrich/src/core/tests.rs` with fixtures covering every activity category enumerated in Phase 1 research.
   - dbt tests — run `dbt test --select tag:task` — verify all 11 invariants pass for YouTrack rows.
   - E2E smoke on test-tenant:
     1. Apply K8s Secret with test-tenant creds.
@@ -592,7 +592,7 @@ The YouTrack task-tracker work is decomposed into ten features that together del
     4. Record silver counts: every `class_task_*` table — row count where `source='youtrack'`.
     5. Second run → bronze/silver idempotency (counts unchanged).
     6. Retry scenario — kill one Argo step mid-run, resume, verify final state.
-  - Write smoke-run report to `docs/components/connectors/task-tracking/youtrack/specs/test-scenarios.md` appendix.
+  - Write smoke-run report to `docs/components/connectors/task-tracking/jira/specs/test-scenarios.md` appendix.
 
 - **Out of scope**:
   - Adding new silver-level dbt tests (unless a genuine YouTrack-only invariant surfaces).

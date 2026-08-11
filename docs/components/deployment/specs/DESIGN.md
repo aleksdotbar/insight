@@ -542,7 +542,7 @@ Per-tag artifacts are immutable; the Chart Publishing CI does not overwrite. GHC
 | `src/frontend/helm` | Helm subchart | Mandatory SPA shipped under `frontend` alias. |
 | `charts/insight/templates/ingestion/*.yaml` | First-class Helm templates | Ingestion WorkflowTemplate sources, gated by `ingestion.templates.enabled`; consume umbrella helpers directly via `include`. |
 | `.github/workflows/build-images.yml` (`publish-chart` job) | GitHub Actions workflow | Chart Publishing CI — produces the published umbrella artifact per merge to `main`. |
-| `src/ingestion/airbyte-toolkit/lib/env.sh` | Read `AIRBYTE_API_URL` from the platform ConfigMap | Ingestion scripts consume Airbyte coordinates from the ConfigMap rather than hard-coding. |
+| `src/ingestion/reconcile-connectors/lib/env.sh` | Read `AIRBYTE_API_URL` from the platform ConfigMap | Ingestion scripts consume Airbyte coordinates from the ConfigMap rather than hard-coding. |
 
 **Dependency Rules**:
 

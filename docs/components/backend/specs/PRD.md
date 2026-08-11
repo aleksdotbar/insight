@@ -318,7 +318,7 @@ The system **MUST** enforce follow-the-unit-strict visibility: when a person tra
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-be-identity-resolution-service`
 
-The system **MUST** map disparate identity signals (emails, usernames, employee IDs, system-specific handles) from multiple source systems into canonical person records. The system **MUST** support conflict detection for ambiguous matches, manual merge and split operations with audit trail. The system **MUST** support GDPR data subject requests (right to erasure, right to data export) -- in v1 via manual admin scripts and data export; automated self-service workflows are deferred to v2. See [Identity Resolution DESIGN](../../domain/identity-resolution/specs/DESIGN.md) and [Backend DESIGN section 3.2](./DESIGN.md) for implementation details.
+The system **MUST** map disparate identity signals (emails, usernames, employee IDs, system-specific handles) from multiple source systems into canonical person records. The system **MUST** support conflict detection for ambiguous matches, manual merge and split operations with audit trail. The system **MUST** support GDPR data subject requests (right to erasure, right to data export) -- in v1 via manual admin scripts and data export; automated self-service workflows are deferred to v2. See [Identity Resolution DESIGN](../../../domain/identity-resolution/specs/DESIGN.md) and [Backend DESIGN section 3.2](./DESIGN.md) for implementation details.
 
 **Rationale**: Cross-source analytics (correlating a person's Git commits with their Jira tasks, calendar events, and HR data) requires a single canonical person_id across all data sources. Without identity resolution, each source has its own user identifiers that cannot be joined.
 
@@ -498,7 +498,7 @@ Every service **MUST** expose versioned API endpoints (`/api/v1/...`) from day o
 
 - [ ] `p1` - **ID**: `cpt-insightspec-nfr-be-api-conventions`
 
-All REST APIs **MUST** follow the project API conventions defined in [DNA REST API guidelines](../../../../DNA/REST/API.md):
+All REST APIs **MUST** follow the project API conventions defined in [DNA REST API guidelines](../../../shared/api-guideline/API.md):
 - **Pagination**: Cursor-based (`limit`, `cursor`); default 25, max 200; cursors in `page_info`.
 - **Filtering**: OData-style `$filter` with operators (`eq`, `ne`, `gt`, `ge`, `lt`, `le`, `in`, `contains`).
 - **Sorting**: OData-style `$orderby` (e.g., `$orderby=created_at desc`).

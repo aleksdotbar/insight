@@ -1,7 +1,7 @@
 # Allure TestOps Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/CONNECTORS_REFERENCE.md` Source 20 (Allure TestOps)
+> Based on: `inbox/CONNECTORS_REFERENCE.md` Source 20 (Allure TestOps)
 
 Standalone specification for the Allure TestOps (Quality / Testing) connector. Expands Source 20 in the main Connector Reference with full table schemas, identity mapping, Silver/Gold pipeline notes, and open questions.
 

@@ -211,7 +211,7 @@ The `unique_key` field MUST include `tenant_id` and `source_id` as the leading c
 
 **Technology**: YAML + Python (Airbyte CDK)
 
-**Location**: [`connectors/`](../../../../connectors/)
+**Location**: [`docs/components/connectors/`](../../../components/connectors/)
 
 **Core Entities**:
 
@@ -365,7 +365,7 @@ All connectors (nocode and CDK) respond to these four commands. The Airbyte prot
 |-------------------|----------------|----------|
 | Connector Orchestrator (Argo Workflows) | Workflow templates + cron triggers | Schedules and executes connector sync runs |
 | dbt Silver union models | `union_by_tag` macro | Combines per-connector Staging output into canonical Silver tables |
-| `airbyte-toolkit/connect.sh` | Shell script reading `descriptor.yaml` | Provisions Airbyte connections from descriptor metadata |
+| `src/ingestion/reconcile-connectors/main.sh` | Shell script reading `descriptor.yaml` | Provisions Airbyte connections from descriptor metadata |
 | `generate-schema.sh` | Shell script | Generates JSON schemas from real API responses |
 | `generate-catalog.sh` | Shell script | Generates configured catalog for local testing |
 
@@ -1008,7 +1008,7 @@ Credentials are never stored in the connector package:
 
 1. K8s Secret example files live in `src/ingestion/secrets/connectors/{name}.yaml.example` (tracked in repo)
 2. Real secrets are in `src/ingestion/secrets/connectors/{name}.yaml` (gitignored)
-3. `airbyte-toolkit/connect.sh` discovers secrets by label and injects credentials into Airbyte
+3. `src/ingestion/reconcile-connectors/lib/secrets.sh` discovers secrets by label and injects credentials into Airbyte
 
 ### 4.12 Development Workflow
 
@@ -1101,20 +1101,20 @@ WHERE e.tenant_id = t.tenant_id
 | ClickHouse destination NPE `getCursor` | Cursor field (e.g. `end_time`) missing from inline schema | Run `generate-schema.sh`, update manifest inline schemas to match |
 | `full_refresh` + `overwrite` NPE | ClickHouse destination v2 bug | Always use `destinationSyncMode: append_dedup` |
 | Stale schema after manifest update | Source created with old definition ID | `update-connections.sh` detects this and recreates source |
-| Duplicate definitions in Airbyte | Old airbyte-toolkit/register.sh created new definition each time | Fixed: updates definition in-place, ID stored in `airbyte-toolkit/state.yaml` |
+| Duplicate definitions in Airbyte | Earlier registration created a new definition each time | Fixed: updates definition in-place, ID stored in the recorded Airbyte definition IDs |
 | Built-in vs custom connector name collision | Built-in "Zoom" found before custom "zoom" | Eliminated: scripts use definition ID from state, not name lookup |
 | Source config validation error | Source uses old definition with different spec fields | Re-run `update-connectors.sh` then `update-connections.sh` (auto-detects change) |
-| State out of sync | `airbyte-toolkit/state.yaml` doesn't match Airbyte | Run `./airbyte-toolkit/sync-state.sh` to re-fetch all IDs |
+| State out of sync | Recorded IDs do not match Airbyte | Re-run `src/ingestion/reconcile-connectors/main.sh` to re-resolve all IDs |
 
 ### 4.16 Correct Deployment Order
 
 1. **Local first**: `source.sh validate` → `check` → `discover` → `generate-schema.sh` → `read`
 2. **Verify schema**: all cursor fields present, all streams have data
-3. **Upload**: `update-connectors.sh` — updates definition in-place, saves ID to `airbyte-toolkit/state.yaml`
+3. **Upload**: `src/ingestion/reconcile-connectors/main.sh` — updates the definition in-place and records its ID
 4. **Connect**: `update-connections.sh <tenant>` — reads definition ID from state, handles create/update/recreate
 5. **Sync**: `run-sync.sh <name> <tenant>` — reads connection ID from state → `logs.sh -f latest`
 6. **Debug**: `logs.sh airbyte latest` for Airbyte-level errors
-7. **State recovery**: `airbyte-toolkit/sync-state.sh` if `airbyte-toolkit/state.yaml` is missing or stale
+7. **State recovery**: re-run `src/ingestion/reconcile-connectors/main.sh` if recorded IDs are missing or stale
 
 ## 5. Traceability
 

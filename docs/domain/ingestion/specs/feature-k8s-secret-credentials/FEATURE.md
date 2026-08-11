@@ -39,7 +39,7 @@ date: 2026-04-02
 
 ### 1.1 Overview
 
-Enable `airbyte-toolkit/connect.sh` to discover and resolve connector credentials from Kubernetes Secrets using label-based discovery, replacing inline plaintext credentials in tenant YAML files. The script discovers Secrets by label `app.kubernetes.io/part-of: insight`, reads connector type and source ID from annotations, merges Secret data with non-credential fields from tenant config, and passes the combined configuration to the Airbyte API.
+Enable the connector reconciler (`src/ingestion/reconcile-connectors/main.sh`) to discover and resolve connector credentials from Kubernetes Secrets using label-based discovery, replacing inline plaintext credentials in tenant YAML files. The script discovers Secrets by label `app.kubernetes.io/part-of: insight`, reads connector type and source ID from annotations, merges Secret data with non-credential fields from tenant config, and passes the combined configuration to the Airbyte API.
 
 ### 1.2 Purpose
 
@@ -55,7 +55,7 @@ Consumers deploy Constructor Insight into their own K8s clusters and need to man
 |-------|-----------------|
 | `cpt-insightspec-actor-ing-platform-engineer` | Creates K8s Secrets with connector credentials, configures RBAC |
 | `cpt-insightspec-actor-ing-workspace-admin` | Manages tenant YAML with non-credential config |
-| `cpt-insightspec-actor-ing-toolbox` | Runs `airbyte-toolkit/connect.sh` inside the cluster, reads Secrets |
+| `cpt-insightspec-actor-ing-toolbox` | Runs `src/ingestion/reconcile-connectors/main.sh` inside the cluster, reads Secrets |
 | `cpt-insightspec-actor-ing-airbyte` | Receives resolved credentials via API |
 
 ### 1.4 References
@@ -168,7 +168,7 @@ The system **MUST** discover K8s Secrets by label `app.kubernetes.io/part-of=ins
 - `cpt-insightspec-fr-ing-secret-management`
 
 **Touches**:
-- Script: `src/ingestion/airbyte-toolkit/connect.sh`
+- Script: `src/ingestion/reconcile-connectors/main.sh` (secret discovery in `lib/secrets.sh`)
 
 ### Credential Merge Logic
 
@@ -180,7 +180,7 @@ The system **MUST** merge K8s Secret data with inline tenant YAML fields, where 
 - `cpt-insightspec-algo-k8s-secret-credentials-merge`
 
 **Touches**:
-- Script: `src/ingestion/airbyte-toolkit/connect.sh`
+- Script: `src/ingestion/reconcile-connectors/main.sh` (secret discovery in `lib/secrets.sh`)
 
 ### Multi-Instance Support
 
@@ -192,7 +192,7 @@ The system **MUST** support multiple Secrets for the same connector type (e.g., 
 - `cpt-insightspec-flow-k8s-secret-credentials-configure`
 
 **Touches**:
-- Script: `src/ingestion/airbyte-toolkit/connect.sh`
+- Script: `src/ingestion/reconcile-connectors/main.sh` (secret discovery in `lib/secrets.sh`)
 
 ### Backward Compatibility
 
@@ -204,7 +204,7 @@ The system **MUST** fall back to inline credentials from tenant YAML when no mat
 - `cpt-insightspec-flow-k8s-secret-credentials-configure`
 
 **Touches**:
-- Script: `src/ingestion/airbyte-toolkit/connect.sh`
+- Script: `src/ingestion/reconcile-connectors/main.sh` (secret discovery in `lib/secrets.sh`)
 
 ### Error Handling
 
@@ -217,7 +217,7 @@ The system **MUST** produce clear error messages when: (a) no K8s Secret and no 
 - `cpt-insightspec-algo-k8s-secret-credentials-discover`
 
 **Touches**:
-- Script: `src/ingestion/airbyte-toolkit/connect.sh`
+- Script: `src/ingestion/reconcile-connectors/main.sh` (secret discovery in `lib/secrets.sh`)
 
 ### Per-Connector Secret Documentation
 
@@ -235,10 +235,10 @@ Every connector **MUST** have a `README.md` documenting: (a) a complete K8s Secr
 
 - [ ] `p2` - **ID**: `cpt-insightspec-dod-k8s-secret-credentials-example`
 
-The example tenant config (`connections/example-tenant.yaml`) **MUST** be updated to remove inline credentials, showing only `tenant_id` and non-credential connector fields (e.g., `start_date`). A comment **MUST** reference K8s Secrets as the credential source.
+The example tenant config **MUST** be updated to remove inline credentials, showing only `tenant_id` and non-credential connector fields (e.g., `start_date`). A comment **MUST** reference K8s Secrets as the credential source.
 
 **Touches**:
-- `src/ingestion/connections/example-tenant.yaml`
+- example tenant config (no longer present in the tree)
 
 ## 6. Acceptance Criteria
 

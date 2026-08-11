@@ -1,9 +1,9 @@
 # Confluence Connector Specification
 
 > Version 1.0 — March 2026
-> Based on: `docs/connectors/wiki/README.md` unified schema, Atlassian Confluence REST API v2
+> Based on: `docs/components/connectors/wiki/README.md` unified schema, Atlassian Confluence REST API v2
 
-Standalone specification for the Confluence connector. Maps Atlassian Confluence Cloud API data to the unified Bronze wiki schema (`wiki_*` tables) defined in [`README.md`](README.md).
+Standalone specification for the Confluence connector. Maps Atlassian Confluence Cloud API data to the unified Bronze wiki schema (`wiki_*` tables) defined in [`../README.md`](../README.md).
 
 <!-- toc -->
 
@@ -56,7 +56,7 @@ Standalone specification for the Confluence connector. Maps Atlassian Confluence
 
 ## Bronze Tables
 
-> All Confluence data is inserted into the shared `wiki_*` tables with `data_source = 'insight_confluence'`. The schema is defined in [`README.md`](README.md). This section documents field-level mapping from Confluence API response to Bronze columns.
+> All Confluence data is inserted into the shared `wiki_*` tables with `data_source = 'insight_confluence'`. The schema is defined in [`../README.md`](../README.md). This section documents field-level mapping from Confluence API response to Bronze columns.
 
 ### `wiki_spaces` — Space directory (Confluence mapping)
 
