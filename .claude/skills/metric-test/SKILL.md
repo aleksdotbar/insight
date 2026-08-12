@@ -13,12 +13,10 @@ This skill writes and validates `*.test.yaml` fixtures that drive the full
 
 ## Source of truth (reference — open only if you need the detail)
 
-This skill is self-contained for authoring. Consult these only when you need the
-precise algorithm/DoD, or when this file and the spec disagree (the spec wins) —
-no need to load them every time:
-
-- FEATURE: [docs/domain/bronze-to-api-e2e/specs/feature-yaml-rig/FEATURE.md](../../../docs/domain/bronze-to-api-e2e/specs/feature-yaml-rig/FEATURE.md) — flows, the `resolve` algorithm, the expect engine, DoD.
-- DESIGN: [docs/domain/bronze-to-api-e2e/specs/DESIGN.md](../../../docs/domain/bronze-to-api-e2e/specs/DESIGN.md) — principles `record-composition`, `schema-is-truth`; components `ref-resolver`, `schema-validator`, `expect-engine`.
+This skill is self-contained for authoring. For the precise algorithm, read the
+rig itself: `src/ingestion/tests/e2e/lib/` — `ref-resolver`, `schema-validator`
+and `expect-engine` live there, and the committed `*.test.yaml` files are the
+worked examples.
 
 ## Commands
 
