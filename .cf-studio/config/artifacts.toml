@@ -5,7 +5,45 @@ name = "InsightSpec"
 slug = "insightspec"
 kit = "sdlc"
 codebase = ["docs"]
-children = []
+children = ["identity-svc"]
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/components/backend/authenticator/PRD.md"
+name = "Authenticator Service PRD"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/backend/authenticator/DESIGN.md"
+name = "Authenticator Service Design"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/authenticator/specs/ADR/0001-per-environment-idp-selection.md"
+name = "ADR-0001: Per-Environment IdP Selection (fakeidp for CI/compose, Dex for local k8s) (superseded by ADR-0002)"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/authenticator/specs/ADR/0002-real-idp-on-deployed-stands.md"
+name = "ADR-0002: Real IdP on Deployed Stands (Pre-Provisioned Keycloak)"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/authenticator/specs/ADR/0003-keycloak-identity-broker.md"
+name = "ADR-0003: Keycloak as the Identity Broker (Configured as Code)"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/backend/gateway/DESIGN.md"
+name = "Gateway (nginx edge) Design"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/gateway/specs/ADR/0001-access-by-lua-over-auth-request.md"
+name = "ADR-0001: Pure access_by_lua Exchange Instead of the auth_request Directive"
 
 [[systems.artifacts]]
 kind = "ADR"
@@ -21,3 +59,93 @@ name = "ADR-0002: Database Field Naming and Type Conventions"
 kind = "ADR"
 path = "docs/shared/glossary/ADR/0003-insight-prefixed-tenant-id.md"
 name = "ADR-0003: Use insight_tenant_id Instead of tenant_id"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/backend/analytics/DESIGN.md"
+name = "Analytics API Design"
+traceability = "DOCS-ONLY"
+
+[[systems]]
+name = "Identity Service"
+slug = "identity-svc"
+kit = "sdlc"
+codebase = ["docs/components/backend/identity-resolution/identity"]
+children = []
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/components/backend/identity-resolution/identity/specs/PRD.md"
+name = "Identity Service PRD"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/backend/identity-resolution/identity/specs/DESIGN.md"
+name = "Identity Service Design"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0002-read-from-mariadb-persons.md"
+name = "ADR-0002: Read From the MariaDB persons Table"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0003-latest-per-source-semantics.md"
+name = "ADR-0003: Latest-Per-Source Lookup Semantics"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0004-lowercase-email-lookup.md"
+name = "ADR-0004: Lowercase Emails on Storage and Lookup"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0005-tenant-context-strategy.md"
+name = "ADR-0005: Composite Tenant Context With JWT Stub"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0006-display-name-split-fallback.md"
+name = "ADR-0006: Display-Name Split Fallback for First/Last Name"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0007-value-type-routing.md"
+name = "ADR-0007: value_type Routing for Identity Reads"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0008-bamboohr-identity-inputs-extension.md"
+name = "ADR-0008: Extend BambooHR identity_inputs With Person Attributes"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0009-post-profile-with-uniqueness-invariant.md"
+name = "ADR-0009: POST /v1/profiles with Single-Result Invariant"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0010-org-chart-cache.md"
+name = "ADR-0010: Materialized SCD2 Cache for Person Parent/Child Edges (org_chart)"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0011-persons-relax-uniqueness-and-collation.md"
+name = "ADR-0011: Persons Relax UNIQUE and Switch value_id Collation"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0012-admin-only-orgchart-visibility-reads.md"
+name = "ADR-0012: Admin-Only Reads on OrgChart Visibility Tables"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0013-roles-hard-delete-with-in-use-guard.md"
+name = "ADR-0013: roles Table Hard DELETE Guarded by Active-Assignment Count"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/identity-resolution/identity/specs/ADR/0014-last-admin-protection.md"
+name = "ADR-0014: Last-Admin Protection on person_roles Revoke"

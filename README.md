@@ -141,19 +141,37 @@ docs/
 │   ├── api-guideline/
 │   └── glossary/
 ├── testing/                      ← test plan and reference orgs
-└── components/backend/           ← committed OpenAPI contracts, generated from the code
-    ├── analytics/openapi.json
-    ├── authenticator/openapi.json
-    └── identity-resolution/openapi.json
+└── components/backend/           ← backend service specs + committed OpenAPI contracts
+    ├── analytics/                ← DESIGN, openapi.json
+    ├── authenticator/            ← DESIGN, PRD, KEY-ROTATION, ADRs, openapi.json
+    ├── gateway/                  ← DESIGN, ADR
+    └── identity-resolution/      ← DESIGN, PRD, 14 ADRs, openapi.json
 ```
 
 The `openapi.json` files are generated, not hand-written. CI regenerates each from
 its service and fails the build on drift, so treat them as build output that happens
 to be committed.
 
-Design intent for a component lives with the code it describes: the connector
+Design intent for everything else lives with the code it describes: the connector
 `README.md` beside each `connector.yaml`, module docs under `src/backend/services/`,
 and the pipeline conventions in `.cf-studio/config/rules/architecture.md`.
+
+#### Backend specs — under review
+
+The four specs above are **retained but not yet trustworthy**. An audit against the
+implementation found claims in each that the code contradicts. They are kept because
+the surrounding material is worth correcting rather than discarding — but read them
+against the code, not as authority, until the entries below are closed.
+
+| Spec | Do not trust until checked |
+|---|---|
+| `analytics/DESIGN.md` | The endpoint table (§ Public API) lists routes the service does not register — the live surface is `/v1/metric-results`, `/v1/queries*`, `/v1/metric-drilldown*`, `/v1/metric-definitions`, `/v1/metrics*`. Metrics are addressed by `metric_key` (`table.column`), not a UUID. Server-side threshold evaluation and a `_thresholds` response field are described but not implemented. The RBAC column claims Tenant Admin on metric and threshold writes; the handlers declare only `.authenticated()`. The Redis alias cache and Redpanda invalidation are not wired. § 3.7 lists three tables that no runtime code reads. |
+| `authenticator/DESIGN.md`, `PRD.md` | The admin revoke-by-user variant is documented on `DELETE /auth/sessions`; that route is public and self-only, and the admin variant is a separate authenticated route. CSRF is documented as covering logout only — it covers every state-changing `/auth/*` with a live session. A `tenants` claim and a `tenants` session field are described; both are a single `tenant_id`. The listed metric names are not the ones the crate registers. Several documented status codes are redirects in code. |
+| `gateway/DESIGN.md` | The hygiene list describes `auth_request` / `auth_request_set` and `error_page`; routegen emits neither — it uses `access_by_lua_block` and shapes failures in Lua. The JWT cache key is the session cookie value, not a derived session id. |
+| `identity-resolution/.../DESIGN.md`, `PRD.md` | An internal `by-email` lookup is documented as present; it was removed. Ambiguous-profile is documented as `422` with structured members; the service returns `409`. `tenant_default_id` is described as a request-time fallback; no request path reads it. Subchart depth is documented as unbounded; it is capped and clamped. The subchart auth is documented as an `X-Insight-Person-Id` header; it is the gateway JWT. The PRD specifies FluentValidation and `IPersonsReader` — .NET idioms that do not exist in this Rust service. Conversely, several capabilities marked "planned" are already shipped, including the whole operator resolution surface. |
+
+The `openapi.json` next to each service is generated from the code and gated by CI,
+so where a spec and the contract disagree, the contract is right.
 
 ### `inbox/`
 
