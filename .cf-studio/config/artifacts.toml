@@ -5,7 +5,7 @@ name = "InsightSpec"
 slug = "insightspec"
 kit = "sdlc"
 codebase = ["docs"]
-children = ["identity-svc"]
+children = ["identity-svc", "ir"]
 
 [[systems.artifacts]]
 kind = "PRD"
@@ -149,3 +149,40 @@ name = "ADR-0013: roles Table Hard DELETE Guarded by Active-Assignment Count"
 kind = "ADR"
 path = "docs/components/backend/identity-resolution/identity/specs/ADR/0014-last-admin-protection.md"
 name = "ADR-0014: Last-Admin Protection on person_roles Revoke"
+
+[[systems]]
+name = "Identity Resolution"
+slug = "ir"
+kit = "sdlc"
+codebase = ["docs/domain/identity-resolution"]
+children = []
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/domain/identity-resolution/specs/DESIGN.md"
+name = "Identity Resolution Design"
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/domain/identity-resolution/specs/PRD.md"
+name = "Identity Resolution PRD"
+
+[[systems.artifacts]]
+kind = "DECOMPOSITION"
+path = "docs/domain/identity-resolution/specs/DECOMPOSITION.md"
+name = "Identity Resolution Decomposition"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/domain/identity-resolution/specs/ADR/0002-stable-person-id-via-persons-observations.md"
+name = "ADR-0002: Stable person_id via append-only persons observations"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/domain/identity-resolution/specs/ADR/0003-operator-decisions-as-persons-observations.md"
+name = "ADR-0003: Operator identity corrections as append-only persons observations"
+
+[[systems.artifacts]]
+kind = "FEATURE"
+path = "docs/domain/identity-resolution/specs/feature-manual-resolution/FEATURE.md"
+name = "Feature: Manual Identity Resolution"

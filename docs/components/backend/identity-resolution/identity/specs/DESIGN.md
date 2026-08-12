@@ -525,7 +525,7 @@ The service is a **reader** of `persons` and the migrator of the
 Defined in `src/migration/sql/001_persons.sql`
 (applied by the SeaORM migrator via the `migrate` subcommand).
 Canonical column reference:
-the `persons` table defined in `src/backend/services/identity-resolution/src/migration/`.
+[docs/domain/identity-resolution/specs/DESIGN.md §"Table: persons"](../../../../../domain/identity-resolution/specs/DESIGN.md#table-persons-mariadb).
 
 The service reads it via two queries (centralised with the
 repository in `src/infra/db/`):
@@ -573,7 +573,7 @@ Defined in `src/migration/sql/002_account_person_map.sql`.
 The service migrates the table but does **not** read it in
 Phase 1 — the seed pipeline rebuilds it as an SCD2 cache from
 `persons` (see
-the `account_person_map` table defined in `src/backend/services/identity-resolution/src/migration/`).
+[domain DESIGN §"Table: account_person_map"](../../../../../domain/identity-resolution/specs/DESIGN.md#table-account_person_map-mariadb)).
 Future Phase 2 lookups will use it for "as-of" account → person
 binding queries.
 
