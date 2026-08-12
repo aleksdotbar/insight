@@ -356,7 +356,7 @@ aren't in the snapshot yet:
 ## Feature-scenario traceability
 
 When a spec implements a scenario tracked in a feature issue's Testing section,
-cite it inside the spec's `description` (`… — #2163 scenario 1`) — the id is
-the link, never copy scenario or AC prose — and after merge check the
-scenario's box in the issue with a link to the spec file. The scenario's
-vector has no marker mechanism in this suite; it lives issue-side only.
+cite it inside the spec's `description` (`… — #2163 scenario 1`); the full
+traceability contract (id-not-prose, box-checking after merge) is the
+`quality-vector-tests` skill's tracking section. The scenario's vector has no
+marker mechanism in this suite; it lives issue-side only.

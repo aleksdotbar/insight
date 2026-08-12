@@ -252,13 +252,12 @@ the gate's central rule and the reason `template` exists.
    `/internal/*` case, or the test hard-fails on a stand that cannot reach the
    token endpoint instead of skipping with a reason.
 6. Write the tests; extend the module docstring's route table. Every test
-   carries exactly one quality-vector marker: a module-level `pytestmark`
+   carries exactly one quality-vector marker — module-level `pytestmark`
    when the whole module shares a vector, per-test markers throughout a
-   mixed module — never both, markers are additive and a default plus an
-   override leaves two on the test and breaks `-m` selection. Contract
-   correctness is `reliability`; access, tenancy and refusal-of-access cases
-   are `security`; catalog-breadth checks are `versatility`. Collection
-   aborts on a test whose vector count is anything but exactly one.
+   mixed module, never both; the why lives with the marker declarations in
+   `tests/pyproject.toml`. Contract correctness is `reliability`; access,
+   tenancy and refusal-of-access cases are `security`; catalog-breadth
+   checks are `versatility`. Collection aborts on any other vector count.
 7. Run and check the ledger:
 
 ```bash
@@ -284,7 +283,7 @@ python3 tests/lib/insight_stand/coverage.py \
 8. Hand a claim marked `EXPECTED TO FAIL` to `file-bug-insight` rather than
    softening the assertion.
 9. When the test implements a scenario tracked in a feature issue's Testing
-   section, cite it in the test docstring (`#2163 scenario 3`) — the id is the
-   link, never copy scenario or AC prose into the test — and after merge check
-   the scenario's box in the issue with a link to the test. The test's vector
-   marker must equal the scenario's vector tag.
+   section, cite it in the test docstring (`#2163 scenario 3`) and keep the
+   marker equal to the scenario's vector tag; the full traceability contract
+   (id-not-prose, box-checking after merge) is the `quality-vector-tests`
+   skill's tracking section.

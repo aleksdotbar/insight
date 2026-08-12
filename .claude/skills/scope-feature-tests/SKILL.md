@@ -74,19 +74,14 @@ hold regardless of the final list (registry-driven harnesses, sum/parity invaria
 pinned to today's list rots the moment the list changes; one pinned to invariants survives it.
 
 ### 1b. Review the acceptance criteria before scoping against them
-Feature ACs are often arbitrary — written before the design settled, gating deferred behaviour,
-or missing the promise the Goal actually makes. Number them AC-1..N in reading order, then check
-each on three counts: **testable** (one behaviour, an observable outcome — vague or compound ACs
-get a proposed rewrite or split; an untestable AC is a requirements defect, not a testing gap),
-**complete** (every promise in Goal/Scope has an AC — the usual failure is a missing one, not a
-wrong one), and **real** (an AC gating deliberately-deferred or out-of-scope behaviour is
-flagged, not tested around). If the set needs changing, propose the corrected AC-1..N list to the
-user *before* designing coverage — the author owns that contract, so it lands in the issue only
-on confirmation. Everything downstream (the groups, the gate, the Testing section
-`quality-vector-tests` writes) maps to the agreed set; a deferred AC keeps an explicit reason and
-owner rather than vanishing. The **real** check usually needs step 2's grounding to answer —
-treat the review as provisional until grounding confirms it — and a deferred AC can stay in
-scope as an executable `xfail` gate (see the boundary traps in step 5) instead of dropping out.
+Run the AC review the `quality-vector-tests` skill's step 1 owns — the testable / complete /
+real three-count check, the corrected AC-1..N list proposed to the user *before* anything is
+designed against it, deferred ACs kept with an explicit reason and owner. Everything downstream
+(the groups, the gate, the Testing section `quality-vector-tests` writes) maps to the agreed
+set. Two scoping-side caveats on top of that contract: the **real** check usually needs step
+2's grounding to answer — treat the review as provisional until grounding confirms it — and a
+deferred AC can stay in scope as an executable `xfail` gate (see the boundary traps in step 5)
+instead of dropping out.
 
 ### 2. Ground it in the real code and data flow
 This is the core. Investigate this repo — `src/backend`, `src/ingestion` (and its dbt),

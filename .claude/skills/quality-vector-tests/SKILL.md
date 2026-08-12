@@ -88,6 +88,10 @@ Three mechanics that make the tags resolvable:
 - **File the numbering back.** The same edit that lands the Testing section prefixes each
   acceptance criterion with its id (`AC-1.` …) — a numbering-only change that needs no
   confirmation — otherwise the section cites ids no reader can resolve.
+- **Keep criterion ids current.** When the issue's criteria list is later edited, reordered or
+  renumbered, the same edit rebuilds the criteria map and every scenario's criterion tag — a
+  stale id silently points the gap audit and merged tests' docstring citations at the wrong
+  requirement.
 - **A scenario may lack a criterion only while its proposal is pending.** The completeness check
   normally supplies a criterion for every scenario; until the author confirms a proposed one, the
   scenario stays untagged and the framing paragraph names it explicitly ("scenarios 6–8 await the
@@ -311,10 +315,9 @@ The section stays alive after it's written — that is its point:
 - A scenario that will *stay* unimplemented gets its checkbox replaced by **deferred** with a
   reason and owner, so the tracker never silently under-reports.
 - In the stand suites the vector attribution is machine-enforced: every api/ui test carries
-  exactly one vector marker (module `pytestmark` for a uniform module, per-test markers in a
-  mixed one; declared in `tests/pyproject.toml`, checked at collection), so `-m security`
-  runs one vector and a test whose vector count is anything but exactly one aborts the
-  session. The marker must equal the scenario's vector tag. metric-spec YAML has no marker
+  exactly one vector marker, declared in `tests/pyproject.toml` (which owns the rule's why)
+  and checked at collection — any other count aborts the session, and the marker must equal
+  the scenario's vector tag. metric-spec YAML has no marker
   mechanism — its vector
   lives issue-side only.
 
