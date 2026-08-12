@@ -54,7 +54,7 @@ Reading the branch (`feat/unified-metrics` — the code was **not on `main`**; f
 > 2. **Exercise** edge semantics (metric-spec) — seed empty/zero-denominator/sparse/missing-dimension; assert
 >    sum→0, ratio→null, dense timeseries, breakdown observed-only, peer drops nulls.
 > 3. **Stand up** the migration differential (the gate; metric-spec) — old path vs engine on same data, each
->    metric tagged `exact` / `known-diff` / `merge`. [AI table]
+>    metric tagged `exact` / `known-diff(direction)` / `merge`. [AI table]
 > 4. **Test** definitions & reconciliation (rust-unit) — precedence/fallback; reconciler idempotent, disables
 >    not deletes, safe under concurrent boot (no zero-input window).
 > 5. **Drive** schema-status + request rejection (stand-api) — caps + invalid inputs.
@@ -64,7 +64,8 @@ Reading the branch (`feat/unified-metrics` — the code was **not on `main`**; f
 > 8. **Validate** in the UI once the renderer lands (stand-ui; sequenced; gates sign-off).
 >
 > **Acceptance:** matrix + differential registry-driven (new metric ⇒ no code change); differential
-> tagged, never blanket zero-diff; reconciler safe under concurrent boot; tenant scoping proven
+> tagged `exact` / `known-diff(direction)` / `merge`, never blanket zero-diff; reconciler safe
+> under concurrent boot; tenant scoping proven
 > (isolation xfail until filter lands); existing screens keep working; every criterion of the
 > reviewed AC set maps to a group.
 

@@ -227,12 +227,14 @@ you last saw, rebuild on the new one and tell the user what changed.
 
 <1–3 framing sentences: the feature shape (port / migration / new capability), what leads the
 risk, and where the checks run. For a port/migration, name the parity bar here.>
-All <N>/<N> acceptance criteria covered: AC-1 → 1,4 · AC-2 → 2,3 · … <deferred ACs named here,
-with reason and owner>.
+All <N>/<N> acceptance criteria covered: <criterion-id> → 1,4 · <criterion-id> → 2,3 · …
+<deferred criteria named here, with reason and owner>. <criterion-id> is whatever scheme the
+issue itself uses — AC-n, BR-n, REQ-n — never renumbered.
 
-- [ ] 1. **<Scenario name>** — <Vector> · <suite-tag> · AC-<n> — <do → expect, one sentence; the
-      expect half restates the AC's outcome; a number only where the number is the oracle>.
-- [ ] 2. **<Scenario name>** — <Vector> · <suite-tag> · AC-<n> — <do → expect>.
+- [ ] 1. **<Scenario name>** — <Vector> · <suite-tag> · <criterion-id> — <do → expect, one
+      sentence; the expect half restates the criterion's outcome; a number only where the number
+      is the oracle>.
+- [ ] 2. **<Scenario name>** — <Vector> · <suite-tag> · <criterion-id> — <do → expect>.
 …
 
 <Vector with nothing to check> — n/a: <one line saying why, e.g. no new query path of its own;
@@ -311,8 +313,9 @@ The section stays alive after it's written — that is its point:
 - In the stand suites the vector attribution is machine-enforced: every api/ui test carries
   exactly one vector marker (module `pytestmark` for a uniform module, per-test markers in a
   mixed one; declared in `tests/pyproject.toml`, checked at collection), so `-m security`
-  runs one vector and a test with zero or two vectors aborts the session. The marker must
-  equal the scenario's vector tag. metric-spec YAML has no marker mechanism — its vector
+  runs one vector and a test whose vector count is anything but exactly one aborts the
+  session. The marker must equal the scenario's vector tag. metric-spec YAML has no marker
+  mechanism — its vector
   lives issue-side only.
 
 ## Turning a vague line into a scenario
@@ -322,7 +325,7 @@ filed section every scenario is numbered.
 
 | Author wrote | Scenario line |
 |---|---|
-| "pagination tests" | `- [ ] **Page honesty** — Reliability · stand-api · AC-3 — page a 3,000-record fixture at size 500 (7 pages) → 0 duplicates, 0 omissions, total exact.` |
+| "pagination tests" | `- [ ] **Page honesty** — Reliability · stand-api · AC-3 — page a 3,000-record fixture at size 500 (6 pages) → 0 duplicates, 0 omissions, total exact.` |
 | "UI e2e tests - coverage?" | `- [ ] **Dashboard renders for a signed-in lead** — Reliability · stand-ui · AC-1 — sign in as a seeded lead → the four KPI tiles render with non-empty values.` |
 | "no critical issues in ci" | `- [ ] **Critical findings** — Security · ci-static · AC-5 — Trivy CRITICAL + Semgrep ERROR counts from the workflows in .github/ → 0.` |
 | "check it degrades ok" | `- [ ] **Warehouse outage banner** — Reliability · fe-component · AC-2 — render the dashboard with the metrics client erroring → the error banner shows, no blank panel, recovers on retry.` |

@@ -68,7 +68,7 @@ author in the AC review.
       oversized request returns 4xx with a reason, never a partial 200; undrillable target returns
       an error distinguishable from an empty result.
 - [ ] 4. **Page honesty** — Reliability · stand-api · BR-9 — page a 3,000-record fixture at page
-      size 500 (7 pages) and union the pages → 0 duplicates, 0 omissions, total exact (3,000,
+      size 500 (6 pages) and union the pages → 0 duplicates, 0 omissions, total exact (3,000,
       not 500).
 - [ ] 5. **Connector coverage** — Versatility · metric-spec · BR-18, BR-12 — per-connector
       fixtures driven by the metric catalog → all 26 connectors and 60 metrics return evidence or

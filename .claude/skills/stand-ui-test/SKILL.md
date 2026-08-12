@@ -227,7 +227,7 @@ coverage.
    additive; two vectors break `-m` selection). Journeys proving rendering
    and data are `reliability`, refused-access journeys `security`,
    breadth-across-domains journeys `versatility`. Collection aborts on a
-   test with zero or two vectors.
+   test whose vector count is anything but exactly one.
 8. Audit fidelity, then run headed once to confirm it fails for the right
    reason when you break the expectation deliberately.
 9. When the journey implements a scenario tracked in a feature issue's Testing

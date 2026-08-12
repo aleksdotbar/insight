@@ -32,15 +32,15 @@ defined none for speed, run-cost or scanning).
       near-duplicate identities (shared names, shared display-names, recycled logins), resolve
       each → 0 distinct humans merged into one person.
 - [ ] 3. **Endpoint coverage** — Reliability · stand-api · AC-2 — e2e across MariaDB + ClickHouse +
-      identity with a contract check → 3/3 endpoints covered, 0 regressions on existing screens.
+      identity with a contract check → 3/3 endpoints covered.
 - [ ] 4. **Org-chart sync** — Versatility · identity-e2e · AC-3 — per-provider fixtures (MS Entra,
       BambooHR; Workday / AD as they land) → 2/2 live providers resolve reporting lines: manager
       and team at correct depth, root and cycles handled.
 - [ ] 5. **Cross-namespace resolution** — Versatility · identity-e2e · AC-4 — fixtures across all 26
       connectors → reviewer-namespace identities (GitHub login / Bitbucket display-name)
       resolved wherever the seeded fixtures carry linking evidence; the unlinkable remainder is
-      the expected gap — kept as a scenario that stays red until cross-namespace resolution
-      lands, rather than a silently deferred one.
+      an xfail assertion that flips to a hard pass when cross-namespace resolution lands —
+      tracked in the suite, not silently deferred.
 - [ ] 6. **Resolution latency** — Performance · manual — load test with a baseline first, on the
       3,000-person demo org → P95 < 100ms. *Proposed; no existing latency budget in the repo sets
       this bar.*

@@ -258,7 +258,7 @@ the gate's central rule and the reason `template` exists.
    override leaves two on the test and breaks `-m` selection. Contract
    correctness is `reliability`; access, tenancy and refusal-of-access cases
    are `security`; catalog-breadth checks are `versatility`. Collection
-   aborts on a test with zero or two vectors.
+   aborts on a test whose vector count is anything but exactly one.
 7. Run and check the ledger:
 
 ```bash

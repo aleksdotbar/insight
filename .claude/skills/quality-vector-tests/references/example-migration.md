@@ -37,7 +37,7 @@ AC-1 → 1 · AC-2 → 2 · AC-3 → 3 · AC-4 → 4 · AC-5 → 5 · AC-6 → 6
 
 - [ ] 1. **Old-vs-new diff** *(main gate)* — Reliability · metric-spec · AC-1 — automated diff harness
       over the seeded dataset, every catalog metric run on both paths, each tagged `exact` /
-      `known-diff` (assert direction) / `merge` (merged = Σ parts) → 0 untagged differences.
+      `known-diff(direction)` / `merge` (merged = Σ parts) → 0 untagged differences.
 - [ ] 2. **Definition integrity** — Reliability · rust-unit · AC-2 — loader/reconciler tests including a
       concurrent reload → 0 invalid definitions served, 0 empty windows during a reload.
 - [ ] 3. **Bad-request handling** — Reliability · stand-api · AC-3 — drive the 4 rejection cases

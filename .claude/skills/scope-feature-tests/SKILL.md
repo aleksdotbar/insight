@@ -328,7 +328,7 @@ matrix only where it adds signal>.
 
 ## Acceptance
 - [ ] <the coverage/differential gate that actually proves it — e.g. per-source coverage measured;
-      differential tagged exact/known-diff/merge, never blanket zero-diff>
+      differential tagged exact/known-diff(direction)/merge, never blanket zero-diff>
 - [ ] every criterion of the reviewed AC set maps to a test group (deferred ones carry a reason
       and an owner)
 - [ ] <invariant / registry-driven / sequenced-UI checks as they apply>
