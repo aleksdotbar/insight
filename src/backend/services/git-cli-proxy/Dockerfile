@@ -1,12 +1,8 @@
-# Rebuild marker (2026-06-11, take 2): republish so the chart-pinned tag advances to
-# an SLSA-attested image — current appVersion predates the provenance
-# attestation steps in build-images.yml.
-# Take 2: the first publish-chart attempt failed before committing the
-# appVersion bumps back to main (chart attest step lacked registry login).
-# Multi-stage build for Insight Analytics API
+# Multi-stage build for Insight Git CLI Proxy (clone-based git data extraction
+# for the nocode git connectors; design: docs/components/connectors/git/git-cli-proxy/).
 #
 # Build context: src/backend/
-# Usage: cd src/backend && docker build -f services/analytics/Dockerfile -t insight-analytics:dev .
+# Usage: cd src/backend && docker build -f services/git-cli-proxy/Dockerfile -t insight-git-cli-proxy:dev .
 
 # Stage 1: Builder
 FROM rust:1.95-bookworm AS builder
@@ -19,17 +15,15 @@ RUN apt-get update && \
 WORKDIR /build
 
 # --- Dependency caching layer ---
+# Every workspace member's manifest must be present for cargo to resolve the
+# workspace, even the ones this image never builds or ships.
 COPY Cargo.toml Cargo.lock ./
 COPY libs/insight-clickhouse/Cargo.toml ./libs/insight-clickhouse/Cargo.toml
 COPY libs/authenticator-sdk/Cargo.toml ./libs/authenticator-sdk/Cargo.toml
 COPY services/analytics/Cargo.toml ./services/analytics/Cargo.toml
 COPY services/authenticator/Cargo.toml ./services/authenticator/Cargo.toml
-# identity-resolution is a workspace member; cargo must load its manifest to
-# resolve the workspace even though this image never builds or ships it.
 COPY services/identity-resolution/Cargo.toml ./services/identity-resolution/Cargo.toml
 COPY services/git-cli-proxy/Cargo.toml ./services/git-cli-proxy/Cargo.toml
-# routegen is a workspace member (build-time CLI); cargo must load its manifest
-# to resolve the workspace even though this image never builds it.
 COPY tools/routegen/Cargo.toml ./tools/routegen/Cargo.toml
 
 RUN mkdir -p libs/insight-clickhouse/src && echo "" > libs/insight-clickhouse/src/lib.rs && \
@@ -40,26 +34,33 @@ RUN mkdir -p libs/insight-clickhouse/src && echo "" > libs/insight-clickhouse/sr
     mkdir -p services/git-cli-proxy/src && echo "fn main() {}" > services/git-cli-proxy/src/main.rs && \
     mkdir -p tools/routegen/src && echo "fn main() {}" > tools/routegen/src/main.rs
 
-RUN cargo build --release --bin analytics 2>/dev/null || true
+RUN cargo build --release --bin git-cli-proxy 2>/dev/null || true
 
 # --- Source layer ---
-RUN rm -rf libs/insight-clickhouse/src services/analytics/src \
-    target/release/analytics target/release/deps/analytics* \
-    target/release/deps/insight_clickhouse* target/release/deps/libinsight_clickhouse*
+RUN rm -rf services/git-cli-proxy/src \
+    target/release/git-cli-proxy target/release/deps/git_cli_proxy*
 
-COPY libs/insight-clickhouse/src/ ./libs/insight-clickhouse/src/
-COPY services/analytics/src/ ./services/analytics/src/
-COPY services/analytics/config/ ./services/analytics/config/
+COPY services/git-cli-proxy/src/ ./services/git-cli-proxy/src/
+COPY services/git-cli-proxy/config/ ./services/git-cli-proxy/config/
 
-RUN cargo build --release --bin analytics
+RUN cargo build --release --bin git-cli-proxy
 
 # Stage 2: Runtime
-FROM debian:bookworm-slim
+#
+# Trixie, where the sibling services use bookworm. `git` is not a utility here,
+# it is the implementation: the blob purge needs `repack --filter` together
+# with `--filter-to` (design §3.3), which arrived in git 2.42/2.43. Bookworm
+# ships 2.39 and has no git in backports at all; trixie ships 2.47. A binary
+# built against bookworm's glibc runs on trixie's newer one, so only this
+# stage moves.
+FROM debian:trixie-slim
 
 ARG TARGETARCH
 ARG WATCHEXEC_VERSION=2.3.2
 
-# Runtime deps + watchexec.
+# The service re-runs the purge invocation against a throwaway repository at
+# boot and refuses to start if git rejects it, so a base image that regresses
+# here fails the deploy rather than quietly filling a volume.
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
       amd64) WX_ARCH=x86_64-unknown-linux-musl ;; \
@@ -67,7 +68,7 @@ RUN set -eux; \
       *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl xz-utils; \
+    apt-get install -y --no-install-recommends ca-certificates git curl xz-utils; \
     curl -fsSL "https://github.com/watchexec/watchexec/releases/download/v${WATCHEXEC_VERSION}/watchexec-${WATCHEXEC_VERSION}-${WX_ARCH}.tar.xz" \
         | tar -xJ -C /tmp; \
     install -m 0755 "/tmp/watchexec-${WATCHEXEC_VERSION}-${WX_ARCH}/watchexec" /usr/local/bin/watchexec; \
@@ -81,17 +82,17 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 WORKDIR /app
 
-COPY --from=builder /build/target/release/analytics /app/analytics
+COPY --from=builder /build/target/release/git-cli-proxy /app/git-cli-proxy
 # Gears config baked at /app/config/. Compose bind-mounts over it for hot
 # edits; k8s mounts a ConfigMap at the same path. Env (APP__*) overrides
-# the deployment-specific leaf values (DB/tenant).
-COPY --from=builder /build/services/analytics/config/ /app/config/
+# the deployment-specific leaf values (budgets, data_dir, proxy_token).
+COPY --from=builder /build/services/git-cli-proxy/config/ /app/config/
 
 RUN useradd -U -u 1000 -m appuser && \
     chown -R 1000:1000 /app
 USER 1000
 
-EXPOSE 8081
+EXPOSE 8084
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/app/analytics", "--", "/app/analytics", "-c", "/app/config/insight.yaml", "run"]
+CMD ["/app/git-cli-proxy", "--", "/app/git-cli-proxy", "-c", "/app/config/insight.yaml"]

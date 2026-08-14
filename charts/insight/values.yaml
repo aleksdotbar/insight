@@ -501,6 +501,49 @@ analytics:
 # SCHEMA OWNER: identity-resolution's migrate initContainer applies the
 # migrations + first-admin bootstrap against `databaseName` — see ADR-0006
 # (service-owned migrations).
+# Git CLI Proxy — clone-based commit extraction for the nocode git connectors.
+# Airbyte-only consumer: no gateway route, no platform-config entry (other
+# services must not discover it), ingress restricted by its own NetworkPolicy.
+# Deploy is OFF by default: it costs a PVC and is only useful once a git
+# connector is configured to use it.
+gitCliProxy:
+  deploy: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/constructorfabric/insight-git-cli-proxy
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {cpu: "2", memory: 2Gi}
+  persistence:
+    size: 50Gi
+    storageClass: ""
+  cache:
+    # Budget defaults to 85% of persistence.size (subchart-computed); the
+    # headroom absorbs transient packs and git temp files. Override with
+    # diskBudgetBytes (must stay within 50-90% of the volume).
+    maxRepoBytes: 10737418240
+    defaultMaxStalenessSeconds: 300
+    heavyOpsConcurrency: 4
+    caCertPath: ""
+  caCertSecret: ""
+  # Bearer token the proxy requires on every /v1 request. Empty = generated on
+  # first install and reused on every upgrade; reconcile hands it to the
+  # connectors, so an operator never needs to see or copy it. Set it only to
+  # pin a specific value.
+  proxyToken: ""
+  # Composed by templates/secrets.yaml (carries the bearer token).
+  existingSecret: "insight-git-cli-proxy-config"
+  networkPolicy:
+    enabled: true
+    # Namespaces whose pods may call the proxy: the one running Airbyte
+    # connector jobs. Required when deploy=true — the subchart refuses to
+    # render an allow-list that would deny every caller.
+    allowedNamespaceLabels:
+      - key: kubernetes.io/metadata.name
+        values: []
+
 identityResolution:
   deploy: true
   replicaCount: 1
