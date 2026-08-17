@@ -707,4 +707,80 @@ export const handlers = [
   ),
   ...savedQueryHandlers(),
   ...customMetricHandlers(),
+  ...usageHandlers(),
 ];
+
+// ── Platform usage (`/v1/usage/*`) ─────────────────────────────
+
+function syntheticDays(count: number) {
+  const days = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const day = new Date();
+    day.setUTCDate(day.getUTCDate() - i);
+    days.push({
+      day: day.toISOString().slice(0, 10),
+      visits: 2 + ((i * 7) % 9),
+      visitors: 1 + ((i * 3) % 5),
+    });
+  }
+  return days;
+}
+
+function usageHandlers() {
+  return [
+    http.get("/api/analytics/v1/usage/config", () =>
+      HttpResponse.json({ enabled: true }),
+    ),
+    http.post("/api/analytics/v1/usage/events", () =>
+      new HttpResponse(null, { status: 204 }),
+    ),
+    http.get("/api/analytics/v1/usage/summary", () => {
+      const by_day = syntheticDays(30);
+      return HttpResponse.json({
+        since: by_day[0]?.day ?? "",
+        until: by_day.at(-1)?.day ?? "",
+        totals: {
+          visits: by_day.reduce((sum, d) => sum + d.visits, 0),
+          visitors: 4,
+          page_views: 214,
+        },
+        by_day,
+        by_person: [
+          {
+            person_id: defaultPerson?.person_id ?? "",
+            display_name: defaultPerson?.name ?? "",
+            visits: 31,
+            page_views: 96,
+            last_seen: `${by_day.at(-1)?.day ?? ""} 09:12`,
+          },
+          {
+            person_id: PEOPLE[1]?.person_id ?? "",
+            display_name: PEOPLE[1]?.name ?? "",
+            visits: 18,
+            page_views: 64,
+            last_seen: `${by_day.at(-1)?.day ?? ""} 08:40`,
+          },
+          {
+            person_id: PEOPLE[2]?.person_id ?? "",
+            display_name: PEOPLE[2]?.name ?? "",
+            visits: 7,
+            page_views: 54,
+            last_seen: `${by_day.at(-2)?.day ?? ""} 17:05`,
+          },
+        ],
+        by_event: [
+          { event_name: "drill", target: "pr_cycle_time", opens: 34, people: 3 },
+          { event_name: "drill", target: "review_load", opens: 21, people: 3 },
+          { event_name: "drill", target: "ai_share", opens: 12, people: 2 },
+          { event_name: "session_start", target: "", opens: 57, people: 4 },
+        ],
+        by_page: [
+          { path: "/portal/overview", views: 88, visitors: 4 },
+          { path: "/portal/people", views: 61, visitors: 3 },
+          { path: "/portal/manage/metric-catalog", views: 42, visitors: 2 },
+          { path: "/portal/manage/platform-usage", views: 23, visitors: 1 },
+        ],
+      });
+    }),
+  ];
+}
