@@ -394,12 +394,42 @@ async fn apply_correction(
     )
     .await;
 
+    let applied = count_items(&items, OUTCOME_APPLIED);
+    if applied > 0 {
+        // Spawned: the correction is already durable in `persons`, so the
+        // response must not wait on ClickHouse.
+        let config = state.config.clone();
+        tokio::spawn(async move { publish_correction(&config).await });
+    }
+
     Ok(CorrectionResponse {
-        applied: count_items(&items, OUTCOME_APPLIED),
+        applied,
         already_decided: count_items(&items, OUTCOME_ALREADY_DECIDED),
         items,
         new_person_id: None,
     })
+}
+
+/// Publish the corrected log into the snapshot the metrics resolver reads.
+/// Never fails the verb: the runner waits for a busy lock, the lock holder's
+/// quiescence re-check covers rows it raced with, and the next publish is
+/// the catch-up path for everything else.
+async fn publish_correction(config: &crate::config::GearConfig) {
+    use crate::sync_runner::{self, SyncRunError};
+    match sync_runner::run(config, false).await {
+        Ok(outcome) => tracing::info!(?outcome, "persons-sync published the corrected log"),
+        Err(SyncRunError::LockBusy) => tracing::warn!(
+            "publish lock stayed busy past the wait; the correction reaches the resolver with \
+             the next publish"
+        ),
+        Err(SyncRunError::Guard(msg)) => {
+            tracing::warn!(%msg, "persons-sync refused the post-correction publish");
+        }
+        Err(SyncRunError::Failed(e)) => tracing::warn!(
+            error = %format!("{e:#}"),
+            "publishing the correction failed; the resolver snapshot is stale until the next publish"
+        ),
+    }
 }
 
 fn count_items(items: &[ItemResult], wanted: &str) -> usize {
