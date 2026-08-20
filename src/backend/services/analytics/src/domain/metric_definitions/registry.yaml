@@ -166,6 +166,7 @@ sources:
         evidence_granularity: event
     dimensions:
       - type
+      - source
   - source:
       key: wiki
       kind: managed_observation
@@ -1124,6 +1125,7 @@ metrics:
         measure_key: tasks_closed
     dimensions:
       - type
+      - source
   - metric_key: tasks.bugs_fixed
     source_key: task
     subject: quality
