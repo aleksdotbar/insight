@@ -3,7 +3,7 @@ name: gitlab
 #   column is_default_branch. MINOR, not MAJOR: the commits stream reports no
 #   branch membership, so the column is NULL whether a row re-materializes or
 #   not and nothing has to be rebuilt.
-version: "1.15.0"
+version: "1.16.0"
 type: cdk
 schedule: "0 2 * * *"
 workflow: sync
@@ -12,7 +12,7 @@ images:
     name: source-gitlab-insight
     dockerfile: ./Dockerfile
     context: .
-    image: "ghcr.io/constructorfabric/source-gitlab-insight:2026.08.20.11.19-2b469e9"
+    image: "ghcr.io/constructorfabric/source-gitlab-insight:2026.08.22.22.39-561c9d1"
 dbt_select: "tag:gitlab+"
 connection:
   namespace: "bronze_gitlab"
