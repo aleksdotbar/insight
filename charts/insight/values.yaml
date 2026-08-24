@@ -485,6 +485,24 @@ analytics:
     limits: {cpu: 500m, memory: 512Mi}
   metricCatalog:
     tenantMetricsEnabled: false
+  # Explaining a metric with an LLM. Off everywhere until an operator turns it
+  # on, and turning it on without `tokenEncryptionKey` stops the service at
+  # boot rather than accepting keys it cannot seal.
+  aiAssist:
+    enabled: false
+    # Base64 of 32 random bytes: `openssl rand -base64 32`. Seals the Anthropic
+    # keys people store. Rotating it makes every stored key unreadable, and
+    # each person has to paste theirs again.
+    tokenEncryptionKey: ""
+    # One Anthropic key for the whole stand. Set it and nobody stores their
+    # own: every explanation is paid for by this key, and the SPA offers no
+    # place to paste a personal one.
+    apiKey: ""
+    # Restrict asking for an explanation to admins. On by default, because
+    # the common setup is a stand key and then every call spends the
+    # deployment's own money. Off for a stand where people bring their own.
+    adminOnly: true
+    model: "claude-sonnet-5"
   # The umbrella generates `insight-analytics-config` with every
   # APP__gears__analytics__config__* env var filled in from the
   # auto-generated credentials (see templates/secrets.yaml). The subchart

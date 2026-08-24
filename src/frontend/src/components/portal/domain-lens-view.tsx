@@ -1,3 +1,5 @@
+import { ExplainWithAi } from "@/components/widgets/dashboard/explain-with-ai";
+import { trendSnapshot } from "@/lib/insight/explain-snapshot";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { MetricName } from "@/components/widgets/metric-help-tooltip";
@@ -6,7 +8,11 @@ import { AttentionList } from "@/components/portal/attention-list";
 import { personDisplayName } from "@/lib/identities/person-display";
 import { ComingSoon } from "@/components/widgets/coming-soon";
 import { orgScopeGate } from "@/components/portal/org-scope-gate";
-import { SectionTrend } from "@/components/portal/section-trend";
+import {
+  SectionTrend,
+  type SectionTrendPoint,
+  type SectionTrendSeries,
+} from "@/components/portal/section-trend";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Tooltip,
@@ -79,7 +85,16 @@ import {
   type LensConfig,
   type SectionSpec,
 } from "@/lib/portal/lens-configs";
-import { buildTrendData, pickTrendBucket } from "@/lib/portal/trend-data";
+import {
+  buildActiveContributorData,
+  buildTrendData,
+  pickTrendBucket,
+} from "@/lib/portal/trend-data";
+import { bucketBreakdown } from "@/lib/portal/trend-drilldown";
+import {
+  TrendDrilldownDialog,
+  type TrendDrilldownState,
+} from "@/components/portal/trend-drilldown-dialog";
 import { usePortalNavActions, usePortalSlice } from "@/lib/portal/portal-nav";
 import { usePortalShowPlanned } from "@/lib/portal/portal-store";
 import type { TeamMember } from "@/types/insight";
@@ -116,6 +131,7 @@ export function DomainLensView({
 }) {
   const { period, dateRange } = usePortalPeriod();
 
+  const [drilldown, setDrilldown] = useState<TrendDrilldownState | null>(null);
   // What this install shows, not what the registry declares: a gated metric
   // takes its tile with it, and a section left with none of its own is gone
   // rather than drawn empty (`visibleSections`).
@@ -124,6 +140,7 @@ export function DomainLensView({
     () => visibleSections(declared, showPlanned),
     [declared, showPlanned]
   );
+
 
   const orgScope = useOrgScope();
   const { isFlat } = useVisibilityPolicy();
@@ -142,6 +159,16 @@ export function DomainLensView({
   );
   const memberIds = useMemo(
     () => members.map((m) => normalizePersonId(m.person_id)),
+    [members]
+  );
+  // Metric rows are keyed by the normalized id; the display name rides along
+  // so a drilldown row can say whose work it was.
+  const scopedMembers = useMemo(
+    () =>
+      members.map((m) => ({
+        person_id: normalizePersonId(m.person_id),
+        name: m.name,
+      })),
     [members]
   );
 
@@ -345,14 +372,52 @@ export function DomainLensView({
     );
   }
 
+  // The affordance sits with the page title, not on the chart: it explains the
+  // view, and a chart that grows a second card would carry two of them.
+  const trendSpec = config.sections.find(
+    (section): section is Extract<SectionSpec, { kind: "trend" }> =>
+      section.kind === "trend"
+  );
+  const charts =
+    trendSpec && trendBucket ? trendCharts(trendSpec, grid, trend, memberIds) : [];
+  const drawable = charts.filter((c) => c.data.length > 1);
+  // The roster the chart sums IS the drilldown's scope, so the two can never
+  // disagree: under a flat policy that roster is the whole organisation, and
+  // under an org chart it is the viewer's own subtree — the permission
+  // boundary identity already enforces.
+  const openTrendDrilldown = (chart: TrendChart) => {
+    setDrilldown({
+      metricKey: chart.derived ? null : chart.drilldownKey,
+      label: chart.title,
+      bucketLabel: trendBucket ?? "period",
+      period: { from: dateRange.from, to: dateRange.to },
+      members: scopedMembers,
+      breakdown: bucketBreakdown(chart.drilldownKey, trend.byKey, scopedMembers),
+    });
+  };
+
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">{config.title}</h1>
-        <p className="text-sm text-muted-foreground">
-          {orgScope.count} {orgScope.count === 1 ? "person" : "people"} ·{" "}
-          {config.tagline ?? "trend & balance"}
-        </p>
+      <div className="relative flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">{config.title}</h1>
+          <p className="text-sm text-muted-foreground">
+            {orgScope.count} {orgScope.count === 1 ? "person" : "people"} ·{" "}
+            {config.tagline ?? "trend & balance"}
+          </p>
+        </div>
+        {drawable.length > 0 && trendBucket ? (
+          <ExplainWithAi
+            className="static"
+            snapshot={trendSnapshot(drawable, {
+              title: config.title,
+              bucket: trendBucket,
+              since: dateRange.from,
+              until: dateRange.to,
+              people: memberIds.length,
+            })}
+          />
+        ) : null}
       </div>
 
       {config.sections.map((s, i) => (
@@ -372,6 +437,7 @@ export function DomainLensView({
           cohortLabel={cohortLabel}
           nameByEntity={nameByEntity}
           personIdByEntity={personIdByEntity}
+          onOpenChart={openTrendDrilldown}
         />
       ))}
 
@@ -385,6 +451,11 @@ export function DomainLensView({
           sliceLabel={sliceLabel ?? slice}
         />
       ) : null}
+
+      <TrendDrilldownDialog
+        state={drilldown}
+        onClose={() => setDrilldown(null)}
+      />
     </div>
   );
 }
@@ -417,6 +488,7 @@ function Section({
   cohortLabel,
   nameByEntity,
   personIdByEntity,
+  onOpenChart,
 }: {
   spec: SectionSpec;
   grid: GridData;
@@ -432,6 +504,7 @@ function Section({
   personIdByEntity: Map<string, string>;
   cohortOf: (id: string) => string | null;
   cohortLabel: string;
+  onOpenChart: (chart: TrendChart) => void;
 }) {
   switch (spec.kind) {
     case "headline":
@@ -454,11 +527,12 @@ function Section({
     case "trend":
       return trendBucket ? (
         <TrendSection
-          metrics={spec.metrics}
+          spec={spec}
           grid={grid}
           trend={trend}
           bucket={trendBucket}
           memberIds={memberIds}
+          onOpenChart={onOpenChart}
         />
       ) : (
         // Say which of the two dials to turn — a bare "no data" would read as
@@ -1065,59 +1139,121 @@ function StatTilesSection({
 
 /* ── trend (rule 8) ──────────────────────────────────────────────────── */
 
+/**
+ * The lines the trend chart draws and their points. Shared with the zone
+ * header, whose explain affordance describes the very same chart.
+ */
+export interface TrendChart {
+  id: string;
+  title: string;
+  description: string;
+  /** The catalog metric this chart drills into. */
+  drilldownKey: string;
+  /** Counted from another metric's rows, so it has no records of its own. */
+  derived?: boolean;
+  series: SectionTrendSeries[];
+  data: SectionTrendPoint[];
+}
+
+/**
+ * One chart per measure, plus the derived contributor count when the spec
+ * asks for it. Shared with the zone header, whose explain affordance describes
+ * every chart on the page.
+ */
+function trendCharts(
+  spec: Extract<SectionSpec, { kind: "trend" }>,
+  grid: GridData,
+  trend: TrendData,
+  memberIds: readonly string[]
+): TrendChart[] {
+  const charts = spec.metrics
+    .map((key): TrendChart | null => {
+      const r = grid.byKey.get(key);
+      if (!r || r.computation !== "sum") return null;
+      const label = r.short_label ?? r.label;
+      return {
+        id: key,
+        title: label,
+        description: "Team total",
+        drilldownKey: key,
+        series: [{ key, label, type: "line" as const }],
+        data: buildTrendData([key], trend.byKey, memberIds),
+      };
+    })
+    .filter((c): c is TrendChart => c != null);
+
+  const activeKey = spec.activeContributorsFor;
+  if (activeKey && grid.byKey.has(activeKey)) {
+    const of = grid.byKey.get(activeKey);
+    charts.push({
+      id: `${activeKey}:active`,
+      title: `Active contributors · ${of?.short_label ?? of?.label ?? activeKey}`,
+      description: "People with at least one",
+      drilldownKey: activeKey,
+      derived: true,
+      series: [{ key: "active", label: "People", type: "line" as const }],
+      data: buildActiveContributorData(activeKey, trend.byKey, memberIds),
+    });
+  }
+
+  return charts;
+}
+
 function TrendSection({
-  metrics,
+  spec,
   grid,
   trend,
   bucket,
   memberIds,
+  onOpenChart,
 }: {
-  metrics: readonly string[];
+  spec: Extract<SectionSpec, { kind: "trend" }>;
   grid: GridData;
   trend: TrendData;
   bucket: MetricBucket;
   memberIds: readonly string[];
+  onOpenChart: (chart: TrendChart) => void;
 }) {
-  const series = metrics
-    .map((key) => {
-      const r = grid.byKey.get(key);
-      if (!r || r.computation !== "sum") return null;
-      return { key, label: r.short_label ?? r.label };
-    })
-    .filter((x): x is NonNullable<typeof x> => x != null)
-    .map((s, i) => ({
-      key: s.key,
-      label: s.label,
-      type: "line" as const,
-      yAxisId: (i === 0 ? "left" : "right") as "left" | "right",
-    }));
-  const data = buildTrendData(
-    series.map((s) => s.key),
-    trend.byKey,
-    memberIds
-  );
+  const charts = trendCharts(spec, grid, trend, memberIds);
 
-  if (series.length === 0) return null;
+  if (charts.length === 0) return null;
   if (trend.isError)
     return (
       <SectionTrend
         title="Activity over time"
-        series={series}
+        series={charts[0]?.series ?? []}
         data={[]}
         isError
         onRetry={trend.refetch}
       />
     );
-  if (data.length < 2) return null;
+
+  const drawable = charts.filter((c) => c.data.length > 1);
+  if (drawable.length === 0) return null;
+
+  // One chart per measure rather than three lines over two axes: a shared
+  // axis makes a count of people and a count of lines look comparable when
+  // they are not, and there is nowhere to click from a legend.
   return (
-    <SectionTrend
-      title="Activity over time"
-      description={`Team totals · per ${bucket}`}
-      series={series}
-      data={data}
-      rightAxis={series.some((s) => s.yAxisId === "right")}
-      isPending={trend.isPending}
-    />
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(34rem,100%),1fr))] gap-4">
+      {drawable.map((chart) => (
+        <button
+          key={chart.id}
+          type="button"
+          className="rounded-xl text-left transition-opacity hover:opacity-90 focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none"
+          onClick={() => onOpenChart(chart)}
+          aria-label={`Open ${chart.title} details`}
+        >
+          <SectionTrend
+            title={chart.title}
+            description={`${chart.description} · per ${bucket}`}
+            series={chart.series}
+            data={chart.data}
+            isPending={trend.isPending}
+          />
+        </button>
+      ))}
+    </div>
   );
 }
 
