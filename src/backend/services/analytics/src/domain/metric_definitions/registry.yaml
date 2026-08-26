@@ -604,7 +604,7 @@ metrics:
     label: AI seat cost
     short_label: Seat cost
     description: What a seat costs before any usage
-    explanation: The invoiced price of one seat for a billing month, taken from the per-seat amount on the invoice. Dated at the first day of that month, so a window inside a month returns nothing and one spanning two months returns both fees. A seat whose tier the invoice does not price returns no value.
+    explanation: The invoiced price of one seat for a billing month, from the invoice's per-seat amount. Dated at that month's first day, so a window must hold it to return the fee. The month comes from the read, not from the vendor. A seat whose tier the invoice does not price returns no value.
     format: currency
     direction: lower_is_better
     entity_type: person
@@ -621,8 +621,8 @@ metrics:
     subject: cost
     label: AI actual usage cost
     short_label: Actual cost
-    description: Exact monthly cost billed on top of the seat fee
-    explanation: What the vendor billed on top of the seat fee, once the usage that fee covered was exhausted. The exact monthly amount, dated at the first day of its billing month, so a window inside a month returns nothing — read the per-day distribution instead. Never added to potential usage cost.
+    description: Monthly cost billed on top of the seat fee, as last read
+    explanation: What the vendor billed on top of the seat fee, once included usage ran out. Exact as of that month's last reading, dated at its first day, so a window missing that day returns nothing — read the per-day distribution. The month comes from the read, not the vendor. Never added to potential usage cost.
     format: currency
     direction: lower_is_better
     entity_type: person
@@ -640,7 +640,7 @@ metrics:
     label: AI actual usage cost — approximate distribution
     short_label: Actual cost / day
     description: The monthly billed cost spread across its days
-    explanation: The billed extra-usage cost placed on the days it was spent. Only a running month-to-date total is reported, so a day's figure is the step between two readings — exact in sum over a month, approximate in placement. A day with no reading shows no point, and no day is ever negative.
+    explanation: The billed extra-usage cost placed on the days spent. Only a month-to-date total is reported, so a day is the step between readings — exact in sum against it, approximate in placement. The month comes from the read, so the 1st can cover several days. No reading means no point, and none is negative.
     format: currency
     direction: lower_is_better
     entity_type: person
@@ -658,7 +658,7 @@ metrics:
     label: Extra-usage ceiling used
     short_label: Ceiling used
     description: Share of the extra-usage ceiling consumed
-    explanation: Extra usage measured against the ceiling on the seat. At 100 per cent the vendor stops the seat, so this reads as proximity to being blocked, not as waste. A seat with no ceiling returns no value, not a zero. Above 100 per cent, the ceiling was lowered below what the seat had spent.
+    explanation: Extra usage measured against the seat's ceiling. At 100% the vendor stops the seat, so this reads as proximity to being blocked, not waste. A seat with no ceiling returns no value, not zero. Above 100%, the ceiling was lowered below what the seat had spent. Its month comes from the read, not the vendor.
     format: percent
     direction: lower_is_better
     entity_type: person
