@@ -1475,6 +1475,29 @@
               "view"
             ],
             "type": "object"
+          },
+          {
+            "description": "This view's computation failed; sibling views and metrics are\nunaffected. `message` detail depends on the caller's role: admins get\nthe underlying description, everyone else a generic one.",
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/MetricViewErrorCode"
+              },
+              "message": {
+                "type": "string"
+              },
+              "view": {
+                "enum": [
+                  "error"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "view"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -1709,6 +1732,16 @@
           "until"
         ],
         "type": "object"
+      },
+      "MetricViewErrorCode": {
+        "enum": [
+          "SOURCE_RELATION_MISSING",
+          "RESOURCE_EXHAUSTED",
+          "QUERY_TIMEOUT",
+          "RESULT_PARSE_FAILED",
+          "QUERY_FAILED"
+        ],
+        "type": "string"
       },
       "MetricViewRequest": {
         "oneOf": [
