@@ -17,7 +17,13 @@ export type MetricResultViewKind =
   | "rollup"
   | "histogram";
 export type MetricBucket = "day" | "week" | "month";
-export type MetricComputation = "sum" | "ratio" | "median" | "distinct_count";
+export type MetricComputation =
+  | "sum"
+  | "ratio"
+  | "median"
+  | "percentile"
+  | "stddev"
+  | "distinct_count";
 export type MetricEntityType = "person" | "tenant";
 export type MetricResultsEntity =
   | { type: "person"; ids: string[] }
@@ -87,6 +93,8 @@ export type MetricResult =
   | SumMetricResult
   | RatioMetricResult
   | MedianMetricResult
+  | PercentileMetricResult
+  | StddevMetricResult
   | DistinctCountMetricResult;
 
 interface MetricResultBase {
@@ -115,6 +123,15 @@ export interface RatioMetricResult extends MetricResultBase {
 
 export interface MedianMetricResult extends MetricResultBase {
   computation: "median";
+}
+
+export interface PercentileMetricResult extends MetricResultBase {
+  computation: "percentile";
+  q: number;
+}
+
+export interface StddevMetricResult extends MetricResultBase {
+  computation: "stddev";
 }
 
 interface DistinctCountMetricResult extends MetricResultBase {
