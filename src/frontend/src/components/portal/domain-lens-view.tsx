@@ -57,7 +57,6 @@ import type {
   MetricDirection,
 } from "@/api/metric-results-client";
 import { normalizePersonId } from "@/lib/metrics/entity";
-import { githubRepoUrl } from "@/lib/metrics/provider-links";
 import {
   personsEvidenceSelection,
   type MetricEvidenceSelection,
@@ -264,13 +263,7 @@ export function DomainLensView({
         views: [
           {
             view: "breakdown" as const,
-            // `source` rides along so a row knows which provider it came
-            // from — the only thing that makes a link safe to build.
-            dimensions: [
-              s.dimension,
-              ...(s.splitBy ? [s.splitBy] : []),
-              ...(s.dimension === LINKABLE_DIMENSION ? [SOURCE_DIMENSION] : []),
-            ],
+            dimensions: [s.dimension, ...(s.splitBy ? [s.splitBy] : [])],
           },
         ],
       })),
@@ -1717,14 +1710,7 @@ function CompositionSection({
           });
         }
         const label = dim.label?.trim() || running?.label || dim.value;
-        const href =
-          running?.href ??
-          (spec.dimension === LINKABLE_DIMENSION
-            ? (githubRepoUrl(
-                row.dimensions.find((d) => d.key === SOURCE_DIMENSION)?.value,
-                label
-              ) ?? undefined)
-            : undefined);
+        const href = running?.href ?? dim.href;
         bucket.set(dim.value, {
           label,
           value: (running?.value ?? 0) + row.value,
@@ -1988,12 +1974,6 @@ function shareLabel(pct: number): string {
 
 /** Same dwell as every other hover explanation in the product. */
 const HOVER_DELAY_MS = 400;
-
-/** The dimension whose rows can address something outside the product. */
-const LINKABLE_DIMENSION = "repository";
-
-/** Names the provider a git row came from. */
-const SOURCE_DIMENSION = "source";
 
 /** Rows shown before the reader opts into the full list. */
 const BAR_LIST_COLLAPSED = 12;
