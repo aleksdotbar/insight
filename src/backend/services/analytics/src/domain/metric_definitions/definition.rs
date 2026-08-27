@@ -99,6 +99,18 @@ impl AliasCollapse {
             _ => None,
         }
     }
+
+    pub fn needs_pre_collapse(self) -> bool {
+        !matches!(self, Self::Sum)
+    }
+
+    pub fn aggregate_fn(self) -> &'static str {
+        match self {
+            Self::Sum => "sum",
+            Self::Max => "max",
+            Self::Min => "min",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -355,6 +367,25 @@ impl MetricDefinition {
             | ComputationSpec::Stddev { value }
             | ComputationSpec::DistinctCount { value } => &value.observation,
             ComputationSpec::Ratio { numerator, .. } => &numerator.observation,
+        }
+    }
+}
+
+impl ComputationSpec {
+    pub fn inputs(&self) -> Vec<&MetricInput> {
+        match self {
+            Self::Sum { value }
+            | Self::Median { value }
+            | Self::Percentile { value, .. }
+            | Self::Stddev { value }
+            | Self::DistinctCount { value } => {
+                vec![value]
+            }
+            Self::Ratio {
+                numerator,
+                denominator,
+                ..
+            } => vec![numerator, denominator],
         }
     }
 }

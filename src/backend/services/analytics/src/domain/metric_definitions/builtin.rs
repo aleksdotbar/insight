@@ -559,13 +559,13 @@ mod tests {
         }
     }
 
-    // INVARIANT: a median input may not declare a collapse — median is
-    // event-grain, and merging same-day rows moves the quantile. Additive
-    // computations collapse by design, and distinct counts are unaffected:
-    // they read `uniqExact(subject_key)` and the collapse groups by
-    // `subject_key`, so the collapse is a no-op there.
+    // INVARIANT: a distribution statistic may not declare a collapse — median,
+    // percentile and standard deviation are event-grain, and merging same-day
+    // rows moves the statistic. Additive computations collapse by design, and
+    // distinct counts are unaffected: they read `uniqExact(subject_key)` and the
+    // collapse groups by `subject_key`, so the collapse is a no-op there.
     #[test]
-    fn alias_collapse_is_never_declared_on_median_inputs() {
+    fn alias_collapse_is_never_declared_on_distribution_inputs() {
         let collapse_by_source: HashMap<&str, HashMap<&str, AliasCollapse>> = builtin_sources()
             .iter()
             .map(|builtin_source| {
@@ -584,7 +584,12 @@ mod tests {
             let collapses = collapse_by_source
                 .get(metric.source_key.as_str())
                 .unwrap_or_else(|| panic!("unknown source for {}", metric.metric_key));
-            if !matches!(metric.computation, SeedComputation::Median) {
+            if !matches!(
+                metric.computation,
+                SeedComputation::Median
+                    | SeedComputation::Percentile { .. }
+                    | SeedComputation::Stddev
+            ) {
                 continue;
             }
             for input in &metric.inputs {
@@ -593,7 +598,7 @@ mod tests {
                     .copied()
                     .unwrap_or_default();
                 assert!(
-                    matches!(collapse, AliasCollapse::Sum),
+                    !collapse.needs_pre_collapse(),
                     "{} is {:?} but binds {}, which declares alias_collapse: {}",
                     metric.metric_key,
                     metric.computation,

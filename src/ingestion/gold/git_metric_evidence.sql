@@ -1,49 +1,24 @@
 {{ metric_evidence_table(join_use_nulls=1) }}
 
--- Resolution happens HERE, once per gold build: evidence carries BOTH keys —
--- `entity_id` is the canonical person id (or '' when identity cannot place
--- the row: those rows stay for coverage but reach no serving relation), and
--- `source_entity_id` keeps the source-native email for provenance. Rows that
--- carry the author's source account id (pull requests) resolve through the
--- account binding first and fall back to the email map; everything else is
--- email-only. Everything downstream (observations, cohorts, coverage,
--- drilldown) reads THIS snapshot, so one identity mapping answers for the
--- whole build.
+-- Resolution happens at READ time, and account-first: a row naming its author's
+-- account (pull requests) resolves through that binding, everything else
+-- through the e-mail map. The account columns below are that key, in the
+-- identity store's vocabulary rather than data_source's.
 SELECT
     src.tenant_id,
     src.source_key,
     src.entity_type,
-    -- Null-proof under EITHER join_use_nulls setting (models differ): the
-    -- conditions are non-Nullable via coalesce, and person_id is read only on
-    -- the matched branch, so entity_id is a plain String fit for the sort key.
-    -- Account first: an account binding is the source's own answer to "whose
-    -- row is this" and survives an empty profile email; the email map decides
-    -- only when the row carries no bound account. A matched account bound to
-    -- the excluded person terminates resolution — the row attributes to
-    -- nobody even when its emails would resolve, or a bot pull request whose
-    -- commits carry a human's email would attribute to that human.
-    multiIf(
-        coalesce(account_map.account_id, '') != '',
-        if(
-            assumeNotNull(account_map.person_id) = {{ excluded_person_id() }},
-            '',
-            toString(assumeNotNull(account_map.person_id))
-        ),
-        coalesce(identity_map.email, '') != '',
-        toString(assumeNotNull(identity_map.person_id)),
-        ''
-    ) AS entity_id,
-    src.entity_id AS source_entity_id,
+    {{ normalized_email('src.entity_id') }} AS entity_id,
+    src.account_source_type,
+    -- INVARIANT: every account column is a plain String in every evidence
+    -- relation. The class PR source_id is Nullable, and one family typing it
+    -- differently fails the service's exact-column probe, blanking its metrics.
+    coalesce(src.account_source_id, '') AS account_source_id,
+    src.account_id,
     src.metric_date,
     src.observed_at,
     src.measure_key,
-    -- Account-qualified: several source-day record_ids (date:measure:dims
-    -- hash) are identical across one person's accounts once entity_id is
-    -- canonical, and both the evidence uniqueness grain and the drilldown
-    -- cursor need one row per record key. Hashed, not the raw email — the id
-    -- reaches the client and stays opaque. The account id joins the salt so
-    -- two email-less accounts cannot collide on one record key.
-    concat(src.record_id, ':', hex(sipHash64(concat(src.entity_id, ':', src.account_id)))) AS record_id,
+    src.record_id,
     src.record_kind,
     src.granularity,
     src.record_label,
@@ -859,5 +834,3 @@ FROM {{ ref('git_review_events') }}
 WHERE tenant_id IS NOT NULL
   AND metric_date IS NOT NULL
 ) AS src
-{{ resolved_person_id_join('src') }}
-{{ resolved_person_id_by_account_join('src') }}
