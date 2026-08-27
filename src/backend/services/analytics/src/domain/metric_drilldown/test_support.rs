@@ -2,8 +2,8 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::domain::metric_definitions::definition::{
-    MetricBase, MetricDirection, MetricFormat, MetricInput, MetricInputRole, ObservationRelation,
-    ObservationSource,
+    AliasCollapse, MetricBase, MetricDirection, MetricFormat, MetricInput, MetricInputRole,
+    ObservationRelation, ObservationSource,
 };
 use crate::domain::metric_definitions::{
     ComputationSpec, EvidenceColumnType, EvidenceDetailColumn, EvidencePresentation,
@@ -25,6 +25,7 @@ pub(super) fn input(role: MetricInputRole, measure_key: &str) -> MetricInput {
         ),
         source_key: "git".to_owned(),
         measure_key: measure_key.to_owned(),
+        alias_collapse: AliasCollapse::Sum,
     }
 }
 

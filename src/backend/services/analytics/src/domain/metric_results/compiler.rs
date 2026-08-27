@@ -1490,8 +1490,8 @@ mod tests {
     use chrono::NaiveDate;
 
     use crate::domain::metric_definitions::definition::{
-        CustomObservationSql, MetricBase, MetricDirection, MetricFormat, MetricInput,
-        MetricInputRole, ObservationRelation, ObservationSource,
+        AliasCollapse, CustomObservationSql, MetricBase, MetricDirection, MetricFormat,
+        MetricInput, MetricInputRole, ObservationRelation, ObservationSource,
     };
 
     fn base(dimensions: Vec<&str>) -> MetricBase {
@@ -1519,6 +1519,7 @@ mod tests {
             ),
             source_key: "ai_usage".to_owned(),
             measure_key: measure_key.to_owned(),
+            alias_collapse: AliasCollapse::Sum,
         }
     }
 
@@ -1697,6 +1698,7 @@ mod tests {
                     )),
                     source_key: "custom_ai_usage".to_owned(),
                     measure_key: "accepted_lines".to_owned(),
+                    alias_collapse: AliasCollapse::Sum,
                 },
             },
         }
