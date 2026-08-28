@@ -3,9 +3,11 @@ use std::fmt::Write;
 
 use serde::Deserialize;
 
-use super::batch::{PeerPopulation, ResolvedGroupLimit, peer_aliases, period_alias};
+use super::batch::{
+    PeerPopulation, ResolvedGroupLimit, peer_aliases, period_alias, period_compare_alias,
+};
 use super::validation::{
-    HISTOGRAM_BINS, ValidatedDimensionFilter, ValidatedEntitySelection,
+    DateWindow, HISTOGRAM_BINS, ValidatedDimensionFilter, ValidatedEntitySelection,
     ValidatedMetricResultsRequest, query_row_limit,
 };
 use super::view::Bucket;
@@ -54,6 +56,10 @@ pub struct CompiledQuery {
 pub struct PeriodQueryRow {
     pub entity_id: String,
     pub value: Option<f64>,
+    /// The same reading over the comparison window; `None` when none was asked
+    /// for.
+    #[serde(default)]
+    pub compare_to: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,9 +152,21 @@ pub(crate) fn compile_period_batch_query(
     filters: &[ValidatedDimensionFilter],
 ) -> CompiledQuery {
     let mut params = Vec::new();
-    let selects = item_value_selects(defs, &mut params, period_alias);
-    let read = batch_resolved_observation_from(defs, req, &mut params);
-    let metric_scope = shared_observation_where(defs, req, filters, &mut params);
+    // With a comparison window the outer WHERE spans both, so each aggregate —
+    // the primary one included — carries its own window term. Without one the
+    // outer WHERE alone scopes the dates and the SQL is unchanged.
+    let mut selects = item_value_selects(defs, &mut params, period_alias, primary_window(req));
+    if let Some(compare_to) = req.compare_to {
+        selects.push_str(&item_value_selects(
+            defs,
+            &mut params,
+            period_compare_alias,
+            Some(compare_to),
+        ));
+    }
+    let read = batch_resolved_observation_from(defs, req, ScanScope::WithComparison, &mut params);
+    let metric_scope =
+        shared_observation_where_within(defs, req, filters, ScanScope::WithComparison, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
     let observation_table = &read.from;
     let limit = query_row_limit();
@@ -162,8 +180,92 @@ pub(crate) fn compile_period_batch_query(
         LIMIT {limit}
         "
     );
-    let sql = transformed_batch(defs, inner, period_alias);
+    let sql = transformed_batch(defs, inner, req.compare_to.is_some());
     CompiledQuery { sql, params }
+}
+
+/// The window the primary value column answers: `None` — and so no window term
+/// at all — until a comparison window makes the outer WHERE span two ranges.
+fn primary_window(req: &ValidatedMetricResultsRequest) -> Option<DateWindow> {
+    req.compare_to.map(|_| DateWindow {
+        from: req.from,
+        to: req.to,
+    })
+}
+
+/// Which ranges a read scans.
+///
+/// INVARIANT: this is a property of the VIEW, not of the request. Only `period`
+/// and `breakdown` answer the comparison window, and they scope each aggregate
+/// to its own range. Every other view answers over the primary period alone and
+/// its aggregates carry NO window term — widening its scan would silently fold
+/// both ranges into one number.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanScope {
+    PrimaryOnly,
+    WithComparison,
+}
+
+impl ScanScope {
+    fn windows(self, req: &ValidatedMetricResultsRequest) -> Vec<DateWindow> {
+        let primary = DateWindow {
+            from: req.from,
+            to: req.to,
+        };
+        match (self, req.compare_to) {
+            (Self::WithComparison, Some(compare_to)) => vec![primary, compare_to],
+            (Self::WithComparison, None) | (Self::PrimaryOnly, _) => vec![primary],
+        }
+    }
+}
+
+/// The date predicate a read scans: the primary period, and the comparison
+/// window when the view is one that answers it.
+///
+/// INVARIANT: a disjunction, never `min(from)..max(to)`. The envelope form
+/// reads every day BETWEEN two far-apart windows and lets the conditional
+/// aggregates discard it, which is the cost this whole request shape exists to
+/// avoid. A single-range request yields the bare term it always had, so its
+/// compiled SQL is unchanged.
+fn scan_window_predicate(
+    req: &ValidatedMetricResultsRequest,
+    column: &str,
+    separator: &str,
+    scope: ScanScope,
+    params: &mut Vec<String>,
+) -> String {
+    let mut terms = Vec::with_capacity(2);
+    for window in scope.windows(req) {
+        params.push(window.from.to_string());
+        params.push(window.to.to_string());
+        terms.push(format!(
+            "{column} >= toDate(?){separator}AND {column} <= toDate(?)"
+        ));
+    }
+    match terms.len() {
+        1 => terms.into_iter().next().unwrap_or_default(),
+        _ => format!(
+            "({})",
+            terms
+                .into_iter()
+                .map(|term| format!("({term})"))
+                .collect::<Vec<_>>()
+                .join(" OR ")
+        ),
+    }
+}
+
+/// The SQL term scoping one conditional aggregate to a window, with its bounds
+/// pushed in textual order. Empty for the unwindowed form.
+fn window_term(window: Option<DateWindow>, params: &mut Vec<String>) -> String {
+    match window {
+        None => String::new(),
+        Some(window) => {
+            params.push(window.from.to_string());
+            params.push(window.to.to_string());
+            " AND metric_date >= toDate(?) AND metric_date <= toDate(?)".to_owned()
+        }
+    }
 }
 
 pub(crate) fn compile_timeseries_query(
@@ -178,7 +280,7 @@ pub(crate) fn compile_timeseries_query(
         return compile_capped_timeseries_query(def, req, bucket, dimensions, filters, group_limit);
     }
     let mut params = grouped_value_params(def);
-    let read = single_resolved_observation_from(def, req, &mut params);
+    let read = single_resolved_observation_from(def, req, ScanScope::PrimaryOnly, &mut params);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
@@ -228,7 +330,7 @@ pub(crate) fn compile_group_ranking_query(
     count: usize,
 ) -> CompiledQuery {
     let mut params = grouped_value_params(def);
-    let read = single_resolved_observation_from(def, req, &mut params);
+    let read = single_resolved_observation_from(def, req, ScanScope::PrimaryOnly, &mut params);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
@@ -269,7 +371,7 @@ fn compile_capped_timeseries_query(
     group_limit: &ResolvedGroupLimit,
 ) -> CompiledQuery {
     let mut params = Vec::new();
-    let read = single_resolved_observation_from(def, req, &mut params);
+    let read = single_resolved_observation_from(def, req, ScanScope::PrimaryOnly, &mut params);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
@@ -430,9 +532,32 @@ pub(crate) fn compile_breakdown_query(
     dimensions: &[String],
     filters: &[ValidatedDimensionFilter],
 ) -> CompiledQuery {
-    let mut params = grouped_value_params(def);
-    let read = single_resolved_observation_from(def, req, &mut params);
-    params.extend(metric_where_params(def, req));
+    let mut params = Vec::new();
+    let mut value_selects = String::new();
+    for (staged, presence_alias, window) in breakdown_columns(req) {
+        let expr = grouped_value_expr_within(def, window, &mut params);
+        let _ = write!(
+            value_selects,
+            ",
+            {expr} AS {staged}"
+        );
+        // Presence is its own column because the value cannot carry it: a
+        // ratio over a group that IS in the window reads NULL whenever its
+        // denominator is zero, which is indistinguishable from a group the
+        // window never had. A standalone request over that window returns the
+        // first and omits the second, so the projection needs both facts.
+        let (Some(window), Some(presence_alias)) = (window, presence_alias) else {
+            continue;
+        };
+        let presence = window_presence_expr(window, &mut params);
+        let _ = write!(
+            value_selects,
+            ",
+            {presence} AS {presence_alias}"
+        );
+    }
+    let read = single_resolved_observation_from(def, req, ScanScope::WithComparison, &mut params);
+    let metric_where = metric_where_scanned(def, req, &mut params);
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
     let observation_table = &read.from;
@@ -445,23 +570,128 @@ pub(crate) fn compile_breakdown_query(
     };
     let group = format!("{group}{source_group}");
     let limit = query_row_limit();
-    let value_expr = grouped_value_expr(def);
     let inner = format!(
         r"
         SELECT
-            entity_id{dim_select}{source_select},
-            {value_expr} AS value
+            entity_id{dim_select}{source_select}{value_selects}
         FROM {observation_table}
         WHERE {metric_where}
           {filter_where}{entity_scope}
         GROUP BY {group}
         ORDER BY entity_id
         LIMIT {limit}
-        ",
-        metric_where = metric_where(def, req.enforce_tenant_scope),
+        "
     );
-    let sql = transformed_single(def, inner);
+    let sql = if req.compare_to.is_none() {
+        transformed_single(def, inner)
+    } else {
+        projected_breakdown_columns(def, &inner)
+    };
     CompiledQuery { sql, params }
+}
+
+/// The value column per window a breakdown computes, with the staged name it
+/// is aliased to inside the query and the presence flag beside it.
+///
+/// INVARIANT: a windowed breakdown must NOT alias any aggregate `value`. The
+/// aggregates read a column of that name, and a sibling's argument resolves to
+/// the alias instead of the column — which ClickHouse rejects outright as an
+/// aggregate inside an aggregate. The wire names are put back by
+/// `projected_breakdown_columns`.
+type BreakdownColumn = (&'static str, Option<&'static str>, Option<DateWindow>);
+
+fn breakdown_columns(req: &ValidatedMetricResultsRequest) -> Vec<BreakdownColumn> {
+    let Some(compare_to) = req.compare_to else {
+        return vec![("value", None, None)];
+    };
+    let primary = DateWindow {
+        from: req.from,
+        to: req.to,
+    };
+    vec![
+        (STAGED_VALUE, Some(PRESENT), Some(primary)),
+        (STAGED_COMPARE, Some(PRESENT_COMPARE), Some(compare_to)),
+    ]
+}
+
+const STAGED_VALUE: &str = "staged_value";
+const STAGED_COMPARE: &str = "staged_compare";
+pub(crate) const PRESENT: &str = "present";
+pub(crate) const PRESENT_COMPARE: &str = "present_compare";
+pub(crate) const VALUE_COMPARE: &str = "value_compare";
+
+/// Whether a group has any row inside one window — the fact a standalone
+/// request over that window expresses by emitting the group or not.
+fn window_presence_expr(window: DateWindow, params: &mut Vec<String>) -> String {
+    params.push(window.from.to_string());
+    params.push(window.to.to_string());
+    "countIf(metric_date >= toDate(?) AND metric_date <= toDate(?)) > 0".to_owned()
+}
+
+/// `metric_where` with its own placeholders bound, so the scanned dates can be
+/// a disjunction whose arity depends on the request.
+fn metric_where_scanned(
+    def: &MetricDefinition,
+    req: &ValidatedMetricResultsRequest,
+    params: &mut Vec<String>,
+) -> String {
+    let (source_key, measures) = match &def.spec {
+        ComputationSpec::Sum { value }
+        | ComputationSpec::Median { value }
+        | ComputationSpec::Percentile { value, .. }
+        | ComputationSpec::Stddev { value }
+        | ComputationSpec::DistinctCount { value } => {
+            (value.source_key.clone(), vec![value.measure_key.clone()])
+        }
+        ComputationSpec::Ratio {
+            numerator,
+            denominator,
+            ..
+        } => (
+            numerator.source_key.clone(),
+            vec![
+                numerator.measure_key.clone(),
+                denominator.measure_key.clone(),
+            ],
+        ),
+    };
+    let tenant = tenant_predicate(req.enforce_tenant_scope);
+    params.push(req.tenant_id.to_string());
+    params.push(source_key);
+    params.push(req.entity.entity_type().to_owned());
+    let scan = scan_window_predicate(req, "metric_date", " ", ScanScope::WithComparison, params);
+    let measure_predicate = if measures.len() == 1 {
+        "measure_key = ?"
+    } else {
+        "measure_key IN (?, ?)"
+    };
+    for measure in measures {
+        params.push(measure);
+    }
+    format!("{tenant} AND source_key = ? AND entity_type = ? AND {scan} AND {measure_predicate}")
+}
+
+/// Rename the staged columns to their wire names, applying the value transform
+/// on the way — the projection stage `transformed_single` performs for an
+/// uncompared breakdown, over both columns.
+fn projected_breakdown_columns(def: &MetricDefinition, inner: &str) -> String {
+    let mut selects = String::new();
+    for (staged, wire) in [(STAGED_VALUE, "value"), (STAGED_COMPARE, VALUE_COMPARE)] {
+        let expr = transformed(def, staged.to_owned());
+        let _ = write!(
+            selects,
+            ",
+            {expr} AS {wire}"
+        );
+    }
+    let excluded = format!("{STAGED_VALUE}, {STAGED_COMPARE}");
+    format!(
+        r"
+        SELECT
+            * EXCEPT ({excluded}){selects}
+        FROM ({inner})
+        "
+    )
 }
 
 pub(crate) fn compile_rollup_query(
@@ -486,7 +716,7 @@ fn compile_uncapped_rollup_query(
     filters: &[ValidatedDimensionFilter],
 ) -> CompiledQuery {
     let mut params = grouped_value_params(def);
-    let read = single_resolved_observation_from(def, req, &mut params);
+    let read = single_resolved_observation_from(def, req, ScanScope::PrimaryOnly, &mut params);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
@@ -524,7 +754,7 @@ fn compile_capped_rollup_query(
     group_limit: &ResolvedGroupLimit,
 ) -> CompiledQuery {
     let mut params = Vec::new();
-    let read = single_resolved_observation_from(def, req, &mut params);
+    let read = single_resolved_observation_from(def, req, ScanScope::PrimaryOnly, &mut params);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
@@ -630,6 +860,58 @@ fn grouped_value_expr(def: &MetricDefinition) -> String {
     }
 }
 
+/// `grouped_value_expr` scoped to one window, pushing its own placeholders in
+/// textual order — the SELECT-list arity now varies per request, so the ratio
+/// arm can no longer lean on `metric_params` leading with a fixed pair.
+/// `window: None` reproduces the unwindowed expression exactly.
+fn grouped_value_expr_within(
+    def: &MetricDefinition,
+    window: Option<DateWindow>,
+    params: &mut Vec<String>,
+) -> String {
+    match &def.spec {
+        ComputationSpec::Sum { .. } => {
+            let window = window_term(window, params);
+            format!("sumIf(value, value IS NOT NULL{window})")
+        }
+        ComputationSpec::Ratio {
+            numerator,
+            denominator,
+            scale,
+            denominator_aggregation,
+        } => {
+            params.push(numerator.measure_key.clone());
+            let numerator_window = window_term(window, params);
+            params.push(denominator.measure_key.clone());
+            let denominator_window = window_term(window, params);
+            let denominator = ratio_denominator_expr(
+                *denominator_aggregation,
+                &format!("measure_key = ? AND value IS NOT NULL{denominator_window}"),
+                &format!("measure_key = ? AND subject_key IS NOT NULL{denominator_window}"),
+            );
+            format!(
+                "{scale} * sumIfOrNull(value, measure_key = ? AND value IS NOT NULL{numerator_window}) / nullIf({denominator}, 0)"
+            )
+        }
+        ComputationSpec::Median { .. } => {
+            let window = window_term(window, params);
+            format!("quantileExactIf(0.5)(value, value IS NOT NULL{window})")
+        }
+        ComputationSpec::Percentile { q, .. } => {
+            let window = window_term(window, params);
+            format!("quantileExactIf({q})(value, value IS NOT NULL{window})")
+        }
+        ComputationSpec::Stddev { .. } => {
+            let window = window_term(window, params);
+            format!("stddevSampIf(value, value IS NOT NULL{window})")
+        }
+        ComputationSpec::DistinctCount { .. } => {
+            let window = window_term(window, params);
+            format!("toFloat64(uniqExactIf(subject_key, subject_key IS NOT NULL{window}))")
+        }
+    }
+}
+
 // Deterministic fixed-width binning over each entity's exact [min, max]:
 // pure arithmetic over exact aggregates, so identical data always yields
 // identical bins (the adaptive `histogram()` aggregate is merge-order
@@ -644,7 +926,7 @@ pub(crate) fn compile_histogram_query(
     filters: &[ValidatedDimensionFilter],
 ) -> CompiledQuery {
     let mut params = grouped_value_params(def);
-    let read = single_resolved_observation_from(def, req, &mut params);
+    let read = single_resolved_observation_from(def, req, ScanScope::PrimaryOnly, &mut params);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
@@ -708,7 +990,7 @@ pub(crate) fn compile_pooled_histogram_query(
     filters: &[ValidatedDimensionFilter],
 ) -> CompiledQuery {
     let mut params = grouped_value_params(def);
-    let read = single_resolved_observation_from(def, req, &mut params);
+    let read = single_resolved_observation_from(def, req, ScanScope::PrimaryOnly, &mut params);
     params.extend(metric_where_params(def, req));
     let filter_where = dimension_filter_where(filters, &mut params);
     let entity_scope = read.entity_scope(req, &mut params);
@@ -794,16 +1076,18 @@ fn compile_declared_cohort_peer_batch_query(
     push_cohort_scope(&mut params, req, cohort_key);
     params.extend(req.entity.entity_ids());
     push_cohort_scope(&mut params, req, cohort_key);
-    let value_selects = item_value_selects(defs, &mut params, period_alias);
+    let value_selects = item_value_selects(defs, &mut params, period_alias, None);
     let collapses = batch_alias_collapses(defs);
     let observation_table = resolved_observation_from(
         batch_observation_source(defs),
         &PersonScope::CohortMembers(req),
         &collapses,
+        ScanScope::PrimaryOnly,
         &mut params,
     )
     .from;
-    let metric_scope = shared_observation_where(defs, req, filters, &mut params);
+    let metric_scope =
+        shared_observation_where_within(defs, req, filters, ScanScope::PrimaryOnly, &mut params);
 
     let entity_id_params = placeholders(req.entity.len());
     let cohort_table = cohort_table(CohortSource::MetricEntityCohortsCurrent);
@@ -868,16 +1152,18 @@ fn compile_tenant_peer_batch_query(
     filters: &[ValidatedDimensionFilter],
 ) -> CompiledQuery {
     let mut params = req.entity.entity_ids();
-    let value_selects = item_value_selects(defs, &mut params, period_alias);
+    let value_selects = item_value_selects(defs, &mut params, period_alias, None);
     let collapses = batch_alias_collapses(defs);
     let observation_table = resolved_observation_from(
         batch_observation_source(defs),
         &PersonScope::TenantWide(req),
         &collapses,
+        ScanScope::PrimaryOnly,
         &mut params,
     )
     .from;
-    let metric_scope = shared_observation_where(defs, req, filters, &mut params);
+    let metric_scope =
+        shared_observation_where_within(defs, req, filters, ScanScope::PrimaryOnly, &mut params);
 
     let entity_id_params = placeholders(req.entity.len());
     let limit = query_row_limit();
@@ -1036,11 +1322,12 @@ fn push_peer_stat_selects(selects: &mut String, item_index: usize) {
 fn item_value_selects(
     defs: &[&MetricDefinition],
     params: &mut Vec<String>,
-    alias: fn(usize) -> String,
+    alias: impl Fn(usize) -> String,
+    window: Option<DateWindow>,
 ) -> String {
     let mut selects = String::new();
     for (item_index, def) in defs.iter().enumerate() {
-        let expr = item_value_expr(def, params);
+        let expr = item_value_expr(def, params, window);
         let _ = write!(
             selects,
             ",
@@ -1058,13 +1345,19 @@ fn item_value_selects(
 // macro guards HAVING countIf(value IS NOT NULL) > 0 — but a future custom
 // SQL source could produce one; OrNull excludes it from pools by
 // construction.)
-fn item_value_expr(def: &MetricDefinition, params: &mut Vec<String>) -> String {
+fn item_value_expr(
+    def: &MetricDefinition,
+    params: &mut Vec<String>,
+    window: Option<DateWindow>,
+) -> String {
     match &def.spec {
         ComputationSpec::Sum { value } => {
             params.push(value.source_key.clone());
             params.push(value.measure_key.clone());
-            "sumIfOrNull(value, source_key = ? AND measure_key = ? AND value IS NOT NULL)"
-                .to_owned()
+            let window = window_term(window, params);
+            format!(
+                "sumIfOrNull(value, source_key = ? AND measure_key = ? AND value IS NOT NULL{window})"
+            )
         }
         ComputationSpec::Ratio {
             numerator,
@@ -1081,15 +1374,21 @@ fn item_value_expr(def: &MetricDefinition, params: &mut Vec<String>) -> String {
             // 0 for no rows and nullIf already turns that into NULL.
             params.push(numerator.source_key.clone());
             params.push(numerator.measure_key.clone());
+            let numerator_window = window_term(window, params);
             params.push(numerator.source_key.clone());
             params.push(denominator.measure_key.clone());
+            let denominator_window = window_term(window, params);
             let denominator = ratio_denominator_expr(
                 *denominator_aggregation,
-                "source_key = ? AND measure_key = ? AND value IS NOT NULL",
-                "source_key = ? AND measure_key = ? AND subject_key IS NOT NULL",
+                &format!(
+                    "source_key = ? AND measure_key = ? AND value IS NOT NULL{denominator_window}"
+                ),
+                &format!(
+                    "source_key = ? AND measure_key = ? AND subject_key IS NOT NULL{denominator_window}"
+                ),
             );
             format!(
-                "{scale} * sumIfOrNull(value, source_key = ? AND measure_key = ? AND value IS NOT NULL) / nullIf({denominator}, 0)"
+                "{scale} * sumIfOrNull(value, source_key = ? AND measure_key = ? AND value IS NOT NULL{numerator_window}) / nullIf({denominator}, 0)"
             )
         }
         ComputationSpec::Median { value } => {
@@ -1098,16 +1397,19 @@ fn item_value_expr(def: &MetricDefinition, params: &mut Vec<String>) -> String {
             // builder never zero-fills medians (honest-null).
             params.push(value.source_key.clone());
             params.push(value.measure_key.clone());
-            "quantileExactIfOrNull(0.5)(value, source_key = ? AND measure_key = ? AND value IS NOT NULL)"
-                .to_owned()
+            let window = window_term(window, params);
+            format!(
+                "quantileExactIfOrNull(0.5)(value, source_key = ? AND measure_key = ? AND value IS NOT NULL{window})"
+            )
         }
         ComputationSpec::Percentile { value, q } => {
             // Honest-null like Median — same event-grain shape, different point
             // on the distribution.
             params.push(value.source_key.clone());
             params.push(value.measure_key.clone());
+            let window = window_term(window, params);
             format!(
-                "quantileExactIfOrNull({q})(value, source_key = ? AND measure_key = ? AND value IS NOT NULL)"
+                "quantileExactIfOrNull({q})(value, source_key = ? AND measure_key = ? AND value IS NOT NULL{window})"
             )
         }
         ComputationSpec::Stddev { value } => {
@@ -1115,8 +1417,10 @@ fn item_value_expr(def: &MetricDefinition, params: &mut Vec<String>) -> String {
             // reads NULL (no spread is measurable), never a fabricated 0.
             params.push(value.source_key.clone());
             params.push(value.measure_key.clone());
-            "stddevSampIfOrNull(value, source_key = ? AND measure_key = ? AND value IS NOT NULL)"
-                .to_owned()
+            let window = window_term(window, params);
+            format!(
+                "stddevSampIfOrNull(value, source_key = ? AND measure_key = ? AND value IS NOT NULL{window})"
+            )
         }
         ComputationSpec::DistinctCount { value } => {
             // OrNull like sum: an entity present via another measure but with
@@ -1126,11 +1430,13 @@ fn item_value_expr(def: &MetricDefinition, params: &mut Vec<String>) -> String {
             // as it does sums. Counts distinct `subject_key`, not `value`.
             params.push(value.source_key.clone());
             params.push(value.measure_key.clone());
+            let window = window_term(window, params);
             // toFloat64 so the wide column is Float64, not a JSON-quoted
             // UInt64 (uniqExact's native type) the f64 row decoder rejects.
             // OrNull is preserved through the cast (NULL stays NULL).
-            "toFloat64(uniqExactIfOrNull(subject_key, source_key = ? AND measure_key = ? AND subject_key IS NOT NULL))"
-                .to_owned()
+            format!(
+                "toFloat64(uniqExactIfOrNull(subject_key, source_key = ? AND measure_key = ? AND subject_key IS NOT NULL{window}))"
+            )
         }
     }
 }
@@ -1178,20 +1484,24 @@ fn transformed_single(def: &MetricDefinition, inner: String) -> String {
     )
 }
 
-// Batch variant: re-projects each transformed item column by alias.
-fn transformed_batch(
-    defs: &[&MetricDefinition],
-    inner: String,
-    alias: fn(usize) -> String,
-) -> String {
+// Batch variant: re-projects each transformed item column by alias, the
+// comparison window's column included.
+fn transformed_batch(defs: &[&MetricDefinition], inner: String, compared: bool) -> String {
     if defs.iter().all(|def| def.transform.is_none()) {
         return inner;
     }
     let mut selects = String::new();
     for (item_index, def) in defs.iter().enumerate() {
-        let value = alias(item_index);
-        let expr = transformed(def, value.clone());
-        let _ = write!(selects, ", {expr} AS {value}");
+        for value in [
+            Some(period_alias(item_index)),
+            compared.then(|| period_compare_alias(item_index)),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let expr = transformed(def, value.clone());
+            let _ = write!(selects, ", {expr} AS {value}");
+        }
     }
     format!(
         r"
@@ -1214,16 +1524,19 @@ fn push_cohort_scope(
     params.push(cohort_key.to_owned());
 }
 
-fn shared_observation_where(
+/// `shared_observation_where` over an explicit scan range: a windowed batch
+/// scans the union of its windows once and lets each conditional aggregate
+/// pick its own out of it.
+fn shared_observation_where_within(
     defs: &[&MetricDefinition],
     req: &ValidatedMetricResultsRequest,
     filters: &[ValidatedDimensionFilter],
+    scope: ScanScope,
     params: &mut Vec<String>,
 ) -> String {
     params.push(req.tenant_id.to_string());
     params.push(req.entity.entity_type().to_owned());
-    params.push(req.from.to_string());
-    params.push(req.to.to_string());
+    let scan = scan_window_predicate(req, "metric_date", " ", scope, params);
     let pairs = measure_pairs(defs);
     for (source_key, measure_key) in &pairs {
         params.push(source_key.clone());
@@ -1232,7 +1545,7 @@ fn shared_observation_where(
     let pair_placeholders = vec!["(?, ?)"; pairs.len()].join(", ");
     let tenant = tenant_predicate(req.enforce_tenant_scope);
     let mut where_clause = format!(
-        "{tenant} AND entity_type = ? AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND (source_key, measure_key) IN ({pair_placeholders})"
+        "{tenant} AND entity_type = ? AND {scan} AND (source_key, measure_key) IN ({pair_placeholders})"
     );
     where_clause.push_str(&dimension_filter_where(filters, params));
     where_clause
@@ -1291,6 +1604,7 @@ fn batch_observation_source<'a>(defs: &'a [&MetricDefinition]) -> &'a Observatio
 fn batch_resolved_observation_from(
     defs: &[&MetricDefinition],
     req: &ValidatedMetricResultsRequest,
+    scope: ScanScope,
     params: &mut Vec<String>,
 ) -> ObservationRead {
     let def = defs
@@ -1301,6 +1615,7 @@ fn batch_resolved_observation_from(
         def.observation_source(),
         &PersonScope::Requested(req),
         &collapses,
+        scope,
         params,
     )
 }
@@ -1308,6 +1623,7 @@ fn batch_resolved_observation_from(
 fn single_resolved_observation_from(
     def: &MetricDefinition,
     req: &ValidatedMetricResultsRequest,
+    scope: ScanScope,
     params: &mut Vec<String>,
 ) -> ObservationRead {
     let defs = [def];
@@ -1316,6 +1632,7 @@ fn single_resolved_observation_from(
         def.observation_source(),
         &PersonScope::Requested(req),
         &collapses,
+        scope,
         params,
     )
 }
@@ -1553,12 +1870,13 @@ pub(crate) fn account_id_expr(alias: &str) -> String {
 /// prune let through.
 fn resolved_observation_from(
     source: &ObservationSource,
-    scope: &PersonScope<'_>,
+    person_scope: &PersonScope<'_>,
     collapses: &[(&MetricInput, AliasCollapse)],
+    scan: ScanScope,
     params: &mut Vec<String>,
 ) -> ObservationRead {
     let table = observation_table(source);
-    let resolution = EntityResolution::of(source, &scope.request().entity);
+    let resolution = EntityResolution::of(source, &person_scope.request().entity);
     if resolution == EntityResolution::Canonical {
         return ObservationRead {
             from: table,
@@ -1566,13 +1884,21 @@ fn resolved_observation_from(
         };
     }
 
-    let date_scope =
-        "\n          AND obs.metric_date >= toDate(?)\n          AND obs.metric_date <= toDate(?)";
-    let (inner_where, resolved_filter) = match scope {
+    // INVARIANT: this read pre-filters observations before the outer aggregates
+    // run, so its dates must cover every range the VIEW answers: the primary
+    // period alone would answer NULL for a comparison window, and both ranges
+    // would make a view that answers only the primary period read rows it must
+    // not see.
+    let scan_of = |req: &ValidatedMetricResultsRequest, params: &mut Vec<String>| {
+        format!(
+            "\n          AND {}",
+            scan_window_predicate(req, "obs.metric_date", "\n          ", scan, params)
+        )
+    };
+    let (inner_where, resolved_filter) = match person_scope {
         PersonScope::Requested(req) => {
             params.extend(req.entity.entity_ids());
-            params.push(req.from.to_string());
-            params.push(req.to.to_string());
+            let date_scope = scan_of(req, params);
             params.extend(req.entity.entity_ids());
             let person_params = placeholders(req.entity.len());
             (
@@ -1584,8 +1910,7 @@ fn resolved_observation_from(
             )
         }
         PersonScope::CohortMembers(req) => {
-            params.push(req.from.to_string());
-            params.push(req.to.to_string());
+            let date_scope = scan_of(req, params);
             (
                 format!(
                     "(obs.entity_id IN (SELECT email FROM {PERSON_MAP_RELATION} \
@@ -1596,13 +1921,9 @@ fn resolved_observation_from(
             )
         }
         PersonScope::TenantWide(req) => {
-            params.push(req.from.to_string());
-            params.push(req.to.to_string());
-            (
-                "obs.metric_date >= toDate(?)\n          AND obs.metric_date <= toDate(?)"
-                    .to_owned(),
-                "resolved_person_id != ''".to_owned(),
-            )
+            let date_scope =
+                scan_window_predicate(req, "obs.metric_date", "\n          ", scan, params);
+            (date_scope, "resolved_person_id != ''".to_owned())
         }
     };
 
@@ -1987,6 +2308,7 @@ mod tests {
             },
             from: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap_or_default(),
             to: NaiveDate::from_ymd_opt(2026, 1, 31).unwrap_or_default(),
+            compare_to: None,
             metrics: Vec::new(),
             enforce_tenant_scope: true,
         }
@@ -2050,6 +2372,297 @@ mod tests {
                 "tool_use_offered",
             ]
         );
+    }
+
+    fn windowed_request() -> ValidatedMetricResultsRequest {
+        let mut req = request();
+        req.compare_to = Some(DateWindow {
+            from: NaiveDate::from_ymd_opt(2025, 12, 1).unwrap_or_default(),
+            to: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap_or_default(),
+        });
+        req
+    }
+
+    #[test]
+    fn a_compared_period_batch_scans_each_range_and_scopes_both_columns() {
+        let sum = sum_metric();
+        let query = compile_period_batch_query(&[&sum], &windowed_request(), &[]);
+
+        assert!(query.sql.contains("AS m0"));
+        assert!(query.sql.contains("AS m0_compare"));
+        // The scan is a disjunction of the requested ranges. The envelope form
+        // — one range from the earliest `from` to the latest `to` — would read
+        // every day between two far-apart windows.
+        assert!(query.sql.contains(
+            "(metric_date >= toDate(?) AND metric_date <= toDate(?)) OR (metric_date >= toDate(?) AND metric_date <= toDate(?))"
+        ));
+        assert_eq!(query.sql.matches('?').count(), query.params.len());
+        assert_eq!(
+            query.params,
+            vec![
+                // primary column, scoped to the period
+                "ai_usage",
+                "accepted_lines",
+                "2026-01-01",
+                "2026-01-31",
+                // extra window column
+                "ai_usage",
+                "accepted_lines",
+                "2025-12-01",
+                "2025-12-31",
+                // the identity-resolving read: it filters observations BEFORE
+                // the aggregates, so it scans both ranges and neither the gap
+                // nor the primary period alone
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+                "2026-01-01",
+                "2026-01-31",
+                "2025-12-01",
+                "2025-12-31",
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+                // shared scope, same two ranges
+                TEST_TENANT_STR,
+                "person",
+                "2026-01-01",
+                "2026-01-31",
+                "2025-12-01",
+                "2025-12-31",
+                "ai_usage",
+                "accepted_lines",
+            ]
+        );
+    }
+
+    /// One view's compiler, named for the assertion message.
+    type UnwidenedCase = (
+        &'static str,
+        fn(&ValidatedMetricResultsRequest) -> CompiledQuery,
+    );
+
+    /// The contract says only `period` and `breakdown` answer the comparison
+    /// window. Every other view's aggregates carry no window term of their own,
+    /// so a widened scan would fold both ranges into one number instead — a
+    /// peer target summing two months, and percentiles built on those.
+    ///
+    /// The check is the strongest available: for those views the compiled SQL
+    /// and its bound parameters must be IDENTICAL with and without
+    /// `compare_to`, down to the identity-resolving subquery.
+    #[test]
+    fn only_period_and_breakdown_widen_their_scan_for_a_comparison_window() {
+        let sum = sum_metric();
+        let mut dimensioned = sum_metric();
+        dimensioned.base.allowed_dimensions = vec!["tool".to_owned()];
+        let dims = vec!["tool".to_owned()];
+
+        let unchanged: Vec<UnwidenedCase> = vec![
+            ("peer (declared cohort)", |req| {
+                compile_peer_batch_query(
+                    &[&sum_metric()],
+                    req,
+                    "org_unit",
+                    PeerPopulation::DeclaredCohort,
+                    &[],
+                )
+            }),
+            ("peer (tenant)", |req| {
+                compile_peer_batch_query(
+                    &[&sum_metric()],
+                    req,
+                    "org_unit",
+                    PeerPopulation::Tenant,
+                    &[],
+                )
+            }),
+            ("timeseries", |req| {
+                compile_timeseries_query(&sum_metric(), req, Bucket::Week, &[], &[], None)
+            }),
+            ("rollup", |req| {
+                compile_rollup_query(
+                    &sum_metric(),
+                    req,
+                    std::slice::from_ref(&"tool".to_owned()),
+                    &[],
+                    None,
+                )
+            }),
+            ("histogram", |req| {
+                compile_histogram_query(&median_metric(), req, &[])
+            }),
+            ("ranking", |req| {
+                compile_group_ranking_query(
+                    &sum_metric(),
+                    req,
+                    std::slice::from_ref(&"tool".to_owned()),
+                    &[],
+                    5,
+                )
+            }),
+        ];
+        for (name, compile) in unchanged {
+            let plain = compile(&request());
+            let compared = compile(&windowed_request());
+            assert_eq!(plain.sql, compared.sql, "{name}: SQL must not widen");
+            assert_eq!(
+                plain.params, compared.params,
+                "{name}: bound dates must not widen"
+            );
+        }
+
+        // ...and the two that do answer it must change.
+        let period_plain = compile_period_batch_query(&[&sum], &request(), &[]);
+        let period_compared = compile_period_batch_query(&[&sum], &windowed_request(), &[]);
+        assert_ne!(period_plain.sql, period_compared.sql, "period must widen");
+
+        let breakdown_plain = compile_breakdown_query(&dimensioned, &request(), &dims, &[]);
+        let breakdown_compared =
+            compile_breakdown_query(&dimensioned, &windowed_request(), &dims, &[]);
+        assert_ne!(
+            breakdown_plain.sql, breakdown_compared.sql,
+            "breakdown must widen"
+        );
+    }
+
+    #[test]
+    fn an_uncompared_batch_keeps_the_single_range_form() {
+        // The whole change rests on this: a request that asks for no extra
+        // window compiles the SQL it always did.
+        let sum = sum_metric();
+        let query = compile_period_batch_query(&[&sum], &request(), &[]);
+
+        assert!(
+            query
+                .sql
+                .contains("AND metric_date >= toDate(?) AND metric_date <= toDate(?) AND")
+        );
+        assert!(!query.sql.contains(" OR ("));
+        assert!(!query.sql.contains("AS m0_compare"));
+    }
+
+    #[test]
+    fn a_ratio_over_windows_scopes_both_halves_of_the_fraction() {
+        let ratio = ratio_metric();
+        let query = compile_period_batch_query(&[&ratio], &windowed_request(), &[]);
+
+        assert_eq!(query.sql.matches('?').count(), query.params.len());
+        assert_eq!(
+            query.params,
+            vec![
+                "ai_usage",
+                "accepted_edit_actions",
+                "2026-01-01",
+                "2026-01-31",
+                "ai_usage",
+                "tool_use_offered",
+                "2026-01-01",
+                "2026-01-31",
+                "ai_usage",
+                "accepted_edit_actions",
+                "2025-12-01",
+                "2025-12-31",
+                "ai_usage",
+                "tool_use_offered",
+                "2025-12-01",
+                "2025-12-31",
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+                "2026-01-01",
+                "2026-01-31",
+                "2025-12-01",
+                "2025-12-31",
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+                TEST_TENANT_STR,
+                "person",
+                "2026-01-01",
+                "2026-01-31",
+                "2025-12-01",
+                "2025-12-31",
+                "ai_usage",
+                "accepted_edit_actions",
+                "ai_usage",
+                "tool_use_offered",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_compared_breakdown_emits_a_value_and_a_presence_column_per_window() {
+        let sum = sum_metric();
+        let query = compile_breakdown_query(
+            &sum,
+            &windowed_request(),
+            std::slice::from_ref(&"tool".to_owned()),
+            &[],
+        );
+
+        assert!(query.sql.contains("AS value"));
+        assert!(query.sql.contains("AS value_compare"));
+        // Presence rides its own column: a group's value cannot express it,
+        // because a ratio over a group that IS in the window reads NULL when
+        // its denominator is zero.
+        assert!(query.sql.contains("AS present"));
+        assert!(query.sql.contains("AS present_compare"));
+        assert_eq!(
+            query
+                .sql
+                .matches("countIf(metric_date >= toDate(?) AND metric_date <= toDate(?)) > 0")
+                .count(),
+            2,
+            "one presence column per window, the primary included"
+        );
+        // The aggregates stage under names that cannot collide with the
+        // observation's own `value` column — see `breakdown_aliases`.
+        assert!(query.sql.contains("AS staged_value"));
+        assert_eq!(query.sql.matches('?').count(), query.params.len());
+        assert_eq!(
+            query.params,
+            vec![
+                // primary value, then primary presence
+                "2026-01-01",
+                "2026-01-31",
+                "2026-01-01",
+                "2026-01-31",
+                // the extra window's value, then its presence
+                "2025-12-01",
+                "2025-12-31",
+                "2025-12-01",
+                "2025-12-31",
+                // identity-resolving read over both ranges
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+                "2026-01-01",
+                "2026-01-31",
+                "2025-12-01",
+                "2025-12-31",
+                "00000000-0000-0000-0000-00000000000a",
+                "00000000-0000-0000-0000-00000000000b",
+                // metric scope, same two ranges
+                TEST_TENANT_STR,
+                "ai_usage",
+                "person",
+                "2026-01-01",
+                "2026-01-31",
+                "2025-12-01",
+                "2025-12-31",
+                "accepted_lines",
+            ]
+        );
+    }
+
+    #[test]
+    fn an_uncompared_breakdown_carries_no_presence_column() {
+        let sum = sum_metric();
+        let query = compile_breakdown_query(
+            &sum,
+            &request(),
+            std::slice::from_ref(&"tool".to_owned()),
+            &[],
+        );
+
+        assert!(!query.sql.contains("present"));
+        assert!(!query.sql.contains("staged_"));
+        assert!(!query.sql.contains(" OR ("));
     }
 
     #[test]

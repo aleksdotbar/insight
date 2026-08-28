@@ -58,6 +58,23 @@ class AiSettingsResponse(BaseModel):
     system_prompt: str
 
 
+class BreakdownWindowValueDto(BaseModel):
+    """
+    One group's reading over the comparison window.
+
+    `value` and `present` are independent: a ratio over a group that IS in the
+    window reads NULL whenever its denominator is zero, so absence cannot be
+    inferred from the value. A reader that wants what a standalone request over
+    that window would have returned keeps the rows with `present` and renders
+    their `value` as it stands, NULL included.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    present: bool
+    value: float | None = None
+
+
 class Bucket(StrEnum):
     day = 'day'
     week = 'week'
@@ -676,6 +693,7 @@ class PeriodValueDto(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    compare_to: float | None = Field(None, description='The same reading over `compare_to`. Omitted both when no comparison\nwindow was asked for and when the entity has no value in it — the two\nare not distinguished on the wire, and a reader that asked knows which\ncase it is in.')
     entity_id: str
     value: float | None = None
 
@@ -962,8 +980,10 @@ class BreakdownValueDto(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    compare_to: BreakdownWindowValueDto | None = None
     dimensions: list[MetricDimensionDto]
     entity_id: str
+    present: bool | None = Field(None, description='Whether this group has any observation inside the primary period.\nPresent only on a windowed response, where the group set spans every\nwindow and a reader has to know which of them each group belongs to.')
     value: float | None = None
 
 
@@ -1193,6 +1213,7 @@ class MetricResultsRequest(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    compare_to: MetricResultsPeriod | None = None
     entity: MetricResultsEntity
     metrics: list[MetricRequest]
     period: MetricResultsPeriod
