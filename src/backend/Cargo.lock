@@ -137,6 +137,7 @@ dependencies = [
  "hex",
  "insight-clickhouse",
  "insight-migration",
+ "opentelemetry 0.31.0",
  "redis",
  "reqwest 0.12.28",
  "rust_xlsxwriter",
@@ -147,8 +148,10 @@ dependencies = [
  "serde_yaml",
  "sha2 0.11.0",
  "sqlparser",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -156,6 +159,7 @@ dependencies = [
  "utoipa",
  "uuid",
  "zeroize",
+ "zip",
 ]
 
 [[package]]
@@ -5894,6 +5898,7 @@ version = "0.98.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "093d730a6f64f9620e047b2de2876e61a691fbcaca3aaf436edade9b897c7a27"
 dependencies = [
+ "tempfile",
  "zip",
 ]
 
