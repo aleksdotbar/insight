@@ -22,9 +22,10 @@ use super::error::ProfileError;
 use super::gate::{require_caller, require_service};
 use crate::domain::login_bootstrap;
 use crate::domain::profile::{
-    ParentProjection, PersonResponse, ResolveProfileRequest, assemble_person, assemble_profile,
-    latest_values,
+    BatchProfilesRequest, ParentProjection, PersonResponse, ResolveProfileRequest, assemble_person,
+    assemble_profile, latest_values,
 };
+use crate::domain::profile_batch::{self, BatchProfilesError};
 use crate::infra::db::{persons_repo, resolution_repo, subchart_repo};
 
 /// `POST /v1/profiles` — resolve one identity (email or source-native id) to a
@@ -101,6 +102,34 @@ pub async fn resolve_profile(
             .create())
         }
     }
+}
+
+pub async fn batch_profiles(
+    Extension(state): Extension<Arc<AppState>>,
+    Extension(ctx): Extension<SecurityContext>,
+    CanonicalJson(req): CanonicalJson<BatchProfilesRequest>,
+) -> Result<impl IntoResponse, CanonicalError> {
+    let tenant = ctx.subject_tenant_id();
+    let caller = require_caller(&ctx)?;
+
+    let response = profile_batch::resolve_batch_profiles(
+        &state.db,
+        tenant,
+        caller,
+        req,
+        &state.config.org_chart_source_type,
+        state.config.visibility_policy,
+    )
+    .await
+    .map_err(batch_profile_read_error)?;
+
+    Ok(Json(response))
+}
+
+#[expect(clippy::needless_pass_by_value, reason = "used directly as map_err")]
+fn batch_profile_read_error(error: BatchProfilesError) -> CanonicalError {
+    tracing::error!(%error, "batch profile read failed");
+    CanonicalError::internal("profile assembly failed").create()
 }
 
 /// Narrow `candidate_ids` down to the ones `caller` can see (current state —
