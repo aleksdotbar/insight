@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
@@ -19,10 +20,12 @@ use crate::domain::metric_drilldown::{
     MetricDrilldownExportRequest, MetricDrilldownRequest, MetricDrilldownResponse,
     MetricDrilldownRow, ValidatedMetricDrilldown, build_export, build_response, compile_query,
     decode_evidence_rows, evidence_unavailable, export_filename, export_internal, export_limit,
-    parse_person_entity, parse_person_ids, presentation, validate_export_request, validate_request,
-    verify_evidence_snapshot, with_evidence_query_limits,
+    parse_person_entity, parse_person_ids, presentation, presents_person, validate_export_request,
+    validate_request, verify_evidence_snapshot, with_evidence_query_limits,
 };
 use crate::domain::person_visibility::authorize_person_ids;
+
+use super::person_names;
 
 const QUERY_TIMEOUT: Duration = Duration::from_secs(EVIDENCE_QUERY_TIMEOUT_SECS);
 const EXPORT_TIMEOUT: Duration = Duration::from_mins(1);
@@ -47,11 +50,16 @@ pub async fn query_metric_drilldown(
     let mut req = validate_request(&state.db, &state.ch, ctx.subject_tenant_id(), req).await?;
     req.enforce_tenant_scope = state.config.metric_catalog.enforce_tenant_scope;
 
+    // Ahead of the read: the reader searches `Who` by name, and the names are
+    // what turn that needle into identities the query can compare.
+    let names = roster_names(&state, &req).await?;
+    req.search_person_ids = people_named_like(&names, req.selection.search.as_deref());
+
     let log_comment = format!("metric-drilldown:page:{}", req.plan.definition.key());
     let rows = fetch_rows(&state, &req, &log_comment).await?;
     verify_evidence_snapshot(&state.ch, &req.plan.relation, &req.snapshot_id).await?;
     let fetched_rows = rows.len();
-    let response = build_response(&req, rows, &state.external_links)?;
+    let response = build_response(&req, rows, &names, &state.external_links)?;
     tracing::info!(
         duration_ms = started.elapsed().as_millis(),
         rows = response.rows.len(),
@@ -86,6 +94,9 @@ pub async fn export_metric_drilldown(
     )
     .await?;
     validated.enforce_tenant_scope = state.config.metric_catalog.enforce_tenant_scope;
+    let names = roster_names(&state, &validated).await?;
+    validated.search_person_ids = people_named_like(&names, validated.selection.search.as_deref());
+
     let evidence = collect_export_rows(&state, &validated, deadline).await?;
     let exported_rows = evidence.len();
 
@@ -94,6 +105,8 @@ pub async fn export_metric_drilldown(
         &validated.plan,
         &validated.selection.filters,
         &validated.selection.display_dimensions,
+        &validated.selection.entity,
+        &names,
     )?;
     drop(evidence);
 
@@ -113,6 +126,75 @@ pub async fn export_metric_drilldown(
     );
 
     attachment_response(body, content_type, &export_name(&validated, extension))
+}
+
+/// Who each row belongs to, in the words the reader knows them by.
+///
+/// Gated on the column actually being presented, not on the shape of the
+/// entity: a roster read of a ratio metric shows no `Who`, and would otherwise
+/// pay for a full identity scan per page for a map nothing reads.
+///
+/// The identity rows failing to answer names nobody rather than failing the
+/// read — an empty column, not an error. Being unable to ASK is different, and
+/// answers 429 like any other read this endpoint cannot find capacity for.
+async fn roster_names(
+    state: &AppState,
+    validated: &ValidatedMetricDrilldown,
+) -> Result<BTreeMap<String, String>, CanonicalError> {
+    if !presents_person(validated) {
+        return Ok(BTreeMap::new());
+    }
+    let Ok(ids) = parse_person_ids(&validated.selection.entity) else {
+        return Ok(BTreeMap::new());
+    };
+
+    // INVARIANT: the permit is held across the awaited lookup below — the hold
+    // is this endpoint's share of MAX_CONCURRENT_QUERIES, which the identity
+    // scan belongs to as much as the evidence read does.
+    let _permit = acquire_query_permit().await?;
+    let names = tokio::time::timeout(
+        QUERY_TIMEOUT,
+        person_names::lookup_bounded(
+            &state.ch,
+            validated.tenant_id,
+            &ids,
+            with_evidence_query_limits,
+        ),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        tracing::warn!(
+            people = ids.len(),
+            "naming a roster exceeded the execution time limit"
+        );
+        std::collections::HashMap::new()
+    });
+
+    Ok(names
+        .into_iter()
+        .filter_map(|(id, name)| Some((id.to_string(), person_name(&name)?)))
+        .collect())
+}
+
+/// The people the needle picks out of the `Who` column, as the ids the query
+/// compares. Folded the same way the SQL search folds — case-insensitively,
+/// on a substring.
+fn people_named_like(names: &BTreeMap<String, String>, search: Option<&str>) -> Vec<String> {
+    let Some(needle) = search.map(str::to_lowercase) else {
+        return Vec::new();
+    };
+    names
+        .iter()
+        .filter(|(_, name)| name.to_lowercase().contains(&needle))
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+fn person_name(name: &person_names::PersonName) -> Option<String> {
+    [name.display_name.trim(), name.username.trim()]
+        .into_iter()
+        .find(|candidate| !candidate.is_empty())
+        .map(str::to_owned)
 }
 
 // INVARIANT: both drilldown routes authorize the typed entity before validation
@@ -243,7 +325,8 @@ fn export_name(validated: &ValidatedMetricDrilldown, extension: &str) -> String 
             .selection
             .filters
             .iter()
-            .any(|filter| !filter.values.is_empty()),
+            .any(|filter| !filter.values.is_empty())
+            || validated.selection.search.is_some(),
         extension,
     )
 }
@@ -352,6 +435,32 @@ fn query_busy() -> CanonicalError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_needle_picks_the_people_it_names_case_insensitively() {
+        let names = BTreeMap::from([
+            ("id-a".to_owned(), "Ada Example".to_owned()),
+            ("id-b".to_owned(), "Grace Park".to_owned()),
+        ]);
+
+        assert_eq!(people_named_like(&names, Some("ada")), ["id-a"]);
+        assert_eq!(people_named_like(&names, Some("PARK")), ["id-b"]);
+        assert!(people_named_like(&names, Some("nobody")).is_empty());
+        assert!(people_named_like(&names, None).is_empty());
+    }
+
+    #[test]
+    fn a_person_is_named_by_whichever_name_identity_holds() {
+        assert_eq!(
+            person_name(&person_names::PersonName::named("Ada Example", "ada")).as_deref(),
+            Some("Ada Example")
+        );
+        assert_eq!(
+            person_name(&person_names::PersonName::named("  ", "ada")).as_deref(),
+            Some("ada")
+        );
+        assert_eq!(person_name(&person_names::PersonName::named("", "")), None);
+    }
 
     #[test]
     fn query_errors_are_classified() {
