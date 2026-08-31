@@ -216,6 +216,16 @@ class FeedbackRequest(BaseModel):
     path: str | None = Field(None, description='The screen the sender was on. Empty when the SPA cannot name one.')
 
 
+class Grain(StrEnum):
+    """
+    Bucket width. The set is closed and validated server-side: the view is a
+    `merge()` over every bronze database, so an operator-supplied interval
+    expression would be a direct route into that scan.
+    """
+    field_15m = '15m'
+    field_1s = '1s'
+
+
 class HistogramBinDto(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -235,6 +245,15 @@ class ImportCustomMetricsResponse(BaseModel):
     )
     imported: int = Field(..., ge=0)
     skipped: list[str]
+
+
+class IngestionPoint(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    bucket: str = Field(..., description="Bucket start as `YYYY-MM-DD HH:MM:SS`, always UTC — the reader's own\nzone would re-cut buckets the server already decided.")
+    key: str = Field(..., description='Connector slug, stream name, or `all`, per the resolved `series`.')
+    rows: int = Field(..., ge=0)
 
 
 class MetricComputation(StrEnum):
@@ -864,6 +883,18 @@ class Scope(StrEnum):
     person = 'person'
 
 
+class Series(StrEnum):
+    """
+    What one plotted band counts. `Total` exists because the full-period trend
+    plots a single line: grouping it by connector would multiply 400 days of
+    15-minute buckets by the connector count for a series the chart then sums
+    back down anyway.
+    """
+    connector = 'connector'
+    stream = 'stream'
+    total = 'total'
+
+
 class SnapshotScope(StrEnum):
     """
     Whose reading this is.
@@ -1126,6 +1157,19 @@ class HistogramValueDto(BaseModel):
     bins: list[HistogramBinDto] = Field(..., description="Empty when a listed entity has no events in the period — the entity is\nstill listed, mirroring the period view's every-requested-entity rule.")
     dimensions: list[MetricDimensionDto] | None = None
     entity_id: str | None = None
+
+
+class IngestionIntensityResponse(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    from_: str = Field(..., alias='from')
+    grain: Grain = Field(..., description='Echoed resolved, not as asked: the caller may have pinned neither bound.')
+    points: list[IngestionPoint]
+    scope: str | None = Field(None, description='The `source_database` the read was scoped to; absent when org-wide.')
+    series: Series
+    to: str
+    truncated: bool = Field(..., description='The group cap clipped the tail: the window is too wide for this grain\nand series to plot honestly. Never silently true — the UI says so.')
 
 
 class MetricDefinitionView(BaseModel):
