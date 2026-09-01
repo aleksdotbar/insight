@@ -160,6 +160,28 @@ class MergeRequest(BaseModel):
     target_person_id: UUID = Field(..., description='The surviving person, named explicitly by the operator.')
 
 
+class PeopleListItemResponse(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    attributes: dict[str, str]
+    display_name: str | None = None
+    email: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    manager_person_id: UUID | None = None
+    person_id: UUID
+    username: str | None = None
+
+
+class PeopleListResponse(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    items: list[PeopleListItemResponse]
+    next_cursor: str | None = None
+
+
 class PersonAccountEntry(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
