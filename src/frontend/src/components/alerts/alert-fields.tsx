@@ -7,10 +7,20 @@ import { MetricPicker } from "@/components/alerts/metric-picker";
 import { Row } from "@/components/custom/editor/controls";
 import { refusal } from "@/components/custom/refusal";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Field,
+  FieldError,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { conditionColumns } from "@/lib/alerts/condition";
 import {
+  CONTEXT_COLUMNS_MAX,
+  contextColumnsOf,
   textOf,
   type AlertDocument,
   type FieldErrors,
@@ -49,6 +59,38 @@ function windowOptions(current: string) {
     ...presets,
     ...(known ? [] : [{ value: current, label: rangeLabel(current) }]),
   ];
+}
+
+function ContextColumnChoice({
+  column,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  column: string;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const id = `alert-context-${column}`;
+
+  return (
+    <Field
+      orientation="horizontal"
+      data-disabled={disabled}
+      className="w-auto gap-2"
+    >
+      <Checkbox
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onToggle}
+      />
+      <FieldLabel htmlFor={id} className="font-mono font-normal">
+        {column}
+      </FieldLabel>
+    </Field>
+  );
 }
 
 export function AlertFields({
@@ -90,6 +132,14 @@ export function AlertFields({
       ? refusal(read.error, "Couldn't read the metric.")
       : undefined);
   const columns = definition?.fields.map((field) => field.as_name) ?? [];
+  const grouped = new Set(definition?.group_by ?? []);
+  const context = contextColumnsOf(document) ?? [];
+  // INVARIANT: a column the metric no longer answers stays listed while the
+  // rule names it, so an edit does not drop it unseen.
+  const offered = [
+    ...columns.filter((column) => !grouped.has(column)),
+    ...context.filter((column) => !columns.includes(column)),
+  ];
   const chosen = metric !== "" && picked.settled;
   // INVARIANT: a metric that cannot be read never hides the window a rule holds.
   const showWindow = stored
@@ -181,6 +231,47 @@ export function AlertFields({
             }
           />
         </fieldset>
+      ) : null}
+
+      {chosen && (offered.length > 0 || errors.context_columns) ? (
+        <FieldSet
+          tabIndex={-1}
+          className="gap-2 outline-none"
+          aria-invalid={errors.context_columns ? true : undefined}
+          aria-describedby={
+            errors.context_columns ? "alert-context-columns-said" : undefined
+          }
+        >
+          <FieldLegend
+            variant="label"
+            className={cn(TEXT_LABEL, "mb-1 font-medium")}
+          >
+            Show in notification
+          </FieldLegend>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {offered.map((column) => (
+              <ContextColumnChoice
+                key={column}
+                column={column}
+                checked={context.includes(column)}
+                disabled={
+                  !context.includes(column) &&
+                  context.length >= CONTEXT_COLUMNS_MAX
+                }
+                onToggle={() =>
+                  onChange({
+                    context_columns: context.includes(column)
+                      ? context.filter((each) => each !== column)
+                      : [...context, column],
+                  })
+                }
+              />
+            ))}
+          </div>
+          <FieldError id="alert-context-columns-said">
+            {errors.context_columns}
+          </FieldError>
+        </FieldSet>
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">

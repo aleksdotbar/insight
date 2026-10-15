@@ -184,6 +184,7 @@ describe("NewAlertPage", { timeout: 20_000 }, () => {
         name: "Too many open PRs",
         metric: "prs-open",
         condition: ABOVE_TEN,
+        context_columns: [],
         range: null,
         interval_secs: 300,
         destination: "ops",
@@ -233,6 +234,7 @@ describe("NewAlertPage", { timeout: 20_000 }, () => {
             rows: "one",
             where: { column: "total", op: "<", value: 10 },
           },
+          context_columns: [],
           range,
           interval_secs: 300,
           destination: "dev",
@@ -450,7 +452,134 @@ describe("NewAlertPage", { timeout: 20_000 }, () => {
       metric: "prs-open",
       range: null,
       condition: ABOVE_TEN,
+      context_columns: [],
     });
+  });
+
+  it("sends the columns ticked to show in the notification, and previews with them", async () => {
+    vi.mocked(customClient.fetchMetric).mockResolvedValue(
+      storedMetric({
+        definition: {
+          table: "gold.prs",
+          fields: [
+            { column: "lead", type: "string", as_name: "lead" },
+            { column: "id", type: "int", agg: "count", as_name: "total" },
+          ],
+        },
+      })
+    );
+    vi.mocked(alertsClient.createAlert).mockResolvedValue(ALERT);
+
+    render(<NewAlertPage />, { wrapper });
+    await fillNew();
+    await userEvent.click(screen.getByRole("checkbox", { name: "lead" }));
+    expect(screen.getByRole("checkbox", { name: "lead" })).toBeChecked();
+    await waitFor(
+      () =>
+        expect(alertsClient.previewAlert).toHaveBeenLastCalledWith(
+          expect.objectContaining({ context_columns: ["lead"] })
+        ),
+      { timeout: 3_000 }
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() =>
+      expect(alertsClient.createAlert).toHaveBeenCalledWith(
+        expect.objectContaining({ context_columns: ["lead"] })
+      )
+    );
+  });
+
+  it("ticks at most five columns to show, and keeps the rest from being ticked", async () => {
+    vi.mocked(customClient.fetchMetric).mockResolvedValue(
+      storedMetric({
+        definition: {
+          table: "gold.prs",
+          fields: [
+            ...["a", "b", "c", "d", "e", "f"].map((name) => ({
+              column: name,
+              type: "string",
+              as_name: name,
+            })),
+            { column: "id", type: "int", agg: "count", as_name: "total" },
+          ],
+        },
+      })
+    );
+
+    render(<NewAlertPage />, { wrapper });
+    await fillNew();
+    for (const name of ["a", "b", "c", "d", "e"]) {
+      await userEvent.click(screen.getByRole("checkbox", { name }));
+    }
+
+    // WORKAROUND: the kit draws a checkbox as a span, so disabled is aria-disabled.
+    const disabled = (name: string) =>
+      screen.getByRole("checkbox", { name }).getAttribute("aria-disabled");
+    expect(disabled("f")).toBe("true");
+    expect(disabled("e")).not.toBe("true");
+    await userEvent.click(screen.getByRole("checkbox", { name: "e" }));
+    expect(disabled("f")).not.toBe("true");
+  });
+
+  it("forgets the columns ticked when another metric is picked", async () => {
+    vi.mocked(customClient.fetchMetricNames).mockResolvedValue({
+      names: ["prs-open", "prs-stale"],
+      total: 2,
+    });
+    vi.mocked(customClient.fetchMetric).mockResolvedValue(
+      storedMetric({
+        definition: {
+          table: "gold.prs",
+          fields: [
+            { column: "lead", type: "string", as_name: "lead" },
+            { column: "id", type: "int", agg: "count", as_name: "total" },
+          ],
+        },
+      })
+    );
+
+    render(<NewAlertPage />, { wrapper });
+    await fillNew();
+    await userEvent.click(screen.getByRole("checkbox", { name: "lead" }));
+    expect(screen.getByRole("checkbox", { name: "lead" })).toBeChecked();
+
+    await userEvent.clear(screen.getByLabelText("Metric"));
+    await userEvent.type(screen.getByLabelText("Metric"), "stale");
+    await userEvent.click(
+      await screen.findByRole("option", { name: "prs-stale" })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: "lead" })).not.toBeChecked()
+    );
+  });
+
+  it("offers no group-by column to show, since the witness always shows it", async () => {
+    vi.mocked(customClient.fetchMetric).mockResolvedValue(
+      storedMetric({
+        definition: {
+          table: "gold.prs",
+          fields: [
+            { column: "team", type: "string", as_name: "team" },
+            { column: "lead", type: "string", as_name: "lead" },
+            { column: "id", type: "int", agg: "count", as_name: "total" },
+          ],
+          group_by: ["team", "lead"],
+        },
+      })
+    );
+
+    render(<NewAlertPage />, { wrapper });
+    await userEvent.type(await screen.findByLabelText("Metric"), "prs");
+    await userEvent.click(
+      await screen.findByRole("option", { name: "prs-open" })
+    );
+    await pickColumn(1, "total");
+
+    expect(screen.getByRole("checkbox", { name: "total" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "team" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "lead" })).toBeNull();
   });
 
   it("shows how many rows of many match, and which", async () => {
@@ -867,6 +996,7 @@ describe("the JSON view", { timeout: 20_000 }, () => {
       name: "Too many open PRs",
       metric: "prs-open",
       condition: ABOVE_TEN,
+      context_columns: [],
       range: null,
       interval_secs: 300,
       destination: "ops",
@@ -994,6 +1124,7 @@ describe("EditAlertPage", () => {
           rows: "one",
           where: { column: "total", op: ">", value: 20 },
         },
+        context_columns: [],
         range: null,
         interval_secs: 300,
         destination: "ops",
@@ -1039,6 +1170,17 @@ describe("EditAlertPage", () => {
         expect.objectContaining({ condition: nested })
       )
     );
+  });
+
+  it("keeps a column to show ticked while the metric no longer answers it", async () => {
+    vi.mocked(alertsClient.fetchAlert).mockResolvedValue({
+      ...ALERT,
+      context_columns: ["gone"],
+    });
+
+    render(<EditAlertPage id="a1" />, { wrapper });
+
+    expect(await screen.findByRole("checkbox", { name: "gone" })).toBeChecked();
   });
 
   it("seeds the form from a read made now, not from the copy the alert page cached", async () => {
