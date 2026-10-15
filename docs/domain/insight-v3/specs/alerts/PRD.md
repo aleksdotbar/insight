@@ -6,7 +6,7 @@ date: 2026-10-14
 
 # PRD — Insight v3 Metric Alerts
 
-**Status:** Alert behavior, scheduling, the condition model, edit semantics, limits, destination provisioning, delivery and the administrator screens in the portal are approved. The first providers are Discord, Telegram and Zulip.
+**Status:** Alert behavior, scheduling, the condition model, edit semantics, limits, destination provisioning, delivery and the administrator screens in the portal are approved. The first providers are Discord, Telegram, Slack and Zulip.
 
 **Revision 0.8:** Conditions cover every row one metric run answers: a row quantifier, nested groups, and number, text and date tests (D4, D9). Notifications and checks show the rows that met the condition, and the portal's form previews a draft on the server. Revision 0.7 moved the administrator screens into scope; 0.6 approved delivery and resolved D3; 0.5 resolved D4–D8.
 
@@ -347,7 +347,7 @@ All evidence is pending. Engineering verifies these against synthetic inputs aft
 
 D3–D9 are resolved; the product owner approved each, with engineering and security input where needed.
 
-- **D3 — First delivery providers.** Resolved: Discord (incoming webhook), Telegram (bot) and Zulip (bot to a stream topic). Rules stay provider-neutral; a destination names its provider in configuration.
+- **D3 — First delivery providers.** Resolved: Discord (incoming webhook), Telegram (bot), Slack (bot to a channel) and Zulip (bot to a stream topic). Rules stay provider-neutral; a destination names its provider in configuration.
 - **D4 — Conditions.** Resolved: a condition is a row quantifier (D9) and a tree of tests. Groups are `all`, `any` and `not`, nested at most 3 deep, holding at most 20 tests in all. Each test reads one column with an operator its kind takes, as `cpt-insightspec-v3-alerts-fr-evaluate` lists them; the kind comes from the metric definition and is checked when the rule is written. `in` and `not_in` take at most 50 values; a text value holds at most 256 characters; `older_than` and `newer_than` reach back at most 100 years. Integers exact, floats as double precision, an integer compared with a float only where the conversion is exact, otherwise unknown. A boolean cell compares as the text `true` or `false`. Tests combine three-valued: `all` is false when any part is false, `any` is true when any part is true, `not` keeps an unknown unknown, and otherwise an unknown part leaves the group unknown.
 - **D5 — Unknown data.** Resolved: an unknown check keeps the last valid finding and records its time and reason. No freshness condition; the check time is shown without claiming the source data is fresh.
 - **D6 — Edits, disabling and deletion.** Resolved: every write bumps a revision and an update names the one it replaces; a check for any other revision is discarded. Editing, enabling and re-enabling reset the finding; disabling withdraws unsent notifications; deleting removes the rule and its notifications.
